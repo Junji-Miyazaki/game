@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ヘルシーシティ・デベロップメント</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        #startScreen, #gameContainer { display: none; }
+        #startScreen { text-align: center; padding: 20px; }
+        #gameContainer { display: flex; width: 100%; height: 100vh; }
+        #gameBoardContainer { flex: 2; }
+        #gameBoard { width: 100%; height: 100%; }
+        #gameInfo { flex: 1; padding: 20px; background-color: #f0f0f0; overflow-y: auto; }
+        .phase { padding: 10px; margin: 5px 0; background-color: #e0e0e0; }
+        .active { background-color: #ffe0e0; }
+        #actions button { margin: 5px; }
+        .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <h1>ヘルシーシティ・デベロップメント</h1>
+        <p>健康的な街づくりを目指すゲームです。リソースを管理し、施設を建設して、最も発展した街を作り上げましょう。</p>
+        <h2>ルール概要:</h2>
+        <ul>
+            <li>各プレイヤーは順番にターンを行います。</li>
+            <li>ターンは「リソース生産」「取引」「建設」の3フェーズで構成されます。</li>
+            <li>サイコロを振ってリソースを獲得し、他プレイヤーと取引を行い、施設を建設します。</li>
+            <li>最初に10勝利ポイントを獲得したプレイヤーが勝利します。</li>
+        </ul>
+        <label>プレイヤー数: <input type="number" id="playerCount" min="2" max="4" value="4"></label><br>
+        <div id="playerNames"></div>
+        <button id="startGame">ゲーム開始</button>
+    </div>
+
+    <div id="gameContainer">
+        <div id="gameBoardContainer">
+            <canvas id="gameBoard"></canvas>
+        </div>
+        <div id="gameInfo">
+            <h2>ゲーム情報</h2>
+            <div id="currentPlayer"></div>
+            <div id="cityHealth"></div>
+            <div id="currentRound"></div>
+            <h3>フェーズ</h3>
+            <div id="phases"></div>
+            <div id="actions">
+                <button id="rollDice">サイコロを振る</button>
+                <button id="openTradeModal">取引を行う</button>
+                <button id="buildFacility">施設建設</button>
+                <button id="endPhase">フェーズ終了</button>
+            </div>
+            <div id="playerResources"></div>
+        </div>
+    </div>
+
+    <div id="tradeModal" class="modal">
+        <div class="modal-content">
+            <h2>取引</h2>
+            <div id="tradeContent"></div>
+            <button id="confirmTrade">取引を確定</button>
+            <button id="cancelTrade">キャンセル</button>
+        </div>
+    </div>
+
+    <div id="buildModal" class="modal">
+        <div class="modal-content">
+            <h2>施設建設</h2>
+            <div id="buildContent"></div>
+            <button id="confirmBuild">建設を確定</button>
+            <button id="cancelBuild">キャンセル</button>
+        </div>
+    </div>
+
+    <div id="cardModal" class="modal">
+        <div class="modal-content">
+            <h2>イベントカード</h2>
+            <div id="cardContent"></div>
+            <button id="closeCard">閉じる</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
