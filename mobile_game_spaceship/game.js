@@ -180,7 +180,7 @@ function createObject(type = ObjectType.NORMAL) {
     
     // createObject関数内のvelocity計算を修正
 let velocity;
-const speedFactor = 1/9;  // 速度を9分の1に
+const speedFactor = 1/27;  // 速度を9分の1に
 switch(type) {
     case ObjectType.ZIGZAG:
         velocity = new THREE.Vector3(
@@ -281,7 +281,21 @@ function continueGame() {
     objectCount = currentObjectCount;
     lastObjectIncrease = 0;
     lastObjectCreationTime = 0;
-    createObject(); // 最初のオブジェクトを作成
+    
+    // 既存のオブジェクトの速度を保持
+    const existingVelocities = objects.map(obj => obj.velocity.clone());
+    
+    // オブジェクトを再作成
+    for (let i = 0; i < objectCount; i++) {
+        createObject();
+    }
+    
+    // 再作成したオブジェクトに既存の速度を適用
+    objects.forEach((obj, index) => {
+        if (existingVelocities[index]) {
+            obj.velocity.copy(existingVelocities[index]);
+        }
+    });
 }
 
 // 画面のフラッシュ効果
@@ -355,7 +369,6 @@ function handleTouchStart(event) {
 
 let targetX = 0, targetY = 0;
 
-// handleTouchMove関数を修正
 function handleTouchMove(event) {
     event.preventDefault();
     if (!touchStartX || !touchStartY) {
@@ -365,13 +378,13 @@ function handleTouchMove(event) {
     let touchEndX = event.touches[0].clientX;
     let touchEndY = event.touches[0].clientY;
 
-    // 画面の中心を原点とした座標に変換
-    targetX = touchEndX - window.innerWidth / 2;
-    targetY = window.innerHeight / 2 - touchEndY;
+    // 画面の中心を原点とした座標に変換（横向き画面に対応）
+    targetX = touchEndY - window.innerHeight / 2;
+    targetY = window.innerWidth / 2 - touchEndX;
 
     // 目標位置を画面内に制限
-    targetX = Math.max(Math.min(targetX, window.innerWidth / 2 - 40), -window.innerWidth / 2 + 40);
-    targetY = Math.max(Math.min(targetY, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
+    targetX = Math.max(Math.min(targetX, window.innerHeight / 2 - 40), -window.innerHeight / 2 + 40);
+    targetY = Math.max(Math.min(targetY, window.innerWidth / 2 - 30), -window.innerWidth / 2 + 30);
 
     touchStartX = touchEndX;
     touchStartY = touchEndY;
@@ -388,8 +401,8 @@ function animate() {
     animationId = requestAnimationFrame(animate);
 	
 	// プレイヤーの位置を目標位置に近づける
-player.position.x += (targetX - player.position.x) * 0.2;
-player.position.y += (targetY - player.position.y) * 0.2;
+player.position.x += (targetX - player.position.x) * 0.1;
+player.position.y += (targetY - player.position.y) * 0.1;
 	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
