@@ -354,6 +354,8 @@ function handleTouchStart(event) {
     touchStartY = event.touches[0].clientY;
 }
 
+let targetX = 0, targetY = 0;
+
 function handleTouchMove(event) {
     if (!touchStartX || !touchStartY) {
         return;
@@ -365,12 +367,13 @@ function handleTouchMove(event) {
     let deltaX = touchEndX - touchStartX;
     let deltaY = touchEndY - touchStartY;
 
-    player.position.x += deltaX * 0.1;
-    player.position.y -= deltaY * 0.1;
+    // 目標位置を設定
+    targetX += deltaX * 0.5;
+    targetY -= deltaY * 0.5;
 
-    // プレイヤーの画面内制限
-    player.position.x = Math.max(Math.min(player.position.x, window.innerWidth / 2 - 40), -window.innerWidth / 2 + 40);
-    player.position.y = Math.max(Math.min(player.position.y, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
+    // 目標位置を画面内に制限
+    targetX = Math.max(Math.min(targetX, window.innerWidth / 2 - 40), -window.innerWidth / 2 + 40);
+    targetY = Math.max(Math.min(targetY, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
 
     touchStartX = touchEndX;
     touchStartY = touchEndY;
@@ -384,7 +387,11 @@ function handleTouchEnd() {
 // アニメーションループ
 function animate() {
     animationId = requestAnimationFrame(animate);
-
+	
+	// プレイヤーの位置を目標位置に近づける
+player.position.x += (targetX - player.position.x) * 0.1;
+	player.position.y += (targetY - player.position.y) * 0.1;
+	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
         const object = objects[i];
