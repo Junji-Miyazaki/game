@@ -389,8 +389,8 @@ function animate() {
     animationId = requestAnimationFrame(animate);
 	
 	// プレイヤーの位置を目標位置に近づける
-player.position.x += (targetX - player.position.x) * 0.1;
-	player.position.y += (targetY - player.position.y) * 0.1;
+player.position.x += (targetX - player.position.x) * 0.5;
+	player.position.y += (targetY - player.position.y) * 0.;
 	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
