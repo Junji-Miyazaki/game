@@ -473,6 +473,10 @@ function checkOrientation() {
     }
 }
 
+window.addEventListener('orientationchange', function() {
+    setTimeout(checkOrientation, 100);  // 100ミリ秒の遅延
+});
+
 // ウィンドウサイズ変更時の処理
 window.addEventListener('resize', () => {
     camera.left = window.innerWidth / -2;
