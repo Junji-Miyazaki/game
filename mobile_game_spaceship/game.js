@@ -179,32 +179,31 @@ function createObject(type = ObjectType.NORMAL) {
     );
     
     let velocity;
-const speedFactor = 1/9;  // 以前の1/3からさらに1/3に
-switch(type) {
-    case ObjectType.ZIGZAG:
-        velocity = new THREE.Vector3(
-            -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
-            (Math.random() * 4 - 2) * 2 * speedFactor,
-            0
-        );
-        object.zigzagTime = 0;
-        object.zigzagDirection = 1;
-        break;
-    case ObjectType.WAVY:
-        velocity = new THREE.Vector3(
-            -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
-            0,
-            0
-        );
-        object.wavyTime = 0;
-        break;
-    default:
-        velocity = new THREE.Vector3(
-            -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
-            (Math.random() * 4 - 2) * speedFactor,
-            0
-        );
-}
+    switch(type) {
+        case ObjectType.ZIGZAG:
+            velocity = new THREE.Vector3(
+                -(Math.random() * 2 + 1) * (1 / scale),
+                (Math.random() * 4 - 2) * 2,
+                0
+            );
+            object.zigzagTime = 0;
+            object.zigzagDirection = 1;
+            break;
+        case ObjectType.WAVY:
+            velocity = new THREE.Vector3(
+                -(Math.random() * 2 + 1) * (1 / scale),
+                0,
+                0
+            );
+            object.wavyTime = 0;
+            break;
+        default:
+            velocity = new THREE.Vector3(
+                -(Math.random() * 2 + 1) * (1 / scale),
+                Math.random() * 4 - 2,
+                0
+            );
+    }
     
     object.velocity = velocity;
     object.type = type;
@@ -358,8 +357,6 @@ function handleTouchStart(event) {
 let targetX = 0, targetY = 0;
 
 function handleTouchMove(event) {
-    event.preventDefault();
-
     if (!touchStartX || !touchStartY) {
         return;
     }
@@ -367,22 +364,33 @@ function handleTouchMove(event) {
     let touchEndX = event.touches[0].clientX;
     let touchEndY = event.touches[0].clientY;
 
-    // 画面の中心を原点とした座標に変換
-    targetX = touchEndX - window.innerWidth / 2;
-    targetY = window.innerHeight / 2 - touchEndY;
+    let deltaX = touchEndX - touchStartX;
+    let deltaY = touchEndY - touchStartY;
+
+    // 目標位置を設定
+    targetX += deltaX * 0.5;
+    targetY -= deltaY * 0.5;
 
     // 目標位置を画面内に制限
     targetX = Math.max(Math.min(targetX, window.innerWidth / 2 - 40), -window.innerWidth / 2 + 40);
     targetY = Math.max(Math.min(targetY, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
+
+    touchStartX = touchEndX;
+    touchStartY = touchEndY;
+}
+
+function handleTouchEnd() {
+    touchStartX = null;
+    touchStartY = null;
 }
 
 // アニメーションループ
 function animate() {
     animationId = requestAnimationFrame(animate);
 	
-// プレイヤーの位置を目標位置に近づける
-player.position.x += (targetX - player.position.x) * 0.2;
-player.position.y += (targetY - player.position.y) * 0.2;
+	// プレイヤーの位置を目標位置に近づける
+player.position.x += (targetX - player.position.x) * 0.5;
+	player.position.y += (targetY - player.position.y) * 0.;
 	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
