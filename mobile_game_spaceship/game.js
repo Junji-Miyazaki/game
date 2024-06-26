@@ -129,11 +129,6 @@ scene.add(player);
 // オブジェクトの配列
 const objects = [];
 
-// キーボード入力の処理
-const keyState = {};
-document.addEventListener('keydown', (event) => { keyState[event.code] = true; });
-document.addEventListener('keyup', (event) => { keyState[event.code] = false; });
-
 // オブジェクトの種類
 const ObjectType = {
     NORMAL: 'normal',
@@ -253,12 +248,8 @@ function gameOver() {
     cancelAnimationFrame(animationId);
     const playAgain = confirm(`Game Over! Your score: ${score} seconds\nDo you want to continue from this difficulty?`);
     if (playAgain) {
-        // キー入力状態をリセット
-        for (let key in keyState) {
-            keyState[key] = false;
-        }
         continueGame();
-        animate();
+        checkOrientation();
     } else {
         // ゲーム終了処理
         renderer.domElement.remove();
@@ -350,19 +341,49 @@ function updateObjectMovement(object) {
     }
 }
 
-// アニメーションループ
-function animate() {
-    animationId = requestAnimationFrame(animate);
+// タッチ操作のための変数
+let touchStartX, touchStartY;
 
-    // プレイヤーの移動
-    if (keyState['ArrowLeft']) player.position.x -= 5;
-    if (keyState['ArrowRight']) player.position.x += 5;
-    if (keyState['ArrowUp']) player.position.y += 5;
-    if (keyState['ArrowDown']) player.position.y -= 5;
+// タッチイベントリスナーの追加
+renderer.domElement.addEventListener('touchstart', handleTouchStart, false);
+renderer.domElement.addEventListener('touchmove', handleTouchMove, false);
+renderer.domElement.addEventListener('touchend', handleTouchEnd, false);
+
+function handleTouchStart(event) {
+    touchStartX = event.touches[0].clientX;
+    touchStartY = event.touches[0].clientY;
+}
+
+function handleTouchMove(event) {
+    if (!touchStartX || !touchStartY) {
+        return;
+    }
+
+    let touchEndX = event.touches[0].clientX;
+    let touchEndY = event.touches[0].clientY;
+
+    let deltaX = touchEndX - touchStartX;
+    let deltaY = touchEndY - touchStartY;
+
+    player.position.x += deltaX * 0.1;
+    player.position.y -= deltaY * 0.1;
 
     // プレイヤーの画面内制限
     player.position.x = Math.max(Math.min(player.position.x, window.innerWidth / 2 - 40), -window.innerWidth / 2 + 40);
-    player.position.y = Math.max(Math.min(player.position.y, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
+player.position.y = Math.max(Math.min(player.position.y, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
+
+    touchStartX = touchEndX;
+    touchStartY = touchEndY;
+}
+
+function handleTouchEnd() {
+    touchStartX = null;
+    touchStartY = null;
+}
+
+// アニメーションループ
+function animate() {
+    animationId = requestAnimationFrame(animate);
 
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
@@ -440,13 +461,17 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// ゲーム開始
-function startGame() {
-    resetGame();
-    animate();
+// 画面の向きを検出し、必要に応じてメッセージを表示
+function checkOrientation() {
+    let rotateMessage = document.getElementById('rotateMessage');
+    if (window.innerHeight > window.innerWidth) {
+        rotateMessage.style.display = 'block';
+        cancelAnimationFrame(animationId);
+    } else {
+        rotateMessage.style.display = 'none';
+        requestAnimationFrame(animate);
+    }
 }
-
-startGame();
 
 // ウィンドウサイズ変更時の処理
 window.addEventListener('resize', () => {
@@ -456,4 +481,13 @@ window.addEventListener('resize', () => {
     camera.bottom = window.innerHeight / -2;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    checkOrientation();
 });
+
+// ゲーム開始
+function startGame() {
+    resetGame();
+    checkOrientation();
+}
+
+startGame();

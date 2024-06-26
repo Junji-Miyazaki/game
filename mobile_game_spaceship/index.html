@@ -2,13 +2,36 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Rocket Dodging Game</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: black; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: black;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        #rotateMessage {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            padding-top: 50%;
+            box-sizing: border-box;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
+    <div id="rotateMessage">Please rotate your device to landscape mode</div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="game.js"></script>
 </body>
