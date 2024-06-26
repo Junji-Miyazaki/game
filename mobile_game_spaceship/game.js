@@ -370,7 +370,7 @@ function handleTouchMove(event) {
 
     // プレイヤーの画面内制限
     player.position.x = Math.max(Math.min(player.position.x, window.innerWidth / 2 - 40), -window.innerWidth / 2 + 40);
-player.position.y = Math.max(Math.min(player.position.y, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
+    player.position.y = Math.max(Math.min(player.position.y, window.innerHeight / 2 - 30), -window.innerHeight / 2 + 30);
 
     touchStartX = touchEndX;
     touchStartY = touchEndY;
