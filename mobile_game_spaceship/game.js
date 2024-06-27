@@ -30,6 +30,8 @@ scoreElement.style.color = 'white';
 scoreElement.style.fontSize = '24px';
 document.body.appendChild(scoreElement);
 
+let targetX = 0, targetY = 0;
+
 function updateLife() {
     lifeElement.textContent = `LIFE: ${life}`;
 }
@@ -178,31 +180,33 @@ function createObject(type = ObjectType.NORMAL) {
         0
     );
     
-    // createObject関数内のvelocity計算を修正
-let velocity;
-const speedFactor = 1/27;  // 速度を9分の1に
-switch(type) {
-    case ObjectType.ZIGZAG:
-        velocity = new THREE.Vector3(
-            -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
-            (Math.random() * 4 - 2) * 2 * speedFactor,
-            0
-        );
-        // ... 残りのコードは変更なし
-    case ObjectType.WAVY:
-        velocity = new THREE.Vector3(
-            -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
-            0,
-            0
-        );
-        // ... 残りのコードは変更なし
-    default:
-        velocity = new THREE.Vector3(
-            -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
-            (Math.random() * 4 - 2) * speedFactor,
-            0
-        );
-}
+    const speedFactor = 1/54;  // 速度をさらに遅く
+    let velocity;
+    switch(type) {
+        case ObjectType.ZIGZAG:
+            velocity = new THREE.Vector3(
+                -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
+                (Math.random() * 4 - 2) * 2 * speedFactor,
+                0
+            );
+            object.zigzagTime = 0;
+            object.zigzagDirection = 1;
+            break;
+        case ObjectType.WAVY:
+            velocity = new THREE.Vector3(
+                -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
+                0,
+                0
+            );
+            object.wavyTime = 0;
+            break;
+        default:
+            velocity = new THREE.Vector3(
+                -(Math.random() * 2 + 1) * (1 / scale) * speedFactor,
+                (Math.random() * 4 - 2) * speedFactor,
+                0
+            );
+    }
     
     object.velocity = velocity;
     object.type = type;
@@ -281,21 +285,7 @@ function continueGame() {
     objectCount = currentObjectCount;
     lastObjectIncrease = 0;
     lastObjectCreationTime = 0;
-    
-    // 既存のオブジェクトの速度を保持
-    const existingVelocities = objects.map(obj => obj.velocity.clone());
-    
-    // オブジェクトを再作成
-    for (let i = 0; i < objectCount; i++) {
-        createObject();
-    }
-    
-    // 再作成したオブジェクトに既存の速度を適用
-    objects.forEach((obj, index) => {
-        if (existingVelocities[index]) {
-            obj.velocity.copy(existingVelocities[index]);
-        }
-    });
+    createObject(); // 最初のオブジェクトを作成
 }
 
 // 画面のフラッシュ効果
@@ -354,23 +344,12 @@ function updateObjectMovement(object) {
     }
 }
 
-// タッチ操作のための変数
-let touchStartX, touchStartY;
-
-
-function handleTouchStart(event) {
-    touchStartX = event.touches[0].clientX;
-    touchStartY = event.touches[0].clientY;
-}
-
-let targetX = 0, targetY = 0;
-
 function handleTouchMove(event) {
     event.preventDefault();
     
     let touch = event.touches[0];
     
-    // タッチ位置を直接ゲーム内座標に変換
+    // タッチ位置をゲーム内座標に変換（横向き画面に対応）
     targetX = touch.clientY - window.innerHeight / 2;
     targetY = window.innerWidth / 2 - touch.clientX;
 
@@ -383,9 +362,9 @@ function handleTouchMove(event) {
 function animate() {
     animationId = requestAnimationFrame(animate);
 	
-// プレイヤーの位置をタッチ位置に滑らかに近づける
-player.position.x += (targetX - player.position.x) * 0.3;
-player.position.y += (targetY - player.position.y) * 0.3;
+// プレイヤーの位置を目標位置に滑らかに近づける
+    player.position.x += (targetX - player.position.x) * 0.1;
+    player.position.y += (targetY - player.position.y) * 0.1;
 	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
@@ -475,9 +454,9 @@ function checkOrientation() {
     }
 }
 
-window.addEventListener('orientationchange', function() {
-    setTimeout(checkOrientation, 100);  // 100ミリ秒の遅延
-});
+function setupEventListeners() {
+    renderer.domElement.addEventListener('touchmove', handleTouchMove, { passive: false });
+}
 
 // ウィンドウサイズ変更時の処理
 window.addEventListener('resize', () => {
@@ -490,22 +469,16 @@ window.addEventListener('resize', () => {
     checkOrientation();
 });
 
-// タッチイベントリスナーの設定
-function setupEventListeners() {
-    renderer.domElement.addEventListener('touchmove', handleTouchMove, false);
-}
+window.addEventListener('orientationchange', function() {
+    setTimeout(checkOrientation, 100);  // 100ミリ秒の遅延
+});
 
 // ゲーム開始
 function startGame() {
     resetGame();
-    setupEventListeners();  // イベントリスナーのセットアップを呼び出し
+    setupEventListeners();
     checkOrientation();
-}
-
-// ゲーム開始
-function startGame() {
-    resetGame();
-    checkOrientation();
+    animate(); // アニメーションループを開始
 }
 
 startGame();
