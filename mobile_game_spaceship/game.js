@@ -30,7 +30,7 @@ scoreElement.style.color = 'white';
 scoreElement.style.fontSize = '24px';
 document.body.appendChild(scoreElement);
 
-let targetX = 0, targetY = 0;
+let lastTouchX, lastTouchY;
 
 function updateLife() {
     lifeElement.textContent = `LIFE: ${life}`;
@@ -180,7 +180,7 @@ function createObject(type = ObjectType.NORMAL) {
         0
     );
     
-    const speedFactor = 1/54;  // 速度をさらに遅く
+    const speedFactor = 1/27;  // 速度を少し上げる（1/54から1/27に変更）
     let velocity;
     switch(type) {
         case ObjectType.ZIGZAG:
@@ -344,27 +344,34 @@ function updateObjectMovement(object) {
     }
 }
 
+function handleTouchStart(event) {
+    event.preventDefault();
+    lastTouchX = event.touches[0].clientY;
+    lastTouchY = event.touches[0].clientX;
+}
+
 function handleTouchMove(event) {
     event.preventDefault();
     
-    let touch = event.touches[0];
-    
-    // タッチ位置をゲーム内座標に変換（横向き画面に対応）
-    targetX = touch.clientY - window.innerHeight / 2;
-    targetY = window.innerWidth / 2 - touch.clientX;
+    const touch = event.touches[0];
+    const deltaX = touch.clientY - lastTouchX;
+    const deltaY = touch.clientX - lastTouchY;
 
-    // 目標位置を画面内に制限
-    targetX = Math.max(Math.min(targetX, window.innerHeight / 2 - 40), -window.innerHeight / 2 + 40);
-    targetY = Math.max(Math.min(targetY, window.innerWidth / 2 - 30), -window.innerWidth / 2 + 30);
+    // 画面の中心を原点とした座標に変換（横向き画面に対応）
+    player.position.x += deltaX;
+    player.position.y -= deltaY;
+
+    // プレイヤーの位置を画面内に制限
+    player.position.x = Math.max(Math.min(player.position.x, window.innerHeight / 2 - 40), -window.innerHeight / 2 + 40);
+    player.position.y = Math.max(Math.min(player.position.y, window.innerWidth / 2 - 30), -window.innerWidth / 2 + 30);
+
+    lastTouchX = touch.clientY;
+    lastTouchY = touch.clientX;
 }
 
 // アニメーションループ
 function animate() {
     animationId = requestAnimationFrame(animate);
-	
-// プレイヤーの位置を目標位置に滑らかに近づける
-    player.position.x += (targetX - player.position.x) * 0.1;
-    player.position.y += (targetY - player.position.y) * 0.1;
 	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
@@ -455,6 +462,7 @@ function checkOrientation() {
 }
 
 function setupEventListeners() {
+    renderer.domElement.addEventListener('touchstart', handleTouchStart, { passive: false });
     renderer.domElement.addEventListener('touchmove', handleTouchMove, { passive: false });
 }
 
