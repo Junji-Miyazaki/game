@@ -354,12 +354,12 @@ function handleTouchMove(event) {
     event.preventDefault();
     
     const touch = event.touches[0];
-    const deltaX = touch.clientY - lastTouchX;
-    const deltaY = touch.clientX - lastTouchY;
+    const deltaX = touch.clientX - lastTouchY;  // X軸とY軸を入れ替え
+    const deltaY = touch.clientY - lastTouchX;  // X軸とY軸を入れ替え
 
     // 画面の中心を原点とした座標に変換（横向き画面に対応）
-    player.position.x += deltaX;
-    player.position.y -= deltaY;
+    player.position.x += deltaY;  // deltaYを使用
+    player.position.y -= deltaX;  // deltaXを使用し、符号を反転
 
     // プレイヤーの位置を画面内に制限
     player.position.x = Math.max(Math.min(player.position.x, window.innerHeight / 2 - 40), -window.innerHeight / 2 + 40);
