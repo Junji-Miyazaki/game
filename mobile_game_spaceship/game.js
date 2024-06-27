@@ -357,10 +357,6 @@ function updateObjectMovement(object) {
 // タッチ操作のための変数
 let touchStartX, touchStartY;
 
-// タッチイベントリスナーの追加
-renderer.domElement.addEventListener('touchstart', handleTouchStart, false);
-renderer.domElement.addEventListener('touchmove', handleTouchMove, false);
-renderer.domElement.addEventListener('touchend', handleTouchEnd, false);
 
 function handleTouchStart(event) {
     touchStartX = event.touches[0].clientX;
@@ -371,38 +367,25 @@ let targetX = 0, targetY = 0;
 
 function handleTouchMove(event) {
     event.preventDefault();
-    if (!touchStartX || !touchStartY) {
-        return;
-    }
-
-    let touchEndX = event.touches[0].clientX;
-    let touchEndY = event.touches[0].clientY;
-
-    // 画面の中心を原点とした座標に変換（横向き画面に対応）
-    targetX = touchEndY - window.innerHeight / 2;
-    targetY = window.innerWidth / 2 - touchEndX;
+    
+    let touch = event.touches[0];
+    
+    // タッチ位置を直接ゲーム内座標に変換
+    targetX = touch.clientY - window.innerHeight / 2;
+    targetY = window.innerWidth / 2 - touch.clientX;
 
     // 目標位置を画面内に制限
     targetX = Math.max(Math.min(targetX, window.innerHeight / 2 - 40), -window.innerHeight / 2 + 40);
     targetY = Math.max(Math.min(targetY, window.innerWidth / 2 - 30), -window.innerWidth / 2 + 30);
-
-    touchStartX = touchEndX;
-    touchStartY = touchEndY;
-}
-
-
-function handleTouchEnd() {
-    touchStartX = null;
-    touchStartY = null;
 }
 
 // アニメーションループ
 function animate() {
     animationId = requestAnimationFrame(animate);
 	
-	// プレイヤーの位置を目標位置に近づける
-player.position.x += (targetX - player.position.x) * 0.1;
-player.position.y += (targetY - player.position.y) * 0.1;
+// プレイヤーの位置をタッチ位置に滑らかに近づける
+player.position.x += (targetX - player.position.x) * 0.3;
+player.position.y += (targetY - player.position.y) * 0.3;
 	
     // オブジェクトの移動と衝突判定
     for (let i = objects.length - 1; i >= 0; i--) {
@@ -506,6 +489,18 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     checkOrientation();
 });
+
+// タッチイベントリスナーの設定
+function setupEventListeners() {
+    renderer.domElement.addEventListener('touchmove', handleTouchMove, false);
+}
+
+// ゲーム開始
+function startGame() {
+    resetGame();
+    setupEventListeners();  // イベントリスナーのセットアップを呼び出し
+    checkOrientation();
+}
 
 // ゲーム開始
 function startGame() {
