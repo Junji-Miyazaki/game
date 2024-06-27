@@ -1,6 +1,6 @@
 // Three.jsのセットアップ
-const scene = new THREE.Scene();
-let camera, renderer;
+let scene, camera, renderer;
+let player, stars;
 
 // ゲーム状態
 let life = 3;
@@ -12,11 +12,9 @@ let lastObjectIncrease = 0;
 let lastObjectCreationTime = 0;
 
 // UI要素
-const lifeElement = document.createElement('div');
-const scoreElement = document.createElement('div');
+let lifeElement, scoreElement;
 
-// プレイヤーとオブジェクト
-let player;
+// オブジェクト
 const objects = [];
 let jetFlame1, jetFlame2;
 
@@ -38,6 +36,7 @@ function checkOrientation() {
 
 // 画面のセットアップ
 function setupScreen() {
+    scene = new THREE.Scene();
     const aspect = window.innerWidth / window.innerHeight;
     const frustumSize = 1000;
     camera = new THREE.OrthographicCamera(
@@ -54,7 +53,9 @@ function setupScreen() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // UI要素のスタイル設定
+    // UI要素の作成
+    lifeElement = document.createElement('div');
+    scoreElement = document.createElement('div');
     const uiStyle = 'position: absolute; color: white; font-size: 18px; padding: 10px;';
     lifeElement.style.cssText = uiStyle + 'top: 10px; left: 10px;';
     scoreElement.style.cssText = uiStyle + 'top: 40px; left: 10px;';
@@ -241,7 +242,6 @@ function checkCollision(obj1, obj2) {
     return box1.intersectsBox(box2);
 }
 
-// 続く...
 // 星の生成
 function createStars() {
     const starGeometry = new THREE.BufferGeometry();
@@ -346,6 +346,8 @@ function updateObjectMovement(object) {
             object.position.y += Math.sin(object.zigzagTime) * 1.5 * object.zigzagDirection;
             break;
         case ObjectType.WAVY:
+		object.position.x
+		case ObjectType.WAVY:
             object.position.x += object.velocity.x;
             object.wavyTime += 0.04;
             object.position.y = Math.sin(object.wavyTime) * 40 + object.position.y;
@@ -496,8 +498,6 @@ function startGame() {
     document.addEventListener('touchend', handleTouchEnd, false);
 }
 
-startGame();
-
 // ウィンドウサイズ変更時の処理
 window.addEventListener('resize', () => {
     if (!checkOrientation()) return;
@@ -510,4 +510,10 @@ window.addEventListener('resize', () => {
     camera.bottom = frustumSize / -2;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ゲームの初期化と開始
+window.addEventListener('load', () => {
+    checkOrientation();
+    startGame();
 });
