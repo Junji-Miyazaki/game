@@ -212,7 +212,7 @@ function createObject(type = ObjectType.NORMAL) {
             velocity = new THREE.Vector3(
                 -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
                 (Math.random() * 3 - 1.5) * 1.5,
-                 0
+                0
             );
             object.zigzagTime = 0;
             object.zigzagDirection = 1;
@@ -388,7 +388,7 @@ function animate() {
 
     // プレイヤーの移動
     if (touchStartX !== undefined && touchStartY !== undefined) {
-        const deltaX = (touchStartX - player.position.x + 50) / 5; // 反応速度を上げると同時に位置を大きくずらす
+        const deltaX = (touchStartX - player.position.x + 75) / 5; // 反応速度を上げると同時に位置をさらにずらす
         const deltaY = (touchStartY - player.position.y) / 5; // 反応速度を上げる
         player.position.x += Math.sign(deltaX) * Math.min(Math.abs(deltaX), playerSpeed);
         player.position.y += Math.sign(deltaY) * Math.min(Math.abs(deltaY), playerSpeed);
@@ -464,13 +464,13 @@ function animate() {
     for (let i = 0; i < starPositionsFar.length; i += 3) {
         starPositionsFar[i] -= 0.4; // 遠い星のスクロール速度
         if (starPositionsFar[i] < camera.left - 300) {
-            starPositionsFar[i] += 600;
+            starPositionsFar[i] += 900; // スクロールの連続性を確保
         }
     }
     for (let i = 0; i < starPositionsNear.length; i += 3) {
         starPositionsNear[i] -= 0.8; // 近い星のスクロール速度
         if (starPositionsNear[i] < camera.left - 300) {
-            starPositionsNear[i] += 600;
+            starPositionsNear[i] += 900; // スクロールの連続性を確保
         }
     }
     starsFar.geometry.attributes.position.needsUpdate = true;
