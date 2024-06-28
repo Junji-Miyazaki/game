@@ -38,7 +38,7 @@ function checkOrientation() {
 function setupScreen() {
     scene = new THREE.Scene();
     const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 500; // スマホ横向き画面用に調整
+    const frustumSize = 300; // 画角を寄せる
     camera = new THREE.OrthographicCamera(
         frustumSize * aspect / -2, 
         frustumSize * aspect / 2, 
@@ -81,41 +81,41 @@ function createPlayerMesh() {
     const group = new THREE.Group();
 
     // 胴体（円筒）
-    const bodyGeometry = new THREE.CylinderGeometry(7.5, 7.5, 12.5, 32); // サイズを小さく
+    const bodyGeometry = new THREE.CylinderGeometry(15, 15, 25, 32);
     const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x3399ff });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     body.rotation.z = Math.PI / 2;
     group.add(body);
 
     // 頭部（円錐）
-    const headGeometry = new THREE.ConeGeometry(7.5, 8.5, 32); // サイズを小さく
+    const headGeometry = new THREE.ConeGeometry(15, 17, 32);
     const headMaterial = new THREE.MeshBasicMaterial({ color: 0x3399ff });
     const head = new THREE.Mesh(headGeometry, headMaterial);
     head.rotation.z = -Math.PI / 2;
-    head.position.set(10.5, 0, 0);
+    head.position.set(21, 0, 0);
     group.add(head);
 
     // コクピットの窓
-    const windowGeometry = new THREE.SphereGeometry(3, 32, 32); // サイズを小さく
+    const windowGeometry = new THREE.SphereGeometry(6, 32, 32);
     const windowMaterial = new THREE.MeshBasicMaterial({ color: 0xccffff });
     const window = new THREE.Mesh(windowGeometry, windowMaterial);
     window.scale.z = 0.5;
-    window.position.set(9, 0, 4);
+    window.position.set(18, 0, 8);
     group.add(window);
 
     // 縦のライン
-    const lineGeometry = new THREE.BoxGeometry(11.5, 0.5, 0.5); // サイズを小さく
+    const lineGeometry = new THREE.BoxGeometry(23, 1, 1);
     const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xff6600 });
     const line = new THREE.Mesh(lineGeometry, lineMaterial);
-    line.position.set(0, 0, 7.5);
+    line.position.set(0, 0, 15);
     group.add(line);
 
     // 尾翼
     const finGeometry = new THREE.BufferGeometry();
     const finVertices = new Float32Array([
-        -6, 0, 0,
-        -10.5, 10.5, 0,
-        -2, 0, 0
+        -12, 0, 0,
+        -21, 21, 0,
+        -4, 0, 0
     ]);
     finGeometry.setAttribute('position', new THREE.BufferAttribute(finVertices, 3));
     const finMaterial = new THREE.MeshBasicMaterial({ color: 0xff6600, side: THREE.DoubleSide });
@@ -123,16 +123,16 @@ function createPlayerMesh() {
     group.add(fin);
 
     // エンジン部分
-    const engineGeometry = new THREE.CylinderGeometry(4, 3.5, 3.5, 32); // サイズを小さく
+    const engineGeometry = new THREE.CylinderGeometry(8, 7, 7, 32);
     const engineMaterial = new THREE.MeshBasicMaterial({ color: 0xcc6600 });
     const engine = new THREE.Mesh(engineGeometry, engineMaterial);
     engine.rotation.z = Math.PI / 2;
-    engine.position.set(-8, 0, 0);
+    engine.position.set(-16, 0, 0);
     group.add(engine);
 
     // ジェット噴射
     const jetFlameGroup = createJetFlame();
-    jetFlameGroup.position.set(-9.5, 0, 0);
+    jetFlameGroup.position.set(-19, 0, 0);
     group.add(jetFlameGroup);
 
     return group;
@@ -141,13 +141,13 @@ function createPlayerMesh() {
 function createJetFlame() {
     const flameGroup = new THREE.Group();
 
-    const flameGeometry1 = new THREE.ConeGeometry(2, 6.5, 32); // サイズを小さく
+    const flameGeometry1 = new THREE.ConeGeometry(4, 13, 32);
     const flameMaterial1 = new THREE.MeshBasicMaterial({ color: 0xff3300 });
     jetFlame1 = new THREE.Mesh(flameGeometry1, flameMaterial1);
     jetFlame1.rotation.z = Math.PI / 2;
     flameGroup.add(jetFlame1);
 
-    const flameGeometry2 = new THREE.ConeGeometry(1.5, 8.5, 32); // サイズを小さく
+    const flameGeometry2 = new THREE.ConeGeometry(3, 17, 32);
     const flameMaterial2 = new THREE.MeshBasicMaterial({ color: 0xffff00 });
     jetFlame2 = new THREE.Mesh(flameGeometry2, flameMaterial2);
     jetFlame2.rotation.z = Math.PI / 2;
@@ -168,11 +168,11 @@ const ObjectType = {
 function createRockGeometry() {
     const vertices = [];
     const numVertices = Math.floor(Math.random() * 5) + 5; // 5〜9頂点
-    const baseSize = Math.random() * 17.5 + 4; // 基本サイズを小さく
+    const baseSize = Math.random() * 35 + 8; // 基本サイズを8〜43に拡大
 
     for (let i = 0; i < numVertices; i++) {
         const angle = (i / numVertices) * Math.PI * 2;
-        const radius = (Math.random() * 0.5 + 0.5) * baseSize;
+        const radius = (Math.random() * 0.5 + 0.5) * baseSize; // 基本サイズの50%〜100%のランダムな半径
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
         vertices.push(new THREE.Vector2(x, y));
@@ -180,7 +180,7 @@ function createRockGeometry() {
 
     const shape = new THREE.Shape(vertices);
     const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: Math.random() * baseSize + 2, // 深さを調整
+        depth: Math.random() * baseSize + 4,
         bevelEnabled: false
     });
 
@@ -198,10 +198,10 @@ function createObject(type = ObjectType.NORMAL) {
     
     const material = new THREE.MeshBasicMaterial({ color: color, wireframe: true });
     const object = new THREE.Mesh(geometry, material);
-    const scale = Math.random() * 0.65 + 0.2; // スケールを調整
+    const scale = Math.random() * 1.3 + 0.4;
     object.scale.set(scale, scale, scale);
     object.position.set(
-        camera.right + 25, // 位置を調整
+        camera.right + 50,
         Math.random() * (camera.top - camera.bottom) + camera.bottom,
         0
     );
@@ -210,8 +210,8 @@ function createObject(type = ObjectType.NORMAL) {
     switch(type) {
         case ObjectType.ZIGZAG:
             velocity = new THREE.Vector3(
-                -(Math.random() * 0.5 + 0.25) * (1 / scale), // 速度を調整
-                (Math.random() * 1.5 - 0.75) * 1.5,
+                -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
+                (Math.random() * 3 - 1.5) * 1.5,
                 0
             );
             object.zigzagTime = 0;
@@ -219,7 +219,7 @@ function createObject(type = ObjectType.NORMAL) {
             break;
         case ObjectType.WAVY:
             velocity = new THREE.Vector3(
-                -(Math.random() * 0.5 + 0.25) * (1 / scale), // 速度を調整
+                -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
                 0,
                 0
             );
@@ -227,8 +227,8 @@ function createObject(type = ObjectType.NORMAL) {
             break;
         default:
             velocity = new THREE.Vector3(
-                -(Math.random() * 0.5 + 0.25) * (1 / scale), // 速度を調整
-                Math.random() * 1.5 - 0.75,
+                -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
+                Math.random() * 3 - 1.5,
                 0
             );
     }
@@ -257,9 +257,9 @@ function createStars() {
 
     const starVertices = [];
     for (let i = 0; i < 1000; i++) {
-        const x = (Math.random() - 0.5) * 1000; // スケールを調整
-        const y = (Math.random() - 0.5) * 500; // スケールを調整
-        const z = Math.random() * 500 - 500; // スケールを調整
+        const x = (Math.random() - 0.5) * 600; // スケールを調整
+        const y = (Math.random() - 0.5) * 300; // スケールを調整
+        const z = Math.random() * 300 - 300; // スケールを調整
         starVertices.push(x, y, z);
     }
 
@@ -510,7 +510,7 @@ window.addEventListener('resize', () => {
     if (!checkOrientation()) return;
 
     const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 500; // スマホ横向き画面用に調整
+    const frustumSize = 300; // 画角を寄せる
     camera.left = frustumSize * aspect / -2;
     camera.right = frustumSize * aspect / 2;
     camera.top = frustumSize / 2;
