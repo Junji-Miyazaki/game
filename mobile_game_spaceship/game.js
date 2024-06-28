@@ -462,4 +462,73 @@ function animate() {
 
 // タッチイベントの処理
 function handleTouchStart(event) {
-    const touch = event.touches[0
+    const touch = event.touches[0];
+    touchStartX = (touch.clientX / window.innerWidth) * (camera.right - camera.left) + camera.left;
+    touchStartY = ((window.innerHeight - touch.clientY) / window.innerHeight) * (camera.top - camera.bottom) + camera.bottom;
+}
+
+function handleTouchMove(event) {
+    event.preventDefault();
+    const touch = event.touches[0];
+    touchStartX = (touch.clientX / window.innerWidth) * (camera.right - camera.left) + camera.left;
+    touchStartY = ((window.innerHeight - touch.clientY) / window.innerHeight) * (camera.top - camera.bottom) + camera.bottom;
+}
+
+function handleTouchEnd() {
+    touchStartX = undefined;
+    touchStartY = undefined;
+}
+
+// ゲーム開始
+function startGame() {
+    if (!checkOrientation()) return;
+
+    setupScreen();
+    player = createPlayerMesh();
+    player.position.set(camera.left + 100, 0, 0);
+    scene.add(player);
+
+    stars = createStars();
+    scene.add(stars);
+
+    resetGame();
+
+    // 「Game Start!」メッセージを表示してからゲームを開始
+    setTimeout(() => {
+        startMessage.style.display = 'none';
+        animate();
+    }, 2000);
+
+    // タッチイベントのリスナーを追加
+    document.addEventListener('touchstart', handleTouchStart, false);
+    document.addEventListener('touchmove', handleTouchMove, false);
+    document.addEventListener('touchend', handleTouchEnd, false);
+}
+
+// ウィンドウサイズ変更時の処理
+window.addEventListener('resize', () => {
+    if (!checkOrientation()) return;
+
+    const aspect = window.innerWidth / window.innerHeight;
+    const frustumSize = 1000;
+    camera.left = frustumSize * aspect / -2;
+    camera.right = frustumSize * aspect / 2;
+    camera.top = frustumSize / 2;
+    camera.bottom = frustumSize / -2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ゲームの初期化と開始
+window.addEventListener('load', () => {
+    if (checkOrientation()) {
+        startGame();
+    } else {
+        const checkInterval = setInterval(() => {
+            if (checkOrientation()) {
+                clearInterval(checkInterval);
+                startGame();
+            }
+        }, 500);
+    }
+});
