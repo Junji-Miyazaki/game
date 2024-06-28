@@ -1,6 +1,6 @@
 // Three.jsのセットアップ
 let scene, camera, renderer;
-let player, stars;
+let player, starsFar, starsNear;
 
 // ゲーム状態
 let life = 3;
@@ -248,23 +248,37 @@ function checkCollision(obj1, obj2) {
 
 // 星の生成
 function createStars() {
-    const starGeometry = new THREE.BufferGeometry();
+    const starGeometryFar = new THREE.BufferGeometry();
+    const starGeometryNear = new THREE.BufferGeometry();
     const starMaterial = new THREE.PointsMaterial({
         color: 0xFFFFFF,
         size: 2,
         sizeAttenuation: false
     });
 
-    const starVertices = [];
-    for (let i = 0; i < 2000; i++) { // 星の数を増加
-        const x = (Math.random() - 0.5) * 600; // スケールを調整
-        const y = (Math.random() - 0.5) * 300; // スケールを調整
-        const z = Math.random() * 300 - 300; // スケールを調整
-        starVertices.push(x, y, z);
+    const starVerticesFar = [];
+    const starVerticesNear = [];
+    for (let i = 0; i < 1000; i++) { // 遠い星
+        const x = (Math.random() - 0.5) * 600;
+        const y = (Math.random() - 0.5) * 300;
+        const z = Math.random() * 300 - 300;
+        starVerticesFar.push(x, y, z);
+    }
+    for (let i = 0; i < 500; i++) { // 近い星
+        const x = (Math.random() - 0.5) * 600;
+        const y = (Math.random() - 0.5) * 300;
+        const z = Math.random() * 300 - 300;
+        starVerticesNear.push(x, y, z);
     }
 
-    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-    return new THREE.Points(starGeometry, starMaterial);
+    starGeometryFar.setAttribute('position', new THREE.Float32BufferAttribute(starVerticesFar, 3));
+    starGeometryNear.setAttribute('position', new THREE.Float32BufferAttribute(starVerticesNear, 3));
+
+    starsFar = new THREE.Points(starGeometryFar, starMaterial);
+    starsNear = new THREE.Points(starGeometryNear, starMaterial);
+
+    scene.add(starsFar);
+    scene.add(starsNear);
 }
 
 // ゲームオーバー処理
@@ -374,7 +388,7 @@ function animate() {
 
     // プレイヤーの移動
     if (touchStartX !== undefined && touchStartY !== undefined) {
-        const deltaX = (touchStartX - player.position.x) / 5; // 反応速度を上げる
+        const deltaX = (touchStartX - player.position.x + 20) / 5; // 反応速度を上げると同時に位置をずらす
         const deltaY = (touchStartY - player.position.y) / 5; // 反応速度を上げる
         player.position.x += Math.sign(deltaX) * Math.min(Math.abs(deltaX), playerSpeed);
         player.position.y += Math.sign(deltaY) * Math.min(Math.abs(deltaY), playerSpeed);
@@ -445,14 +459,22 @@ function animate() {
     }
 
     // 星のスクロール
-    const starPositions = stars.geometry.attributes.position.array;
-    for (let i = 0; i < starPositions.length; i += 3) {
-        starPositions[i] -= 0.8; // X軸方向にスクロール
-        if (starPositions[i] < camera.left - 300) { // 連続性を保つ
-            starPositions[i] += 600;
+    const starPositionsFar = starsFar.geometry.attributes.position.array;
+    const starPositionsNear = starsNear.geometry.attributes.position.array;
+    for (let i = 0; i < starPositionsFar.length; i += 3) {
+        starPositionsFar[i] -= 0.4; // 遠い星のスクロール速度
+        if (starPositionsFar[i] < camera.left - 300) {
+            starPositionsFar[i] += 600;
         }
     }
-    stars.geometry.attributes.position.needsUpdate = true;
+    for (let i = 0; i < starPositionsNear.length; i += 3) {
+        starPositionsNear[i] -= 0.8; // 近い星のスクロール速度
+        if (starPositionsNear[i] < camera.left - 300) {
+            starPositionsNear[i] += 600;
+        }
+    }
+    starsFar.geometry.attributes.position.needsUpdate = true;
+    starsNear.geometry.attributes.position.needsUpdate = true;
 
     // ジェット噴射のアニメーション
     animateJetFlame();
@@ -488,8 +510,7 @@ function startGame() {
     player.position.set(camera.left + 50, 0, 0);
     scene.add(player);
 
-    stars = createStars();
-    scene.add(stars);
+    createStars();
 
     resetGame();
 
