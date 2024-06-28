@@ -259,13 +259,13 @@ function createStars() {
     const starVerticesFar = [];
     const starVerticesNear = [];
     for (let i = 0; i < 250; i++) { // 遠い星
-        const x = Math.random() * 900; // 900を超える範囲で星を生成
+        const x = Math.random() * 900 - 300; // -300から600の範囲で生成
         const y = (Math.random() - 0.5) * 300;
         const z = Math.random() * 300 - 300;
         starVerticesFar.push(x, y, z);
     }
     for (let i = 0; i < 125; i++) { // 近い星
-        const x = Math.random() * 900; // 900を超える範囲で星を生成
+        const x = Math.random() * 900 - 300; // -300から600の範囲で生成
         const y = (Math.random() - 0.5) * 300;
         const z = Math.random() * 300 - 300;
         starVerticesNear.push(x, y, z);
@@ -462,13 +462,13 @@ function animate() {
     const starPositionsFar = starsFar.geometry.attributes.position.array;
     const starPositionsNear = starsNear.geometry.attributes.position.array;
     for (let i = 0; i < starPositionsFar.length; i += 3) {
-        starPositionsFar[i] -= 0.4; // 遠い星のスクロール速度
+        starPositionsFar[i] -= 0.2; // 遠い星のスクロール速度を遅くする
         if (starPositionsFar[i] < camera.left - 300) {
             starPositionsFar[i] += 1200; // スクロールの連続性を確保
         }
     }
     for (let i = 0; i < starPositionsNear.length; i += 3) {
-        starPositionsNear[i] -= 0.8; // 近い星のスクロール速度
+        starPositionsNear[i] -= 0.4; // 近い星のスクロール速度を遅くする
         if (starPositionsNear[i] < camera.left - 300) {
             starPositionsNear[i] += 1200; // スクロールの連続性を確保
         }
