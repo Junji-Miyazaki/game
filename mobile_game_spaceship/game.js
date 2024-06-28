@@ -259,13 +259,13 @@ function createStars() {
     const starVerticesFar = [];
     const starVerticesNear = [];
     for (let i = 0; i < 250; i++) { // 遠い星
-        const x = (Math.random() - 0.5) * 600;
+        const x = Math.random() * 900; // 900を超える範囲で星を生成
         const y = (Math.random() - 0.5) * 300;
         const z = Math.random() * 300 - 300;
         starVerticesFar.push(x, y, z);
     }
     for (let i = 0; i < 125; i++) { // 近い星
-        const x = (Math.random() - 0.5) * 600;
+        const x = Math.random() * 900; // 900を超える範囲で星を生成
         const y = (Math.random() - 0.5) * 300;
         const z = Math.random() * 300 - 300;
         starVerticesNear.push(x, y, z);
@@ -464,13 +464,13 @@ function animate() {
     for (let i = 0; i < starPositionsFar.length; i += 3) {
         starPositionsFar[i] -= 0.4; // 遠い星のスクロール速度
         if (starPositionsFar[i] < camera.left - 300) {
-            starPositionsFar[i] += 900; // スクロールの連続性を確保
+            starPositionsFar[i] += 1200; // スクロールの連続性を確保
         }
     }
     for (let i = 0; i < starPositionsNear.length; i += 3) {
         starPositionsNear[i] -= 0.8; // 近い星のスクロール速度
         if (starPositionsNear[i] < camera.left - 300) {
-            starPositionsNear[i] += 900; // スクロールの連続性を確保
+            starPositionsNear[i] += 1200; // スクロールの連続性を確保
         }
     }
     starsFar.geometry.attributes.position.needsUpdate = true;
