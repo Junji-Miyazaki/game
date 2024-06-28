@@ -12,7 +12,7 @@ let lastObjectIncrease = 0;
 let lastObjectCreationTime = 0;
 
 // UI要素
-let lifeElement, scoreElement;
+let lifeElement, scoreElement, startMessage;
 
 // オブジェクト
 const objects = [];
@@ -56,11 +56,15 @@ function setupScreen() {
     // UI要素の作成
     lifeElement = document.createElement('div');
     scoreElement = document.createElement('div');
+    startMessage = document.createElement('div');
     const uiStyle = 'position: absolute; color: white; font-size: 18px; padding: 10px;';
     lifeElement.style.cssText = uiStyle + 'top: 10px; left: 10px;';
     scoreElement.style.cssText = uiStyle + 'top: 40px; left: 10px;';
+    startMessage.style.cssText = 'position: absolute; color: white; font-size: 24px; top: 50%; left: 50%; transform: translate(-50%, -50%);';
+    startMessage.textContent = 'Game Start!';
     document.body.appendChild(lifeElement);
     document.body.appendChild(scoreElement);
+    document.body.appendChild(startMessage);
 }
 
 function updateLife() {
@@ -206,7 +210,7 @@ function createObject(type = ObjectType.NORMAL) {
     switch(type) {
         case ObjectType.ZIGZAG:
             velocity = new THREE.Vector3(
-                -(Math.random() * 1.5 + 0.7) * (1 / scale),
+                -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
                 (Math.random() * 3 - 1.5) * 1.5,
                 0
             );
@@ -215,7 +219,7 @@ function createObject(type = ObjectType.NORMAL) {
             break;
         case ObjectType.WAVY:
             velocity = new THREE.Vector3(
-                -(Math.random() * 1.5 + 0.7) * (1 / scale),
+                -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
                 0,
                 0
             );
@@ -223,7 +227,7 @@ function createObject(type = ObjectType.NORMAL) {
             break;
         default:
             velocity = new THREE.Vector3(
-                -(Math.random() * 1.5 + 0.7) * (1 / scale),
+                -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
                 Math.random() * 3 - 1.5,
                 0
             );
@@ -346,8 +350,6 @@ function updateObjectMovement(object) {
             object.position.y += Math.sin(object.zigzagTime) * 1.5 * object.zigzagDirection;
             break;
         case ObjectType.WAVY:
-		object.position.x
-		case ObjectType.WAVY:
             object.position.x += object.velocity.x;
             object.wavyTime += 0.04;
             object.position.y = Math.sin(object.wavyTime) * 40 + object.position.y;
@@ -460,60 +462,4 @@ function animate() {
 
 // タッチイベントの処理
 function handleTouchStart(event) {
-    const touch = event.touches[0];
-    touchStartX = (touch.clientX / window.innerWidth) * (camera.right - camera.left) + camera.left;
-    touchStartY = ((window.innerHeight - touch.clientY) / window.innerHeight) * (camera.top - camera.bottom) + camera.bottom;
-}
-
-function handleTouchMove(event) {
-    event.preventDefault();
-    const touch = event.touches[0];
-    touchStartX = (touch.clientX / window.innerWidth) * (camera.right - camera.left) + camera.left;
-    touchStartY = ((window.innerHeight - touch.clientY) / window.innerHeight) * (camera.top - camera.bottom) + camera.bottom;
-}
-
-function handleTouchEnd() {
-    touchStartX = undefined;
-    touchStartY = undefined;
-}
-
-// ゲーム開始
-function startGame() {
-    if (!checkOrientation()) return;
-
-    setupScreen();
-    player = createPlayerMesh();
-    player.position.set(camera.left + 100, 0, 0);
-    scene.add(player);
-
-    stars = createStars();
-    scene.add(stars);
-
-    resetGame();
-    animate();
-
-    // タッチイベントのリスナーを追加
-    document.addEventListener('touchstart', handleTouchStart, false);
-    document.addEventListener('touchmove', handleTouchMove, false);
-    document.addEventListener('touchend', handleTouchEnd, false);
-}
-
-// ウィンドウサイズ変更時の処理
-window.addEventListener('resize', () => {
-    if (!checkOrientation()) return;
-
-    const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 1000;
-    camera.left = frustumSize * aspect / -2;
-    camera.right = frustumSize * aspect / 2;
-    camera.top = frustumSize / 2;
-    camera.bottom = frustumSize / -2;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// ゲームの初期化と開始
-window.addEventListener('load', () => {
-    checkOrientation();
-    startGame();
-});
+    const touch = event.touches[0
