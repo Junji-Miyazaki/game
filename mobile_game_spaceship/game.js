@@ -256,7 +256,7 @@ function createStars() {
     });
 
     const starVertices = [];
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 2000; i++) { // 星の数を増加
         const x = (Math.random() - 0.5) * 600; // スケールを調整
         const y = (Math.random() - 0.5) * 300; // スケールを調整
         const z = Math.random() * 300 - 300; // スケールを調整
@@ -448,8 +448,8 @@ function animate() {
     const starPositions = stars.geometry.attributes.position.array;
     for (let i = 0; i < starPositions.length; i += 3) {
         starPositions[i] -= 0.8; // X軸方向にスクロール
-        if (starPositions[i] < camera.left - 50) {
-            starPositions[i] = camera.right + 50;
+        if (starPositions[i] < camera.left - 300) { // 連続性を保つ
+            starPositions[i] += 600;
         }
     }
     stars.geometry.attributes.position.needsUpdate = true;
