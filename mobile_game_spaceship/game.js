@@ -212,7 +212,7 @@ function createObject(type = ObjectType.NORMAL) {
             velocity = new THREE.Vector3(
                 -(Math.random() * 1.0 + 0.5) * (1 / scale), // 隕石の速度を遅くする
                 (Math.random() * 3 - 1.5) * 1.5,
-                0
+                 0
             );
             object.zigzagTime = 0;
             object.zigzagDirection = 1;
@@ -258,13 +258,13 @@ function createStars() {
 
     const starVerticesFar = [];
     const starVerticesNear = [];
-    for (let i = 0; i < 1000; i++) { // 遠い星
+    for (let i = 0; i < 250; i++) { // 遠い星
         const x = (Math.random() - 0.5) * 600;
         const y = (Math.random() - 0.5) * 300;
         const z = Math.random() * 300 - 300;
         starVerticesFar.push(x, y, z);
     }
-    for (let i = 0; i < 500; i++) { // 近い星
+    for (let i = 0; i < 125; i++) { // 近い星
         const x = (Math.random() - 0.5) * 600;
         const y = (Math.random() - 0.5) * 300;
         const z = Math.random() * 300 - 300;
@@ -388,7 +388,7 @@ function animate() {
 
     // プレイヤーの移動
     if (touchStartX !== undefined && touchStartY !== undefined) {
-        const deltaX = (touchStartX - player.position.x + 20) / 5; // 反応速度を上げると同時に位置をずらす
+        const deltaX = (touchStartX - player.position.x + 50) / 5; // 反応速度を上げると同時に位置を大きくずらす
         const deltaY = (touchStartY - player.position.y) / 5; // 反応速度を上げる
         player.position.x += Math.sign(deltaX) * Math.min(Math.abs(deltaX), playerSpeed);
         player.position.y += Math.sign(deltaY) * Math.min(Math.abs(deltaY), playerSpeed);
