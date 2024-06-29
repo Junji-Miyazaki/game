@@ -194,7 +194,9 @@ function drawBullets() {
 
 function drawZombies() {
     zombies.forEach(zombie => {
-        if (zombie.health <= 5) {
+        if (zombie.isItemZombie) {
+            ctx.fillStyle = 'orange'; // アイテムゾンビは目立つ色
+        } else if (zombie.health <= 5) {
             ctx.fillStyle = 'lightgreen';
         } else if (zombie.health <= 10) {
             ctx.fillStyle = 'green';
@@ -238,8 +240,8 @@ function spawnZombies() {
             zombieHealth = Math.floor(Math.random() * 5) + 1;
         }
 
-        // アイテムゾンビの確率を設定
-        if (Math.random() < 0.1) {
+        // アイテムゾンビの確率を設定（頻度を増加）
+        if (Math.random() < 0.3) { // 確率を0.3に変更して頻度を増加
             isItemZombie = true;
         }
 
