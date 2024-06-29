@@ -23,7 +23,7 @@ const player = {
     invincibleTime: 0,
     lastShot: 0,
     color: 'blue',
-    bulletSpeed: 5,  // 初期値を増加
+    bulletSpeed: 8,  // 初期値を増加
     bulletCount: 1,
     spread: 0,
     fireRate: 500,  // 初期の射撃間隔を0.5秒に短縮
@@ -95,9 +95,16 @@ function shootBullet() {
     const bulletCount = player.bulletCount;
     const spread = player.spread;
 
+    const baseAngle = Math.atan2(player.direction.y, player.direction.x);
+    const totalSpread = spread * Math.PI / 180;  // 度数法からラジアンに変換
+
     for (let i = 0; i < bulletCount; i++) {
-        const angle = Math.atan2(player.direction.y, player.direction.x) + 
-                      (Math.random() - 0.5) * spread * Math.PI / 4;
+        let angle;
+        if (bulletCount > 1) {
+            angle = baseAngle + (i / (bulletCount - 1) - 0.5) * totalSpread;
+        } else {
+            angle = baseAngle;
+        }
         const dx = Math.cos(angle) * speed;
         const dy = Math.sin(angle) * speed;
 
@@ -326,7 +333,7 @@ function applyItemEffect() {
             announceEffect('弾数増加！');
         },
         () => { 
-            player.spread += 0.5;
+            player.spread += 20; // 20度ずつ増加
             player.effects.spreadShot++;
             announceEffect('扇状照射！');
         },
@@ -561,7 +568,7 @@ function restartGame(success) {
     player.invincible = false;
     player.invincibleTime = 0;
     player.direction = { x: 0, y: 0 };
-    player.bulletSpeed = 5;  // 初期値を5に設定
+    player.bulletSpeed = 8;  // 初期値を5に設定
     player.bulletCount = 1;
     player.spread = 0;
     player.fireRate = 500;  // 初期の射撃間隔を0.5秒に設定
