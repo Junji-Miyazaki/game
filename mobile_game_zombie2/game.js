@@ -23,10 +23,10 @@ const player = {
     invincibleTime: 0,
     lastShot: 0,
     color: 'blue',
-    bulletSpeed: 1,
+    bulletSpeed: 5,  // 初期値を増加
     bulletCount: 1,
     spread: 0,
-    fireRate: 1000,
+    fireRate: 500,  // 初期の射撃間隔を0.5秒に短縮
     effects: {
         speedBoost: 0,
         multiShot: 0,
@@ -316,7 +316,7 @@ function applyItemEffect() {
             announceEffect('Life増加！');
         },
         () => { 
-            player.bulletSpeed += 0.5;
+            player.bulletSpeed += 2;  // 弾速の増加量を大きくした
             player.effects.speedBoost++;
             announceEffect('弾の速度上昇！');
         },
@@ -326,12 +326,12 @@ function applyItemEffect() {
             announceEffect('弾数増加！');
         },
         () => { 
-            player.spread += 0.5;  // 扇状の範囲を大きく増加
+            player.spread += 0.5;
             player.effects.spreadShot++;
             announceEffect('扇状照射！');
         },
         () => { 
-            player.fireRate = Math.max(player.fireRate * 0.9, 100);
+            player.fireRate = Math.max(player.fireRate * 0.8, 100);  // 射撃間隔の短縮を20%に増加（最小100ms）
             player.effects.fireRateBoost++;
             announceEffect('連射速度上昇！');
         },
@@ -394,8 +394,8 @@ function drawEffects() {
     if (player.effects.fireRateBoost > 0) {
         ctx.fillStyle = 'cyan';
         ctx.beginPath();
-ctx.arc(20, yOffset, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(20, yOffset, 5, 0, Math.PI * 2);
+ctx.fill();
         ctx.fillStyle = 'white';
         ctx.fillText(`連射 +${player.effects.fireRateBoost}`, 30, yOffset + 5);
     }
@@ -561,10 +561,10 @@ function restartGame(success) {
     player.invincible = false;
     player.invincibleTime = 0;
     player.direction = { x: 0, y: 0 };
-    player.bulletSpeed = 1;
+    player.bulletSpeed = 5;  // 初期値を5に設定
     player.bulletCount = 1;
     player.spread = 0;
-    player.fireRate = 1000;
+    player.fireRate = 500;  // 初期の射撃間隔を0.5秒に設定
     player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
     bossMode = false;
     boss = null;
