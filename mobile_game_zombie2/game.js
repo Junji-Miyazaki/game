@@ -1,7 +1,6 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// スマートフォン向けに画面サイズを設定
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -22,7 +21,11 @@ const player = {
     animationFrame: 0,
     invincible: false,
     invincibleTime: 0,
-    lastShot: 0
+    lastShot: 0,
+    color: 'blue',
+    bulletSpeed: 7,
+    bulletCount: 1,
+    spread: 0
 };
 
 const zombies = [];
@@ -38,7 +41,6 @@ let zombieSpawnCount = 1;
 let zombieAnimationFrame = 0;
 let isGameOver = false;
 
-// タッチイベントの追加
 canvas.addEventListener('touchstart', handleTouchStart, false);
 canvas.addEventListener('touchmove', handleTouchMove, false);
 canvas.addEventListener('touchend', handleTouchEnd, false);
@@ -61,11 +63,9 @@ function handleTouchMove(event) {
     player.x += dx;
     player.y += dy;
 
-    // 画面外に出ないように制限
     player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
     player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
 
-    // 移動方向を更新
     player.direction = { x: dx, y: dy };
 
     touch = newTouch;
@@ -79,20 +79,25 @@ function handleTouchEnd(event) {
 
 function shootBullet() {
     const currentTime = Date.now();
-    if (currentTime - player.lastShot < 100) return; // 連射速度の制限
+    if (currentTime - player.lastShot < 100) return;
 
     player.lastShot = currentTime;
-    const speed = 7;
-    const angle = Math.atan2(player.direction.y, player.direction.x);
-    const dx = Math.cos(angle) * speed;
-    const dy = Math.sin(angle) * speed;
+    const speed = player.bulletSpeed;
+    const bulletCount = player.bulletCount;
+    const spread = player.spread;
 
-    player.bullets.push({ 
-        x: player.x + player.width / 2, 
-        y: player.y + player.height / 2, 
-        dx: dx, 
-        dy: dy 
-    });
+    for (let i = 0; i < bulletCount; i++) {
+        const angle = Math.atan2(player.direction.y, player.direction.x) + (Math.random() - 0.5) * spread * 0.1;
+        const dx = Math.cos(angle) * speed;
+        const dy = Math.sin(angle) * speed;
+
+        player.bullets.push({ 
+            x: player.x + player.width / 2, 
+            y: player.y + player.height / 2, 
+            dx: dx, 
+            dy: dy 
+        });
+    }
 }
 
 function spawnZombies() {
@@ -100,6 +105,7 @@ function spawnZombies() {
         let zombieHealth;
         const currentTime = Math.floor(time / 60);
         const randomValue = Math.random();
+        let isItemZombie = false;
 
         if (currentTime >= 60 && randomValue < 0.1) {
             zombieHealth = Math.floor(Math.random() * 10) + 21;
@@ -111,12 +117,17 @@ function spawnZombies() {
             zombieHealth = Math.floor(Math.random() * 5) + 1;
         }
 
+        if (Math.random() < 0.1) {
+            isItemZombie = true;
+        }
+
         zombies.push({ 
             x: Math.random() * canvas.width, 
             y: -60, 
             width: 30,
             height: 50, 
-            health: zombieHealth, 
+            health: zombieHealth,
+            isItemZombie: isItemZombie,
             animationFrame: 0 
         });
     }
@@ -170,7 +181,7 @@ function startBossMode() {
 }
 
 function drawPlayer() {
-    ctx.fillStyle = player.invincible ? 'rgba(0, 0, 255, 0.5)' : 'blue';
+    ctx.fillStyle = player.invincible ? player.color : 'blue';
     ctx.fillRect(player.x, player.y, player.width, player.height);
     ctx.beginPath();
     ctx.arc(player.x + player.width / 2, player.y - 10, 10, 0, Math.PI * 2);
@@ -178,6 +189,26 @@ function drawPlayer() {
     const legOffset = Math.sin(player.animationFrame * 0.2) * 5;
     ctx.fillRect(player.x, player.y + player.height, 10, 10 + legOffset);
     ctx.fillRect(player.x + player.width - 10, player.y + player.height, 10, 10 - legOffset);
+
+    // 強化効果の表示
+    if (player.bulletSpeed > 7) {
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width / 2, player.y - 20, 5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    if (player.bulletCount > 1) {
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width / 2 + 10, player.y - 20, 5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    if (player.spread > 0) {
+        ctx.fillStyle = 'green';
+        ctx.beginPath();
+        ctx.arc(player.x + player.width / 2 - 10, player.y - 20, 5, 0, Math.PI * 2);
+        ctx.fill();
+    }
 }
 
 function drawBullets() {
@@ -195,7 +226,7 @@ function drawBullets() {
 function drawZombies() {
     zombies.forEach(zombie => {
         if (zombie.isItemZombie) {
-            ctx.fillStyle = 'orange'; // アイテムゾンビは目立つ色
+            ctx.fillStyle = 'orange';
         } else if (zombie.health <= 5) {
             ctx.fillStyle = 'lightgreen';
         } else if (zombie.health <= 10) {
@@ -218,44 +249,9 @@ function drawZombies() {
         
         ctx.fillStyle = 'white';
         ctx.fillText(zombie.health, zombie.x + zombie.width / 4, zombie.y + zombie.height / 2);
-        zombie.y += 0.25; // ゾンビの速度を半分に設定
+        zombie.y += 0.25;
         zombie.animationFrame = (zombie.animationFrame + 1) % 60;
     });
-}
-
-function spawnZombies() {
-    for (let i = 0; i < zombieSpawnCount; i++) {
-        let zombieHealth;
-        const currentTime = Math.floor(time / 60);
-        const randomValue = Math.random();
-        let isItemZombie = false;
-
-        if (currentTime >= 60 && randomValue < 0.1) {
-            zombieHealth = Math.floor(Math.random() * 10) + 21;
-        } else if (currentTime >= 40 && randomValue < 0.2) {
-            zombieHealth = Math.floor(Math.random() * 10) + 11;
-        } else if (currentTime >= 20 && randomValue < 0.3) {
-            zombieHealth = Math.floor(Math.random() * 6) + 5;
-        } else {
-            zombieHealth = Math.floor(Math.random() * 5) + 1;
-        }
-
-        // アイテムゾンビの確率を設定
-        if (Math.random() < 0.1) {
-            isItemZombie = true;
-        }
-
-        zombies.push({ 
-            x: Math.random() * canvas.width, 
-            y: -60, 
-            width: 30,
-            height: 50, 
-            health: zombieHealth,
-            isItemZombie: isItemZombie, // アイテムゾンビのフラグを追加
-            animationFrame: 0 
-        });
-    }
-    zombieSpawnCount = Math.min(zombieSpawnCount + 1, 10);
 }
 
 function checkCollisions() {
@@ -267,7 +263,7 @@ function checkCollisions() {
                 if (zombie.health <= 0) {
                     score += 10;
                     if (zombie.isItemZombie) {
-                        applyItemEffect(); // アイテム効果を適用
+                        applyItemEffect();
                     }
                     zombies.splice(zombieIndex, 1);
                 }
@@ -296,7 +292,7 @@ function checkCollisions() {
                 player.invincible = true;
                 player.invincibleTime = 180;
                 flashScreen();
-                setTimeout(() => player.invincible = false, 3000); // 無敵時間を3秒に設定
+                setTimeout(() => player.invincible = false, 3000);
                 if (player.life <= 0) {
                     gameOver();
                 }
@@ -311,7 +307,7 @@ function checkCollisions() {
                 player.invincible = true;
                 player.invincibleTime = 180;
                 flashScreen();
-                setTimeout(() => player.invincible = false, 3000); // 無敵時間を3秒に設定
+                setTimeout(() => player.invincible = false, 3000);
                 if (player.life <= 0) {
                     gameOver();
                 }
@@ -322,24 +318,23 @@ function checkCollisions() {
 
 function applyItemEffect() {
     const effects = [
-        () => { player.life = Math.min(player.life + 1, 5); }, // ライフ増加
-        () => { player.bulletSpeed = player.bulletSpeed ? player.bulletSpeed + 1 : 8; }, // ライフルの威力増加
-        () => { player.bulletCount = player.bulletCount ? player.bulletCount + 1 : 2; }, // ライフルの球数増加
-        () => { player.spread = player.spread ? player.spread + 1 : 1; }, // ライフルの球の方向広がる
+        () => { player.life = Math.min(player.life + 1, 5); },
+        () => { player.bulletSpeed = player.bulletSpeed + 1; },
+        () => { player.bulletCount = player.bulletCount + 1; },
+        () => { player.spread = player.spread + 1; },
         () => { 
             player.invincible = true;
-            player.invincibleTime = 180; 
-            setTimeout(() => player.invincible = false, 5000); // 一定期間無敵
+            player.color = 'rgba(0, 0, 255, 0.5)';
+            player.invincibleTime = 300; 
+            setTimeout(() => {
+                player.invincible = false;
+                player.color = 'blue';
+            }, 5000);
         }
     ];
 
     const randomEffect = effects[Math.floor(Math.random() * effects.length)];
     randomEffect();
-
-    if (player.invincible) {
-        player.color = 'rgba(0, 0, 255, 0.5)'; // 無敵状態の色変更
-        setTimeout(() => player.color = 'blue', 5000); // 無敵状態終了後に元の色に戻す
-    }
 }
 
 function drawBoss() {
@@ -413,65 +408,6 @@ function drawTime() {
     ctx.fillStyle = 'white';
     ctx.font = '20px Arial';
     ctx.fillText(`Time: ${displayTime}`, 10, 90);
-}
-
-function checkCollisions() {
-    player.bullets.forEach((bullet, bulletIndex) => {
-        zombies.forEach((zombie, zombieIndex) => {
-            if (bullet.x > zombie.x && bullet.x < zombie.x + zombie.width &&
-                bullet.y > zombie.y && bullet.y < zombie.y + zombie.height) {
-                zombie.health--;
-                if (zombie.health <= 0) {
-                    score += 10;
-                    zombies.splice(zombieIndex, 1);
-                }
-                player.bullets.splice(bulletIndex, 1);
-                return;
-            }
-        });
-        if (bossMode && boss && !isExploding) {
-            if (bullet.x > boss.x && bullet.x < boss.x + boss.width &&
-                bullet.y > boss.y && bullet.y < boss.y + boss.height) {
-                boss.health--;
-                if (boss.health <= 0) {
-                    score += 200;
-                    explodeBoss();
-                }
-                player.bullets.splice(bulletIndex, 1);
-            }
-        }
-    });
-
-    if (!isExploding && !player.invincible) {
-        zombies.forEach((zombie, index) => {
-            if (zombie.x < player.x + player.width && zombie.x + zombie.width > player.x &&
-                zombie.y < player.y + player.height && zombie.y + zombie.height > player.y) {
-                player.life--;
-                player.invincible = true;
-                player.invincibleTime = 180;
-                flashScreen();
-                setTimeout(() => player.invincible = false, 3000); // 無敵時間を3秒に設定
-                if (player.life <= 0) {
-                    gameOver();
-                }
-                zombies.splice(index, 1);
-            }
-        });
-        
-        if (bossMode && boss) {
-            if (boss.x < player.x + player.width && boss.x + boss.width > player.x &&
-                boss.y < player.y + player.height && boss.y + boss.height > player.y) {
-                player.life--;
-                player.invincible = true;
-                player.invincibleTime = 180;
-                flashScreen();
-                setTimeout(() => player.invincible = false, 3000); // 無敵時間を3秒に設定
-                if (player.life <= 0) {
-                    gameOver();
-                }
-            }
-        }
-    }
 }
 
 function gameOver() {
@@ -551,6 +487,9 @@ function restartGame(success) {
     player.invincible = false;
     player.invincibleTime = 0;
     player.direction = { x: 0, y: 0 };
+    player.bulletSpeed = 7;
+    player.bulletCount = 1;
+    player.spread = 0;
     bossMode = false;
     boss = null;
     zombieSpawnCount = 1;
@@ -562,7 +501,7 @@ function restartGame(success) {
     if (bossMoveInterval) clearInterval(bossMoveInterval);
 
     if (success) {
-        player.life = player.life;
+        player.life = Math.min(player.life + 1, 5);
     } else {
         player.life = 5;
         score = 0;
