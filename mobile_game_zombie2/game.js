@@ -25,8 +25,7 @@ const player = {
     color: 'blue',
     bulletSpeed: 8,  // 初期値を増加
     bulletCount: 1,
-    spread: 0,
-    fireRate: 500,  // 初期の射撃間隔を0.5秒に短縮
+    fireRate: 200, // 初期発射間隔を200msに設定
     effects: {
         speedBoost: 0,
         multiShot: 0,
@@ -92,21 +91,21 @@ function shootBullet() {
 
     player.lastShot = currentTime;
     const speed = player.bulletSpeed;
-    const bulletCount = player.bulletCount;
-    const spread = player.spread;
+    const spreadLevel = player.effects.spreadShot;
 
     const baseAngle = Math.atan2(player.direction.y, player.direction.x);
-    const totalSpread = spread * Math.PI / 180;  // 度数法からラジアンに変換
+    const angles = [0]; // 常に正面方向の弾を発射
 
-    for (let i = 0; i < bulletCount; i++) {
-        let angle;
-        if (bulletCount > 1) {
-            angle = baseAngle + (i / (bulletCount - 1) - 0.5) * totalSpread;
-        } else {
-            angle = baseAngle;
-        }
-        const dx = Math.cos(angle) * speed;
-        const dy = Math.sin(angle) * speed;
+    // 扇状効果レベルに応じて角度を追加
+    for (let i = 1; i <= spreadLevel; i++) {
+        angles.push(i * 10 * Math.PI / 180);  // 右側
+        angles.push(-i * 10 * Math.PI / 180); // 左側
+    }
+
+    angles.forEach(angle => {
+        const totalAngle = baseAngle + angle;
+        const dx = Math.cos(totalAngle) * speed;
+        const dy = Math.sin(totalAngle) * speed;
 
         player.bullets.push({ 
             x: player.x + player.width / 2, 
@@ -114,7 +113,7 @@ function shootBullet() {
             dx: dx, 
             dy: dy 
         });
-    }
+    });
 }
 
 function spawnZombies() {
@@ -330,6 +329,7 @@ function applyItemEffect() {
         () => { 
             player.bulletCount++;
             player.effects.multiShot++;
+            player.fireRate = Math.max(player.fireRate * 0.9, 50); // 発射間隔を10%短縮（最小50ms）
             announceEffect('弾数増加！');
         },
         () => { 
@@ -570,8 +570,8 @@ function restartGame(success) {
     player.direction = { x: 0, y: 0 };
     player.bulletSpeed = 8;  // 初期値を5に設定
     player.bulletCount = 1;
-    player.spread = 0;
-    player.fireRate = 500;  // 初期の射撃間隔を0.5秒に設定
+    player.bulletCount = 1;
+    player.fireRate = 200;
     player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
     bossMode = false;
     boss = null;
