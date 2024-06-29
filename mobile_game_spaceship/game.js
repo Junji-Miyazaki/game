@@ -388,8 +388,8 @@ function animate() {
 
     // プレイヤーの移動
     if (touchStartX !== undefined && touchStartY !== undefined) {
-        const deltaX = (touchStartX - player.position.x + 75) / 5; // 反応速度を上げると同時に位置をさらにずらす
-        const deltaY = (touchStartY - player.position.y) / 5; // 反応速度を上げる
+        const deltaX = (touchStartX - player.position.x) / 5; // 反応速度を上げる
+        const deltaY = (touchStartY - player.position.y - 50) / 5; // 反応速度を上げると同時に位置を上にずらす
         player.position.x += Math.sign(deltaX) * Math.min(Math.abs(deltaX), playerSpeed);
         player.position.y += Math.sign(deltaY) * Math.min(Math.abs(deltaY), playerSpeed);
     }
