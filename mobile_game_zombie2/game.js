@@ -23,13 +23,15 @@ const player = {
     invincibleTime: 0,
     lastShot: 0,
     color: 'blue',
-    bulletSpeed: 3,  // 初期値を遅くした
+    bulletSpeed: 1,  // 初期値をさらに遅くした
     bulletCount: 1,
     spread: 0,
+    fireRate: 1000,  // 初期の射撃間隔を1秒に設定
     effects: {
         speedBoost: 0,
         multiShot: 0,
-        spreadShot: 0
+        spreadShot: 0,
+        fireRateBoost: 0
     }
 };
 
@@ -86,7 +88,7 @@ function handleTouchEnd(event) {
 
 function shootBullet() {
     const currentTime = Date.now();
-    if (currentTime - player.lastShot < 100) return;
+    if (currentTime - player.lastShot < player.fireRate) return;
 
     player.lastShot = currentTime;
     const speed = player.bulletSpeed;
@@ -94,7 +96,8 @@ function shootBullet() {
     const spread = player.spread;
 
     for (let i = 0; i < bulletCount; i++) {
-        const angle = Math.atan2(player.direction.y, player.direction.x) + (Math.random() - 0.5) * spread * 0.1;
+        const angle = Math.atan2(player.direction.y, player.direction.x) + 
+                      (Math.random() - 0.5) * spread * Math.PI / 8;  // 扇状の範囲を広げた
         const dx = Math.cos(angle) * speed;
         const dy = Math.sin(angle) * speed;
 
@@ -323,9 +326,14 @@ function applyItemEffect() {
             announceEffect('弾数増加！');
         },
         () => { 
-            player.spread += 0.1;
+            player.spread += 0.2;  // 扇状の範囲を大きく増加
             player.effects.spreadShot++;
             announceEffect('扇状照射！');
+        },
+        () => { 
+            player.fireRate = Math.max(player.fireRate * 0.9, 100);  // 射撃間隔を10%短縮（最小100ms）
+            player.effects.fireRateBoost++;
+            announceEffect('連射速度上昇！');
         },
         () => { 
             player.invincible = true;
@@ -380,6 +388,16 @@ function drawEffects() {
         ctx.fill();
         ctx.fillStyle = 'white';
         ctx.fillText(`扇状 +${player.effects.spreadShot}`, 30, yOffset + 5);
+        yOffset += 20;
+    }
+
+    if (player.effects.fireRateBoost > 0) {
+        ctx.fillStyle = 'cyan';
+        ctx.beginPath();
+        ctx.arc(20, yOffset, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.fillText(`連射 +${player.effects.fireRateBoost}`, 30, yOffset + 5);
     }
 }
 
@@ -394,11 +412,57 @@ function drawAnnouncement() {
 }
 
 function drawBoss() {
-    // ...既存のdrawBoss関数のコード...
+    ctx.fillStyle = 'darkred';
+    ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+    ctx.beginPath();
+    ctx.arc(boss.x + boss.width / 2, boss.y - 30, 40, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.moveTo(boss.x + boss.width / 2 - 30, boss.y - 60);
+    ctx.lineTo(boss.x + boss.width / 2 - 10, boss.y - 90);
+    ctx.lineTo(boss.x + boss.width / 2 + 10, boss.y - 60);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(boss.x + boss.width / 2 + 30, boss.y - 60);
+    ctx.lineTo(boss.x + boss.width / 2 + 10, boss.y - 90);
+    ctx.lineTo(boss.x + boss.width / 2 - 10, boss.y - 60);
+    ctx.fill();
+    ctx.fillStyle = 'yellow';
+    ctx.beginPath();
+    ctx.arc(boss.x + boss.width / 2 - 20, boss.y - 40, 10, 0, Math.PI * 2);
+    ctx.arc(boss.x + boss.width / 2 + 20, boss.y - 40, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'darkred';
+    const armOffset = Math.sin(boss.animationFrame * 0.1) * 20;
+    ctx.fillRect(boss.x - 30, boss.y + 60 + armOffset, 30, 120);
+    ctx.fillRect(boss.x + boss.width, boss.y + 60 - armOffset, 30, 120);
+    const legOffset = Math.sin(boss.animationFrame * 0.2) * 10;
+    ctx.fillRect(boss.x + 30, boss.y + boss.height, 40, 30 + legOffset);
+    ctx.fillRect(boss.x + boss.width - 70, boss.y + boss.height, 40, 30 - legOffset);
+    
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.fillText(boss.health, boss.x + boss.width / 2 - 20, boss.y + boss.height / 2);
+    
+    boss.animationFrame = (boss.animationFrame + 1) % 60;
 }
 
 function moveBoss() {
-    // ...既存のmoveBoss関数のコード...
+    boss.x += boss.dx;
+    boss.y += boss.dy;
+
+    if (boss.x <= 0 || boss.x + boss.width >= canvas.width) {
+        boss.dx = -boss.dx;
+    }
+    if (boss.y <= canvas.height / 8 || boss.y + boss.height >= canvas.height) {
+        boss.dy = -boss.dy;
+    }
+
+    if (Math.random() < 0.05) {
+        boss.dx = (Math.random() - 0.5) * boss.speed * 2;
+        boss.dy = (Math.random() - 0.5) * boss.speed * 2;
+    }
 }
 
 function drawScore() {
@@ -432,7 +496,53 @@ function gameOver() {
 }
 
 function explodeBoss() {
-    // ...既存のexplodeBoss関数のコード...
+    clearInterval(bossMoveInterval);
+    isExploding = true;
+    const fragments = [];
+    for (let i = 0; i < 20; i++) {
+        fragments.push({ x: boss.x, y: boss.y, dx: (Math.random() - 0.5) * 10, dy: (Math.random() - 0.5) * 10 });
+    }
+    const explodeInterval = setInterval(() => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPlayer();
+        drawBullets();
+        drawScore();
+        drawLife();
+        drawTime();
+        fragments.forEach(fragment => {
+            fragment.x += fragment.dx;
+            fragment.y += fragment.dy;
+            ctx.fillStyle = 'red';
+            ctx.fillRect(fragment.x, fragment.y, boss.width / 10, boss.height / 10);
+        });
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`おめでとう！ スコア: ${score}`, canvas.width / 2, canvas.height / 2);
+        ctx.textAlign = 'left';
+    }, 50);
+    setTimeout(() => {
+        clearInterval(explodeInterval);
+        isExploding = false;
+        boss = null;
+        bossMode = false;
+        zombies.length = 0;
+        timeSinceLastBoss = 0;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPlayer();
+        drawScore();
+        ctx.fillStyle = 'white';
+        ctx.font = '36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`おめでとう！ スコア: ${score}`, canvas.width / 2, canvas.height / 2);
+        ctx.textAlign = 'left';
+        setTimeout(() => {
+            if (confirm(`おめでとう！スコア: ${score}\n次のステージを始めますか？`)) {
+                restartGame(true);
+            }
+        }, 5000);
+    }, 5000);
 }
 
 function flashScreen() {
@@ -451,10 +561,11 @@ function restartGame(success) {
     player.invincible = false;
     player.invincibleTime = 0;
     player.direction = { x: 0, y: 0 };
-    player.bulletSpeed = 3;  // 初期値に戻す
+    player.bulletSpeed = 1;  // 初期値に戻す
     player.bulletCount = 1;
     player.spread = 0;
-    player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0};
+    player.fireRate = 1000;  // 初期の射撃間隔を1秒に設定
+    player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
     bossMode = false;
     boss = null;
     zombieSpawnCount = 1;
