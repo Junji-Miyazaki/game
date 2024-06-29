@@ -170,7 +170,7 @@ function startBossMode() {
 }
 
 function drawPlayer() {
-    ctx.fillStyle = player.color || 'blue'; // プレイヤーの色を動的に変更
+    ctx.fillStyle = player.invincible ? 'rgba(0, 0, 255, 0.5)' : 'blue';
     ctx.fillRect(player.x, player.y, player.width, player.height);
     ctx.beginPath();
     ctx.arc(player.x + player.width / 2, player.y - 10, 10, 0, Math.PI * 2);
@@ -240,8 +240,8 @@ function spawnZombies() {
             zombieHealth = Math.floor(Math.random() * 5) + 1;
         }
 
-        // アイテムゾンビの確率を設定（頻度を低下）
-        if (Math.random() < 0.1) { // 確率を0.1に変更
+        // アイテムゾンビの確率を設定
+        if (Math.random() < 0.1) {
             isItemZombie = true;
         }
 
@@ -320,7 +320,7 @@ function checkCollisions() {
     }
 }
 
-ffunction applyItemEffect() {
+function applyItemEffect() {
     const effects = [
         () => { player.life = Math.min(player.life + 1, 5); }, // ライフ増加
         () => { player.bulletSpeed = player.bulletSpeed ? player.bulletSpeed + 1 : 8; }, // ライフルの威力増加
@@ -329,11 +329,7 @@ ffunction applyItemEffect() {
         () => { 
             player.invincible = true;
             player.invincibleTime = 180; 
-            player.color = 'rgba(0, 0, 255, 0.5)'; // 無敵状態の色変更
-            setTimeout(() => {
-                player.invincible = false;
-                player.color = 'blue'; // 無敵状態終了後に元の色に戻す
-            }, 5000); // 一定期間無敵
+            setTimeout(() => player.invincible = false, 5000); // 一定期間無敵
         }
     ];
 
@@ -342,74 +338,46 @@ ffunction applyItemEffect() {
 
     if (player.invincible) {
         player.color = 'rgba(0, 0, 255, 0.5)'; // 無敵状態の色変更
-        setTimeout(() => {
-            player.color = 'blue'; // 無敵状態終了後に元の色に戻す
-        }, 5000); // 一定期間無敵
+        setTimeout(() => player.color = 'blue', 5000); // 無敵状態終了後に元の色に戻す
     }
 }
 
-function checkCollisions() {
-    player.bullets.forEach((bullet, bulletIndex) => {
-        zombies.forEach((zombie, zombieIndex) => {
-            if (bullet.x > zombie.x && bullet.x < zombie.x + zombie.width &&
-                bullet.y > zombie.y && bullet.y < zombie.y + zombie.height) {
-                zombie.health--;
-                if (zombie.health <= 0) {
-                    score += 10;
-                    if (zombie.isItemZombie) {
-                        applyItemEffect(); // アイテム効果を適用
-                    }
-                    zombies.splice(zombieIndex, 1);
-                }
-                player.bullets.splice(bulletIndex, 1);
-                return;
-            }
-        });
-        if (bossMode && boss && !isExploding) {
-            if (bullet.x > boss.x && bullet.x < boss.x + boss.width &&
-                bullet.y > boss.y && bullet.y < boss.y + boss.height) {
-                boss.health--;
-                if (boss.health <= 0) {
-                    score += 200;
-                    explodeBoss();
-                }
-                player.bullets.splice(bulletIndex, 1);
-            }
-        }
-    });
-
-    if (!isExploding && !player.invincible) {
-        zombies.forEach((zombie, index) => {
-            if (zombie.x < player.x + player.width && zombie.x + zombie.width > player.x &&
-                zombie.y < player.y + player.height && zombie.y + zombie.height > player.y) {
-                player.life--;
-                player.invincible = true;
-                player.invincibleTime = 180;
-                flashScreen();
-                setTimeout(() => player.invincible = false, 3000); // 無敵時間を3秒に設定
-                if (player.life <= 0) {
-                    gameOver();
-                }
-                zombies.splice(index, 1);
-            }
-        });
-        
-        if (bossMode && boss) {
-            if (boss.x < player.x + player.width && boss.x + boss.width > player.x &&
-                boss.y < player.y + player.height && boss.y + boss.height > player.y) {
-                player.life--;
-                player.invincible = true;
-                player.invincibleTime = 180;
-                flashScreen();
-                setTimeout(() => player.invincible = false, 3000); // 無敵時間を3秒に設定
-                if (player.life <= 0) {
-                    gameOver();
-                }
-            }
-        }
-    }
+function drawBoss() {
+    ctx.fillStyle = 'darkred';
+    ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+    ctx.beginPath();
+    ctx.arc(boss.x + boss.width / 2, boss.y - 30, 40, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.moveTo(boss.x + boss.width / 2 - 30, boss.y - 60);
+    ctx.lineTo(boss.x + boss.width / 2 - 10, boss.y - 90);
+    ctx.lineTo(boss.x + boss.width / 2 + 10, boss.y - 60);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(boss.x + boss.width / 2 + 30, boss.y - 60);
+    ctx.lineTo(boss.x + boss.width / 2 + 10, boss.y - 90);
+    ctx.lineTo(boss.x + boss.width / 2 - 10, boss.y - 60);
+    ctx.fill();
+    ctx.fillStyle = 'yellow';
+    ctx.beginPath();
+    ctx.arc(boss.x + boss.width / 2 - 20, boss.y - 40, 10, 0, Math.PI * 2);
+    ctx.arc(boss.x + boss.width / 2 + 20, boss.y - 40, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'darkred';
+    const armOffset = Math.sin(boss.animationFrame * 0.1) * 20;
+    ctx.fillRect(boss.x - 30, boss.y + 60 + armOffset, 30, 120);
+    ctx.fillRect(boss.x + boss.width, boss.y + 60 - armOffset, 30, 120);
+    const legOffset = Math.sin(boss.animationFrame * 0.2) * 10;
+    ctx.fillRect(boss.x + 30, boss.y + boss.height, 40, 30 + legOffset);
+    ctx.fillRect(boss.x + boss.width - 70, boss.y + boss.height, 40, 30 - legOffset);
+    
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.fillText(boss.health, boss.x + boss.width / 2 - 20, boss.y + boss.height / 2);
+    
+    boss.animationFrame = (boss.animationFrame + 1) % 60;
 }
-
 
 function moveBoss() {
     boss.x += boss.dx;
