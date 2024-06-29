@@ -23,10 +23,10 @@ const player = {
     invincibleTime: 0,
     lastShot: 0,
     color: 'blue',
-    bulletSpeed: 1,  // 初期値をさらに遅くした
+    bulletSpeed: 1,
     bulletCount: 1,
     spread: 0,
-    fireRate: 1000,  // 初期の射撃間隔を1秒に設定
+    fireRate: 1000,
     effects: {
         speedBoost: 0,
         multiShot: 0,
@@ -97,7 +97,7 @@ function shootBullet() {
 
     for (let i = 0; i < bulletCount; i++) {
         const angle = Math.atan2(player.direction.y, player.direction.x) + 
-                      (Math.random() - 0.5) * spread * Math.PI / 8;  // 扇状の範囲を広げた
+                      (Math.random() - 0.5) * spread * Math.PI / 4;
         const dx = Math.cos(angle) * speed;
         const dy = Math.sin(angle) * speed;
 
@@ -326,12 +326,12 @@ function applyItemEffect() {
             announceEffect('弾数増加！');
         },
         () => { 
-            player.spread += 0.2;  // 扇状の範囲を大きく増加
+            player.spread += 0.5;  // 扇状の範囲を大きく増加
             player.effects.spreadShot++;
             announceEffect('扇状照射！');
         },
         () => { 
-            player.fireRate = Math.max(player.fireRate * 0.9, 100);  // 射撃間隔を10%短縮（最小100ms）
+            player.fireRate = Math.max(player.fireRate * 0.9, 100);
             player.effects.fireRateBoost++;
             announceEffect('連射速度上昇！');
         },
@@ -353,13 +353,13 @@ function applyItemEffect() {
 
 function announceEffect(text) {
     announceText = text;
-    announceTime = 180;  // 3秒間表示
+    announceTime = 180;
 }
 
 function drawEffects() {
     ctx.fillStyle = 'white';
     ctx.font = '16px Arial';
-    let yOffset = 120;  // Timeの下から開始
+    let yOffset = 120;
     
     if (player.effects.speedBoost > 0) {
         ctx.fillStyle = 'yellow';
@@ -394,7 +394,7 @@ function drawEffects() {
     if (player.effects.fireRateBoost > 0) {
         ctx.fillStyle = 'cyan';
         ctx.beginPath();
-        ctx.arc(20, yOffset, 5, 0, Math.PI * 2);
+ctx.arc(20, yOffset, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = 'white';
         ctx.fillText(`連射 +${player.effects.fireRateBoost}`, 30, yOffset + 5);
@@ -561,10 +561,10 @@ function restartGame(success) {
     player.invincible = false;
     player.invincibleTime = 0;
     player.direction = { x: 0, y: 0 };
-    player.bulletSpeed = 1;  // 初期値に戻す
+    player.bulletSpeed = 1;
     player.bulletCount = 1;
     player.spread = 0;
-    player.fireRate = 1000;  // 初期の射撃間隔を1秒に設定
+    player.fireRate = 1000;
     player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
     bossMode = false;
     boss = null;
