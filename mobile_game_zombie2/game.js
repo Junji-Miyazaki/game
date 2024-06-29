@@ -9,6 +9,8 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
+let currentStage = 1;
+
 const player = {
     x: canvas.width / 2,
     y: canvas.height - 100,
@@ -283,11 +285,12 @@ function checkCollisions() {
         }
     });
 
-    if (!isExploding && !player.invincible) {
+   if (!isExploding && !player.invincible) {
         zombies.forEach((zombie, index) => {
             if (zombie.x < player.x + player.width && zombie.x + zombie.width > player.x &&
                 zombie.y < player.y + player.height && zombie.y + zombie.height > player.y) {
                 player.life--;
+                decreaseRandomEffect(); // 効果減少を追加
                 player.invincible = true;
                 player.invincibleTime = 180;
                 flashScreen();
@@ -303,6 +306,7 @@ function checkCollisions() {
             if (boss.x < player.x + player.width && boss.x + boss.width > player.x &&
                 boss.y < player.y + player.height && boss.y + boss.height > player.y) {
                 player.life--;
+                decreaseRandomEffect(); // 効果減少を追加
                 player.invincible = true;
                 player.invincibleTime = 180;
                 flashScreen();
@@ -356,6 +360,15 @@ function applyItemEffect() {
 
     const randomEffect = effects[Math.floor(Math.random() * effects.length)];
     randomEffect();
+}
+
+function decreaseRandomEffect() {
+    const effects = ['speedBoost', 'multiShot', 'spreadShot', 'fireRateBoost'];
+    const randomEffect = effects[Math.floor(Math.random() * effects.length)];
+    if (player.effects[randomEffect] > 0) {
+        player.effects[randomEffect]--;
+        announceEffect(`${randomEffect}効果が減少！`);
+    }
 }
 
 function announceEffect(text) {
@@ -542,13 +555,11 @@ function explodeBoss() {
         ctx.fillStyle = 'white';
         ctx.font = '36px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`おめでとう！ スコア: ${score}`, canvas.width / 2, canvas.height / 2);
+        ctx.fillText(`Stage ${currentStage} Clear!`, canvas.width / 2, canvas.height / 2);
         ctx.textAlign = 'left';
         setTimeout(() => {
-            if (confirm(`おめでとう！スコア: ${score}\n次のステージを始めますか？`)) {
-                restartGame(true);
-            }
-        }, 5000);
+            startNextStage();
+        }, 3000);
     }, 5000);
 }
 
@@ -568,11 +579,17 @@ function restartGame(success) {
     player.invincible = false;
     player.invincibleTime = 0;
     player.direction = { x: 0, y: 0 };
-    player.bulletSpeed = 8;  // 初期値を5に設定
+    player.bulletSpeed = 8;
     player.bulletCount = 1;
-    player.bulletCount = 1;
+    player.spread = 0;
     player.fireRate = 200;
-    player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
+    if (!success) {
+        player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
+        player.life = 5;
+        score = 0;
+        time = 0;
+        currentStage = 1;
+    }
     bossMode = false;
     boss = null;
     zombieSpawnCount = 1;
@@ -582,14 +599,6 @@ function restartGame(success) {
     clearInterval(gameInterval);
     clearInterval(zombieSpawnInterval);
     if (bossMoveInterval) clearInterval(bossMoveInterval);
-
-    if (success) {
-        player.life = Math.min(player.life + 1, 5);
-    } else {
-        player.life = 5;
-        score = 0;
-        time = 0;
-    }
 
     canvas.style.backgroundColor = 'black';
     ctx.clearRect(0, 0, canvas.width, canvas.height);
