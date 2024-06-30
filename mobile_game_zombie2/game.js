@@ -288,36 +288,41 @@ function checkCollisions() {
             }
         }
     });
-
-   if (!isExploding && !player.invincible) {
-        zombies.forEach((zombie, index) => {
-            if (zombie.x < player.x + player.width && zombie.x + zombie.width > player.x &&
-                zombie.y < player.y + player.height && zombie.y + zombie.height > player.y) {
-                player.life--;
-                decreaseRandomEffect(); // 効果減少を追加
-                player.invincible = true;
-                player.invincibleTime = 180;
-                flashScreen();
-                setTimeout(() => player.invincible = false, 3000);
-                if (player.life <= 0) {
-                    gameOver();
-                }
-                zombies.splice(index, 1);
+	
+	if (!player.invincible) {
+    zombies.forEach((zombie, index) => {
+        if (zombie.x < player.x + player.width && zombie.x + zombie.width > player.x &&
+            zombie.y < player.y + player.height && zombie.y + zombie.height > player.y) {
+            player.life--;
+            decreaseRandomEffect();
+            player.invincible = true;
+            player.invincibleTime = 180;
+            flashScreen();
+            setTimeout(() => {
+                player.invincible = false;
+                player.color = 'blue';  // 色を元に戻す
+            }, 3000);
+            if (player.life <= 0) {
+                gameOver();
             }
-        });
-        
-        if (bossMode && boss) {
-            if (boss.x < player.x + player.width && boss.x + boss.width > player.x &&
-                boss.y < player.y + player.height && boss.y + boss.height > player.y) {
-                player.life--;
-                decreaseRandomEffect(); // 効果減少を追加
-                player.invincible = true;
-                player.invincibleTime = 180;
-                flashScreen();
-                setTimeout(() => player.invincible = false, 3000);
-                if (player.life <= 0) {
-                    gameOver();
-                }
+            zombies.splice(index, 1);
+        }
+    });
+    
+    if (bossMode && boss) {
+        if (boss.x < player.x + player.width && boss.x + boss.width > player.x &&
+            boss.y < player.y + player.height && boss.y + boss.height > player.y) {
+            player.life--;
+            decreaseRandomEffect();
+            player.invincible = true;
+            player.invincibleTime = 180;
+            flashScreen();
+            setTimeout(() => {
+                player.invincible = false;
+                player.color = 'blue';  // 色を元に戻す
+            }, 3000);
+            if (player.life <= 0) {
+                gameOver();
             }
         }
     }
@@ -567,24 +572,40 @@ function explodeBoss() {
     }, 5000);
 }
 
-function startNextStage() {
-    currentStage++;
+function startNextStage(isRestart = false) {
+    if (!isRestart) {
+        currentStage++;
+    }
+    
     bossMode = false;
     boss = null;
     zombies.length = 0;
     timeSinceLastBoss = 0;
     
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'white';
-    ctx.font = '36px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(`Stage ${currentStage} Start!`, canvas.width / 2, canvas.height / 2);
-    ctx.textAlign = 'left';
+    clearInterval(gameInterval);
+    clearInterval(zombieSpawnInterval);
+    
+    function displayStageText() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPlayer();
+        drawScore();
+        drawLife();
+        drawTime();
+        drawEffects();
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Stage ${currentStage} Start!`, canvas.width / 2, canvas.height / 2);
+        ctx.textAlign = 'left';
+    }
+    
+    displayStageText();
     
     setTimeout(() => {
         gameInterval = setInterval(update, 1000 / 60);
         zombieSpawnInterval = setInterval(spawnZombies, 5000);
-    }, 3000);  // 3秒に変更
+    }, 3000);
 }
 
 function restartGame(success) {
@@ -641,14 +662,18 @@ function showGameInstructions() {
         "ボスゾンビ: 定期的に出現する強敵",
         "",
         "画面をタッチして移動・攻撃",
-        "ゾンビを倒してスコアを稼ごう！",
-        "",
-        "準備ができたらOKを押してゲーム開始"
+        "ゾンビを倒してスコアを稼ごう！"
     ];
     
     instructions.forEach((line, index) => {
         ctx.fillText(line, canvas.width / 2, 50 + index * 30);
     });
+    
+    // スタートボタンの描画
+    ctx.fillStyle = 'green';
+    ctx.fillRect(canvas.width / 2 - 100, canvas.height - 100, 200, 50);
+    ctx.fillStyle = 'white';
+    ctx.fillText("Game Start", canvas.width / 2, canvas.height - 70);
     
     ctx.textAlign = 'left';
 }
@@ -656,14 +681,18 @@ function showGameInstructions() {
 function startGame() {
     showGameInstructions();
     
-    setTimeout(() => {
-        if (confirm("ゲームを開始しますか？")) {
+    canvas.addEventListener('click', function startGameListener(e) {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        if (x > canvas.width / 2 - 100 && x < canvas.width / 2 + 100 &&
+            y > canvas.height - 100 && y < canvas.height - 50) {
+            canvas.removeEventListener('click', startGameListener);
             gameInterval = setInterval(update, 1000 / 60);
             zombieSpawnInterval = setInterval(spawnZombies, 5000);
-        } else {
-            showGameInstructions();
         }
-    }, 1000);
+    });
 }
 
 // ゲームの初期化コードの最後に以下を追加
