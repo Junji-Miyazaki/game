@@ -168,7 +168,7 @@ function update() {
         shootBullet();
     }
     drawBullets();
-    if (bossMode && boss) {
+   if (bossMode && boss) {
         if (boss.y < canvas.height / 4) {
             boss.y += 2;
         } else {
@@ -176,6 +176,7 @@ function update() {
         }
         drawBoss();
     } else if (!bossMode && timeSinceLastBoss >= bossTime * 60) {
+        console.log("Starting boss mode");
         startBossMode();
     }
     drawZombies();
@@ -443,11 +444,59 @@ function drawAnnouncement() {
 }
 
 function drawBoss() {
-    // ボスの描画コード（省略）
+    if (!boss) return;
+
+    ctx.fillStyle = 'darkred';
+    ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+    
+    // ボスの頭
+    ctx.beginPath();
+    ctx.arc(boss.x + boss.width / 2, boss.y - 30, 40, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // ボスの目
+    ctx.fillStyle = 'yellow';
+    ctx.beginPath();
+    ctx.arc(boss.x + boss.width / 2 - 20, boss.y - 40, 10, 0, Math.PI * 2);
+    ctx.arc(boss.x + boss.width / 2 + 20, boss.y - 40, 10, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // ボスの腕
+    const armOffset = Math.sin(boss.animationFrame * 0.1) * 20;
+    ctx.fillStyle = 'darkred';
+    ctx.fillRect(boss.x - 30, boss.y + 60 + armOffset, 30, 120);
+    ctx.fillRect(boss.x + boss.width, boss.y + 60 - armOffset, 30, 120);
+    
+    // ボスの足
+    const legOffset = Math.sin(boss.animationFrame * 0.2) * 10;
+    ctx.fillRect(boss.x + 30, boss.y + boss.height, 40, 30 + legOffset);
+    ctx.fillRect(boss.x + boss.width - 70, boss.y + boss.height, 40, 30 - legOffset);
+    
+    // ボスのHP
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.fillText(boss.health, boss.x + boss.width / 2 - 20, boss.y + boss.height / 2);
+    
+    boss.animationFrame = (boss.animationFrame + 1) % 60;
 }
 
 function moveBoss() {
-    // ボスの移動コード（省略）
+    boss.x += boss.dx;
+    boss.y += boss.dy;
+
+    // 画面端での跳ね返り
+    if (boss.x <= 0 || boss.x + boss.width >= canvas.width) {
+        boss.dx = -boss.dx;
+    }
+    if (boss.y <= canvas.height / 8 || boss.y + boss.height >= canvas.height) {
+        boss.dy = -boss.dy;
+    }
+
+    // ランダムな動きの追加
+    if (Math.random() < 0.05) {
+        boss.dx = (Math.random() - 0.5) * boss.speed * 2;
+        boss.dy = (Math.random() - 0.5) * boss.speed * 2;
+    }
 }
 
 function drawScore() {
