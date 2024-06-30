@@ -530,7 +530,57 @@ function gameOver() {
 }
 
 function explodeBoss() {
-    // ボス爆発のコード（省略）
+    isExploding = true;
+    clearInterval(bossMoveInterval);
+    const fragments = [];
+    for (let i = 0; i < 20; i++) {
+        fragments.push({
+            x: boss.x + boss.width / 2,
+            y: boss.y + boss.height / 2,
+            dx: (Math.random() - 0.5) * 10,
+            dy: (Math.random() - 0.5) * 10,
+            size: Math.random() * 20 + 5
+        });
+    }
+
+    const explosionInterval = setInterval(() => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPlayer();
+        drawBullets();
+        drawScore();
+        drawLife();
+        drawTime();
+        drawEffects();
+
+        fragments.forEach(fragment => {
+            fragment.x += fragment.dx;
+            fragment.y += fragment.dy;
+            ctx.fillStyle = 'red';
+            ctx.fillRect(fragment.x, fragment.y, fragment.size, fragment.size);
+        });
+    }, 1000 / 60);
+
+    setTimeout(() => {
+        clearInterval(explosionInterval);
+        isExploding = false;
+        bossMode = false;
+        boss = null;
+        zombies.length = 0;
+        timeSinceLastBoss = 0;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPlayer();
+        drawScore();
+        ctx.fillStyle = 'white';
+        ctx.font = '36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Stage ${currentStage} Clear!`, canvas.width / 2, canvas.height / 2);
+        ctx.textAlign = 'left';
+
+        setTimeout(() => {
+            startNextStage();
+        }, 3000);
+    }, 3000);
 }
 
 function flashScreen() {
@@ -542,13 +592,44 @@ function flashScreen() {
 }
 
 function restartGame(success) {
-    // ゲーム再スタートのコード（省略）
+    isGameOver = false;
+    player.x = canvas.width / 2;
+    player.y = canvas.height - 100;
+    player.bullets = [];
+    player.invincible = false;
+    player.invincibleTime = 0;
+    player.direction = { x: 0, y: 0 };
+    player.bulletSpeed = 8;
+    player.bulletCount = 1;
+    player.spread = 0;
+    player.fireRate = 200;
+    
+    if (!success) {
+        player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
+        player.life = 5;
+        score = 0;
+        time = 0;
+        currentStage = 1;
+    }
+
+    bossMode = false;
+    boss = null;
+    zombieSpawnCount = 1;
+    zombies.length = 0;
+    timeSinceLastBoss = 0;
+
+    clearInterval(gameInterval);
+    clearInterval(zombieSpawnInterval);
+    if (bossMoveInterval) clearInterval(bossMoveInterval);
+
+    canvas.style.backgroundColor = 'black';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    startNextStage(true);
 }
 
-function startNextStage(isRestart = false) {
-    if (!isRestart) {
-        currentStage++;
-    }
+function startNextStage() {
+    currentStage++;
     
     bossMode = false;
     boss = null;
@@ -558,22 +639,12 @@ function startNextStage(isRestart = false) {
     clearInterval(gameInterval);
     clearInterval(zombieSpawnInterval);
     
-    function displayStageText() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawPlayer();
-        drawScore();
-        drawLife();
-        drawTime();
-        drawEffects();
-        
-        ctx.fillStyle = 'white';
-        ctx.font = '36px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Stage ${currentStage} Start!`, canvas.width / 2, canvas.height / 2);
-        ctx.textAlign = 'left';
-    }
-    
-    displayStageText();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Stage ${currentStage} Start!`, canvas.width / 2, canvas.height / 2);
+    ctx.textAlign = 'left';
     
     setTimeout(() => {
         gameInterval = setInterval(update, 1000 / 60);
