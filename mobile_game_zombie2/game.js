@@ -125,11 +125,15 @@ function spawnZombies() {
         const randomValue = Math.random();
         let isItemZombie = false;
 
-        if (currentTime >= 60 && randomValue < 0.1) {
+        const toughZombieChance = Math.min(0.2 * (currentStage - 1), 0.8);  // 20%ずつ増加、最大80%
+
+        if (randomValue < toughZombieChance) {
+            zombieHealth = Math.floor(Math.random() * 11) + 20;  // 20-30のヘルス
+        } else if (currentTime >= 60 && randomValue < 0.1 + toughZombieChance) {
             zombieHealth = Math.floor(Math.random() * 10) + 21;
-        } else if (currentTime >= 40 && randomValue < 0.2) {
+        } else if (currentTime >= 40 && randomValue < 0.2 + toughZombieChance) {
             zombieHealth = Math.floor(Math.random() * 10) + 11;
-        } else if (currentTime >= 20 && randomValue < 0.3) {
+        } else if (currentTime >= 20 && randomValue < 0.3 + toughZombieChance) {
             zombieHealth = Math.floor(Math.random() * 6) + 5;
         } else {
             zombieHealth = Math.floor(Math.random() * 5) + 1;
@@ -563,12 +567,24 @@ function explodeBoss() {
     }, 5000);
 }
 
-function flashScreen() {
-    const originalColor = canvas.style.backgroundColor;
-    canvas.style.backgroundColor = 'white';
+function startNextStage() {
+    currentStage++;
+    bossMode = false;
+    boss = null;
+    zombies.length = 0;
+    timeSinceLastBoss = 0;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Stage ${currentStage} Start!`, canvas.width / 2, canvas.height / 2);
+    ctx.textAlign = 'left';
+    
     setTimeout(() => {
-        canvas.style.backgroundColor = originalColor;
-    }, 100);
+        gameInterval = setInterval(update, 1000 / 60);
+        zombieSpawnInterval = setInterval(spawnZombies, 5000);
+    }, 3000);  // 3秒に変更
 }
 
 function restartGame(success) {
@@ -583,6 +599,7 @@ function restartGame(success) {
     player.bulletCount = 1;
     player.spread = 0;
     player.fireRate = 200;
+    
     if (!success) {
         player.effects = {speedBoost: 0, multiShot: 0, spreadShot: 0, fireRateBoost: 0};
         player.life = 5;
@@ -590,6 +607,7 @@ function restartGame(success) {
         time = 0;
         currentStage = 1;
     }
+
     bossMode = false;
     boss = null;
     zombieSpawnCount = 1;
@@ -602,9 +620,51 @@ function restartGame(success) {
 
     canvas.style.backgroundColor = 'black';
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    gameInterval = setInterval(update, 1000 / 60);
-    zombieSpawnInterval = setInterval(spawnZombies, 5000);
+
+    // ゲーム再開のロジックを startNextStage に移動
+    startNextStage(true);
 }
 
-gameInterval = setInterval(update, 1000 / 60);
-zombieSpawnInterval = setInterval(spawnZombies, 5000);
+function showGameInstructions() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    
+    const instructions = [
+        "ゾンビシューティングゲーム",
+        "",
+        "通常ゾンビ: 様々な体力を持つ敵",
+        "アイテムゾンビ: 倒すと特殊能力を獲得",
+        "ボスゾンビ: 定期的に出現する強敵",
+        "",
+        "画面をタッチして移動・攻撃",
+        "ゾンビを倒してスコアを稼ごう！",
+        "",
+        "準備ができたらOKを押してゲーム開始"
+    ];
+    
+    instructions.forEach((line, index) => {
+        ctx.fillText(line, canvas.width / 2, 50 + index * 30);
+    });
+    
+    ctx.textAlign = 'left';
+}
+
+function startGame() {
+    showGameInstructions();
+    
+    setTimeout(() => {
+        if (confirm("ゲームを開始しますか？")) {
+            gameInterval = setInterval(update, 1000 / 60);
+            zombieSpawnInterval = setInterval(spawnZombies, 5000);
+        } else {
+            showGameInstructions();
+        }
+    }, 1000);
+}
+
+// ゲームの初期化コードの最後に以下を追加
+startGame();
