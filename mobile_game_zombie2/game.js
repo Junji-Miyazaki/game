@@ -681,7 +681,7 @@ function showGameInstructions() {
 function startGame() {
     showGameInstructions();
     
-    canvas.addEventListener('click', function startGameListener(e) {
+    function startGameListener(e) {
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -692,7 +692,9 @@ function startGame() {
             gameInterval = setInterval(update, 1000 / 60);
             zombieSpawnInterval = setInterval(spawnZombies, 5000);
         }
-    });
+    }
+    
+    canvas.addEventListener('click', startGameListener);
 }
 
 // ゲームの初期化コードの最後に以下を追加
