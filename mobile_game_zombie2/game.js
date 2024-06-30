@@ -4,7 +4,7 @@ const ctx = canvas.getContext('2d');
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    canvas.style.touchAction = 'none';  // この行を追加
+    canvas.style.touchAction = 'none';
 }
 
 resizeCanvas();
@@ -572,9 +572,13 @@ function startGame() {
         const rect = canvas.getBoundingClientRect();
         let x, y;
 
-        if (e.type === 'touchstart') {
-            x = e.touches[0].clientX - rect.left;
-            y = e.touches[0].clientY - rect.top;
+        if (e.type.startsWith('touch')) {
+            if (e.touches.length > 0) {
+                x = e.touches[0].clientX - rect.left;
+                y = e.touches[0].clientY - rect.top;
+            } else {
+                return; // タッチが検出されない場合は何もしない
+            }
         } else {
             x = e.clientX - rect.left;
             y = e.clientY - rect.top;
@@ -584,6 +588,7 @@ function startGame() {
             y > canvas.height - 100 && y < canvas.height - 50) {
             canvas.removeEventListener('click', handleStart);
             canvas.removeEventListener('touchstart', handleStart);
+            canvas.removeEventListener('touchend', handleStart);
             gameInterval = setInterval(update, 1000 / 60);
             zombieSpawnInterval = setInterval(spawnZombies, 5000);
         }
@@ -591,6 +596,7 @@ function startGame() {
     
     canvas.addEventListener('click', handleStart);
     canvas.addEventListener('touchstart', handleStart);
+    canvas.addEventListener('touchend', handleStart);
 }
 
 // ゲームの初期化
