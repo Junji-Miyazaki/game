@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>健康ロード：アドベンチャー</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f8ff;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 800px;
+        }
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 5px;
+            margin-top: 20px;
+            width: 100%;
+        }
+        .cell {
+            aspect-ratio: 1;
+            background-color: #ffebcd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #000;
+            border-radius: 5px;
+            font-size: 12px;
+            text-align: center;
+            position: relative;
+        }
+        .player {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            position: absolute;
+            transition: all 0.5s ease;
+        }
+        .destination {
+            border: 3px solid gold;
+            box-shadow: 0 0 10px gold;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .blink {
+            animation: blink 0.5s linear 3;
+        }
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        button {
+            margin: 5px;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #000;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        #player-info, #card-container, #event-info {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #fff;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        #dice-container {
+            font-size: 48px;
+            margin: 20px 0;
+            min-height: 60px;
+        }
+        .card {
+            display: inline-block;
+            width: 80px;
+            height: 120px;
+            margin: 5px;
+            padding: 5px;
+            border: 1px solid #000;
+            border-radius: 5px;
+            background-color: #f0f0f0;
+            cursor: pointer;
+            vertical-align: top;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-board"></div>
+        <div id="dice-container"></div>
+        <div id="controls">
+            <button id="roll-dice">サイコロを振る</button>
+        </div>
+        <div id="player-info">
+            <h3>プレイヤー1</h3>
+            <p>健康度: <span id="health-score">85</span></p>
+            <p>現在位置: <span id="current-position">4</span></p>
+            <p>総獲得ポイント: <span id="total-points">200</span></p>
+            <p>目的地: <span id="destination">0</span></p>
+        </div>
+        <div id="card-container">
+            <h3>所持カード</h3>
+        </div>
+        <div id="event-info"></div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const gameBoard = document.getElementById('game-board');
+        const rollDiceButton = document.getElementById('roll-dice');
+        const diceContainer = document.getElementById('dice-container');
+        const healthScoreElement = document.getElementById('health-score');
+        const currentPositionElement = document.getElementById('current-position');
+        const totalPointsElement = document.getElementById('total-points');
+        const destinationElement = document.getElementById('destination');
+        const eventInfoElement = document.getElementById('event-info');
+        const cardContainer = document.getElementById('card-container');
+
+        const boardSize = 50;
+        let playerPosition = 4;
+        let healthScore = 85;
+        let totalPoints = 200;
+        let destination = 0;
+        let playerCards = [];
+
+        const eventTypes = [
+            { type: '運動', color: '#90EE90', effect: 10, points: 20, description: 'ジョギングで体を動かしました！' },
+            { type: '食事', color: '#FFB6C1', effect: 5, points: 10, description: '栄養バランスの取れた食事をとりました。' },
+            { type: '休息', color: '#ADD8E6', effect: 15, points: 15, description: '十分な睡眠をとり、体を休めました。' },
+            { type: 'ストレス管理', color: '#DDA0DD', effect: 10, points: 15, description: '瞑想でストレスを解消しました。' },
+            { type: 'マイナス', color: '#FFA07A', effect: -15, points: -10, description: '夜更かしで体調を崩してしまいました。' },
+            { type: '特別イベント', color: '#FFFF00', effect: 0, points: 30, description: '健康フェアに参加し、たくさんの知識を得ました！' }
+        ];
+
+        const cardTypes = [
+            { name: '新幹線', effect: '好きな場所に移動', description: '好きな場所に移動できます。' },
+            { name: '健康ドリンク', effect: '健康度+20', description: '健康度を20ポイント回復します。' },
+            { name: '休息', effect: 'マイナス効果無効化', description: '次のマイナスイベントを無効化します。' },
+            { name: 'ボーナス', effect: '獲得ポイント2倍', description: '次のイベントで獲得するポイントが2倍になります。' }
+        ];
+
+        const initializeGame = () => {
+            for (let i = 0; i < boardSize; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.id = `cell-${i}`;
+                const event = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+                cell.style.backgroundColor = event.color;
+                cell.textContent = event.type;
+                gameBoard.appendChild(cell);
+            }
+            placePlayer(playerPosition);
+            setNewDestination();
+            updateDisplay();
+            givePlayerCard();
+            givePlayerCard();
+            givePlayerCard();
+        };
+
+        const placePlayer = (position) => {
+            const player = document.querySelector('.player') || document.createElement('div');
+            player.classList.add('player');
+            player.style.backgroundColor = '#ff6347';
+            const cell = document.getElementById(`cell-${position}`);
+            cell.appendChild(player);
+        };
+
+        const setNewDestination = () => {
+            const prevDestination = document.querySelector('.destination');
+            if (prevDestination) prevDestination.classList.remove('destination');
+            
+            destination = Math.floor(Math.random() * boardSize);
+            const destCell = document.getElementById(`cell-${destination}`);
+            destCell.classList.add('destination');
+            destinationElement.textContent = destination;
+        };
+
+        const updateDisplay = () => {
+            healthScoreElement.textContent = healthScore;
+            currentPositionElement.textContent = playerPosition;
+            totalPointsElement.textContent = totalPoints;
+            destinationElement.textContent = destination;
+        };
+
+        const givePlayerCard = () => {
+            if (playerCards.length < 3) {
+                const newCard = cardTypes[Math.floor(Math.random() * cardTypes.length)];
+                playerCards.push(newCard);
+                updateCardDisplay();
+            }
+        };
+
+        const updateCardDisplay = () => {
+            cardContainer.innerHTML = '<h3>所持カード</h3>';
+            playerCards.forEach((card, index) => {
+                const cardElement = document.createElement('div');
+                cardElement.classList.add('card');
+                cardElement.innerHTML = `
+                    <h4>${card.name}</h4>
+                    <p>${card.effect}</p>
+                `;
+                cardElement.addEventListener('click', () => useCard(index));
+                cardContainer.appendChild(cardElement);
+            });
+        };
+
+        const useCard = (index) => {
+            const card = playerCards[index];
+            let message = '';
+
+            switch(card.name) {
+                case '新幹線':
+                    const newPosition = prompt('移動先の位置を入力してください（0-49）:');
+                    if (newPosition !== null && !isNaN(newPosition) && newPosition >= 0 && newPosition < boardSize) {
+                        playerPosition = parseInt(newPosition);
+                        placePlayer(playerPosition);
+                        updateDisplay();
+                        message = `新幹線で${playerPosition}に移動しました！`;
+                    }
+                    break;
+                case '健康ドリンク':
+                    healthScore = Math.min(100, healthScore + 20);
+                    updateDisplay();
+                    message = '健康ドリンクで健康度が20回復しました！';
+                    break;
+                case '休息':
+                    // 効果は次のマイナスイベント時に適用
+                    message = '休息カードを使用しました。次のマイナスイベントが無効化されます。';
+                    break;
+                case 'ボーナス':
+                    // 効果は次のイベント時に適用
+                    message = 'ボーナスカードを使用しました。次のイベントでポイントが2倍になります。';
+                    break;
+            }
+
+            playerCards.splice(index, 1);
+            updateCardDisplay();
+            eventInfoElement.innerHTML = `<p>${message}</p>`;
+        };
+
+        const movePlayer = async (steps) => {
+            for (let i = 0; i < steps; i++) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                playerPosition = (playerPosition + 1) % boardSize;
+                placePlayer(playerPosition);
+                updateDisplay();
+            }
+
+            const cell = document.getElementById(`cell-${playerPosition}`);
+            cell.classList.add('blink');
+            setTimeout(() => cell.classList.remove('blink'), 1500);
+
+            const event = eventTypes.find(e => e.type === cell.textContent);
+            healthScore += event.effect;
+            healthScore = Math.max(0, Math.min(100, healthScore));
+            totalPoints += event.points;
+
+            updateDisplay();
+
+            eventInfoElement.innerHTML = `
+                <h4>${event.type}マスに到着！</h4>
+                <p>${event.description}</p>
+                <p>健康度: ${event.effect > 0 ? '+' : ''}${event.effect}</p>
+                <p>獲得ポイント: ${event.points > 0 ? '+' : ''}${event.points}</p>
+            `;
+
+            if (playerPosition === destination) {
+                const bonus = 50;
+                totalPoints += bonus;
+                updateDisplay();
+                eventInfoElement.innerHTML += `
+                    <h4>目的地に到着！</h4>
+                    <p>ボーナスポイント: +${bonus}</p>
+                `;
+                setNewDestination();
+            }
+
+            givePlayerCard();
+        };
+
+        const rollDice = () => {
+            return new Promise(resolve => {
+                const roll = setInterval(() => {
+                    diceContainer.textContent = Math.floor(Math.random() * 6) + 1;
+                }, 100);
+
+                setTimeout(() => {
+                    clearInterval(roll);
+                    const result = Math.floor(Math.random() * 6) + 1;
+                    diceContainer.textContent = result;
+                    resolve(result);
+                }, 1000);
+            });
+        };
+
+        rollDiceButton.addEventListener('click', async () => {
+            rollDiceButton.disabled = true;
+            const diceRoll = await rollDice();
+            await movePlayer(diceRoll);
+            rollDiceButton.disabled = false;
+        });
+
+        initializeGame();
+    });
+    </script>
+</body>
+</html>
