@@ -11,21 +11,22 @@
             flex-direction: column;
             align-items: center;
             margin: 0;
-            padding: 20px;
+            padding: 15px;
             background-color: #f0f8ff;
+            font-size: 14px;
         }
         #game-container {
             display: flex;
             flex-direction: column;
             align-items: center;
             width: 100%;
-            max-width: 800px;
+            max-width: 700px;
         }
         #game-board {
             display: grid;
             grid-template-columns: repeat(10, 1fr);
-            gap: 5px;
-            margin-top: 20px;
+            gap: 3px;
+            margin-top: 15px;
             width: 100%;
         }
         .cell {
@@ -35,21 +36,21 @@
             align-items: center;
             justify-content: center;
             border: 1px solid #000;
-            border-radius: 5px;
-            font-size: 12px;
+            border-radius: 4px;
+            font-size: 11px;
             text-align: center;
             position: relative;
         }
         .player {
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
             position: absolute;
             transition: all 0.5s ease;
         }
         .destination {
-            border: 3px solid gold;
-            box-shadow: 0 0 10px gold;
+            border: 2px solid gold;
+            box-shadow: 0 0 5px gold;
         }
         @keyframes blink {
             0% { opacity: 1; }
@@ -60,46 +61,54 @@
             animation: blink 0.5s linear 3;
         }
         #controls {
-            margin-top: 20px;
+            margin-top: 15px;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
         button {
             margin: 5px;
-            padding: 10px;
-            font-size: 16px;
-            border-radius: 5px;
+            padding: 8px 15px;
+            font-size: 14px;
+            border-radius: 4px;
             border: 1px solid #000;
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
         }
         #player-info, #card-container, #event-info {
-            margin-top: 20px;
-            padding: 10px;
+            margin-top: 15px;
+            padding: 8px;
             border: 1px solid #ccc;
-            border-radius: 5px;
+            border-radius: 4px;
             background-color: #fff;
             width: 100%;
             box-sizing: border-box;
         }
         #dice-container {
-            font-size: 48px;
-            margin: 20px 0;
-            min-height: 60px;
+            font-size: 36px;
+            margin: 15px 0;
+            min-height: 45px;
         }
         .card {
             display: inline-block;
-            width: 80px;
-            height: 120px;
-            margin: 5px;
-            padding: 5px;
+            width: 70px;
+            height: 105px;
+            margin: 4px;
+            padding: 4px;
             border: 1px solid #000;
-            border-radius: 5px;
+            border-radius: 4px;
             background-color: #f0f0f0;
             cursor: pointer;
             vertical-align: top;
+            font-size: 12px;
+        }
+        h3 {
+            margin: 8px 0;
+            font-size: 16px;
+        }
+        p {
+            margin: 5px 0;
         }
     </style>
 </head>
@@ -243,11 +252,9 @@
                     message = '健康ドリンクで健康度が20回復しました！';
                     break;
                 case '休息':
-                    // 効果は次のマイナスイベント時に適用
                     message = '休息カードを使用しました。次のマイナスイベントが無効化されます。';
                     break;
                 case 'ボーナス':
-                    // 効果は次のイベント時に適用
                     message = 'ボーナスカードを使用しました。次のイベントでポイントが2倍になります。';
                     break;
             }
