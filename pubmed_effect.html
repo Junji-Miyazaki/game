@@ -109,47 +109,47 @@ const exposureKeywords = [
 ];
 
 // PubMedで検索を行う関数
-async function searchPubMed(keyword1, keyword2) {
-  const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
-  const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(keyword1)}+AND+${encodeURIComponent(keyword2)}&retmax=1&format=json`;
-  
-  try {
-    const searchResponse = await fetch(searchUrl);
-    const searchData = await searchResponse.json();
-    const id = searchData.esearchresult.idlist[0];
-    
-    if (id) {
-      const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${id}&format=json`;
-      const summaryResponse = await fetch(summaryUrl);
-      const summaryData = await summaryResponse.json();
-      
-      return {
-        title: summaryData.result[id].title,
-        abstract: summaryData.result[id].abstract,
-        citation: `${summaryData.result[id].sorttitle}. ${summaryData.result[id].source}. ${summaryData.result[id].pubdate}.`,
-        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`
-      };
-    } else {
-      return null;
-    }
-  } catch (error) {
-    console.error('Error searching PubMed:', error);
-    return null;
-  }
-}
+        async function searchPubMed(keyword1, keyword2) {
+            const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+            const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(keyword1)}+AND+${encodeURIComponent(keyword2)}&retmax=1&format=json`;
+            
+            try {
+                const searchResponse = await fetch(searchUrl);
+                const searchData = await searchResponse.json();
+                const id = searchData.esearchresult.idlist[0];
+                
+                if (id) {
+                    const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${id}&format=json`;
+                    const summaryResponse = await fetch(summaryUrl);
+                    const summaryData = await summaryResponse.json();
+                    
+                    return {
+                        title: summaryData.result[id].title,
+                        abstract: summaryData.result[id].abstract,
+                        citation: `${summaryData.result[id].sorttitle}. ${summaryData.result[id].source}. ${summaryData.result[id].pubdate}.`,
+                        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`
+                    };
+                } else {
+                    return null;
+                }
+            } catch (error) {
+                console.error('Error searching PubMed:', error);
+                return null;
+            }
+        }
 
-// ランダムにキーワードを選択する関数（アウトカムと曝露・介入を分離）
-function selectRandomKeywords() {
-const outcome = outcomeKeywords[Math.floor(Math.random() * outcomeKeywords.length)];
-const exposure1 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
-const exposure2 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
-return [outcome, exposure1, exposure2];
-}
+        // ランダムにキーワードを選択する関数（アウトカムと曝露・介入を分離）
+        function selectRandomKeywords() {
+            const outcome = outcomeKeywords[Math.floor(Math.random() * outcomeKeywords.length)];
+            const exposure1 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
+            const exposure2 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
+            return [outcome, exposure1, exposure2];
+        }
 
-// ランダムなフォントサイズを生成する関数
+        // ランダムなフォントサイズを生成する関数
         function getRandomFontSize() {
-            const min = 12;
-            const max = 24;
+            const min = 30;
+            const max = 30;
             return Math.floor(Math.random() * (max - min + 1)) + min;
         }
 
@@ -167,13 +167,21 @@ return [outcome, exposure1, exposure2];
                 const result = await searchPubMed(outcome, `${exposure1} OR ${exposure2}`);
 
                 if (result) {
-                    newResultDiv.innerHTML += `
+                    let resultHTML = `
                         <h3 class="random-size">${result.title}</h3>
                         <p class="random-size"><strong>Citation:</strong> ${result.citation}</p>
-                        <p class="random-size"><strong>Abstract:</strong> ${result.abstract}</p>
+                    `;
+                    
+                    if (result.abstract) {
+                        resultHTML += `<p class="random-size"><strong>Abstract:</strong> ${result.abstract}</p>`;
+                    }
+                    
+                    resultHTML += `
                         <p class="random-size"><a href="${result.url}" target="_blank">View on PubMed</a></p>
                         <hr>
                     `;
+                    
+                    newResultDiv.innerHTML += resultHTML;
                     newResultDiv.querySelectorAll('.random-size').forEach(el => {
                         el.style.setProperty('--random-size', `${getRandomFontSize()}px`);
                     });
