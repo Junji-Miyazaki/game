@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PubMed Search with Animated Display</title>
+    <title>PubMed Search with Animated Display (Debug)</title>
     <style>
         body {
             background-color: black;
@@ -20,194 +20,157 @@
             transition: opacity 2s;
             font-size: 16px;
         }
+        #debug-info {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
+    <div id="debug-info"></div>
     <div id="animation-container"></div>
 
     <script>
-    // アウトカムのキーワードリスト
-    const outcomeKeywords = [
-      "Cardiovascular Disease Incidence", "Cardiovascular Mortality",
-      "Coronary Artery Disease", "Acute Coronary Syndrome", "Angina Pectoris",
-      "Myocardial Ischemia", "Coronary Artery Calcification", "Coronary Plaque",
-      "Sudden Cardiac Death", "Peripheral Artery Disease", "Aortic Disease",
-      "Valvular Heart Disease", "Myocardial Infarction Incidence", "Myocardial Infarction Mortality",
-      "ST-Elevation Myocardial Infarction", "Non-ST-Elevation Myocardial Infarction",
-      "Acute Myocardial Infarction", "Reperfusion Injury", "Myocardial Necrosis",
-      "Myocardial Troponin", "Creatine Kinase", "Left Ventricular Remodeling",
-      "Post-Myocardial Infarction Complications", "Silent Myocardial Infarction",
-      "Heart Failure Incidence", "Heart Failure Hospitalization",
-      "Acute Heart Failure", "Chronic Heart Failure", "Systolic Dysfunction",
-      "Diastolic Dysfunction", "Congestive Heart Failure", "Left Ventricular Ejection Fraction",
-      "Cardiac Remodeling", "Heart Failure Exacerbation", "Heart Failure Biomarkers",
-      "Stroke Incidence", "Stroke Mortality", "Ischemic Stroke Outcome",
-      "Hemorrhagic Stroke Outcome", "Stroke Severity", "Stroke Recovery",
-      "Stroke Rehabilitation Outcome", "Functional Outcome after Stroke",
-      "Post-Stroke Disability", "Post-Stroke Cognitive Impairment",
-      "Stroke Recurrence", "Long-term Stroke Prognosis", "Transient Ischemic Attack",
-      "Cerebral Infarction", "Cerebral Hemorrhage", "Subarachnoid Hemorrhage",
-      "Cerebral Thrombosis", "Cerebral Embolism", "Atherosclerotic Disease Progression",
-      "Atheroma", "Carotid Atherosclerosis", "Aortic Atherosclerosis", "Coronary Atherosclerosis",
-      "Peripheral Atherosclerosis", "Endothelial Dysfunction", "Vascular Calcification",
-      "Plaque Rupture", "Vascular Inflammation", "Vascular Remodeling",
-      "Hypertension Incidence", "Diabetes Mellitus Onset", "Dyslipidemia Prevalence",
-      "Obesity Trends", "Metabolic Syndrome Development", "Smoking Effects",
-      "Physical Inactivity Consequences", "Stress Impact on Cardiovascular Health",
-      "Family History of Cardiovascular Disease", "Genetic Predisposition to Cardiovascular Disease",
-      "Cardiovascular Event Onset", "Sudden Cardiac Death Incidence",
-      "All-Cause Mortality", "Cardiovascular Mortality Rate", "Survival Rate",
-      "Recurrence Rate", "Prognosis Prediction", "Long-term Cardiovascular Outcomes",
-      "Mortality Risk", "Life Expectancy with Cardiovascular Disease",
-      "Childhood Atopic Dermatitis", "Pediatric Asthma", "Allergic Rhinitis in Children",
-      "Food Allergies in Children", "Anaphylaxis in Children", "Allergy March",
-      "Wheezing in Infants", "Childhood Eczema", "Pediatric Hay Fever", "Childhood Urticaria",
-      "Preterm Birth", "Low Birth Weight", "Intrauterine Growth Restriction",
-      "Macrosomia", "Congenital Anomalies", "Neonatal Asphyxia", "Perinatal Mortality",
-      "Fetal Distress", "Pregnancy-Induced Hypertension", "Gestational Diabetes"
-    ];
-
-    // 曝露・介入のキーワードリスト
-    const exposureKeywords = [
-      "Lead Exposure", "Mercury Poisoning", "Cadmium Toxicity", "Arsenic Contamination",
-      "Aluminum Exposure", "Chromium Toxicity", "Nickel Allergy", "Copper Overload",
-      "Zinc Deficiency", "Iron Overload", "Bisphenol A Exposure", "Phthalates in Environment",
-      "Pesticide Residues", "Polychlorinated Biphenyls", "Dioxins", "Perfluoroalkyl Substances",
-      "Flame Retardants", "Microplastics Ingestion", "Air Pollution Particles",
-      "Volatile Organic Compounds", "Hospital Admission Factors", "Length of Stay",
-      "Intensive Care Unit Treatment", "Mechanical Ventilation", "Antibiotic Therapy",
-      "Surgical Intervention", "Medication Adherence", "Patient-Nurse Ratio",
-      "Hospital-Acquired Infections", "Emergency Department Crowding",
-      "Socioeconomic Status", "Education Level", "Income Inequality",
-      "Unemployment Impact", "Health Insurance Coverage", "Access to Healthcare",
-      "Neighborhood Deprivation", "Social Support Networks", "Occupational Hazards",
-      "Housing Conditions", "Dietary Patterns", "Nutrient Deficiencies",
-      "Omega-3 Fatty Acids Intake", "Antioxidant Consumption", "Fiber Intake",
-      "Vitamin D Status", "Folic Acid Supplementation", "Protein Quality",
-      "Glycemic Index of Diet", "Mediterranean Diet Adherence", "Sleep Duration",
-      "Sleep Quality", "Sleep Apnea", "Insomnia", "Circadian Rhythm Disruption",
-      "Shift Work Sleep Disorder", "Napping Habits", "Sleep Hygiene Practices",
-      "Melatonin Levels", "REM Sleep Behavior Disorder", "Physical Activity Levels",
-      "Sedentary Behavior", "Alcohol Consumption Patterns", "Smoking Status",
-      "Stress Management Techniques", "Body Mass Index", "Waist Circumference",
-      "Blood Pressure Variability", "Glycemic Control", "Lipid Profile"
-    ];
+    // キーワードリストは省略（前回と同じ）
 
     const texts = [];
     const container = document.getElementById('animation-container');
+    const debugInfo = document.getElementById('debug-info');
+
+    // デバッグ情報を表示する関数
+    function updateDebugInfo(message) {
+        debugInfo.innerHTML += message + '<br>';
+        console.log(message);
+    }
 
     // PubMedで検索を行う関数
     async function searchPubMed(keyword1, keyword2) {
-      const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
-      const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(keyword1)}+AND+${encodeURIComponent(keyword2)}&retmax=1&format=json`;
-      
-      try {
-        const searchResponse = await fetch(searchUrl);
-        const searchData = await searchResponse.json();
-        const id = searchData.esearchresult.idlist[0];
+        updateDebugInfo(`Searching PubMed for: ${keyword1} AND (${keyword2})`);
+        const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+        const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(keyword1)}+AND+${encodeURIComponent(keyword2)}&retmax=1&format=json`;
         
-        if (id) {
-          const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${id}&format=json`;
-          const summaryResponse = await fetch(summaryUrl);
-          const summaryData = await summaryResponse.json();
-          
-          return {
-            title: summaryData.result[id].title,
-            abstract: summaryData.result[id].abstract,
-            citation: `${summaryData.result[id].sorttitle}. ${summaryData.result[id].source}. ${summaryData.result[id].pubdate}.`,
-            url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`
-          };
-        } else {
-          return null;
+        try {
+            const searchResponse = await fetch(searchUrl);
+            const searchData = await searchResponse.json();
+            updateDebugInfo('Search response received');
+            const id = searchData.esearchresult.idlist[0];
+            
+            if (id) {
+                const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${id}&format=json`;
+                const summaryResponse = await fetch(summaryUrl);
+                const summaryData = await summaryResponse.json();
+                updateDebugInfo('Summary data received');
+                
+                return {
+                    title: summaryData.result[id].title,
+                    abstract: summaryData.result[id].abstract,
+                    citation: `${summaryData.result[id].sorttitle}. ${summaryData.result[id].source}. ${summaryData.result[id].pubdate}.`,
+                    url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`
+                };
+            } else {
+                updateDebugInfo('No results found');
+                return null;
+            }
+        } catch (error) {
+            updateDebugInfo(`Error searching PubMed: ${error.message}`);
+            return null;
         }
-      } catch (error) {
-        console.error('Error searching PubMed:', error);
-        return null;
-      }
     }
 
     // ランダムにキーワードを選択する関数
     function selectRandomKeywords() {
-      const outcome = outcomeKeywords[Math.floor(Math.random() * outcomeKeywords.length)];
-      const exposure1 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
-      const exposure2 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
-      return [outcome, exposure1, exposure2];
+        const outcome = outcomeKeywords[Math.floor(Math.random() * outcomeKeywords.length)];
+        const exposure1 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
+        const exposure2 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
+        return [outcome, exposure1, exposure2];
     }
 
     // テキストアニメーションを作成する関数
     function createTextElement() {
-      if (texts.length === 0) return;
+        if (texts.length === 0) {
+            updateDebugInfo('No texts available for animation');
+            return;
+        }
 
-      const text = texts[Math.floor(Math.random() * texts.length)];
-      const textElement = document.createElement('div');
-      textElement.className = 'text-container';
-      textElement.textContent = text;
-      
-      // ランダムな初期位置
-      const startPosition = Math.random() * 100;
-      const isVertical = Math.random() < 0.5;
-      
-      if (isVertical) {
-        textElement.style.top = `${startPosition}vh`;
-        textElement.style.left = `${Math.random() * 100}vw`;
-        textElement.style.transform = 'rotate(90deg)';
-      } else {
-        textElement.style.top = `${Math.random() * 100}vh`;
-        textElement.style.left = `${startPosition}vw`;
-      }
+        const text = texts[Math.floor(Math.random() * texts.length)];
+        const textElement = document.createElement('div');
+        textElement.className = 'text-container';
+        textElement.textContent = text;
+        
+        // ランダムな初期位置
+        const startPosition = Math.random() * 100;
+        const isVertical = Math.random() < 0.5;
+        
+        if (isVertical) {
+            textElement.style.top = `${startPosition}vh`;
+            textElement.style.left = `${Math.random() * 100}vw`;
+            textElement.style.transform = 'rotate(90deg)';
+        } else {
+            textElement.style.top = `${Math.random() * 100}vh`;
+            textElement.style.left = `${startPosition}vw`;
+        }
 
-      container.appendChild(textElement);
+        container.appendChild(textElement);
+        updateDebugInfo('New text element created');
 
-      // フェードイン
-      setTimeout(() => {
-        textElement.style.opacity = '1';
-      }, 100);
-
-      // アニメーション
-      const duration = 5000 + Math.random() * 10000; // 5-15秒
-      const distance = 50 + Math.random() * 100; // 50-150%
-
-      textElement.animate([
-        { [isVertical ? 'top' : 'left']: `${startPosition}%` },
-        { [isVertical ? 'top' : 'left']: `${startPosition + distance}%` }
-      ], {
-        duration: duration,
-        easing: 'linear'
-      });
-
-      // フェードアウトと要素の削除
-      setTimeout(() => {
-        textElement.style.opacity = '0';
+        // フェードイン
         setTimeout(() => {
-          container.removeChild(textElement);
-        }, 2000);
-      }, duration - 2000);
+            textElement.style.opacity = '1';
+        }, 100);
+
+        // アニメーション
+        const duration = 5000 + Math.random() * 10000; // 5-15秒
+        const distance = 50 + Math.random() * 100; // 50-150%
+
+        textElement.animate([
+            { [isVertical ? 'top' : 'left']: `${startPosition}%` },
+            { [isVertical ? 'top' : 'left']: `${startPosition + distance}%` }
+        ], {
+            duration: duration,
+            easing: 'linear'
+        });
+
+        // フェードアウトと要素の削除
+        setTimeout(() => {
+            textElement.style.opacity = '0';
+            setTimeout(() => {
+                container.removeChild(textElement);
+                updateDebugInfo('Text element removed');
+            }, 2000);
+        }, duration - 2000);
     }
 
     // PubMed検索結果を処理する関数
     function processPubMedResult(result) {
-      if (result && result.title && result.abstract) {
-        texts.push(result.title);
-        // アブストラクトを短い文に分割
-        const sentences = result.abstract.split('. ');
-        texts.push(...sentences);
-      }
+        if (result && result.title && result.abstract) {
+            texts.push(result.title);
+            // アブストラクトを短い文に分割
+            const sentences = result.abstract.split('. ');
+            texts.push(...sentences);
+            updateDebugInfo(`Processed result: ${result.title}`);
+        } else {
+            updateDebugInfo('No valid result to process');
+        }
     }
 
     // メイン処理
     async function main() {
-      while (true) {
-        const [outcome, exposure1, exposure2] = selectRandomKeywords();
-        console.log(`Searching: ${outcome}, ${exposure1}, ${exposure2}`);
-        
-        const result = await searchPubMed(outcome, `${exposure1} OR ${exposure2}`);
-        
-        if (result) {
-          processPubMedResult(result);
+        while (true) {
+            const [outcome, exposure1, exposure2] = selectRandomKeywords();
+            updateDebugInfo(`Selected keywords: ${outcome}, ${exposure1}, ${exposure2}`);
+            
+            const result = await searchPubMed(outcome, `${exposure1} OR ${exposure2}`);
+            
+            if (result) {
+                processPubMedResult(result);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 5000)); // 5秒待機
         }
-        
-        await new Promise(resolve => setTimeout(resolve, 5000)); // 5秒待機
-      }
     }
 
     // 定期的に新しいテキスト要素を作成
