@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PubMed Search with Animated Display (Debug)</title>
+    <title>Simple Text Animation</title>
     <style>
         body {
             background-color: black;
@@ -18,166 +18,74 @@
             white-space: nowrap;
             opacity: 0;
             transition: opacity 2s;
-            font-size: 16px;
-        }
-        #debug-info {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            z-index: 1000;
         }
     </style>
 </head>
 <body>
-    <div id="debug-info"></div>
     <div id="animation-container"></div>
 
     <script>
-    // キーワードリストは省略（前回と同じ）
+        const container = document.getElementById('animation-container');
+        const texts = [
+            "心臓病", "脳卒中", "高血圧", "糖尿病", "肥満", 
+            "運動", "健康的な食事", "睡眠", "ストレス管理", "禁煙"
+        ];
+        const colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8"];
 
-    const texts = [];
-    const container = document.getElementById('animation-container');
-    const debugInfo = document.getElementById('debug-info');
-
-    // デバッグ情報を表示する関数
-    function updateDebugInfo(message) {
-        debugInfo.innerHTML += message + '<br>';
-        console.log(message);
-    }
-
-    // PubMedで検索を行う関数
-    async function searchPubMed(keyword1, keyword2) {
-        updateDebugInfo(`Searching PubMed for: ${keyword1} AND (${keyword2})`);
-        const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
-        const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(keyword1)}+AND+${encodeURIComponent(keyword2)}&retmax=1&format=json`;
-        
-        try {
-            const searchResponse = await fetch(searchUrl);
-            const searchData = await searchResponse.json();
-            updateDebugInfo('Search response received');
-            const id = searchData.esearchresult.idlist[0];
+        function createTextElement() {
+            const text = texts[Math.floor(Math.random() * texts.length)];
+            const textElement = document.createElement('div');
+            textElement.className = 'text-container';
+            textElement.textContent = text;
             
-            if (id) {
-                const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${id}&format=json`;
-                const summaryResponse = await fetch(summaryUrl);
-                const summaryData = await summaryResponse.json();
-                updateDebugInfo('Summary data received');
-                
-                return {
-                    title: summaryData.result[id].title,
-                    abstract: summaryData.result[id].abstract,
-                    citation: `${summaryData.result[id].sorttitle}. ${summaryData.result[id].source}. ${summaryData.result[id].pubdate}.`,
-                    url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`
-                };
+            // ランダムなスタイル
+            const fontSize = 20 + Math.random() * 80; // 20px から 100px
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            textElement.style.fontSize = `${fontSize}px`;
+            textElement.style.color = color;
+            
+            // ランダムな初期位置と移動方向
+            const isVertical = Math.random() < 0.5;
+            const startPosition = Math.random() * 100;
+            
+            if (isVertical) {
+                textElement.style.left = `${Math.random() * 100}vw`;
+                textElement.style.top = `${startPosition}vh`;
             } else {
-                updateDebugInfo('No results found');
-                return null;
+                textElement.style.top = `${Math.random() * 100}vh`;
+                textElement.style.left = `${startPosition}vw`;
             }
-        } catch (error) {
-            updateDebugInfo(`Error searching PubMed: ${error.message}`);
-            return null;
-        }
-    }
 
-    // ランダムにキーワードを選択する関数
-    function selectRandomKeywords() {
-        const outcome = outcomeKeywords[Math.floor(Math.random() * outcomeKeywords.length)];
-        const exposure1 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
-        const exposure2 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
-        return [outcome, exposure1, exposure2];
-    }
+            container.appendChild(textElement);
 
-    // テキストアニメーションを作成する関数
-    function createTextElement() {
-        if (texts.length === 0) {
-            updateDebugInfo('No texts available for animation');
-            return;
-        }
-
-        const text = texts[Math.floor(Math.random() * texts.length)];
-        const textElement = document.createElement('div');
-        textElement.className = 'text-container';
-        textElement.textContent = text;
-        
-        // ランダムな初期位置
-        const startPosition = Math.random() * 100;
-        const isVertical = Math.random() < 0.5;
-        
-        if (isVertical) {
-            textElement.style.top = `${startPosition}vh`;
-            textElement.style.left = `${Math.random() * 100}vw`;
-            textElement.style.transform = 'rotate(90deg)';
-        } else {
-            textElement.style.top = `${Math.random() * 100}vh`;
-            textElement.style.left = `${startPosition}vw`;
-        }
-
-        container.appendChild(textElement);
-        updateDebugInfo('New text element created');
-
-        // フェードイン
-        setTimeout(() => {
-            textElement.style.opacity = '1';
-        }, 100);
-
-        // アニメーション
-        const duration = 5000 + Math.random() * 10000; // 5-15秒
-        const distance = 50 + Math.random() * 100; // 50-150%
-
-        textElement.animate([
-            { [isVertical ? 'top' : 'left']: `${startPosition}%` },
-            { [isVertical ? 'top' : 'left']: `${startPosition + distance}%` }
-        ], {
-            duration: duration,
-            easing: 'linear'
-        });
-
-        // フェードアウトと要素の削除
-        setTimeout(() => {
-            textElement.style.opacity = '0';
+            // フェードイン
             setTimeout(() => {
-                container.removeChild(textElement);
-                updateDebugInfo('Text element removed');
-            }, 2000);
-        }, duration - 2000);
-    }
+                textElement.style.opacity = '1';
+            }, 100);
 
-    // PubMed検索結果を処理する関数
-    function processPubMedResult(result) {
-        if (result && result.title && result.abstract) {
-            texts.push(result.title);
-            // アブストラクトを短い文に分割
-            const sentences = result.abstract.split('. ');
-            texts.push(...sentences);
-            updateDebugInfo(`Processed result: ${result.title}`);
-        } else {
-            updateDebugInfo('No valid result to process');
+            // アニメーション
+            const duration = 5000 + Math.random() * 10000; // 5-15秒
+            const distance = 50 + Math.random() * 100; // 50-150%
+
+            const animation = textElement.animate([
+                { [isVertical ? 'top' : 'left']: `${startPosition}%` },
+                { [isVertical ? 'top' : 'left']: `${startPosition + distance}%` }
+            ], {
+                duration: duration,
+                easing: 'linear'
+            });
+
+            // フェードアウトと要素の削除
+            animation.onfinish = () => {
+                textElement.style.opacity = '0';
+                setTimeout(() => {
+                    container.removeChild(textElement);
+                }, 2000);
+            };
         }
-    }
 
-    // メイン処理
-    async function main() {
-        while (true) {
-            const [outcome, exposure1, exposure2] = selectRandomKeywords();
-            updateDebugInfo(`Selected keywords: ${outcome}, ${exposure1}, ${exposure2}`);
-            
-            const result = await searchPubMed(outcome, `${exposure1} OR ${exposure2}`);
-            
-            if (result) {
-                processPubMedResult(result);
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, 5000)); // 5秒待機
-        }
-    }
-
-    // 定期的に新しいテキスト要素を作成
-    setInterval(createTextElement, 2000);
-
-    // メイン処理を開始
-    main();
+        // 定期的に新しいテキスト要素を作成
+        setInterval(createTextElement, 1000);
     </script>
 </body>
 </html>
