@@ -154,24 +154,24 @@ async function main() {
     resultDiv.appendChild(newResultDiv);
     
     const result = await searchPubMed(outcome, `${exposure1} OR ${exposure2}`);
-    
-    if (result) {
-      newResultDiv.innerHTML += `
-        <h3>${result.title}</h3>
-        <p><strong>Citation:</strong> ${result.citation}</p>
-        <p><strong>Abstract:</strong> ${result.abstract}</p>
-        <p><a href="${result.url}" target="_blank">View on PubMed</a></p>
-        <hr>
-      `;
-    } else {
-      newResultDiv.innerHTML += '<p>No results found or an error occurred.</p><hr>';
-    }
-    
-    // 新しい結果にスクロール
-    newResultDiv.scrollIntoView({ behavior: 'smooth' });
-    
-    // 次の検索までの待機時間（ミリ秒）
-    await new Promise(resolve => setTimeout(resolve, 1000));
+
+if (result) {
+  newResultDiv.innerHTML += `
+    <h3>${result.title}</h3>
+    <p><strong>Citation:</strong> ${result.citation}</p>
+    <p><strong>Abstract:</strong> ${result.abstract}</p>
+    <p><a href="${result.url}" target="_blank">View on PubMed</a></p>
+    <hr>
+  `;
+} else {
+  newResultDiv.innerHTML += '<p>No results found or an error occurred.</p><hr>';
+}
+
+// 新しい結果にスクロール
+newResultDiv.scrollIntoView({ behavior: 'smooth' });
+
+// 次の検索までの待機時間（ミリ秒）
+await new Promise(resolve => setTimeout(resolve, 1000));
   }
 }
 
