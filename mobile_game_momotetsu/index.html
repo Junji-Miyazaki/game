@@ -20,13 +20,13 @@
             flex-direction: column;
             align-items: center;
             width: 100%;
-            max-width: 700px;
+            max-width: 800px;
         }
         #game-board {
             display: grid;
             grid-template-columns: repeat(10, 1fr);
-            gap: 3px;
-            margin-top: 15px;
+            gap: 2px;
+            margin-top: 20px;
             width: 100%;
         }
         .cell {
@@ -36,10 +36,10 @@
             align-items: center;
             justify-content: center;
             border: 1px solid #000;
-            border-radius: 4px;
-            font-size: 11px;
+            font-size: 10px;
             text-align: center;
             position: relative;
+            cursor: pointer;
         }
         .player {
             width: 16px;
@@ -47,24 +47,24 @@
             border-radius: 50%;
             position: absolute;
             transition: all 0.5s ease;
+            z-index: 10;
         }
         .destination {
             border: 2px solid gold;
             box-shadow: 0 0 5px gold;
         }
-        @keyframes blink {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+        .level-change {
+            border: 2px solid purple;
+            box-shadow: 0 0 5px purple;
         }
-        .blink {
-            animation: blink 0.5s linear 3;
-        }
-        #controls {
+        #controls, #player-info, #card-container, #event-info {
             margin-top: 15px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fff;
+            width: 100%;
+            box-sizing: border-box;
         }
         button {
             margin: 5px;
@@ -75,15 +75,6 @@
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
-        }
-        #player-info, #card-container, #event-info {
-            margin-top: 15px;
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            background-color: #fff;
-            width: 100%;
-            box-sizing: border-box;
         }
         #dice-container {
             font-size: 36px;
@@ -103,13 +94,6 @@
             vertical-align: top;
             font-size: 12px;
         }
-        h3 {
-            margin: 8px 0;
-            font-size: 16px;
-        }
-        p {
-            margin: 5px 0;
-        }
     </style>
 </head>
 <body>
@@ -122,9 +106,10 @@
         <div id="player-info">
             <h3>プレイヤー1</h3>
             <p>健康度: <span id="health-score">85</span></p>
-            <p>現在位置: <span id="current-position">4</span></p>
+            <p>現在位置: <span id="current-position">0</span></p>
             <p>総獲得ポイント: <span id="total-points">200</span></p>
             <p>目的地: <span id="destination">0</span></p>
+            <p>現在の階層: <span id="current-level">1</span></p>
         </div>
         <div id="card-container">
             <h3>所持カード</h3>
@@ -141,15 +126,21 @@
         const currentPositionElement = document.getElementById('current-position');
         const totalPointsElement = document.getElementById('total-points');
         const destinationElement = document.getElementById('destination');
+        const currentLevelElement = document.getElementById('current-level');
         const eventInfoElement = document.getElementById('event-info');
         const cardContainer = document.getElementById('card-container');
 
-        const boardSize = 50;
-        let playerPosition = 4;
+        const boardSize = 100;
+        const boardWidth = 10;
+        const boardHeight = 10;
+        const levelCount = 4;
+        let playerPosition = 0;
+        let currentLevel = 0;
         let healthScore = 85;
         let totalPoints = 200;
         let destination = 0;
         let playerCards = [];
+        let gameMaps = [];
 
         const eventTypes = [
             { type: '運動', color: '#90EE90', effect: 10, points: 20, description: 'ジョギングで体を動かしました！' },
@@ -157,7 +148,8 @@
             { type: '休息', color: '#ADD8E6', effect: 15, points: 15, description: '十分な睡眠をとり、体を休めました。' },
             { type: 'ストレス管理', color: '#DDA0DD', effect: 10, points: 15, description: '瞑想でストレスを解消しました。' },
             { type: 'マイナス', color: '#FFA07A', effect: -15, points: -10, description: '夜更かしで体調を崩してしまいました。' },
-            { type: '特別イベント', color: '#FFFF00', effect: 0, points: 30, description: '健康フェアに参加し、たくさんの知識を得ました！' }
+            { type: '特別イベント', color: '#FFFF00', effect: 0, points: 30, description: '健康フェアに参加し、たくさんの知識を得ました！' },
+            { type: '階層移動', color: '#8A2BE2', effect: 0, points: 0, description: '階層を移動できます！' }
         ];
 
         const cardTypes = [
@@ -168,21 +160,82 @@
         ];
 
         const initializeGame = () => {
-            for (let i = 0; i < boardSize; i++) {
-                const cell = document.createElement('div');
-                cell.classList.add('cell');
-                cell.id = `cell-${i}`;
-                const event = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-                cell.style.backgroundColor = event.color;
-                cell.textContent = event.type;
-                gameBoard.appendChild(cell);
+            for (let level = 0; level < levelCount; level++) {
+                gameMaps[level] = generateMap(level);
             }
+            renderMap();
             placePlayer(playerPosition);
             setNewDestination();
             updateDisplay();
             givePlayerCard();
             givePlayerCard();
             givePlayerCard();
+        };
+
+        const generateMap = (level) => {
+            const map = [];
+            for (let i = 0; i < boardSize; i++) {
+                const event = i % 10 === 0 && i !== 0 ? eventTypes[6] : eventTypes[Math.floor(Math.random() * (eventTypes.length - 1))];
+                map.push({
+                    id: i,
+                    event: event,
+                    level: level
+                });
+            }
+            return map;
+        };
+
+        const renderMap = () => {
+            gameBoard.innerHTML = '';
+            const currentMap = gameMaps[currentLevel];
+            for (let i = 0; i < boardSize; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.id = `cell-${i}`;
+                cell.style.backgroundColor = currentMap[i].event.color;
+                cell.textContent = currentMap[i].event.type;
+                if (currentMap[i].event.type === '階層移動') {
+                    cell.classList.add('level-change');
+                }
+                gameBoard.appendChild(cell);
+            }
+        };
+
+        const moveToCell = async (cellId, remainingSteps) => {
+            playerPosition = cellId;
+            placePlayer(playerPosition);
+            updateDisplay();
+            const currentMap = gameMaps[currentLevel];
+            const event = currentMap[playerPosition].event;
+
+            if (event.type === '階層移動' && remainingSteps > 0) {
+                const changeLevel = await askForLevelChange();
+                if (changeLevel) {
+                    currentLevel = (currentLevel + 1) % levelCount;
+                    renderMap();
+                    placePlayer(playerPosition);
+                    updateDisplay();
+                    eventInfoElement.innerHTML += `<p>階層${currentLevel + 1}に移動しました。</p>`;
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await moveToCell(playerPosition, remainingSteps - 1);
+                    return;
+                }
+            }
+
+            processEvent(event);
+
+            if (remainingSteps > 0) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const nextPosition = (playerPosition + 1) % boardSize;
+                await moveToCell(nextPosition, remainingSteps - 1);
+            }
+        };
+
+        const askForLevelChange = () => {
+            return new Promise(resolve => {
+                const confirmChange = confirm('階層を移動しますか？');
+                resolve(confirmChange);
+            });
         };
 
         const placePlayer = (position) => {
@@ -208,6 +261,7 @@
             currentPositionElement.textContent = playerPosition;
             totalPointsElement.textContent = totalPoints;
             destinationElement.textContent = destination;
+            currentLevelElement.textContent = currentLevel + 1;
         };
 
         const givePlayerCard = () => {
@@ -238,7 +292,7 @@
 
             switch(card.name) {
                 case '新幹線':
-                    const newPosition = prompt('移動先の位置を入力してください（0-49）:');
+                    const newPosition = prompt('移動先の位置を入力してください（0-99）:');
                     if (newPosition !== null && !isNaN(newPosition) && newPosition >= 0 && newPosition < boardSize) {
                         playerPosition = parseInt(newPosition);
                         placePlayer(playerPosition);
@@ -264,19 +318,7 @@
             eventInfoElement.innerHTML = `<p>${message}</p>`;
         };
 
-        const movePlayer = async (steps) => {
-            for (let i = 0; i < steps; i++) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                playerPosition = (playerPosition + 1) % boardSize;
-                placePlayer(playerPosition);
-                updateDisplay();
-            }
-
-            const cell = document.getElementById(`cell-${playerPosition}`);
-            cell.classList.add('blink');
-            setTimeout(() => cell.classList.remove('blink'), 1500);
-
-            const event = eventTypes.find(e => e.type === cell.textContent);
+        const processEvent = (event) => {
             healthScore += event.effect;
             healthScore = Math.max(0, Math.min(100, healthScore));
             totalPoints += event.points;
@@ -304,7 +346,7 @@
             givePlayerCard();
         };
 
-        const rollDice = () => {
+       const rollDice = () => {
             return new Promise(resolve => {
                 const roll = setInterval(() => {
                     diceContainer.textContent = Math.floor(Math.random() * 6) + 1;
@@ -322,7 +364,14 @@
         rollDiceButton.addEventListener('click', async () => {
             rollDiceButton.disabled = true;
             const diceRoll = await rollDice();
-            await movePlayer(diceRoll);
+            
+            eventInfoElement.innerHTML = `
+                <h4>サイコロの目: ${diceRoll}</h4>
+                <p>移動を開始します。</p>
+            `;
+
+            await moveToCell(playerPosition, diceRoll);
+            
             rollDiceButton.disabled = false;
         });
 

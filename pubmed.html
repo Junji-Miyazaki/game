@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PubMed Keyword Search</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        // キーワードリスト
+// アウトカムのキーワードリスト
+const outcomeKeywords = [
+  "Cardiovascular Disease Incidence", "Cardiovascular Mortality",
+  "Stroke Incidence", "Stroke Mortality", "Ischemic Stroke Outcome",
+  "Hemorrhagic Stroke Outcome", "Stroke Severity", "Stroke Recovery",
+  "Stroke Rehabilitation Outcome", "Functional Outcome after Stroke",
+  "Post-Stroke Disability", "Post-Stroke Cognitive Impairment",
+  "Stroke Recurrence", "Long-term Stroke Prognosis",
+  "Acute Stroke Outcome", "In-hospital Stroke Mortality",
+  "30-day Stroke Mortality", "1-year Stroke Mortality",
+  "5-year Stroke Survival", "Stroke-related Quality of Life",
+  "Post-Stroke Depression", "Stroke Discharge Disposition",
+  "Myocardial Infarction Incidence", "Myocardial Infarction Mortality",
+  "Heart Failure Incidence", "Heart Failure Hospitalization",
+  "Cardiovascular Event-free Survival", "Major Adverse Cardiovascular Events",
+  "Cardiovascular Risk Reduction", "Atrial Fibrillation Incidence",
+  "Coronary Heart Disease Mortality", "Peripheral Artery Disease Progression"
+];
+
+// 曝露・介入のキーワードリスト
+const exposureKeywords = [
+  // リスクファクター
+  "Hypertension", "Diabetes Mellitus", "Hyperlipidemia", "Obesity",
+  "Smoking", "Physical Inactivity", "Alcohol Consumption", "Diet",
+  "Stress", "Sleep Disorders", "Air Pollution", "Socioeconomic Status",
+  
+  // 生活習慣介入
+  "Exercise Therapy", "Dietary Intervention", "Weight Loss",
+  "Smoking Cessation", "Stress Management", "Sleep Hygiene",
+  
+  // 薬物療法
+  "Antihypertensive Medication", "Statins", "Antiplatelet Therapy",
+  "Anticoagulation", "Thrombolysis", "Neuroprotective Agents",
+  
+  // 手術・処置
+  "Carotid Endarterectomy", "Stenting", "Thrombectomy",
+  "Cardiac Rehabilitation", "Stroke Unit Care",
+  
+  // 予防
+  "Primary Prevention", "Secondary Prevention", "Risk Factor Management",
+  
+  // 診断・モニタリング
+  "Neuroimaging", "Biomarkers", "Telemedicine", "Mobile Health",
+  
+  // その他の関連要因
+  "Genetic Factors", "Inflammation", "Oxidative Stress",
+  "Endothelial Dysfunction", "Arterial Stiffness", "Blood Pressure Variability",
+  "Atrial Fibrillation", "Atherosclerosis", "Carotid Intima-Media Thickness"
+];
+
+// PubMedで検索を行う関数
+async function searchPubMed(keyword1, keyword2) {
+  const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+  const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(keyword1)}+AND+${encodeURIComponent(keyword2)}&retmax=1&format=json`;
+  
+  try {
+    const searchResponse = await fetch(searchUrl);
+    const searchData = await searchResponse.json();
+    const id = searchData.esearchresult.idlist[0];
+    
+    if (id) {
+      const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${id}&format=json`;
+      const summaryResponse = await fetch(summaryUrl);
+      const summaryData = await summaryResponse.json();
+      
+      return {
+        title: summaryData.result[id].title,
+        abstract: summaryData.result[id].abstract,
+        citation: `${summaryData.result[id].sorttitle}. ${summaryData.result[id].source}. ${summaryData.result[id].pubdate}.`,
+        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`
+      };
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error searching PubMed:', error);
+    return null;
+  }
+}
+
+// ランダムにキーワードを選択する関数（アウトカムと曝露・介入を分離）
+function selectRandomKeywords() {
+  const outcome = outcomeKeywords[Math.floor(Math.random() * outcomeKeywords.length)];
+  const exposure1 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
+  const exposure2 = exposureKeywords[Math.floor(Math.random() * exposureKeywords.length)];
+  return [outcome, exposure1, exposure2];
+}
+
+// メイン処理
+async function main() {
+  const resultDiv = document.getElementById('result');
+  
+  while (true) {
+    const [outcome, exposure1, exposure2] = selectRandomKeywords();
+    const newResultDiv = document.createElement('div');
+    newResultDiv.innerHTML = `<h2>Search: Outcome: ${outcome}, Exposure/Intervention: ${exposure1} and ${exposure2}</h2>`;
+    resultDiv.appendChild(newResultDiv);
+    
+    const result = await searchPubMed(outcome, `${exposure1} OR ${exposure2}`);
+    
+    if (result) {
+      newResultDiv.innerHTML += `
+        <h3>${result.title}</h3>
+        <p><strong>Citation:</strong> ${result.citation}</p>
+        <p><strong>Abstract:</strong> ${result.abstract}</p>
+        <p><a href="${result.url}" target="_blank">View on PubMed</a></p>
+        <hr>
+      `;
+    } else {
+      newResultDiv.innerHTML += '<p>No results found or an error occurred.</p><hr>';
+    }
+    
+    // 新しい結果にスクロール
+    newResultDiv.scrollIntoView({ behavior: 'smooth' });
+    
+    // 次の検索までの待機時間（ミリ秒）
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+}
+
+// ページロード時に実行
+window.onload = () => {
+  const appDiv = document.createElement('div');
+  appDiv.innerHTML = `
+    <h1>PubMed Keyword Search</h1>
+    <div id="result"></div>
+  `;
+  document.body.appendChild(appDiv);
+  
+  main();
+};
+    </script>
+</body>
+</html>
