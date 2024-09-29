@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Idea Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .idea-container {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #333;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Research Idea Generator: Cardiovascular Diseases and Heavy Metals</h1>
+    <button id="generateButton">Generate New Idea</button>
+    <div id="ideas-output"></div>
+
+    <script>
+        const cardiovascularOutcomes = ['myocardial infarction', 'stroke', 'hypertension', 'atherosclerosis', 'heart failure'];
+        const heavyMetals = ['lead', 'cadmium', 'mercury', 'arsenic', 'aluminum'];
+
+        function getRandomKeyword(list) {
+            return list[Math.floor(Math.random() * list.length)];
+        }
+
+        async function generateIdea(outcome, exposure) {
+            try {
+                const response = await fetch('http://localhost:3000/generate-idea', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ outcome, exposure }),
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Server error occurred.');
+                }
+                
+                const data = await response.json();
+                if (!data.idea) {
+                    throw new Error('No idea generated.');
+                }
+                return data.idea;
+            } catch (error) {
+                console.error('Error:', error);
+                return `Error: ${error.message}`;
+            }
+        }
+
+        function displayResult(idea) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'idea-container';
+            resultDiv.innerHTML = `
+                <h2>New Research Idea</h2>
+                <p class="${idea.startsWith('Error') ? 'error' : ''}">${idea}</p>
+            `;
+            document.getElementById('ideas-output').prepend(resultDiv);
+        }
+
+        async function generateAndDisplayIdea() {
+            const outcome = getRandomKeyword(cardiovascularOutcomes);
+            const exposure = getRandomKeyword(heavyMetals);
+            console.log(`Generating idea for ${outcome} and ${exposure}`);
+            const idea = await generateIdea(outcome, exposure);
+            displayResult(idea);
+        }
+
+        document.getElementById('generateButton').addEventListener('click', generateAndDisplayIdea);
+    </script>
+</body>
+</html>

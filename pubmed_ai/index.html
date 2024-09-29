@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Idea Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #000;
+            color: #fff;
+        }
+        .idea-container {
+            background-color: #222;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        h2, h3 {
+            color: #4CAF50;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        .error {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="ideas-output"></div>
+
+    <script>
+        let isGenerating = true;
+
+        function smoothScroll(duration) {
+            const targetPosition = document.body.scrollHeight;
+            const startPosition = window.pageYOffset;
+            const distance = targetPosition - startPosition;
+            let startTime = null;
+
+            function animation(currentTime) {
+                if (startTime === null) startTime = currentTime;
+                const timeElapsed = currentTime - startTime;
+                const run = ease(timeElapsed, startPosition, distance, duration);
+                window.scrollTo(0, run);
+                if (timeElapsed < duration) requestAnimationFrame(animation);
+            }
+
+            function ease(t, b, c, d) {
+                t /= d / 2;
+                if (t < 1) return c / 2 * t * t + b;
+                t--;
+                return -c / 2 * (t * (t - 2) - 1) + b;
+            }
+
+            requestAnimationFrame(animation);
+        }
+
+        async function generateAndDisplayIdea() {
+            try {
+                const response = await fetch('http://localhost:3000/generate-idea');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                const ideaDiv = document.createElement('div');
+                ideaDiv.className = 'idea-container';
+                ideaDiv.innerHTML = `
+                    <h2>Keywords: ${data.keywords.join(', ')}</h2>
+                    <h3>PubMed Citations:</h3>
+                    <ul>
+                        ${data.citations.map(citation => `<li>${citation}</li>`).join('')}
+                    </ul>
+                    <h3>Research Idea:</h3>
+                    <div>${data.researchIdea.replace(/\n/g, '<br>')}</div>
+                `;
+                
+                document.getElementById('ideas-output').appendChild(ideaDiv);
+                smoothScroll(2000);
+            } catch (error) {
+                console.error('Error:', error);
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'idea-container error';
+                errorDiv.textContent = `An error occurred while generating the idea. Please try again later.`;
+                document.getElementById('ideas-output').appendChild(errorDiv);
+            }
+            
+            if (isGenerating) {
+                setTimeout(generateAndDisplayIdea, 5000);
+            }
+        }
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                isGenerating = false;
+                console.log('Idea generation stopped');
+                const stopMessage = document.createElement('div');
+                stopMessage.className = 'idea-container';
+                stopMessage.textContent = 'Idea generation has been stopped. Refresh the page to start again.';
+                document.getElementById('ideas-output').appendChild(stopMessage);
+            }
+        });
+
+        generateAndDisplayIdea();
+    </script>
+</body>
+</html>
