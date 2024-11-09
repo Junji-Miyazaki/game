@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Split Control Theremin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 10px;
+            margin: 0;
+            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto;
+        }
+        
+        #video {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            background: #eee;
+            position: relative;
+            transform: scaleX(-1);
+        }
+        
+        #video::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+        }
+        
+        #controls {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+        }
+        
+        .basic-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+            max-width: 600px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            background: #007AFF;
+            color: white;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        button:active {
+            background: #0056b3;
+        }
+        
+        select {
+            padding: 12px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+            margin: 8px 0;
+            -webkit-appearance: none;
+            background: #e9ecef;
+            border-radius: 8px;
+            height: 8px;
+        }
+        
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #007AFF;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .control-group span {
+            display: inline-block;
+            min-width: 50px;
+            font-family: monospace;
+            color: #666;
+        }
+        
+        #debug {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        
+        .side-controls h3 {
+            margin: 10px 0;
+            color: #333;
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+            }
+            
+            #controls {
+                padding: 10px;
+            }
+            
+            .control-group {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="basic-controls">
+        <button id="startButton">開始</button>
+        <button id="stopButton">停止</button>
+        <select id="waveform">
+            <option value="sine">サイン波</option>
+            <option value="square">矩形波</option>
+            <option value="sawtooth">のこぎり波</option>
+            <option value="triangle">三角波</option>
+        </select>
+    </div>
+
+    <div id="controls">
+        <div class="side-controls">
+            <h3>右側：音量コントロール</h3>
+            <div class="control-group">
+                <label>最小明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="30" id="volumeMinThreshold">
+                <span id="volumeMinThresholdValue">30</span>
+            </div>
+            <div class="control-group">
+                <label>最大明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="220" id="volumeMaxThreshold">
+                <span id="volumeMaxThresholdValue">220</span>
+            </div>
+            <div class="control-group">
+                <label>感度:</label>
+                <input type="range" min="1" max="100" value="50" id="volumeSensitivity">
+                <span id="volumeSensitivityValue">50</span>
+            </div>
+        </div>
+
+        <div class="side-controls">
+            <h3>左側：周波数コントロール</h3>
+            <div class="control-group">
+                <label>最低周波数 (Hz):</label>
+                <input type="range" min="20" max="1000" value="40" id="minFreqControl">
+                <span id="minFreqValue">40</span>
+            </div>
+            <div class="control-group">
+                <label>最高周波数 (Hz):</label>
+                <input type="range" min="1000" max="20000" value="10000" id="maxFreqControl">
+                <span id="maxFreqValue">10000</span>
+            </div>
+            <div class="control-group">
+                <label>最小明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="30" id="freqMinThreshold">
+                <span id="freqMinThresholdValue">30</span>
+            </div>
+            <div class="control-group">
+                <label>最大明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="220" id="freqMaxThreshold">
+                <span id="freqMaxThresholdValue">220</span>
+            </div>
+            <div class="control-group">
+                <label>感度:</label>
+                <input type="range" min="1" max="100" value="50" id="freqSensitivity">
+                <span id="freqSensitivityValue">50</span>
+            </div>
+        </div>
+    </div>
+
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+    
+    <div id="debug">
+        <div>
+            左側 (周波数): 
+            <br>明るさ: <span id="leftBrightness">0</span> / 255
+            <br>調整後: <span id="leftAdjusted">0</span>%
+            <br>周波数: <span id="frequency">0</span> Hz
+        </div>
+        <div>
+            右側 (音量): 
+            <br>明るさ: <span id="rightBrightness">0</span> / 255
+            <br>調整後: <span id="rightAdjusted">0</span>%
+            <br>音量: <span id="volume">0</span>%
+        </div>
+    </div>
+
+    <script>
+        let audioContext;
+        let oscillator;
+        let gainNode;
+        let animationFrame;
+        let isActive = false;
+        let minFreq = 40;
+        let maxFreq = 10000;
+        
+        // 音量コントロールのパラメータ
+        let volumeMinThreshold = 30;
+        let volumeMaxThreshold = 220;
+        let volumeSensitivity = 50;
+        
+        // 周波数コントロールのパラメータ
+        let freqMinThreshold = 30;
+        let freqMaxThreshold = 220;
+        let freqSensitivity = 50;
+
+        // iOS Safariでの自動再生制限に対応するための初期化
+        function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            oscillator = audioContext.createOscillator();
+            gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.type = document.getElementById('waveform').value;
+            gainNode.gain.value = 0;
+            oscillator.start();
+        }
+
+        // パラメータ更新関数
+        document.querySelectorAll('input[type="range"]').forEach(input => {
+            input.addEventListener('input', function() {
+                const value = parseInt(this.value);
+                document.getElementById(this.id + 'Value').textContent = value;
+                
+                switch(this.id) {
+                    case 'volumeMinThreshold':
+                        volumeMinThreshold = value;
+                        break;
+                    case 'volumeMaxThreshold':
+                        volumeMaxThreshold = value;
+                        break;
+                    case 'volumeSensitivity':
+                        volumeSensitivity = value;
+                        break;
+                    case 'freqMinThreshold':
+                        freqMinThreshold = value;
+                        break;
+                    case 'freqMaxThreshold':
+                        freqMaxThreshold = value;
+                        break;
+                    case 'freqSensitivity':
+                        freqSensitivity = value;
+                        break;
+                    case 'minFreqControl':
+                        minFreq = value;
+                        break;
+                    case 'maxFreqControl':
+                        maxFreq = value;
+                        break;
+                }
+            });
+        });
+
+        // 明るさを調整する関数
+        function adjustBrightness(brightness, minThreshold, maxThreshold, sensitivity) {
+            if (brightness < minThreshold) brightness = minThreshold;
+            if (brightness > maxThreshold) brightness = maxThreshold;
+            
+            let normalized = (brightness - minThreshold) / (maxThreshold - minThreshold) * 100;
+            normalized = Math.pow(normalized / 100, (101 - sensitivity) / 50) * 100;
+            
+            return Math.min(Math.max(normalized, 0), 100);
+        }
+
+        document.getElementById('startButton').addEventListener('click', async () => {
+            if (isActive) return;
+            
+            try {
+                // iOSの場合、ユーザージェスチャーでAudioContextを開始
+                if (!audioContext) {
+                    initAudio();
+                } else if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                
+                isActive = true;
+                startTracking();
+            } catch (err) {
+                console.error('エラー:', err);
+                alert('カメラまたはオーディオの開始に失敗しました: ' + err.message);
+            }
+        });
+
+        document.getElementById('stopButton').addEventListener('click', () => {
+            if (!isActive) return;
+
+            const video = document.getElementById('video');
+            const stream = video.srcObject;
+            const tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+
+            if (oscillator) {
+                oscillator.stop();
+                oscillator = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+
+            isActive = false;
+            
+            ['leftBrightness', 'rightBrightness', 'leftAdjusted', 
+             'rightAdjusted', 'volume', 'frequency'].forEach(id => {
+                document.getElementById(id).textContent = '0';
+            });
+        });
+
+        document.getElementById('waveform').addEventListener('change', function() {
+            if (oscillator) {
+                oscillator.type = this.value;
+            }
+        });
+
+        function analyzeFrame() {
+            if (!isActive) return;
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = 100;
+            canvas.height = 100;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            let leftBrightness = 0;
+            let rightBrightness = 0;
+            const midX = Math.floor(canvas.width / 2);
+
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    const i = (y * canvas.width + x) * 4;
+                    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+
+                    if (x < midX) {
+                        leftBrightness += brightness;
+                    } else {
+                        rightBrightness += brightness;
+                    }
+                }
+            }
+
+            const pixelsPerSide = canvas.width * canvas.height / 2;
+            leftBrightness /= pixelsPerSide;
+            rightBrightness /= pixelsPerSide;
+
+            const adjustedFreqValue = adjustBrightness(
+                leftBrightness, 
+                freqMinThreshold, 
+                freqMaxThreshold, 
+                freqSensitivity
+            );
+
+            const freqValue = 100 - adjustedFreqValue;
+            const frequency = minFreq * Math.pow(maxFreq / minFreq, freqValue / 100);
+
+            const adjustedVolumeValue = adjustBrightness(
+                rightBrightness, 
+                volumeMinThreshold, 
+                volumeMaxThreshold, 
+                volumeSensitivity
+            );
+            
+            const volume = 1 - (adjustedVolumeValue / 100);
+
+            // iOSでの音声出力の確認
+            if (audioContext && audioContext.state === 'running') {
+                if (gainNode) {
+                    gainNode.gain.setValueAtTime(volume * 0.5, audioContext.currentTime); // 音量を少し下げる
+                }
+                if (oscillator) {
+                    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+                }
+            }
+
+            // デバッグ表示の更新
+            document.getElementById('leftBrightness').textContent = Math.round(leftBrightness);
+            document.getElementById('rightBrightness').textContent = Math.round(rightBrightness);
+            document.getElementById('leftAdjusted').textContent = Math.round(adjustedFreqValue);
+            document.getElementById('rightAdjusted').textContent = Math.round(adjustedVolumeValue);
+            document.getElementById('volume').textContent = Math.round(volume * 100);
+            document.getElementById('frequency').textContent = Math.round(frequency);
+
+            animationFrame = requestAnimationFrame(analyzeFrame);
+        }
+
+        function startTracking() {
+            analyzeFrame();
+        }
+
+        // iOSでの画面ロック防止
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isActive) {
+                if (oscillator) {
+                    oscillator.stop();
+                    oscillator = null;
+                }
+                if (audioContext) {
+                    audioContext.close();
+                    audioContext = null;
+                }
+            } else if (!document.hidden && isActive) {
+                initAudio();
+            }
+        });
+
+        // iOS Safariでのジェスチャー要求対応
+        document.addEventListener('touchstart', () => {
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }, false);
+    </script>
+</body>
+</html>
