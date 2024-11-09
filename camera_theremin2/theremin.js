@@ -470,7 +470,7 @@ function processFrame() {
     for (let y = 0; y < canvas.height; y += defaultDotSize) {
         for (let x = 0; x < canvas.width; x += defaultDotSize) {
             const noise = Math.random() * 300;
-            ctx.fillStyle = `rgba(${noise}, ${noise}, ${noise}, 5)`;
+            ctx.fillStyle = `rgba(${noise}, ${noise}, ${noise}, 0.6)`;
             ctx.fillRect(x, y, defaultDotSize, defaultDotSize);
         }
     }
