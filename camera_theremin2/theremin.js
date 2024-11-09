@@ -451,7 +451,7 @@ function processFrame() {
     const dotSize = 1 + Math.floor((osc2Freq / 2000) * 4); // オシレータ2でドットサイズ調整
 
     // デフォルトのノイズを細かく設定（音に反応がないとき）
-    const defaultDotSize = 1;
+    const defaultDotSize = 5;
 
     // 一定の間隔ごとにノイズエフェクトを描画
     if (currentTime - lastNoiseUpdate > noiseSpeed) {
@@ -470,7 +470,7 @@ function processFrame() {
     for (let y = 0; y < canvas.height; y += defaultDotSize) {
         for (let x = 0; x < canvas.width; x += defaultDotSize) {
             const noise = Math.random() * 300;
-            ctx.fillStyle = `rgba(${noise}, ${noise}, ${noise}, 0.05)`;
+            ctx.fillStyle = `rgba(${noise}, ${noise}, ${noise}, 5)`;
             ctx.fillRect(x, y, defaultDotSize, defaultDotSize);
         }
     }
