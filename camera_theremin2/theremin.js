@@ -810,7 +810,7 @@ function addControlPanelToggle() {
     const controlPanel = document.getElementById('controls');
     
     const toggleButton = document.createElement('button');
-    toggleButton.textContent = '設定';
+    toggleButton.textContent = 'setting';
     toggleButton.id = 'toggleControls';
     basicControls.appendChild(toggleButton);
 
@@ -818,7 +818,7 @@ function addControlPanelToggle() {
     toggleButton.addEventListener('click', () => {
         isControlPanelVisible = !isControlPanelVisible;
         controlPanel.style.display = isControlPanelVisible ? 'block' : 'none';
-        toggleButton.textContent = isControlPanelVisible ? '閉じる' : '設定';
+        toggleButton.textContent = isControlPanelVisible ? 'close' : 'setting';
     });
 }
 
