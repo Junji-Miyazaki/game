@@ -208,13 +208,8 @@ async function initVideo() {
     canvas.width = 320;
     canvas.height = 240;
 
-    // カメラ切り替えボタンを追加
-    const cameraButton = document.createElement('button');
-    cameraButton.textContent = 'カメラ切り替え';
-    cameraButton.id = 'switchCamera';
-    document.querySelector('.basic-controls').appendChild(cameraButton);
-
-    let currentFacingMode = 'user';
+    // カメラ切り替えボタンの取得（既にHTMLで定義されているため、作成は不要）
+    const cameraButton = document.getElementById('switchCamera');
     
     async function startCamera(facingMode) {
         try {
