@@ -40,7 +40,8 @@ h1 {
 #video {
     width: 100%;
     height: 100%;
-    transform: scaleX(-1);
+    transform: scaleX(-1) !important; /* !important を追加して確実に適用 */
+    -webkit-transform: scaleX(-1) !important; /* Safari対応 */
     object-fit: cover;
     display: none;
 }
@@ -51,6 +52,8 @@ h1 {
     left: 0;
     width: 100%;
     height: 100%;
+    transform: scaleX(-1) !important; /* canvasも同じく反転 */
+    -webkit-transform: scaleX(-1) !important;
 }
 
 .basic-controls {
