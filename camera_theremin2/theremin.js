@@ -411,6 +411,28 @@ function processFrame() {
 
     // カメラ映像の表示
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // グレースケール変換
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    
+    for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        // グレースケール値の計算（輝度）
+        const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        
+        pixels[i] = gray;     // R
+        pixels[i + 1] = gray; // G
+        pixels[i + 2] = gray; // B
+        // pixels[i + 3] はアルファ値なので変更しない
+    }
+    
+    // グレースケール画像を描画
+    ctx.putImageData(imageData, 0, 0);
+
+    // 左右の領域の明るさを計算
     const leftData = ctx.getImageData(0, 0, canvas.width / 2, canvas.height);
     const rightData = ctx.getImageData(canvas.width / 2, 0, canvas.width / 2, canvas.height);
 
