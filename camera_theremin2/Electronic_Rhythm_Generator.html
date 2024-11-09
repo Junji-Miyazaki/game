@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electronic Rhythm Generator</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #000;
+            color: #0f0;
+        }
+        .container {
+            display: grid;
+            gap: 20px;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+            border: 1px solid #0f0;
+        }
+        video {
+            width: 100%;
+            filter: grayscale(1) brightness(1.2);
+        }
+        .controls {
+            background: #111;
+            padding: 20px;
+            border: 1px solid #0f0;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        button {
+            background: #000;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 5px;
+            font-family: monospace;
+        }
+        button:hover {
+            background: #0f0;
+            color: #000;
+        }
+        button.muted {
+            background: #0f0;
+            color: #000;
+        }
+        .slider-container {
+            display: grid;
+            gap: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .visualization {
+            width: 100%;
+            height: 150px;
+            background: #000;
+            border: 1px solid #0f0;
+            margin-top: 10px;
+        }
+        .track-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .track-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Electronic Rhythm Generator</h1>
+        
+        <div class="video-container">
+            <video id="video" playsinline autoplay muted></video>
+            <canvas id="visualizer" class="visualization"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <button id="startStop">Start</button>
+                <button id="toggleCamera">Switch Camera</button>
+            </div>
+
+            <div class="track-controls">
+                <div class="track-control">
+                    <button id="muteHihat1">Hihat 1</button>
+                    <button id="autoMuteHihat1">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteHihat2">Hihat 2</button>
+                    <button id="autoMuteHihat2">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteOpenHihat1">Open HH 1</button>
+                    <button id="autoMuteOpenHihat1">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteOpenHihat2">Open HH 2</button>
+                    <button id="autoMuteOpenHihat2">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteSignal">Signal</button>
+                    <button id="autoMuteSignal">Auto</button>
+                </div>
+            </div>
+                <div class="control-group">
+    <button id="toggleAutoDensity">Auto Density: ON</button>
+</div>
+
+            <div class="control-group">
+                <div class="slider-container">
+    <div>
+        <label for="tempo">Tempo: <span id="tempoValue">200</span> BPM</label>
+        <input type="range" id="tempo" min="60" max="200" value="200">
+    </div>
+    <div>
+        <label for="density">Pattern Density: <span id="densityValue">100</span>%</label>
+        <input type="range" id="density" min="0" max="100" value="100">
+    </div>
+    <div>
+        <label for="randomness">Randomness: <span id="randomnessValue">100</span>%</label>
+        <input type="range" id="randomness" min="0" max="100" value="100">
+    </div>
+</div>
+            </div>
+        </div>
+    </div>
+
+   <script>
+class ElectronicSounds {
+    constructor(audioContext) {
+        this.audioContext = audioContext;
+    }
+
+    createSound(frequency, time, duration, brightness = 0.5) {
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    const filter = this.audioContext.createBiquadFilter();
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(frequency, time);
+    
+    // 明るさに応じてフィルター特性を変更
+    filter.type = 'lowpass';
+    filter.frequency.value = 1000 + (brightness * 7000); // 1kHz ～ 8kHz
+    
+    // 明るさに応じて音量を変化させる（0.1 ～ 0.4の範囲）
+    const volume = 0.1 + (brightness * 0.3);
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(volume, time + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
+    
+    osc.connect(filter);
+    filter.connect(gain);
+    osc.start(time);
+    osc.stop(time + duration);
+    
+    return gain;
+}
+
+getModulatedFrequency(baseFreq, brightness) {
+        const modulation = 1 + ((brightness - 0.5) * 0.5); // ±25%の変調
+        return baseFreq * modulation;
+    }
+
+    hihat1(time, brightness = 0.5) {
+    return this.createSound(this.getModulatedFrequency(8000, brightness), time, 0.05, brightness);
+}
+
+hihat2(time, brightness = 0.5) {
+    return this.createSound(this.getModulatedFrequency(10000, brightness), time, 0.03, brightness);
+}
+
+openHihat1(time, brightness = 0.5) {
+    return this.createSound(this.getModulatedFrequency(6000, brightness), time, 0.2, brightness);
+}
+
+openHihat2(time, brightness = 0.5) {
+    return this.createSound(this.getModulatedFrequency(7000, brightness), time, 0.15, brightness);
+}
+
+signal(time, brightness = 0.5) {
+    return this.createSound(this.getModulatedFrequency(200 + Math.random() * 200, brightness), time, 0.15, brightness);
+}
+}
+
+class RhythmGenerator {
+    constructor() {
+        this.audioContext = null;
+        this.sounds = null;
+        this.isPlaying = false;
+        this.tempo = 200;
+        this.density = 1.0;
+        this.randomness = 1.0;
+        this.stepsPerBar = 16;
+        this.barsPerPhrase = 2;
+        this.totalSteps = this.stepsPerBar * this.barsPerPhrase;
+        this.currentStep = 0;
+        this.phraseCount = 0;
+        this.lastBrightness = null;
+        this.lastAreaBrightness = null;
+        this.autoDensityChange = true;
+        this.densityChangeInterval = 20000;
+
+        this.muteStates = {
+            hihat1: false,
+            hihat2: false,
+            openHihat1: false,
+            openHihat2: false,
+            signal: false
+        };
+
+        this.autoMuteStates = {
+            hihat1: true,
+            hihat2: true,
+            openHihat1: true,
+            openHihat2: true,
+            signal: true
+        };
+        
+        this.pattern = this.generateInitialPattern();
+        this.setupCamera();
+        this.setupVisualizer();
+        this.startAutoDensityChange();
+    }
+
+    setupVisualizer() {
+        this.visualizer = document.getElementById('visualizer');
+        this.visualizerCtx = this.visualizer.getContext('2d');
+        this.visualizer.width = this.visualizer.offsetWidth;
+        this.visualizer.height = this.visualizer.offsetHeight;
+    }
+
+    generateInitialPattern() {
+        const pattern = Array(this.totalSteps).fill().map(() => ({
+            hihat1: false,
+            hihat2: false,
+            openHihat1: false,
+            openHihat2: false,
+            signal: false
+        }));
+
+        for (let i = 0; i < this.totalSteps; i++) {
+            if (Math.random() < this.density) {
+                const sound = ['hihat1', 'hihat2', 'openHihat1', 'openHihat2', 'signal'][
+                    Math.floor(Math.random() * 5)
+                ];
+                pattern[i][sound] = true;
+            }
+        }
+
+        return pattern;
+    }
+
+    startAutoDensityChange() {
+        if (this.densityChangeTimer) {
+            clearInterval(this.densityChangeTimer);
+        }
+        
+        this.densityChangeTimer = setInterval(() => {
+            if (this.autoDensityChange && this.isPlaying) {
+                const newDensity = Math.floor(Math.random() * 91 + 10);
+                this.setDensity(newDensity);
+
+                const densitySlider = document.getElementById('density');
+                const densityValue = document.getElementById('densityValue');
+                if (densitySlider && densityValue) {
+                    densitySlider.value = newDensity;
+                    densityValue.textContent = newDensity;
+                }
+            }
+        }, this.densityChangeInterval);
+    }
+
+    async setupCamera() {
+        this.video = document.getElementById('video');
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.isFrontCamera = false;
+
+        try {
+            await this.startCamera();
+            this.canvas.width = this.video.videoWidth || 640;
+            this.canvas.height = this.video.videoHeight || 480;
+            console.log('Camera setup successful');
+        } catch (err) {
+            console.error('Camera setup failed:', err);
+            this.canvas.width = 640;
+            this.canvas.height = 480;
+        }
+    }
+
+    async startCamera() {
+        try {
+            const constraints = {
+                video: {
+                    facingMode: this.isFrontCamera ? "user" : "environment",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.video.srcObject = stream;
+            
+            return new Promise((resolve) => {
+                this.video.onloadedmetadata = () => {
+                    this.video.play()
+                        .then(resolve)
+                        .catch(err => {
+                            console.error('Video play failed:', err);
+                            resolve();
+                        });
+                };
+            });
+        } catch (err) {
+            console.error('Getting user media failed:', err);
+            throw err;
+        }
+    }
+
+    toggleCamera() {
+        this.isFrontCamera = !this.isFrontCamera;
+        if (this.video.srcObject) {
+            const tracks = this.video.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+        }
+        this.startCamera();
+    }
+
+    analyzeVideo() {
+        if (!this.video || !this.video.videoWidth) {
+            return {
+                brightness: 0.5,
+                changed: false
+            };
+        }
+
+        try {
+            this.ctx.drawImage(this.video, 0, 0);
+            const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+            const data = imageData.data;
+            
+            const areaSize = 4;
+            const areaWidth = this.canvas.width / areaSize;
+            const areaHeight = this.canvas.height / areaSize;
+            let areaBrightness = [];
+            
+            for (let y = 0; y < areaSize; y++) {
+                for (let x = 0; x < areaSize; x++) {
+                    let brightness = 0;
+                    let count = 0;
+                    
+                    for (let py = y * areaHeight; py < (y + 1) * areaHeight; py++) {
+                        for (let px = x * areaWidth; px < (x + 1) * areaWidth; px++) {
+                            const i = (Math.floor(py) * this.canvas.width + Math.floor(px)) * 4;
+                            brightness += (data[i] + data[i + 1] + data[i + 2]) / 3;
+                            count++;
+                        }
+                    }
+                    
+                    areaBrightness.push(brightness / count);
+                }
+            }
+            
+            const brightness = areaBrightness.reduce((a, b) => a + b) / (areaSize * areaSize) / 255;
+            
+            const changed = !this.lastBrightness || 
+                Math.abs(brightness - this.lastBrightness) > 0.01 ||
+                areaBrightness.some((b, i) => 
+                    !this.lastAreaBrightness || 
+                    Math.abs(b/255 - this.lastAreaBrightness[i]/255) > 0.03
+                );
+            
+            this.lastBrightness = brightness;
+            this.lastAreaBrightness = areaBrightness;
+            
+            return {
+                brightness,
+                changed
+            };
+        } catch (err) {
+            console.error('Video analysis failed:', err);
+            return {
+                brightness: 0.5,
+                changed: false
+            };
+        }
+    }
+
+    async start() {
+        try {
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.sounds = new ElectronicSounds(this.audioContext);
+            }
+
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
+            this.isPlaying = true;
+            this.startTime = this.audioContext.currentTime;
+            this.currentStep = 0;
+            this.phraseCount = 0;
+            this.startAutoDensityChange();
+            this.scheduleNext();
+        } catch (err) {
+            console.error('Failed to start audio context:', err);
+        }
+    }
+
+    stop() {
+        this.isPlaying = false;
+        if (this.densityChangeTimer) {
+            clearInterval(this.densityChangeTimer);
+        }
+    }
+
+    updatePattern(brightness, changed) {
+        if (changed) {
+            const activeSounds = Object.keys(this.pattern[0]).filter(sound => 
+                !this.muteStates[sound]
+            );
+            
+            if (activeSounds.length > 0) {
+                const soundToChange = activeSounds[Math.floor(Math.random() * activeSounds.length)];
+                
+                const shouldChange = Math.random() < this.randomness;
+                if (shouldChange) {
+                    const increase = Math.random() < 0.5;
+                    
+                    const currentNotes = this.pattern.reduce((count, step) => 
+                        count + (step[soundToChange] ? 1 : 0), 0
+                    );
+                    
+                    const minNotes = Math.floor(this.totalSteps * 0.1);
+                    const maxNotes = Math.floor(this.totalSteps * 0.7);
+                    
+                    if ((increase && currentNotes < maxNotes) || (!increase && currentNotes > minNotes)) {
+                        for (let i = 0; i < this.totalSteps; i++) {
+                            if (increase) {
+                                if (!this.pattern[i][soundToChange] && Math.random() < 0.3) {
+                                    this.pattern[i][soundToChange] = true;
+                                }
+                            } else {
+                                if (this.pattern[i][soundToChange] && Math.random() < 0.3) {
+                                    this.pattern[i][soundToChange] = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    handleAutoMutes() {
+        if (this.lastVideoChange && this.currentStep === 0) {
+            const autoMutedSounds = Object.keys(this.autoMuteStates).filter(sound => 
+                this.autoMuteStates[sound]
+            );
+            
+            if (autoMutedSounds.length > 0) {
+                const soundToToggle = autoMutedSounds[Math.floor(Math.random() * autoMutedSounds.length)];
+                
+                const currentMutes = this.countActiveMutes();
+                const currentlyMuted = this.muteStates[soundToToggle];
+                
+                if (currentlyMuted || (!currentlyMuted && currentMutes < 3)) {
+                    this.muteStates[soundToToggle] = !this.muteStates[soundToToggle];
+                    const button = document.getElementById(`mute${soundToToggle.charAt(0).toUpperCase() + soundToToggle.slice(1)}`);
+                    if (button) {
+                        button.classList.toggle('muted', this.muteStates[soundToToggle]);
+                    }
+                }
+            }
+        }
+    }
+
+    updateVisualization(currentStep, brightness) {
+        const ctx = this.visualizerCtx;
+        const width = this.visualizer.width;
+        const height = this.visualizer.height;
+        const stepWidth = width / this.totalSteps;
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(0, 0, width, height);
+        
+        this.pattern.forEach((step, index) => {
+            const x = index * stepWidth;
+            Object.entries(step).forEach(([sound, isActive], soundIndex) => {
+                if (isActive && !this.muteStates[sound]) {
+                    const intensity = Math.floor(brightness * 255);
+                    const color = index === currentStep ? 
+                        `rgb(${intensity}, ${255}, ${intensity})` : 
+                        `rgb(0, ${intensity}, 0)`;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x, soundIndex * 30, stepWidth - 1, 25);
+                }
+            });
+        });
+    }
+
+    scheduleNext() {
+        if (!this.isPlaying) return;
+        const stepTime = 60 / this.tempo / 4;
+        const time = this.audioContext.currentTime;
+        const { brightness, changed } = this.analyzeVideo();
+        
+        this.updateVisualization(this.currentStep, brightness);
+        this.lastVideoChange = changed;
+        
+        if (changed) {
+            this.updatePattern(brightness, changed);
+            this.handleAutoMutes();
+        }
+
+        Object.entries(this.pattern[this.currentStep]).forEach(([sound, isActive]) => {
+            if (isActive && !this.muteStates[sound]) {
+                const output = this.sounds[sound](time, brightness);
+                output.connect(this.audioContext.destination);
+            }
+        });
+
+        if (brightness > 0.6 && Math.random() < 0.3) {
+            const availableSounds = Object.keys(this.pattern[this.currentStep])
+                .filter(sound => !this.muteStates[sound]);
+            if (availableSounds.length > 0) {
+                const randomSound = availableSounds[Math.floor(Math.random() * availableSounds.length)];
+                const output = this.sounds[randomSound](time, brightness);
+                output.connect(this.audioContext.destination);
+            }
+        }
+
+        this.currentStep = (this.currentStep + 1) % this.totalSteps;
+        if (this.currentStep === 0) {
+            this.phraseCount++;
+        }
+        
+        setTimeout(() => this.scheduleNext(), stepTime * 1000);
+    }
+
+    setTempo(newTempo) {
+        this.tempo = Math.max(60, Math.min(200, newTempo));
+    }
+
+    setDensity(newDensity) {
+        this.density = newDensity / 100;
+        this.pattern = this.generateInitialPattern();
+    }
+
+    setRandomness(newRandomness) {
+        this.randomness = newRandomness / 100;
+    }
+
+    countActiveMutes() {
+        return Object.values(this.muteStates).filter(state => state).length;
+    }
+
+    toggleMute(sound) {
+        const currentlyMuted = this.muteStates[sound];
+        if (!currentlyMuted && this.countActiveMutes() >= 3) {
+            return this.muteStates[sound];
+        }
+        this.muteStates[sound] = !currentlyMuted;
+        return this.muteStates[sound];
+    }
+
+    toggleAutoMute(sound) {
+        this.autoMuteStates[sound] = !this.autoMuteStates[sound];
+        return this.autoMuteStates[sound];
+    }
+
+    cleanup() {
+        if (this.densityChangeTimer) {
+            clearInterval(this.densityChangeTimer);
+        }
+    }
+}
+
+
+// UIコントロールの設定
+document.addEventListener('DOMContentLoaded', () => {
+    const generator = new RhythmGenerator();
+    let isPlaying = false;
+
+    const autoDensityButton = document.getElementById('toggleAutoDensity');
+    if (autoDensityButton) {
+        autoDensityButton.addEventListener('click', () => {
+            generator.autoDensityChange = !generator.autoDensityChange;
+            autoDensityButton.textContent = `Auto Density: ${generator.autoDensityChange ? 'ON' : 'OFF'}`;
+            if (generator.autoDensityChange) {
+                generator.startAutoDensityChange();
+            } else if (generator.densityChangeTimer) {
+                clearInterval(generator.densityChangeTimer);
+            }
+        });
+    }
+
+    const startStopButton = document.getElementById('startStop');
+    startStopButton.addEventListener('click', () => {
+        if (!isPlaying) {
+            generator.start();
+            startStopButton.textContent = 'Stop';
+        } else {
+            generator.stop();
+            startStopButton.textContent = 'Start';
+        }
+        isPlaying = !isPlaying;
+    });
+
+    document.getElementById('toggleCamera').addEventListener('click', () => {
+        generator.toggleCamera();
+    });
+
+    const sounds = ['hihat1', 'hihat2', 'openHihat1', 'openHihat2', 'signal'];
+    sounds.forEach(sound => {
+        const capitalizedSound = sound.charAt(0).toUpperCase() + sound.slice(1);
+        
+        const muteButton = document.getElementById(`mute${capitalizedSound}`);
+        muteButton.addEventListener('click', () => {
+            const isMuted = generator.toggleMute(sound);
+            muteButton.classList.toggle('muted', isMuted);
+        });
+
+        const autoMuteButton = document.getElementById(`autoMute${capitalizedSound}`);
+        // 初期状態でAutoをONにする
+        autoMuteButton.classList.add('muted');
+        autoMuteButton.addEventListener('click', () => {
+            const isAutoMuted = generator.toggleAutoMute(sound);
+            autoMuteButton.classList.toggle('muted', isAutoMuted);
+        });
+    });
+
+    const tempoSlider = document.getElementById('tempo');
+    const tempoValue = document.getElementById('tempoValue');
+    tempoSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        tempoValue.textContent = value;
+        generator.setTempo(value);
+    });
+
+    const densitySlider = document.getElementById('density');
+    const densityValue = document.getElementById('densityValue');
+    densitySlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        densityValue.textContent = value;
+        generator.setDensity(value);
+    });
+
+    const randomnessSlider = document.getElementById('randomness');
+    const randomnessValue = document.getElementById('randomnessValue');
+    randomnessSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        randomnessValue.textContent = value;
+        generator.setRandomness(value);
+    });
+});
+</script>
+        
+</body>
+</html>

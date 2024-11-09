@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Rhythm Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            display: grid;
+            gap: 20px;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+        video {
+            width: 100%;
+            border-radius: 8px;
+        }
+        .controls {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .slider-container {
+            display: grid;
+            gap: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        .visualization {
+            width: 100%;
+            height: 100px;
+            background: #2a2a2a;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Camera Rhythm Generator</h1>
+        
+        <div class="video-container">
+            <video id="video" playsinline></video>
+            <canvas id="visualizer" class="visualization"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <button id="startStop">Start</button>
+                <button id="toggleCamera">カメラ切替</button>
+            </div>
+
+            <div class="control-group">
+                <div class="slider-container">
+                    <div>
+                        <label for="tempo">テンポ: <span id="tempoValue">120</span> BPM</label>
+                        <input type="range" id="tempo" min="60" max="200" value="120">
+                    </div>
+                    <div>
+                        <label for="swingAmount">スイング: <span id="swingValue">0</span>%</label>
+                        <input type="range" id="swingAmount" min="0" max="100" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>エフェクト</h3>
+                <div class="slider-container">
+                    <div>
+                        <label for="delayTime">ディレイ時間: <span id="delayTimeValue">0.3</span>秒</label>
+                        <input type="range" id="delayTime" min="0" max="1" step="0.1" value="0.3">
+                    </div>
+                    <div>
+                        <label for="delayFeedback">ディレイフィードバック: <span id="delayFeedbackValue">30</span>%</label>
+                        <input type="range" id="delayFeedback" min="0" max="90" value="30">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+class DrumSynthesizer {
+    constructor(audioContext) {
+        this.audioContext = audioContext;
+    }
+
+    kick(time) {
+        const osc = this.audioContext.createOscillator();
+        const gainOsc = this.audioContext.createGain();
+        const finalGain = this.audioContext.createGain();
+
+        osc.connect(gainOsc);
+        gainOsc.connect(finalGain);
+        finalGain.connect(this.audioContext.destination);
+
+        osc.frequency.setValueAtTime(150, time);
+        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+        gainOsc.gain.setValueAtTime(1, time);
+        gainOsc.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+        finalGain.gain.setValueAtTime(1, time);
+        finalGain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+
+        osc.start(time);
+        osc.stop(time + 0.5);
+
+        return finalGain;
+    }
+
+    snare(time) {
+        const noise = this.audioContext.createBufferSource();
+        const noiseGain = this.audioContext.createGain();
+        const osc = this.audioContext.createOscillator();
+        const oscGain = this.audioContext.createGain();
+        const finalGain = this.audioContext.createGain();
+
+        // ノイズの生成
+        const bufferSize = this.audioContext.sampleRate * 0.5;
+        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        noise.buffer = buffer;
+        noise.connect(noiseGain);
+        noiseGain.connect(finalGain);
+        osc.connect(oscGain);
+        oscGain.connect(finalGain);
+        finalGain.connect(this.audioContext.destination);
+
+        osc.frequency.setValueAtTime(250, time);
+        oscGain.gain.setValueAtTime(1, time);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+        noiseGain.gain.setValueAtTime(1, time);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+
+        noise.start(time);
+        osc.start(time);
+        noise.stop(time + 0.2);
+        osc.stop(time + 0.2);
+
+        return finalGain;
+    }
+
+    hihatClosed(time) {
+        const fundamental = 40;
+        const ratios = [2, 3, 4.16, 5.43, 6.79, 8.21];
+        const gain = this.audioContext.createGain();
+        
+        ratios.forEach(ratio => {
+            const osc = this.audioContext.createOscillator();
+            const oscGain = this.audioContext.createGain();
+            
+            osc.frequency.value = fundamental * ratio;
+            oscGain.gain.setValueAtTime(1, time);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+            
+            osc.connect(oscGain);
+            oscGain.connect(gain);
+            
+            osc.start(time);
+            osc.stop(time + 0.05);
+        });
+        
+        gain.connect(this.audioContext.destination);
+        return gain;
+    }
+
+    hihatOpen(time) {
+        const fundamental = 40;
+        const ratios = [2, 3, 4.16, 5.43, 6.79, 8.21];
+        const gain = this.audioContext.createGain();
+        
+        ratios.forEach(ratio => {
+            const osc = this.audioContext.createOscillator();
+            const oscGain = this.audioContext.createGain();
+            
+            osc.frequency.value = fundamental * ratio;
+            oscGain.gain.setValueAtTime(1, time);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+            
+            osc.connect(oscGain);
+            oscGain.connect(gain);
+            
+            osc.start(time);
+            osc.stop(time + 0.3);
+        });
+        
+        gain.connect(this.audioContext.destination);
+        return gain;
+    }
+
+    rimshot(time) {
+        const osc = this.audioContext.createOscillator();
+        const gainOsc = this.audioContext.createGain();
+        const finalGain = this.audioContext.createGain();
+
+        osc.connect(gainOsc);
+        gainOsc.connect(finalGain);
+        finalGain.connect(this.audioContext.destination);
+
+        osc.frequency.setValueAtTime(1000, time);
+        osc.frequency.exponentialRampToValueAtTime(100, time + 0.05);
+        gainOsc.gain.setValueAtTime(0.8, time);
+        gainOsc.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+
+        osc.start(time);
+        osc.stop(time + 0.05);
+
+        return finalGain;
+    }
+
+    clap(time) {
+        const noise = this.audioContext.createBufferSource();
+        const noiseGain = this.audioContext.createGain();
+        const finalGain = this.audioContext.createGain();
+
+        const bufferSize = this.audioContext.sampleRate * 0.2;
+        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        noise.buffer = buffer;
+        noise.connect(noiseGain);
+        noiseGain.connect(finalGain);
+        finalGain.connect(this.audioContext.destination);
+
+        noiseGain.gain.setValueAtTime(0, time);
+        noiseGain.gain.linearRampToValueAtTime(1, time + 0.02);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+
+        noise.start(time);
+        noise.stop(time + 0.2);
+
+        return finalGain;
+    }
+}
+
+class RhythmGenerator {
+    constructor() {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        this.drumSynth = new DrumSynthesizer(this.audioContext);
+        this.isPlaying = false;
+        this.tempo = 120;
+        this.swing = 0;
+        this.resolution = 16;
+        this.currentStep = 0;
+        
+        this.setupEffects();
+        this.setupCamera();
+        this.setupVisualizer();
+    }
+
+    setupEffects() {
+        // ディレイエフェクト
+        this.delay = this.audioContext.createDelay();
+        this.delayFeedback = this.audioContext.createGain();
+        this.delay.delayTime.value = 0.3;
+        this.delayFeedback.gain.value = 0.3;
+
+        this.delay.connect(this.delayFeedback);
+        this.delayFeedback.connect(this.delay);
+        this.delay.connect(this.audioContext.destination);
+    }
+
+    async setupCamera() {
+        this.video = document.getElementById('video');
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.isFrontCamera = false;
+
+        try {
+            await this.startCamera();
+        } catch (err) {
+            console.error('Camera setup failed:', err);
+        }
+    }
+
+    setupVisualizer() {
+        this.visualizer = document.getElementById('visualizer');
+        this.visualizerCtx = this.visualizer.getContext('2d');
+        this.visualizer.width = this.visualizer.offsetWidth;
+        this.visualizer.height = this.visualizer.offsetHeight;
+    }
+
+    async startCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: this.isFrontCamera ? "user" : "environment"
+            }
+        });
+        this.video.srcObject = stream;
+        await this.video.play();
+        
+        this.canvas.width = this.video.videoWidth;
+        this.canvas.height = this.video.videoHeight;
+    }
+
+    toggleCamera() {
+        this.isFrontCamera = !this.isFrontCamera;
+        if (this.video.srcObject) {
+            const tracks = this.video.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+        }
+        this.startCamera();
+    }
+
+    analyzeVideo() {
+        this.ctx.drawImage(this.video, 0, 0);
+        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const data = imageData.data;
+        
+        const brightness = this.calculateAverageBrightness(data);
+        const movement = this.calculateMovement(data);
+        
+        this.updateVisualization(brightness, movement);
+        return { brightness, movement };
+    }
+
+    calculateAverageBrightness(data) {
+        let total = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            total += (data[i] + data[i + 1] + data[i + 2]) / 3;
+        }
+        return total / (data.length / 4);
+    }
+
+    calculateMovement(currentData) {
+        return Math.random(); // デモ用
+    }
+
+    updateVisualization(brightness, movement) {
+        const ctx = this.visualizerCtx;
+        const width = this.visualizer.width;
+        const height = this.visualizer.height;
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(0, 0, width, height);
+        
+        const barHeight = (brightness / 255) * height;
+        const movementHeight = movement * height;
+        
+        ctx.fillStyle = `hsl(${brightness}, 100%, 50%)`;
+        ctx.fillRect(this.currentStep * (width / 16), height - barHeight, width / 16, barHeight);
+        
+        ctx.fillStyle = `rgba(255, 255, 255, ${movement})`;
+        ctx.fillRect(this.currentStep * (width / 16), 0, width / 16, movementHeight);
+    }
+
+    start() {
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        this.isPlaying = true;
+        this.startTime = this.audioContext.currentTime;
+        this.currentStep = 0;
+        this.scheduleNext();
+    }
+
+    stop() {
+        this.isPlaying = false;
+    }
+
+    scheduleNext() {
+        if (!this.isPlaying) return;
+
+        const { brightness, movement } = this.analyzeVideo();
+        const stepTime = 60 / this.tempo / 4;
+        const swingOffset = (this.currentStep % 2) * (this.swing / 100) * stepTime;
+        const time = this.audioContext.currentTime + stepTime + swingOffset;
+
+        // 映像の解析結果に基づいてドラムパターンを生成
+        if (movement > 0.7) {
+            const kick = this.drumSynth.kick(time);
+            kick.connect(this.delay);
+        }
+        
+        if (brightness > 128 && this.currentStep % 4 === 2) {
+            const snare = this.drumSynth.snare(time);
+            snare.connect(this.delay);
+        }
+        
+        if (this.currentStep % 2 === 0) {
+            const hihat = this.drumSynth.hihatClosed(time);
+            hihat.connect(this.delay);
+        }
+        
+        if (movement > 0.5 && brightness < 100) {
+            const openHat = this.drumSynth.hihatOpen(time);
+            openHat.connect(this.delay);
+        }
+        
+        if (movement > 0.8 && brightness > 200) {
+            const rimshot = this.drumSynth.rimshot(time);
+            rimshot.connect(this.delay);
+        }
+        
+        if (movement > 0.9 && this.currentStep % 8 === 4) {
+            const clap = this.drumSynth.clap(time);
+            clap.connect(this.delay);
+        }
+
+        this.currentStep = (this.currentStep + 1) % this.resolution;
+        
+        // 次のステップのスケジュール
+        setTimeout(() => this.scheduleNext(), (stepTime + swingOffset) * 1000);
+    }
+
+    setTempo(newTempo) {
+        this.tempo = Math.max(60, Math.min(200, newTempo));
+    }
+
+    setSwing(newSwing) {
+        this.swing = Math.max(0, Math.min(100, newSwing));
+    }
+
+    setDelayTime(time) {
+        this.delay.delayTime.value = time;
+    }
+
+    setDelayFeedback(feedback) {
+        this.delayFeedback.gain.value = feedback / 100;
+    }
+}
+
+// UIコントロールの設定
+document.addEventListener('DOMContentLoaded', () => {
+    const rhythmGenerator = new RhythmGenerator();
+    let isPlaying = false;
+
+    // Start/Stopボタン
+    const startStopButton = document.getElementById('startStop');
+    startStopButton.addEventListener('click', () => {
+        if (!isPlaying) {
+            rhythmGenerator.start();
+            startStopButton.textContent = 'Stop';
+        } else {
+            rhythmGenerator.stop();
+            startStopButton.textContent = 'Start';
+        }
+        isPlaying = !isPlaying;
+    });
+
+    // カメラ切り替えボタン
+    document.getElementById('toggleCamera').addEventListener('click', () => {
+        rhythmGenerator.toggleCamera();
+    });
+
+    // テンポコントロール
+    const tempoSlider = document.getElementById('tempo');
+    const tempoValue = document.getElementById('tempoValue');
+    tempoSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        tempoValue.textContent = value;
+        rhythmGenerator.setTempo(value);
+    });
+
+    // スイングコントロール
+    const swingSlider = document.getElementById('swingAmount');
+    const swingValue = document.getElementById('swingValue');
+    swingSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        swingValue.textContent = value;
+        rhythmGenerator.setSwing(value);
+    });
+
+    // ディレイ時間
+    const delayTimeSlider = document.getElementById('delayTime');
+    const delayTimeValue = document.getElementById('delayTimeValue');
+    delayTimeSlider.addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value);
+        delayTimeValue.textContent = value;
+        rhythmGenerator.setDelayTime(value);
+    });
+
+    // ディレイフィードバック
+    const delayFeedbackSlider = document.getElementById('delayFeedback');
+    const delayFeedbackValue = document.getElementById('delayFeedbackValue');
+    delayFeedbackSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        delayFeedbackValue.textContent = value;
+        rhythmGenerator.setDelayFeedback(value);
+    });
+});
+</script>
+</body>
+</html>
