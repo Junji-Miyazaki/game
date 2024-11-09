@@ -603,6 +603,22 @@ function updateEffectRouting() {
     }
 }
 
+function setupSliderListeners() {
+    document.querySelectorAll('input[type="range"]').forEach(slider => {
+        ['input', 'change'].forEach(eventType => {
+            slider.addEventListener(eventType, (e) => {
+                const valueElement = document.getElementById(e.target.id + 'Value');
+                if (valueElement) {
+                    valueElement.textContent = e.target.value;
+                }
+                if (audioCtx) {
+                    updateEffectRouting();
+                }
+                saveSettings();
+            });
+        });
+    });
+}
 // イベントリスナーのセットアップ
 function setupEventListeners() {
     // 開始ボタン
@@ -650,7 +666,7 @@ function setupEventListeners() {
         });
     });
 
-    // エフェクト切り替え
+   // エフェクト切り替え
     document.querySelectorAll('.effect-toggle input').forEach(toggle => {
         toggle.addEventListener('change', () => {
             updateEffectRouting();
@@ -658,20 +674,7 @@ function setupEventListeners() {
         });
     });
 
-    // スライダー値の表示更新とエフェクト更新
-    document.querySelectorAll('input[type="range"]').forEach(slider => {
-        slider.addEventListener('input', (e) => {
-            const valueElement = document.getElementById(e.target.id + 'Value');
-            if (valueElement) {
-                valueElement.textContent = e.target.value;
-            }
-            if (audioCtx) {
-                updateEffectRouting();
-            }
-            saveSettings();
-        });
-    });
-
+	
     // その他の設定変更時の保存
     document.querySelectorAll('input').forEach(input => {
         input.addEventListener('change', saveSettings);
@@ -683,23 +686,36 @@ function setupEventListeners() {
             audioCtx.resume();
         }
 	});
-	window.addEventListener('beforeunload', () => {
-        if (isPlaying) {
-            // 再生中なら停止
-            isPlaying = false;
-            cancelAnimationFrame(animationId);
-            if (gainNode1) gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
-            if (gainNode2) gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
+	
+    // ページ終了時の設定保存
+    window.addEventListener('beforeunload', saveBeforeClose);
+    window.addEventListener('pagehide', saveBeforeClose);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            saveBeforeClose();
         }
-        // 設定を保存
-        saveSettings();
     });
 }
 
-// 初期化
+
+// 終了時保存用の関数を追加
+function saveBeforeClose() {
+    if (isPlaying) {
+        // 再生中なら停止
+        isPlaying = false;
+        cancelAnimationFrame(animationId);
+        if (gainNode1) gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
+        if (gainNode2) gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
+    }
+    // 設定を保存
+    saveSettings();
+}
+
+// 初期化順序を修正
 document.addEventListener('DOMContentLoaded', function() {
     initVideo();
-    setupEventListeners();
     addThresholdControls();
+    setupSliderListeners();
+    setupEventListeners();
     loadSettings();
 });
