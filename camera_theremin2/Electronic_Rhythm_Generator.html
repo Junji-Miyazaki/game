@@ -187,19 +187,19 @@ getModulatedFrequency(baseFreq, brightness) {
 }
 
 hihat2(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(10000, brightness), time, 0.03, brightness);
+    return this.createSound(this.getModulatedFrequency(10000, brightness), time, 0.05, brightness);
 }
 
 openHihat1(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(6000, brightness), time, 0.2, brightness);
+    return this.createSound(this.getModulatedFrequency(1000, brightness), time, 0.08, brightness);
 }
 
 openHihat2(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(7000, brightness), time, 0.15, brightness);
+    return this.createSound(this.getModulatedFrequency(5000, brightness), time, 0.15, brightness);
 }
 
 signal(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(200 + Math.random() * 200, brightness), time, 0.15, brightness);
+    return this.createSound(this.getModulatedFrequency(200 + Math.random() * 100, brightness), time, 0.15, brightness);
 }
 }
 
@@ -474,27 +474,39 @@ class RhythmGenerator {
     }
 
     handleAutoMutes() {
-        if (this.lastVideoChange && this.currentStep === 0) {
-            const autoMutedSounds = Object.keys(this.autoMuteStates).filter(sound => 
-                this.autoMuteStates[sound]
-            );
+    // カメラの変化があった時は即座に反応
+    if (this.lastVideoChange) {
+        const autoMutedSounds = Object.keys(this.autoMuteStates).filter(sound => 
+            this.autoMuteStates[sound]
+        );
+        
+        if (autoMutedSounds.length > 0) {
+            // 変化確率を調整（現在の明るさに応じて）
+            const changeProb = this.lastBrightness ? 0.3 + (this.lastBrightness * 0.4) : 0.5;
             
-            if (autoMutedSounds.length > 0) {
-                const soundToToggle = autoMutedSounds[Math.floor(Math.random() * autoMutedSounds.length)];
+            if (Math.random() < changeProb) {  // 明るいほど変化しやすい
+                // Auto ON の音から1-2個をランダムに選択
+                const numChanges = Math.random() < 0.3 ? 2 : 1;  // 30%の確率で2つ変化
+                const shuffledSounds = [...autoMutedSounds].sort(() => Math.random() - 0.5);
                 
-                const currentMutes = this.countActiveMutes();
-                const currentlyMuted = this.muteStates[soundToToggle];
-                
-                if (currentlyMuted || (!currentlyMuted && currentMutes < 3)) {
-                    this.muteStates[soundToToggle] = !this.muteStates[soundToToggle];
-                    const button = document.getElementById(`mute${soundToToggle.charAt(0).toUpperCase() + soundToToggle.slice(1)}`);
-                    if (button) {
-                        button.classList.toggle('muted', this.muteStates[soundToToggle]);
+                for (let i = 0; i < Math.min(numChanges, shuffledSounds.length); i++) {
+                    const soundToToggle = shuffledSounds[i];
+                    const currentMutes = this.countActiveMutes();
+                    const currentlyMuted = this.muteStates[soundToToggle];
+
+                    // ミュート解除は常に可能、ミュートは3未満の時のみ
+                    if (currentlyMuted || (!currentlyMuted && currentMutes < 3)) {
+                        this.muteStates[soundToToggle] = !this.muteStates[soundToToggle];
+                        const button = document.getElementById(`mute${soundToToggle.charAt(0).toUpperCase() + soundToToggle.slice(1)}`);
+                        if (button) {
+                            button.classList.toggle('muted', this.muteStates[soundToToggle]);
+                        }
                     }
                 }
             }
         }
     }
+}
 
     updateVisualization(currentStep, brightness) {
         const ctx = this.visualizerCtx;
