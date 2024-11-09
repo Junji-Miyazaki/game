@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera Theremin</title>
     <style>
-        body {
-            font-family: system-ui, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f0f0f0;
-        }
+       body {
+    font-family: system-ui, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #000; /* 背景色を黒に */
+    color: #fff;      /* テキスト色を白に */
+}
 
         #controls {
             display: grid;
@@ -20,12 +21,12 @@
             margin: 20px 0;
         }
 
-        .control-group {
-            background: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+.control-group {
+    background: #111; /* 各コントロールの背景も暗く */
+    color: #ddd;      /* コントロールのテキストを暗めの白に */
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(255, 255, 255, 0.1);
+}
 
         #videoContainer {
             width: 320px;
@@ -177,7 +178,7 @@
     </style>
 </head>
 <body>
-    <h1>Camera Theremin</h1>
+    <h1>Dual teremin synthesis</h1>
     
     <div class="basic-controls">
         <button id="startButton">開始</button>
