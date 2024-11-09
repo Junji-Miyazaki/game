@@ -66,6 +66,11 @@
             -webkit-tap-highlight-color: transparent;
         }
         
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
         button:active {
             background: #0056b3;
         }
@@ -133,6 +138,29 @@
             color: #333;
         }
         
+        .audio-status {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-family: monospace;
+            color: #333;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+        }
+        
+        .error-message {
+            color: red;
+            margin: 10px 0;
+            padding: 10px;
+            background: #fff0f0;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+        }
+        
         @media (max-width: 480px) {
             body {
                 padding: 5px;
@@ -149,8 +177,12 @@
     </style>
 </head>
 <body>
+    <div class="audio-status" id="audioStatus">Audio Status: Not initialized</div>
+    <div class="error-message" id="errorMessage"></div>
+    
     <div class="basic-controls">
-        <button id="startButton">開始</button>
+        <button id="initAudioButton">音声を有効化</button>
+        <button id="startButton" disabled>開始</button>
         <button id="stopButton">停止</button>
         <select id="waveform">
             <option value="sine">サイン波</option>
@@ -247,21 +279,28 @@
         let freqMaxThreshold = 220;
         let freqSensitivity = 50;
 
-        // iOS Safariでの自動再生制限に対応するための初期化
-        function initAudio() {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            oscillator = audioContext.createOscillator();
-            gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.type = document.getElementById('waveform').value;
-            gainNode.gain.value = 0;
-            oscillator.start();
+        // ステータス表示の更新
+        function updateAudioStatus(status) {
+            document.getElementById('audioStatus').textContent = 'Audio Status: ' + status;
         }
 
-        // パラメータ更新関数
+        // エラー表示
+        function showError(error) {
+            document.getElementById('errorMessage').textContent = 'Error: ' + error;
+        }
+
+        // 明るさを調整する関数
+        function adjustBrightness(brightness, minThreshold, maxThreshold, sensitivity) {
+            if (brightness < minThreshold) brightness = minThreshold;
+            if (brightness > maxThreshold) brightness = maxThreshold;
+            
+            let normalized = (brightness - minThreshold) / (maxThreshold - minThreshold) * 100;
+            normalized = Math.pow(normalized / 100, (101 - sensitivity) / 50) * 100;
+            
+            return Math.min(Math.max(normalized, 0), 100);
+        }
+
+        // パラメータ更新のイベントリスナー設定
         document.querySelectorAll('input[type="range"]').forEach(input => {
             input.addEventListener('input', function() {
                 const value = parseInt(this.value);
@@ -296,27 +335,50 @@
             });
         });
 
-        // 明るさを調整する関数
-        function adjustBrightness(brightness, minThreshold, maxThreshold, sensitivity) {
-            if (brightness < minThreshold) brightness = minThreshold;
-            if (brightness > maxThreshold) brightness = maxThreshold;
-            
-            let normalized = (brightness - minThreshold) / (maxThreshold - minThreshold) * 100;
-            normalized = Math.pow(normalized / 100, (101 - sensitivity) / 50) * 100;
-            
-            return Math.min(Math.max(normalized, 0), 100);
-        }
+        // 音声初期化ボタンのハンドラー
+        document.getElementById('initAudioButton').addEventListener('click', async () => {
+            try {
+                updateAudioStatus('Initializing...');
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.resume();
+                
+                oscillator = audioContext.createOscillator();
+                gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = document.getElementById('waveform').value;
+                gainNode.gain.value = 0;
+                
+                oscillator.start();
+                
+                document.getElementById('startButton').disabled = false;
+                document.getElementById('initAudioButton').disabled = true;
+                
+                updateAudioStatus('Ready (Context State: ' + audioContext.state + ')');
+            } catch (error) {
+                showError(error.toString());
+                updateAudioStatus('Initialization failed');
+                console.error('Audio initialization error:', error);
+            }
+        });
 
+        // カメラ開始ボタンのハンドラー
         document.getElementById('startButton').addEventListener('click', async () => {
             if (isActive) return;
             
             try {
-                // iOSの場合、ユーザージェスチャーでAudioContextを開始
                 if (!audioContext) {
-                    initAudio();
-                } else if (audioContext.state === 'suspended') {
+                    throw new Error('Please initialize audio first');
+                }
+                
+                if (audioContext.state !== 'running') {
                     await audioContext.resume();
                 }
+                
+                updateAudioStatus('Starting camera... (Audio state: ' + audioContext.state + ')');
                 
                 const constraints = {
                     video: {
@@ -329,50 +391,28 @@
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 const video = document.getElementById('video');
                 video.srcObject = stream;
+                await video.play();
                 
                 isActive = true;
-                startTracking();
+                analyzeFrame();
+                
+                updateAudioStatus('Running (Audio state: ' + audioContext.state + ')');
             } catch (err) {
-                console.error('エラー:', err);
-                alert('カメラまたはオーディオの開始に失敗しました: ' + err.message);
+                showError(err.toString());
+                console.error('Start error:', err);
             }
         });
 
-        document.getElementById('stopButton').addEventListener('click', () => {
-            if (!isActive) return;
-
-            const video = document.getElementById('video');
-            const stream = video.srcObject;
-            const tracks = stream.getTracks();
-            tracks.forEach(track => track.stop());
-            video.srcObject = null;
-
-            if (oscillator) {
-                oscillator.stop();
-                oscillator = null;
-            }
-            if (audioContext) {
-                audioContext.close();
-                audioContext = null;
-            }
-            if (animationFrame) {
-                cancelAnimationFrame(animationFrame);
-            }
-
-            isActive = false;
-            
-            ['leftBrightness', 'rightBrightness', 'leftAdjusted', 
-             'rightAdjusted', 'volume', 'frequency'].forEach(id => {
-                document.getElementById(id).textContent = '0';
-            });
-        });
-
+        // 波形変更のハンドラー
         document.getElementById('waveform').addEventListener('change', function() {
             if (oscillator) {
                 oscillator.type = this.value;
+                updateAudioStatus('Waveform changed to ' + this.value + 
+                    ' (Audio state: ' + audioContext.state + ')');
             }
         });
 
+        // フレーム分析関数
         function analyzeFrame() {
             if (!isActive) return;
 
@@ -390,7 +430,7 @@
             let leftBrightness = 0;
             let rightBrightness = 0;
             const midX = Math.floor(canvas.width / 2);
-
+            // 左右の明るさを計算
             for (let y = 0; y < canvas.height; y++) {
                 for (let x = 0; x < canvas.width; x++) {
                     const i = (y * canvas.width + x) * 4;
@@ -408,32 +448,37 @@
             leftBrightness /= pixelsPerSide;
             rightBrightness /= pixelsPerSide;
 
+            // 周波数の計算
             const adjustedFreqValue = adjustBrightness(
                 leftBrightness, 
                 freqMinThreshold, 
                 freqMaxThreshold, 
                 freqSensitivity
             );
-
             const freqValue = 100 - adjustedFreqValue;
             const frequency = minFreq * Math.pow(maxFreq / minFreq, freqValue / 100);
 
+            // 音量の計算
             const adjustedVolumeValue = adjustBrightness(
                 rightBrightness, 
                 volumeMinThreshold, 
                 volumeMaxThreshold, 
                 volumeSensitivity
             );
-            
             const volume = 1 - (adjustedVolumeValue / 100);
 
-            // iOSでの音声出力の確認
             if (audioContext && audioContext.state === 'running') {
-                if (gainNode) {
-                    gainNode.gain.setValueAtTime(volume * 0.5, audioContext.currentTime); // 音量を少し下げる
-                }
-                if (oscillator) {
+                try {
+                    // 音量の更新（最大値を0.5に制限）
+                    gainNode.gain.setValueAtTime(volume * 0.5, audioContext.currentTime);
+                    // 周波数の更新
                     oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+                    
+                    // デバッグ情報の更新
+                    updateAudioStatus('Playing (Volume: ' + Math.round(volume * 100) + 
+                        '%, Freq: ' + Math.round(frequency) + 'Hz)');
+                } catch (error) {
+                    showError('Audio update error: ' + error);
                 }
             }
 
@@ -448,11 +493,50 @@
             animationFrame = requestAnimationFrame(analyzeFrame);
         }
 
-        function startTracking() {
-            analyzeFrame();
-        }
+        // 停止ボタンのハンドラー
+        document.getElementById('stopButton').addEventListener('click', () => {
+            if (!isActive) return;
 
-        // iOSでの画面ロック防止
+            try {
+                // カメラの停止
+                const video = document.getElementById('video');
+                if (video.srcObject) {
+                    const tracks = video.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                    video.srcObject = null;
+                }
+
+                // オーディオの停止
+                if (oscillator) {
+                    oscillator.stop();
+                    oscillator = null;
+                }
+                if (audioContext) {
+                    audioContext.close();
+                    audioContext = null;
+                }
+                if (animationFrame) {
+                    cancelAnimationFrame(animationFrame);
+                }
+
+                isActive = false;
+                document.getElementById('initAudioButton').disabled = false;
+                document.getElementById('startButton').disabled = true;
+                
+                updateAudioStatus('Stopped');
+            } catch (error) {
+                showError('Stop error: ' + error);
+            }
+        });
+
+        // iOS Safariでのジェスチャー要求対応
+        document.addEventListener('touchstart', () => {
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }, false);
+
+        // 画面ロック時の処理
         document.addEventListener('visibilitychange', () => {
             if (document.hidden && isActive) {
                 if (oscillator) {
@@ -464,16 +548,16 @@
                     audioContext = null;
                 }
             } else if (!document.hidden && isActive) {
-                initAudio();
+                document.getElementById('initAudioButton').click();
             }
         });
 
-        // iOS Safariでのジェスチャー要求対応
-        document.addEventListener('touchstart', () => {
-            if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume();
+        // ページアンロード時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (audioContext) {
+                audioContext.close();
             }
-        }, false);
+        });
     </script>
 </body>
 </html>
