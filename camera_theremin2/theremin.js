@@ -12,13 +12,15 @@ let amGain1, amGain2;
 let isPlaying = false;
 let video, canvas, ctx;
 let animationId;
+let currentFacingMode = 'user';
 
 // 設定の保存
 function saveSettings() {
     const settings = {
         // 一般設定
         isPlaying: isPlaying,
-        lastFacingMode: currentFacingMode, // カメラの向きも保存
+        lastFacingMode: currentFacingMode,
+        debugVisible: document.getElementById('debug').style.display === 'block',
 
         // オシレータ1の設定
         osc1: {
@@ -93,6 +95,7 @@ function saveSettings() {
     localStorage.setItem('thereminSettings', JSON.stringify(settings));
     console.log('Settings saved:', settings);
 }
+
 
 
 // loadSettings関数も対応して修正
@@ -767,25 +770,70 @@ function setupEventListeners() {
     });
 }
 
+// デバッグ表示のトグルボタンを追加
+function addDebugToggle() {
+    // トグルボタンを作成
+    const toggleButton = document.createElement('button');
+    toggleButton.textContent = 'Freq/Amp';
+    toggleButton.className = 'debug-toggle';
+    document.body.appendChild(toggleButton);
 
-// 終了時保存用の関数を追加
+    // デバッグ表示の状態を管理
+    let isDebugVisible = false;
+    const debugElement = document.getElementById('debug');
+
+    // ローカルストレージから状態を復元
+    const savedState = localStorage.getItem('debugVisible');
+    if (savedState === 'true') {
+        isDebugVisible = true;
+        debugElement.style.display = 'block';
+    }
+
+    // クリックイベントの処理
+    toggleButton.addEventListener('click', () => {
+        isDebugVisible = !isDebugVisible;
+        debugElement.style.display = isDebugVisible ? 'block' : 'none';
+        
+        // 状態をローカルストレージに保存
+        localStorage.setItem('debugVisible', isDebugVisible);
+    });
+}
+
+// 終了時保存用の関数
 function saveBeforeClose() {
     if (isPlaying) {
-        // 再生中なら停止
         isPlaying = false;
         cancelAnimationFrame(animationId);
         if (gainNode1) gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
         if (gainNode2) gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
     }
-    // 設定を保存
     saveSettings();
+}
+	
+function addControlPanelToggle() {
+    const basicControls = document.querySelector('.basic-controls');
+    const controlPanel = document.getElementById('controls');
+    
+    const toggleButton = document.createElement('button');
+    toggleButton.textContent = '設定';
+    toggleButton.id = 'toggleControls';
+    basicControls.appendChild(toggleButton);
+
+    let isControlPanelVisible = false;
+    toggleButton.addEventListener('click', () => {
+        isControlPanelVisible = !isControlPanelVisible;
+        controlPanel.style.display = isControlPanelVisible ? 'block' : 'none';
+        toggleButton.textContent = isControlPanelVisible ? '閉じる' : '設定';
+    });
 }
 
 // 初期化順序を修正
 document.addEventListener('DOMContentLoaded', function() {
-    initVideo();
+  initVideo();
     addThresholdControls();
     setupSliderListeners();
     setupEventListeners();
-    loadSettings();
+    addControlPanelToggle();
+    addDebugToggle();
+    loadSettings(); // 最後に設定を読み込む
 });
