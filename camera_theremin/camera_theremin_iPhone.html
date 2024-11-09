@@ -214,16 +214,22 @@
 
         <div class="side-controls">
             <h3>左側：周波数コントロール</h3>
-            <div class="control-group">
-                <label>最低周波数 (Hz):</label>
-                <input type="range" min="20" max="1000" value="40" id="minFreqControl">
-                <span id="minFreqValue">40</span>
-            </div>
-            <div class="control-group">
-                <label>最高周波数 (Hz):</label>
-                <input type="range" min="1000" max="20000" value="10000" id="maxFreqControl">
-                <span id="maxFreqValue">10000</span>
-            </div>
+    <div class="control-group">
+        <label>最低周波数 (Hz):</label>
+        <input type="range" min="20" max="5000" value="40" 
+               onchange="updateMinFreq(this.value)"
+               oninput="updateMinFreqDisplay(this.value)"
+               id="minFreqControl">
+        <span id="minFreqValue">40</span>
+    </div>
+    <div class="control-group">
+        <label>最高周波数 (Hz):</label>
+        <input type="range" min="1000" max="15000" value="10000" 
+               onchange="updateMaxFreq(this.value)"
+               oninput="updateMaxFreqDisplay(this.value)"
+               id="maxFreqControl">
+        <span id="maxFreqValue">10000</span>
+    </div>
             <div class="control-group">
                 <label>最小明るさ閾値:</label>
                 <input type="range" min="0" max="255" value="30" id="freqMinThreshold">
@@ -279,6 +285,38 @@
         let freqMaxThreshold = 220;
         let freqSensitivity = 50;
 
+
+// 最低周波数の更新関数
+function updateMinFreq(value) {
+    minFreq = parseInt(value);
+    // 最低周波数が最高周波数を超えないようにチェック
+    if (minFreq >= maxFreq) {
+        minFreq = maxFreq - 100; // 最低でも100Hz以上の差を確保
+        document.getElementById('minFreqControl').value = minFreq;
+    }
+    document.getElementById('minFreqValue').textContent = minFreq;
+}
+
+// 最高周波数の更新関数
+function updateMaxFreq(value) {
+    maxFreq = parseInt(value);
+    // 最高周波数が最低周波数を下回らないようにチェック
+    if (maxFreq <= minFreq) {
+        maxFreq = minFreq + 100; // 最低でも100Hz以上の差を確保
+        document.getElementById('maxFreqControl').value = maxFreq;
+    }
+    document.getElementById('maxFreqValue').textContent = maxFreq;
+}
+
+// スライダー移動中のリアルタイム表示更新用
+function updateMinFreqDisplay(value) {
+    document.getElementById('minFreqValue').textContent = value;
+}
+
+function updateMaxFreqDisplay(value) {
+    document.getElementById('maxFreqValue').textContent = value;
+}
+            
         // ステータス表示の更新
         function updateAudioStatus(status) {
             document.getElementById('audioStatus').textContent = 'Audio Status: ' + status;
