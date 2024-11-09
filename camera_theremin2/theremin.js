@@ -437,7 +437,7 @@ function processFrame() {
             for (let x = 0; x < canvas.width; x += dotSize) {
                 // 各ドットにランダムな輝度を設定
                 const noise = Math.random() * 255;
-                ctx.fillStyle = `rgba(${noise}, ${noise}, ${noise}, 0.9)`; // ノイズを半透明に
+                ctx.fillStyle = `rgba(${noise}, ${noise}, ${noise}, 0.85)`; // ノイズを半透明に
                 ctx.fillRect(x, y, dotSize, dotSize);
             }
         }
