@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カメラテルミン V2</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .control-group {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #videoContainer {
+            width: 320px;
+            height: 240px;
+            position: relative;
+            margin: 20px auto;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            /* 左右反転を解除 */
+            transform: scaleX(1);
+            object-fit: cover;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .wave-selector {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+
+        .wave-button {
+            padding: 8px 16px;
+            border: 2px solid #007bff;
+            border-radius: 20px;
+            background: white;
+            color: #007bff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .wave-button.active {
+            background: #007bff;
+            color: white;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 20px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .slider-container {
+            margin: 10px 0;
+        }
+
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin: 8px 0;
+        }
+
+        /* スイッチスタイル */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+            margin-right: 10px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .effect-toggle {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .effect-toggle label {
+            margin-right: 10px;
+        }
+
+        #debug {
+            font-family: monospace;
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>カメラテルミン V2</h1>
+    
+    <div class="basic-controls">
+        <button id="startButton">開始</button>
+        <button id="stopButton">停止</button>
+    </div>
+
+    <div id="videoContainer">
+        <video id="video" playsinline></video>
+        <canvas id="overlay"></canvas>
+    </div>
+
+    <div id="controls">
+        <div class="control-group">
+            <h3>オシレータ1設定</h3>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="osc1-enabled" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>音声オン/オフ</span>
+            </div>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="osc1-camera-control" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>カメラ制御</span>
+            </div>
+            <div class="wave-selector" id="osc1-waves">
+                <button class="wave-button osc1-wave active" data-wave="sine">サイン波</button>
+                <button class="wave-button osc1-wave" data-wave="square">矩形波</button>
+                <button class="wave-button osc1-wave" data-wave="sawtooth">のこぎり波</button>
+                <button class="wave-button osc1-wave" data-wave="triangle">三角波</button>
+            </div>
+            <div class="slider-container">
+                <label>最低周波数 (Hz): <span id="minFreq1Value">40</span></label>
+                <input type="range" id="minFreq1" min="20" max="2000" value="40">
+            </div>
+            <div class="slider-container">
+                <label>最高周波数 (Hz): <span id="maxFreq1Value">1000</span></label>
+                <input type="range" id="maxFreq1" min="100" max="10000" value="1000">
+            </div>
+            <div class="slider-container">
+                <label>感度: <span id="sensitivity1Value">50</span></label>
+                <input type="range" id="sensitivity1" min="1" max="100" value="50">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>オシレータ2設定</h3>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="osc2-enabled" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>音声オン/オフ</span>
+            </div>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="osc2-camera-control" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>カメラ制御</span>
+            </div>
+            <div class="wave-selector" id="osc2-waves">
+                <button class="wave-button osc2-wave active" data-wave="sine">サイン波</button>
+                <button class="wave-button osc2-wave" data-wave="square">矩形波</button>
+                <button class="wave-button osc2-wave" data-wave="sawtooth">のこぎり波</button>
+                <button class="wave-button osc2-wave" data-wave="triangle">三角波</button>
+            </div>
+            <div class="slider-container">
+                <label>最低周波数 (Hz): <span id="minFreq2Value">40</span></label>
+                <input type="range" id="minFreq2" min="20" max="2000" value="40">
+            </div>
+            <div class="slider-container">
+                <label>最高周波数 (Hz): <span id="maxFreq2Value">1000</span></label>
+                <input type="range" id="maxFreq2" min="100" max="10000" value="1000">
+            </div>
+            <div class="slider-container">
+                <label>感度: <span id="sensitivity2Value">50</span></label>
+                <input type="range" id="sensitivity2" min="1" max="100" value="50">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>エフェクト設定</h3>
+            
+            <h4>LFO</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="lfo-osc1" checked> Osc1</label>
+                <label><input type="checkbox" id="lfo-osc2" checked> Osc2</label>
+            </div>
+            <div class="slider-container">
+                <label>レート (Hz): <span id="lfoRateValue">1</span></label>
+                <input type="range" id="lfoRate" min="0.1" max="10" step="0.1" value="1">
+            </div>
+            <div class="slider-container">
+                <label>深さ: <span id="lfoDepthValue">0</span></label>
+                <input type="range" id="lfoDepth" min="0" max="100" value="0">
+            </div>
+            
+            <h4>フィルター</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="filter-osc1" checked> Osc1</label>
+                <label><input type="checkbox" id="filter-osc2" checked> Osc2</label>
+            </div>
+            <div class="slider-container">
+                <label>カットオフ周波数 (Hz): <span id="filterFreqValue">1000</span></label>
+                <input type="range" id="filterFreq" min="20" max="20000" value="1000">
+            </div>
+            <div class="slider-container">
+                <label>レゾナンス: <span id="filterQValue">1</span></label>
+                <input type="range" id="filterQ" min="0" max="20" step="0.1" value="1">
+            </div>
+
+            <h4>AM</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="am-osc1" checked> Osc1</label>
+                <label><input type="checkbox" id="am-osc2" checked> Osc2</label>
+            </div>
+            <div class="slider-container">
+                <label>レート (Hz): <span id="amRateValue">2</span></label>
+                <input type="range" id="amRate" min="0.1" max="20" step="0.1" value="2">
+            </div>
+            <div class="slider-container">
+                <label>深さ: <span id="amDepthValue">50</span></label>
+                <input type="range" id="amDepth" min="0" max="100" value="50">
+            </div>
+            
+            <h4>ディレイ</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="delay-osc1" checked> Osc1</label>
+                <label><input type="checkbox" id="delay-osc2" checked> Osc2</label>
+            </div>
+            <div class="slider-container">
+                <label>時間 (秒): <span id="delayTimeValue">0.3</span></label>
+                <input type="range" id="delayTime" min="0" max="1" step="0.01" value="0.3">
+            </div>
+            <div class="slider-container">
+                <label>フィードバック: <span id="delayFeedbackValue">0.3</span></label>
+                <input type="range" id="delayFeedback" min="0" max="0.9" step="0.1" value="0.3">
+            </div>
+        </div>
+    </div>
+
+    <div id="debug">
+        <div>
+            オシレータ1: 周波数: <span id="freq1">0</span> Hz, 音量: <span id="vol1">0</span>%
+        </div>
+        <div>
+            オシレータ2: 周波数: <span id="freq2">0</span> Hz, 音量: <span id="vol2">0</span>%
+        </div>
+    </div>
+
+</body>
+</html>
+
+
+
+
+<script>
+// グローバル変数
+let audioCtx;
+let oscillator1, oscillator2;
+let gainNode1, gainNode2;
+let filter1, filter2;
+let delay1, delay2;
+let delayGain1, delayGain2;
+let lfo;
+let lfoGain1, lfoGain2;
+let am1, am2;
+let amGain1, amGain2;
+let isPlaying = false;
+let video, canvas, ctx;
+let animationId;
+
+// ビデオ初期化
+async function initVideo() {
+    video = document.getElementById('video');
+    canvas = document.getElementById('overlay');
+    ctx = canvas.getContext('2d');
+
+    canvas.width = 320;
+    canvas.height = 240;
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                facingMode: 'user',
+                width: { ideal: 320 },
+                height: { ideal: 240 }
+            } 
+        });
+        video.srcObject = stream;
+        await video.play();
+        console.log('Video initialized successfully');
+    } catch (err) {
+        console.error('Video initialization failed:', err);
+        alert('カメラの初期化に失敗しました。カメラへのアクセスを許可してください。');
+    }
+}
+
+// オーディオ初期化
+function initAudio() {
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // オシレータ1のセットアップ
+        oscillator1 = audioCtx.createOscillator();
+        gainNode1 = audioCtx.createGain();
+        filter1 = audioCtx.createBiquadFilter();
+        delay1 = audioCtx.createDelay(1.0);
+        delayGain1 = audioCtx.createGain();
+        lfoGain1 = audioCtx.createGain();
+        amGain1 = audioCtx.createGain();
+        
+        // オシレータ2のセットアップ
+        oscillator2 = audioCtx.createOscillator();
+        gainNode2 = audioCtx.createGain();
+        filter2 = audioCtx.createBiquadFilter();
+        delay2 = audioCtx.createDelay(1.0);
+        delayGain2 = audioCtx.createGain();
+        lfoGain2 = audioCtx.createGain();
+        amGain2 = audioCtx.createGain();
+
+        // LFOセットアップ
+        lfo = audioCtx.createOscillator();
+        lfo.frequency.value = 1;
+        
+        // AMセットアップ
+        am1 = audioCtx.createOscillator();
+        am2 = audioCtx.createOscillator();
+        am1.frequency.value = 2;
+        am2.frequency.value = 2;
+
+        // 初期値設定
+        gainNode1.gain.value = 0;
+        gainNode2.gain.value = 0;
+        filter1.type = 'lowpass';
+        filter2.type = 'lowpass';
+        filter1.frequency.value = 1000;
+        filter2.frequency.value = 1000;
+        delay1.delayTime.value = 0.3;
+        delay2.delayTime.value = 0.3;
+        delayGain1.gain.value = 0.3;
+        delayGain2.gain.value = 0.3;
+        lfoGain1.gain.value = 0;
+        lfoGain2.gain.value = 0;
+        amGain1.gain.value = 1;
+        amGain2.gain.value = 1;
+
+        // オシレータ1の接続
+        oscillator1.connect(filter1);
+        filter1.connect(amGain1);
+        amGain1.connect(gainNode1);
+        gainNode1.connect(delay1);
+        gainNode1.connect(audioCtx.destination);
+        delay1.connect(delayGain1);
+        delayGain1.connect(delay1);
+        delayGain1.connect(audioCtx.destination);
+
+        // オシレータ2の接続
+        oscillator2.connect(filter2);
+        filter2.connect(amGain2);
+        amGain2.connect(gainNode2);
+        gainNode2.connect(delay2);
+        gainNode2.connect(audioCtx.destination);
+        delay2.connect(delayGain2);
+        delayGain2.connect(delay2);
+        delayGain2.connect(audioCtx.destination);
+
+        // LFO接続
+        lfo.connect(lfoGain1);
+        lfo.connect(lfoGain2);
+        lfoGain1.connect(oscillator1.frequency);
+        lfoGain2.connect(oscillator2.frequency);
+
+        // AM接続
+        am1.connect(amGain1.gain);
+        am2.connect(amGain2.gain);
+
+        // オシレータ開始
+        oscillator1.start();
+        oscillator2.start();
+        lfo.start();
+        am1.start();
+        am2.start();
+
+        console.log('Audio initialized successfully');
+    } catch (e) {
+        console.error('Audio initialization failed:', e);
+    }
+}
+
+// エフェクトルーティング更新
+function updateEffectRouting() {
+    // LFOルーティング
+    lfoGain1.gain.value = document.getElementById('lfo-osc1').checked ? 
+        parseFloat(document.getElementById('lfoDepth').value) : 0;
+    lfoGain2.gain.value = document.getElementById('lfo-osc2').checked ? 
+        parseFloat(document.getElementById('lfoDepth').value) : 0;
+
+    // フィルタールーティング
+    const filterFreq = parseFloat(document.getElementById('filterFreq').value);
+    const filterQ = parseFloat(document.getElementById('filterQ').value);
+    
+    if (document.getElementById('filter-osc1').checked) {
+        filter1.frequency.value = filterFreq;
+        filter1.Q.value = filterQ;
+    }
+    if (document.getElementById('filter-osc2').checked) {
+        filter2.frequency.value = filterFreq;
+        filter2.Q.value = filterQ;
+    }
+
+    // AMルーティング
+    const amRate = parseFloat(document.getElementById('amRate').value);
+    const amDepth = parseFloat(document.getElementById('amDepth').value) / 100;
+    
+    if (document.getElementById('am-osc1').checked) {
+        am1.frequency.value = amRate;
+        amGain1.gain.value = amDepth;
+    } else {
+        amGain1.gain.value = 1;
+    }
+    
+    if (document.getElementById('am-osc2').checked) {
+        am2.frequency.value = amRate;
+        amGain2.gain.value = amDepth;
+    } else {
+        amGain2.gain.value = 1;
+    }
+
+    // ディレイルーティング
+    const delayTime = parseFloat(document.getElementById('delayTime').value);
+    const delayFeedback = parseFloat(document.getElementById('delayFeedback').value);
+    
+    if (document.getElementById('delay-osc1').checked) {
+        delay1.delayTime.value = delayTime;
+        delayGain1.gain.value = delayFeedback;
+    } else {
+        delayGain1.gain.value = 0;
+    }
+    
+    if (document.getElementById('delay-osc2').checked) {
+        delay2.delayTime.value = delayTime;
+        delayGain2.gain.value = delayFeedback;
+    } else {
+        delayGain2.gain.value = 0;
+    }
+}
+</script>
+
+
+<script>
+// イベントリスナー設定
+document.getElementById('startButton').addEventListener('click', async () => {
+    if (isPlaying) return;
+    
+    if (!audioCtx) {
+        initAudio();
+    }
+
+    if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+    }
+
+    isPlaying = true;
+    processFrame();
+    console.log('Started');
+});
+
+document.getElementById('stopButton').addEventListener('click', () => {
+    if (!isPlaying) return;
+    
+    isPlaying = false;
+    cancelAnimationFrame(animationId);
+    
+    if (gainNode1) gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
+    if (gainNode2) gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
+    
+    console.log('Stopped');
+});
+
+// 波形選択ボタンのイベントリスナー
+document.querySelectorAll('.wave-button').forEach(button => {
+    button.addEventListener('click', (e) => {
+        const isOsc1 = e.target.classList.contains('osc1-wave');
+        const oscillator = isOsc1 ? oscillator1 : oscillator2;
+        const waveType = e.target.dataset.wave;
+        const buttonGroup = e.target.closest('.wave-selector');
+        
+        setWaveType(oscillator, waveType, buttonGroup);
+    });
+});
+
+// エフェクト切り替えのイベントリスナー
+document.querySelectorAll('.effect-toggle input').forEach(toggle => {
+    toggle.addEventListener('change', updateEffectRouting);
+});
+
+// スライダー値の表示更新
+document.querySelectorAll('input[type="range"]').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+        const valueElement = document.getElementById(e.target.id + 'Value');
+        if (valueElement) {
+            valueElement.textContent = e.target.value;
+        }
+        updateEffectRouting();
+    });
+});
+
+// オシレータのオン/オフ切り替え
+document.getElementById('osc1-enabled').addEventListener('change', function() {
+    if (!this.checked) {
+        gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
+    }
+});
+
+document.getElementById('osc2-enabled').addEventListener('change', function() {
+    if (!this.checked) {
+        gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
+    }
+});
+
+// Safari対応
+document.addEventListener('touchstart', function() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+});
+
+// 初期化実行
+initVideo();
+</script>
+

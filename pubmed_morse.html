@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>High Speed PubMed Morse Search</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            background-color: #000000;
+            color: #00ff00;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        #result {
+    margin: 20px;
+    padding: 20px;
+    background-color: #111;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0,255,0,0.3);
+    font-size: 22px;
+    width: 80%;
+    max-width: 1200px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.1; /* 1.3から1.1に変更 */
+    border: 1px solid #00ff00;
+        }
+      .info-line {
+    margin: 2px 0; /* 5pxから2pxに変更 */
+}
+        .search-query {
+            color: #ffff00;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        .citation {
+            color: #ffffff;
+            font-size: 28px;
+            padding: 10px 0;
+        }
+        .authors {
+            color: #00ccff;
+        }
+        .journal {
+            color: #ff66ff;
+        }
+        }
+        .doi {
+            color: #00ff00;
+            font-size: 20px;
+        }
+        .info-line {
+            margin: 5px 0;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 20px;
+            background-color: #00ff00;
+            color: black;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background-color: #00cc00;
+            box-shadow: 0 0 20px rgba(0,255,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <script>
+    // 前のコードと同じ部分は省略（outcomes, exposures, morseCode, audio関連の関数）
+    const outcomes = [
+      'mortality', 'cancer', 'diabetes', 'cardiovascular disease',
+      'depression', 'anxiety', 'obesity', 'hypertension'
+    ];
+
+    const exposures = [
+      'smoking', 'alcohol', 'exercise', 'diet',
+      'sleep', 'stress', 'pollution', 'radiation'
+    ];
+
+    const morseCode = {
+      'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
+      'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---',
+      'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---',
+      'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-',
+      'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-', 'Y': '-.--',
+      'Z': '--..', ' ': ' ', '0': '-----', '1': '.----', '2': '..---',
+      '3': '...--', '4': '....-', '5': '.....', '6': '-....', '7': '--...',
+      '8': '---..', '9': '----.', '.': '.-.-.-', ',': '--..--'
+    };
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const DOT_DURATION = 15;
+    const DASH_DURATION = DOT_DURATION * 2;
+    const FREQUENCY = 1500;
+    const FLASH_FREQUENCY = 1000;
+    const FLASH_DURATION = 250;
+
+    function playTone(duration, freq = FREQUENCY) {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.value = freq;
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.start();
+      
+       // 音量を下げる（0.4と0.3から0.25と0.2に変更）
+      const baseVolume = (freq === FLASH_FREQUENCY) ? 0.25 : 0.2;
+      // より緩やかな減衰を設定
+  gainNode.gain.setValueAtTime(baseVolume, audioContext.currentTime);
+  
+  // 終わりの20%の時間をかけて徐々に減衰
+  const fadeOutTime = duration * 0.2;
+  gainNode.gain.setValueAtTime(baseVolume, audioContext.currentTime + (duration - fadeOutTime) / 1000);
+  gainNode.gain.linearRampToValueAtTime(0.001, audioContext.currentTime + duration / 1000);
+
+      
+      setTimeout(() => {
+        oscillator.stop();
+      }, duration);
+    }
+
+    // モールス信号とフラッシュの関数は同じなので省略
+
+    async function playMorseCode(text) {
+      const morse = text.toUpperCase().split('').map(char => morseCode[char] || '').join(' ');
+      
+      for (const symbol of morse) {
+        switch (symbol) {
+          case '.':
+            playTone(DOT_DURATION);
+            await new Promise(resolve => setTimeout(resolve, DOT_DURATION * 1.1));
+            break;
+          case '-':
+            playTone(DASH_DURATION);
+            await new Promise(resolve => setTimeout(resolve, DASH_DURATION * 1.1));
+            break;
+          case ' ':
+            await new Promise(resolve => setTimeout(resolve, DOT_DURATION));
+            break;
+        }
+      }
+    }
+
+    function flashScreen() {
+      const flash = document.createElement('div');
+      flash.style.position = 'fixed';
+      flash.style.top = '0';
+      flash.style.left = '0';
+      flash.style.width = '100%';
+      flash.style.height = '100%';
+      flash.style.backgroundColor = '#ffffff';
+      flash.style.opacity = '0';
+      flash.style.transition = 'opacity 0.05s';
+      flash.style.pointerEvents = 'none';
+      flash.style.zIndex = '9999';
+      
+      document.body.appendChild(flash);
+      
+      requestAnimationFrame(() => {
+        flash.style.opacity = '0.3';
+        setTimeout(() => {
+          flash.style.opacity = '0';
+          setTimeout(() => {
+            flash.remove();
+          }, 50);
+        }, 25);
+      });
+      
+      playTone(FLASH_DURATION, FLASH_FREQUENCY);
+    }
+
+    async function searchPubMed(query) {
+      const baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/';
+      const searchUrl = `${baseUrl}esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=1&sort=date&format=json`;
+      
+      try {
+        const searchResponse = await fetch(searchUrl);
+        const searchData = await searchResponse.json();
+        
+        if (searchData.esearchresult.idlist.length > 0) {
+          const pmid = searchData.esearchresult.idlist[0];
+          const summaryUrl = `${baseUrl}esummary.fcgi?db=pubmed&id=${pmid}&format=json`;
+          
+          const summaryResponse = await fetch(summaryUrl);
+          const summaryData = await summaryResponse.json();
+          
+          const article = summaryData.result[pmid];
+          return {
+            title: article.title,
+            authors: article.authors.map(author => author.name),
+            journal: article.source,
+            year: article.pubdate.substring(0, 4),
+            doi: article.elocationid || 'DOI not available',
+            country: article.country || 'Country not specified'
+          };
+        }
+        return {
+          title: 'No results found',
+          authors: [],
+          journal: '',
+          year: '',
+          doi: '',
+          country: ''
+        };
+      } catch (error) {
+        console.error('Error fetching from PubMed:', error);
+        return {
+          title: 'Error fetching results',
+          authors: [],
+          journal: '',
+          year: '',
+          doi: '',
+          country: ''
+        };
+      }
+    }
+
+    async function runSearchSequence() {
+      while (true) {
+        const outcome = outcomes[Math.floor(Math.random() * outcomes.length)];
+        const exposure = exposures[Math.floor(Math.random() * exposures.length)];
+        const query = `${exposure} AND ${outcome}`;
+        
+        const resultDiv = document.getElementById('result') || (() => {
+          const div = document.createElement('div');
+          div.id = 'result';
+          document.body.appendChild(div);
+          return div;
+        })();
+        
+        const article = await searchPubMed(query);
+        resultDiv.innerHTML = `
+          <div class="search-query">SEARCH: ${query}</div>
+          <div class="citation">TITLE: ${article.title}</div>
+          <div class="info-line authors">AUTHORS: ${article.authors.join('; ')}</div>
+          <div class="info-line journal">JOURNAL: ${article.journal} (${article.year})</div>
+          <div class="info-line doi">DOI: ${article.doi}</div>
+        `;
+        
+        flashScreen();
+        await playMorseCode(article.title);
+        continue;
+      }
+    }
+
+    window.addEventListener('load', () => {
+      const startButton = document.createElement('button');
+      startButton.textContent = 'START SEQUENCE';
+      startButton.style.padding = '15px 30px';
+      startButton.style.margin = '20px';
+      document.body.appendChild(startButton);
+      
+      startButton.addEventListener('click', () => {
+        startButton.remove();
+        runSearchSequence();
+      });
+    });
+    </script>
+</body>
+</html>

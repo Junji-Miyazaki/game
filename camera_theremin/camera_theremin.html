@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Split Control Theremin</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+        }
+        #video {
+            width: 640px;
+            height: 480px;
+            background: #eee;
+            position: relative;
+        }
+        #video::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+        }
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            width: 640px;
+        }
+        .side-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        #debug {
+            font-family: monospace;
+            background: #eee;
+            padding: 10px;
+            border-radius: 5px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+            #video {
+    width: 640px;
+    height: 480px;
+    background: #eee;
+    position: relative;
+    transform: scaleX(-1); /* 画像の左右反転 */
+}
+            .control-group {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: #fff;
+        border-radius: 5px;
+    }
+    .control-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+    }
+    .control-group input[type="range"] {
+        width: 100%;
+    }
+    .control-group span {
+        display: inline-block;
+        min-width: 50px;
+        font-family: monospace;
+    }
+    </style>
+</head>
+<body>
+    <div class="basic-controls">
+        <button onclick="startCamera()">開始</button>
+        <button onclick="stopCamera()">停止</button>
+        <select id="waveform" onchange="updateWaveform(this.value)">
+            <option value="sine">サイン波</option>
+            <option value="square">矩形波</option>
+            <option value="sawtooth">のこぎり波</option>
+            <option value="triangle">三角波</option>
+        </select>
+    </div>
+
+    <div id="controls">
+        <!-- 右側：音量コントロール -->
+        <div class="side-controls">
+            <h3>右側：音量コントロール</h3>
+            <div class="control-group">
+                <label>最小明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="30" 
+                       onchange="updateVolumeMinThreshold(this.value)"
+                       id="volumeMinThreshold">
+                <span id="volumeMinThresholdValue">30</span>
+            </div>
+            <div class="control-group">
+                <label>最大明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="220" 
+                       onchange="updateVolumeMaxThreshold(this.value)"
+                       id="volumeMaxThreshold">
+                <span id="volumeMaxThresholdValue">220</span>
+            </div>
+            <div class="control-group">
+                <label>感度:</label>
+                <input type="range" min="1" max="100" value="50" 
+                       onchange="updateVolumeSensitivity(this.value)"
+                       id="volumeSensitivity">
+                <span id="volumeSensitivityValue">50</span>
+            </div>
+        </div>
+
+        <!-- 左側：周波数コントロール -->
+        <div class="side-controls">
+                <h3>左側：周波数コントロール</h3>
+    <!-- 既存のコントロールの前に追加 -->
+    <div class="control-group">
+        <label>最低周波数 (Hz):</label>
+        <input type="range" min="20" max="1000" value="40" 
+               onchange="updateMinFreq(this.value)"
+               id="minFreqControl">
+        <span id="minFreqValue">40</span>
+    </div>
+    <div class="control-group">
+        <label>最高周波数 (Hz):</label>
+        <input type="range" min="1000" max="20000" value="10000" 
+               onchange="updateMaxFreq(this.value)"
+               id="maxFreqControl">
+        <span id="maxFreqValue">10000</span>
+    </div>
+                
+            <h3>左側：周波数コントロール</h3>
+            <div class="control-group">
+                <label>最小明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="30" 
+                       onchange="updateFreqMinThreshold(this.value)"
+                       id="freqMinThreshold">
+                <span id="freqMinThresholdValue">30</span>
+            </div>
+            <div class="control-group">
+                <label>最大明るさ閾値:</label>
+                <input type="range" min="0" max="255" value="220" 
+                       onchange="updateFreqMaxThreshold(this.value)"
+                       id="freqMaxThreshold">
+                <span id="freqMaxThresholdValue">220</span>
+            </div>
+            <div class="control-group">
+                <label>感度:</label>
+                <input type="range" min="1" max="100" value="50" 
+                       onchange="updateFreqSensitivity(this.value)"
+                       id="freqSensitivity">
+                <span id="freqSensitivityValue">50</span>
+            </div>
+        </div>
+    </div>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+    
+    <div id="debug">
+        <div>
+            左側 (周波数): 
+            <br>明るさ: <span id="leftBrightness">0</span> / 255
+            <br>調整後: <span id="leftAdjusted">0</span>%
+            <br>周波数: <span id="frequency">0</span> Hz
+        </div>
+        <div>
+            右側 (音量): 
+            <br>明るさ: <span id="rightBrightness">0</span> / 255
+            <br>調整後: <span id="rightAdjusted">0</span>%
+            <br>音量: <span id="volume">0</span>%
+        </div>
+    </div>
+
+    <script>
+            // 既存の変数宣言の近くに追加
+    let minFreq = 40;
+    let maxFreq = 10000;
+
+    // 新しい更新関数
+    function updateMinFreq(value) {
+        minFreq = parseInt(value);
+        document.getElementById('minFreqValue').textContent = value;
+    }
+
+    function updateMaxFreq(value) {
+        maxFreq = parseInt(value);
+        document.getElementById('maxFreqValue').textContent = value;
+    }
+        let audioContext;
+        let oscillator;
+        let gainNode;
+        let animationFrame;
+        let isActive = false;
+
+        const MIN_FREQ = 40;
+        const MAX_FREQ = 10000;
+
+        // 音量コントロールのパラメータ
+        let volumeMinThreshold = 30;
+        let volumeMaxThreshold = 220;
+        let volumeSensitivity = 50;
+
+        // 周波数コントロールのパラメータ
+        let freqMinThreshold = 30;
+        let freqMaxThreshold = 220;
+        let freqSensitivity = 50;
+
+        // パラメータ更新関数
+        function updateVolumeMinThreshold(value) {
+            volumeMinThreshold = parseInt(value);
+            document.getElementById('volumeMinThresholdValue').textContent = value;
+        }
+
+        function updateVolumeMaxThreshold(value) {
+            volumeMaxThreshold = parseInt(value);
+            document.getElementById('volumeMaxThresholdValue').textContent = value;
+        }
+
+        function updateVolumeSensitivity(value) {
+            volumeSensitivity = parseInt(value);
+            document.getElementById('volumeSensitivityValue').textContent = value;
+        }
+
+        function updateFreqMinThreshold(value) {
+            freqMinThreshold = parseInt(value);
+            document.getElementById('freqMinThresholdValue').textContent = value;
+        }
+
+        function updateFreqMaxThreshold(value) {
+            freqMaxThreshold = parseInt(value);
+            document.getElementById('freqMaxThresholdValue').textContent = value;
+        }
+
+        function updateFreqSensitivity(value) {
+            freqSensitivity = parseInt(value);
+            document.getElementById('freqSensitivityValue').textContent = value;
+        }
+
+        // 明るさを調整する関数
+        function adjustBrightness(brightness, minThreshold, maxThreshold, sensitivity) {
+            // 閾値でクリップ
+            if (brightness < minThreshold) brightness = minThreshold;
+            if (brightness > maxThreshold) brightness = maxThreshold;
+
+            // 閾値範囲で正規化（0-100）
+            let normalized = (brightness - minThreshold) / (maxThreshold - minThreshold) * 100;
+            
+            // 感度による調整
+            normalized = Math.pow(normalized / 100, (101 - sensitivity) / 50) * 100;
+            
+            return Math.min(Math.max(normalized, 0), 100);
+        }
+
+        async function startCamera() {
+            if (isActive) return;
+            
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                oscillator = audioContext.createOscillator();
+                gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = 'sine';
+                gainNode.gain.value = 0;  // 初期音量を0に
+                oscillator.start();
+
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    } 
+                });
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                
+                isActive = true;
+                startTracking();
+            } catch (err) {
+                console.error('エラー:', err);
+                alert('カメラまたはオーディオの開始に失敗しました');
+            }
+        }
+
+        function stopCamera() {
+            if (!isActive) return;
+
+            const video = document.getElementById('video');
+            const stream = video.srcObject;
+            const tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+
+            if (oscillator) {
+                oscillator.stop();
+                oscillator = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+
+            isActive = false;
+            
+            // リセット表示
+            ['leftBrightness', 'rightBrightness', 'leftAdjusted', 
+             'rightAdjusted', 'volume', 'frequency'].forEach(id => {
+                document.getElementById(id).textContent = '0';
+            });
+        }
+
+        function analyzeFrame() {
+            if (!isActive) return;
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = 100;
+            canvas.height = 100;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // 左右の領域それぞれの明るさを計算
+            let leftBrightness = 0;
+            let rightBrightness = 0;
+            const midX = Math.floor(canvas.width / 2);
+
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    const i = (y * canvas.width + x) * 4;
+                    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+
+                    if (x < midX) {
+                        leftBrightness += brightness;
+                    } else {
+                        rightBrightness += brightness;
+                    }
+                }
+            }
+
+            const pixelsPerSide = canvas.width * canvas.height / 2;
+            leftBrightness /= pixelsPerSide;
+            rightBrightness /= pixelsPerSide;
+
+            // 左側（周波数）の調整
+            const adjustedFreqValue = adjustBrightness(
+                leftBrightness, 
+                freqMinThreshold, 
+                freqMaxThreshold, 
+                freqSensitivity
+            );
+// 明るさと周波数を反転（100%から引く）
+ const freqValue = 100 - adjustedFreqValue;
+    // minFreqとmaxFreqを使用
+    const frequency = minFreq * Math.pow(maxFreq / minFreq, freqValue / 100);
+
+
+            // 右側（音量）の調整
+            const adjustedVolumeValue = adjustBrightness(
+                rightBrightness, 
+                volumeMinThreshold, 
+                volumeMaxThreshold, 
+                volumeSensitivity
+            );
+// 明るさと音量を反転（100%から引く）
+const volume = 1 - (adjustedVolumeValue / 100);
+
+            // オーディオパラメータの更新
+            if (gainNode) {
+                gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+            }
+            if (oscillator) {
+                oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            }
+
+            // デバッグ表示の更新
+            document.getElementById('leftBrightness').textContent = Math.round(leftBrightness);
+            document.getElementById('rightBrightness').textContent = Math.round(rightBrightness);
+            document.getElementById('leftAdjusted').textContent = Math.round(adjustedFreqValue);
+            document.getElementById('rightAdjusted').textContent = Math.round(adjustedVolumeValue);
+            document.getElementById('volume').textContent = Math.round(volume * 100);
+            document.getElementById('frequency').textContent = Math.round(frequency);
+
+            animationFrame = requestAnimationFrame(analyzeFrame);
+        }
+
+        function updateWaveform(value) {
+            if (oscillator) {
+                oscillator.type = value;
+            }
+        }
+
+        function startTracking() {
+            analyzeFrame();
+        }
+    </script>
+</body>
+</html>

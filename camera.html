@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Camera Test</title>
+</head>
+<body>
+    <button onclick="startCamera()">カメラを起動</button>
+    <video id="video" autoplay playsinline style="width: 640px; height: 480px;"></video>
+
+    <script>
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoElement = document.getElementById('video');
+                videoElement.srcObject = stream;
+            } catch (err) {
+                alert('カメラへのアクセスに失敗しました: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>

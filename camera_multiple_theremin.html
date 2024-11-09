@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Oscillator Theremin</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        #videoContainer {
+            position: relative;
+            width: 640px;
+            height: 480px;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            background: #eee;
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .controls {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #debugInfo {
+            width: 100%;
+            padding: 10px;
+            background: #f8f8f8;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Multi-Oscillator Theremin</h1>
+    
+    <div class="basic-controls">
+        <button id="startButton">Start</button>
+        <button id="stopButton" disabled>Stop</button>
+    </div>
+
+    <div id="videoContainer">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div id="debugInfo">
+        Debugging information will appear here...
+    </div>
+
+    <script>
+        class ThereminController {
+            constructor() {
+                this.audioContext = null;
+                this.oscillators = [];
+                this.isActive = false;
+            }
+
+            async initialize() {
+                if (this.audioContext === null) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.audioContext = new AudioContext();
+                    
+                    if (this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
+                    }
+                }
+            }
+
+            addOscillator(config) {
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                
+                oscillator.type = config.type || 'sine';
+                oscillator.frequency.setValueAtTime(config.initialFreq || 440, this.audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+
+                const oscConfig = {
+                    oscillator,
+                    gainNode,
+                    config: {
+                        ...config,
+                        smoothing: config.smoothing || 0.1,
+                        frequencyMapping: config.frequencyMapping || 'exponential'
+                    }
+                };
+                
+                this.oscillators.push(oscConfig);
+                oscillator.start();
+                
+                return oscConfig;
+            }
+
+            calculateFrequency(brightness, config) {
+                const normalized = Math.pow(brightness / 255, config.brightnessSensitivity);
+                
+                if (config.frequencyMapping === 'exponential') {
+                    const exponent = config.exponent || 2;
+                    return config.minFreq + (config.maxFreq - config.minFreq) * Math.pow(normalized, exponent);
+                }
+                
+                if (config.frequencyMapping === 'logarithmic') {
+                    if (normalized === 0) return config.minFreq;
+                    const logMin = Math.log(config.minFreq);
+                    const logMax = Math.log(config.maxFreq);
+                    return Math.exp(logMin + (logMax - logMin) * normalized);
+                }
+
+                return config.minFreq + (config.maxFreq - config.minFreq) * normalized;
+            }
+
+            calculateVolume(brightness, sensitivity) {
+                return Math.pow(brightness / 255, sensitivity);
+            }
+
+            calculateRegionBrightness(imageData, region) {
+                const width = imageData.width;
+                const startX = Math.floor(region.x * width);
+                const startY = Math.floor(region.y * imageData.height);
+                const regionWidth = Math.floor(region.width * width);
+                const regionHeight = Math.floor(region.height * imageData.height);
+                
+                let total = 0;
+                let count = 0;
+                
+                for (let y = startY; y < startY + regionHeight; y++) {
+                    for (let x = startX; x < startX + regionWidth; x++) {
+                        const i = (y * width + x) * 4;
+                        const brightness = (imageData.data[i] + imageData.data[i + 1] + imageData.data[i + 2]) / 3;
+                        total += brightness;
+                        count++;
+                    }
+                }
+                
+                return total / count;
+            }
+
+            updateFrame(imageData) {
+                if (!this.isActive) return;
+
+                const debugInfo = [];
+                const currentTime = this.audioContext.currentTime;
+
+                this.oscillators.forEach((osc, index) => {
+                    const brightness = this.calculateRegionBrightness(imageData, osc.config.region);
+                    const frequency = this.calculateFrequency(brightness, osc.config);
+                    const detuned = frequency * (1 + (osc.config.detune || 0));
+                    const volume = this.calculateVolume(brightness, osc.config.volumeSensitivity);
+
+                    osc.oscillator.frequency.setTargetAtTime(detuned, currentTime, osc.config.smoothing);
+                    osc.gainNode.gain.setTargetAtTime(volume, currentTime, osc.config.smoothing);
+
+                    debugInfo.push(`Osc ${index + 1}: ${Math.round(detuned)}Hz, Vol: ${Math.round(volume * 100)}%`);
+                });
+
+                document.getElementById('debugInfo').innerText = debugInfo.join('\n');
+            }
+
+            stopAll() {
+                this.oscillators.forEach(({ oscillator, gainNode }) => {
+                    oscillator.stop();
+                    gainNode.disconnect();
+                });
+                this.oscillators = [];
+                if (this.audioContext) {
+                    this.audioContext.close();
+                    this.audioContext = null;
+                }
+                this.isActive = false;
+            }
+        }
+
+        class CameraController {
+            constructor(theremin) {
+                this.video = document.getElementById('video');
+                this.canvas = document.getElementById('canvas');
+                this.context = this.canvas.getContext('2d');
+                this.theremin = theremin;
+                this.isActive = false;
+            }
+
+            async start() {
+                try {
+                    const constraints = {
+                        video: {
+                            width: { ideal: 640 },
+                            height: { ideal: 480 },
+                            frameRate: { ideal: 30 },
+                            facingMode: 'environment'
+                        }
+                    };
+
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.video.srcObject = stream;
+                    
+                    await this.video.play();
+
+                    this.canvas.width = this.video.videoWidth;
+                    this.canvas.height = this.video.videoHeight;
+
+                    this.isActive = true;
+                    this.startTracking();
+                } catch (err) {
+                    console.error('Camera initialization error:', err);
+                    throw err;
+                }
+            }
+
+            stop() {
+                if (!this.isActive) return;
+
+                const stream = this.video.srcObject;
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                this.video.srcObject = null;
+                this.isActive = false;
+            }
+
+            startTracking() {
+                const analyze = () => {
+                    if (!this.isActive) return;
+
+                    this.context.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+                    const imageData = this.context.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                    this.theremin.updateFrame(imageData);
+
+                    requestAnimationFrame(analyze);
+                };
+
+                analyze();
+            }
+        }
+
+        let theremin;
+        let camera;
+
+        async function initializeTheremin() {
+            theremin = new ThereminController();
+            await theremin.initialize();
+            theremin.isActive = true;
+
+            // 3つの異なる特性を持つオシレータを追加
+            theremin.addOscillator({
+                type: 'sine',
+                minFreq: 100,
+                maxFreq: 800,
+                brightnessSensitivity: 1.5,
+                volumeSensitivity: 0.8,
+                region: { x: 0, y: 0, width: 0.5, height: 1 },
+                frequencyMapping: 'exponential',
+                exponent: 2.5,
+                smoothing: 0.1,
+                detune: 0.02
+            });
+
+            theremin.addOscillator({
+                type: 'triangle',
+                minFreq: 200,
+                maxFreq: 1200,
+                brightnessSensitivity: 1.2,
+                volumeSensitivity: 0.7,
+                region: { x: 0.5, y: 0, width: 0.5, height: 1 },
+                frequencyMapping: 'logarithmic',
+                smoothing: 0.15,
+                detune: 0.01
+            });
+
+            theremin.addOscillator({
+                type: 'sine',
+                minFreq: 150,
+                maxFreq: 1000,
+                brightnessSensitivity: 1.8,
+                volumeSensitivity: 0.6,
+                region: { x: 0, y: 0, width: 1, height: 1 },
+                frequencyMapping: 'exponential',
+                exponent: 1.5,
+                smoothing: 0.2
+            });
+
+            camera = new CameraController(theremin);
+            await camera.start();
+
+            document.getElementById('startButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+        }
+
+        function stopTheremin() {
+            if (camera) {
+                camera.stop();
+            }
+            if (theremin) {
+                theremin.stopAll();
+            }
+
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+        }
+
+        document.getElementById('startButton').addEventListener('click', async () => {
+            try {
+                await initializeTheremin();
+            } catch (err) {
+                console.error('Initialization error:', err);
+                alert('Failed to initialize: ' + err.message);
+            }
+        });
+
+        document.getElementById('stopButton').addEventListener('click', () => {
+            stopTheremin();
+        });
+    </script>
+</body>
+</html>
