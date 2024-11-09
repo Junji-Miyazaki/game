@@ -13,6 +13,174 @@ let isPlaying = false;
 let video, canvas, ctx;
 let animationId;
 
+// 設定の保存
+function saveSettings() {
+    const settings = {
+        // 一般設定
+        isPlaying: isPlaying,
+        lastFacingMode: currentFacingMode, // カメラの向きも保存
+
+        // オシレータ1の設定
+        osc1: {
+            enabled: document.getElementById('osc1-enabled').checked,
+            volume: document.getElementById('volume1').value,
+            cameraControl: document.getElementById('osc1-camera-control').checked,
+            waveType: oscillator1?.currentWaveType || 'sine',
+            minFreq: document.getElementById('minFreq1').value,
+            maxFreq: document.getElementById('maxFreq1').value,
+            sensitivity: document.getElementById('sensitivity1').value,
+            minThreshold: document.getElementById('minThreshold1').value,
+            maxThreshold: document.getElementById('maxThreshold1').value
+        },
+
+        // オシレータ2の設定
+        osc2: {
+            enabled: document.getElementById('osc2-enabled').checked,
+            volume: document.getElementById('volume2').value,
+            cameraControl: document.getElementById('osc2-camera-control').checked,
+            waveType: oscillator2?.currentWaveType || 'sine',
+            minFreq: document.getElementById('minFreq2').value,
+            maxFreq: document.getElementById('maxFreq2').value,
+            sensitivity: document.getElementById('sensitivity2').value,
+            minThreshold: document.getElementById('minThreshold2').value,
+            maxThreshold: document.getElementById('maxThreshold2').value
+        },
+
+        // エフェクト設定
+        effects: {
+            lfo: {
+                osc1: document.getElementById('lfo-osc1').checked,
+                osc2: document.getElementById('lfo-osc2').checked,
+                rate: document.getElementById('lfoRate').value,
+                depth: document.getElementById('lfoDepth').value
+            },
+            filter: {
+                osc1: document.getElementById('filter-osc1').checked,
+                osc2: document.getElementById('filter-osc2').checked,
+                freq: document.getElementById('filterFreq').value,
+                q: document.getElementById('filterQ').value
+            },
+            am: {
+                osc1: {
+                    enabled: document.getElementById('am-osc1').checked,
+                    rate: document.getElementById('amRate1').value,
+                    depth: document.getElementById('amDepth1').value
+                },
+                osc2: {
+                    enabled: document.getElementById('am-osc2').checked,
+                    rate: document.getElementById('amRate2').value,
+                    depth: document.getElementById('amDepth2').value
+                }
+            },
+            delay: {
+                osc1: {
+                    enabled: document.getElementById('delay-osc1').checked,
+                    time: document.getElementById('delayTime1').value,
+                    feedback: document.getElementById('delayFeedback1').value
+                },
+                osc2: {
+                    enabled: document.getElementById('delay-osc2').checked,
+                    time: document.getElementById('delayTime2').value,
+                    feedback: document.getElementById('delayFeedback2').value
+                }
+            }
+        },
+
+        // 最後の保存日時
+        lastSaved: new Date().toISOString()
+    };
+    
+    localStorage.setItem('thereminSettings', JSON.stringify(settings));
+    console.log('Settings saved:', settings);
+}
+
+
+// loadSettings関数も対応して修正
+function loadSettings() {
+    const savedSettings = localStorage.getItem('thereminSettings');
+    if (!savedSettings) return;
+    
+    const settings = JSON.parse(savedSettings);
+    
+    // カメラの向きを復元（initVideo関数内で使用）
+    currentFacingMode = settings.lastFacingMode || 'user';
+
+    // オシレータ1の設定を適用
+    document.getElementById('osc1-enabled').checked = settings.osc1.enabled;
+    document.getElementById('volume1').value = settings.osc1.volume;
+    document.getElementById('osc1-camera-control').checked = settings.osc1.cameraControl;
+    document.getElementById('minFreq1').value = settings.osc1.minFreq;
+    document.getElementById('maxFreq1').value = settings.osc1.maxFreq;
+    document.getElementById('sensitivity1').value = settings.osc1.sensitivity;
+    document.getElementById('minThreshold1').value = settings.osc1.minThreshold;
+    document.getElementById('maxThreshold1').value = settings.osc1.maxThreshold;
+    
+    // オシレータ2の設定を適用
+    document.getElementById('osc2-enabled').checked = settings.osc2.enabled;
+    document.getElementById('volume2').value = settings.osc2.volume;
+    document.getElementById('osc2-camera-control').checked = settings.osc2.cameraControl;
+    document.getElementById('minFreq2').value = settings.osc2.minFreq;
+    document.getElementById('maxFreq2').value = settings.osc2.maxFreq;
+    document.getElementById('sensitivity2').value = settings.osc2.sensitivity;
+    document.getElementById('minThreshold2').value = settings.osc2.minThreshold;
+    document.getElementById('maxThreshold2').value = settings.osc2.maxThreshold;
+    
+    // エフェクト設定を適用
+    document.getElementById('lfo-osc1').checked = settings.effects.lfo.osc1;
+    document.getElementById('lfo-osc2').checked = settings.effects.lfo.osc2;
+    document.getElementById('lfoRate').value = settings.effects.lfo.rate;
+    document.getElementById('lfoDepth').value = settings.effects.lfo.depth;
+    
+    document.getElementById('filter-osc1').checked = settings.effects.filter.osc1;
+    document.getElementById('filter-osc2').checked = settings.effects.filter.osc2;
+    document.getElementById('filterFreq').value = settings.effects.filter.freq;
+    document.getElementById('filterQ').value = settings.effects.filter.q;
+    
+    document.getElementById('am-osc1').checked = settings.effects.am.osc1.enabled;
+    document.getElementById('amRate1').value = settings.effects.am.osc1.rate;
+    document.getElementById('amDepth1').value = settings.effects.am.osc1.depth;
+
+    document.getElementById('am-osc2').checked = settings.effects.am.osc2.enabled;
+    document.getElementById('amRate2').value = settings.effects.am.osc2.rate;
+    document.getElementById('amDepth2').value = settings.effects.am.osc2.depth;
+
+    document.getElementById('delay-osc1').checked = settings.effects.delay.osc1.enabled;
+    document.getElementById('delayTime1').value = settings.effects.delay.osc1.time;
+    document.getElementById('delayFeedback1').value = settings.effects.delay.osc1.feedback;
+
+    document.getElementById('delay-osc2').checked = settings.effects.delay.osc2.enabled;
+    document.getElementById('delayTime2').value = settings.effects.delay.osc2.time;
+    document.getElementById('delayFeedback2').value = settings.effects.delay.osc2.feedback;
+    
+    // 波形の設定を適用
+    if (oscillator1) {
+        setWaveType(oscillator1, settings.osc1.waveType, document.getElementById('osc1-waves'));
+    }
+    if (oscillator2) {
+        setWaveType(oscillator2, settings.osc2.waveType, document.getElementById('osc2-waves'));
+    }
+    
+    // 表示値の更新
+    updateAllDisplayValues();
+    
+    // エフェクト設定を反映
+    if (audioCtx) {
+        updateEffectRouting();
+    }
+
+    console.log('Settings loaded from:', settings.lastSaved);
+}
+
+// すべての表示値を更新
+function updateAllDisplayValues() {
+    document.querySelectorAll('input[type="range"]').forEach(slider => {
+        const valueElement = document.getElementById(slider.id + 'Value');
+        if (valueElement) {
+            valueElement.textContent = slider.value;
+        }
+    });
+}
+
 // 波形選択のセットアップ関数
 function setWaveType(oscillator, type, buttonGroup) {
     if (oscillator) {
@@ -25,56 +193,7 @@ function setWaveType(oscillator, type, buttonGroup) {
                 btn.classList.add('active');
             }
         });
-        console.log(`Wave type set to ${type}`);
     }
-}
-
-// DOMContentLoaded時に初期化
-document.addEventListener('DOMContentLoaded', function() {
-    initVideo();
-    setupEventListeners();
-    addThresholdControls();
-});
-
-// 閾値コントロールの追加
-function addThresholdControls() {
-    const controlGroups = document.querySelectorAll('.control-group');
-    
-    // オシレータ1の閾値コントロール
-    const thresholdControls1 = createThresholdControls('1');
-    controlGroups[0].insertBefore(thresholdControls1, controlGroups[0].querySelector('.wave-selector'));
-    
-    // オシレータ2の閾値コントロール
-    const thresholdControls2 = createThresholdControls('2');
-    controlGroups[1].insertBefore(thresholdControls2, controlGroups[1].querySelector('.wave-selector'));
-    
-    // 初期値の設定
-    document.getElementById('minThreshold1').value = 0;
-    document.getElementById('maxThreshold1').value = 255;
-    document.getElementById('minThreshold2').value = 0;
-    document.getElementById('maxThreshold2').value = 255;
-    
-    // 値表示の更新
-    document.getElementById('minThreshold1Value').textContent = '0';
-    document.getElementById('maxThreshold1Value').textContent = '255';
-    document.getElementById('minThreshold2Value').textContent = '0';
-    document.getElementById('maxThreshold2Value').textContent = '255';
-}
-
-// 閾値コントロールのHTML生成
-function createThresholdControls(oscillatorNum) {
-    const div = document.createElement('div');
-    div.innerHTML = `
-        <div class="slider-container">
-            <label>最小輝度閾値: <span id="minThreshold${oscillatorNum}Value">0</span></label>
-            <input type="range" id="minThreshold${oscillatorNum}" min="0" max="255" value="0">
-        </div>
-        <div class="slider-container">
-            <label>最大輝度閾値: <span id="maxThreshold${oscillatorNum}Value">255</span></label>
-            <input type="range" id="maxThreshold${oscillatorNum}" min="0" max="255" value="255">
-        </div>
-    `;
-    return div;
 }
 
 // ビデオ初期化
@@ -86,21 +205,45 @@ async function initVideo() {
     canvas.width = 320;
     canvas.height = 240;
 
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                facingMode: 'user',
-                width: { ideal: 320 },
-                height: { ideal: 240 }
-            } 
-        });
-        video.srcObject = stream;
-        await video.play();
-        console.log('Video initialized successfully');
-    } catch (err) {
-        console.error('Video initialization failed:', err);
-        alert('カメラの初期化に失敗しました。カメラへのアクセスを許可してください。');
+    // カメラ切り替えボタンを追加
+    const cameraButton = document.createElement('button');
+    cameraButton.textContent = 'カメラ切り替え';
+    cameraButton.id = 'switchCamera';
+    document.querySelector('.basic-controls').appendChild(cameraButton);
+
+    let currentFacingMode = 'user';
+    
+    async function startCamera(facingMode) {
+        try {
+            if (video.srcObject) {
+                const tracks = video.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: facingMode,
+                    width: { ideal: 320 },
+                    height: { ideal: 240 }
+                } 
+            });
+            video.srcObject = stream;
+            await video.play();
+            console.log('Video initialized successfully with facing mode:', facingMode);
+        } catch (err) {
+            console.error('Video initialization failed:', err);
+            alert('カメラの初期化に失敗しました。カメラへのアクセスを許可してください。');
+        }
     }
+
+    // カメラ切り替えボタンのイベントリスナー
+    cameraButton.addEventListener('click', async () => {
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        await startCamera(currentFacingMode);
+    });
+
+    // 初期カメラ起動
+    await startCamera(currentFacingMode);
 }
 
 // オーディオ初期化
@@ -197,10 +340,51 @@ function initAudio() {
         am1.start();
         am2.start();
 
+        // 設定を反映
+        updateEffectRouting();
+
         console.log('Audio initialized successfully');
     } catch (e) {
         console.error('Audio initialization failed:', e);
     }
+}
+
+// 閾値コントロールの追加
+function addThresholdControls() {
+    const controlGroups = document.querySelectorAll('.control-group');
+    
+    // オシレータ1の閾値コントロール
+    const thresholdControls1 = createThresholdControls('1');
+    controlGroups[0].insertBefore(thresholdControls1, controlGroups[0].querySelector('.wave-selector'));
+    
+    // オシレータ2の閾値コントロール
+    const thresholdControls2 = createThresholdControls('2');
+    controlGroups[1].insertBefore(thresholdControls2, controlGroups[1].querySelector('.wave-selector'));
+    
+    // 初期値の設定
+    document.getElementById('minThreshold1').value = 0;
+    document.getElementById('maxThreshold1').value = 255;
+    document.getElementById('minThreshold2').value = 0;
+    document.getElementById('maxThreshold2').value = 255;
+    
+    // 値表示の更新
+    updateAllDisplayValues();
+}
+
+// 閾値コントロールのHTML生成
+function createThresholdControls(oscillatorNum) {
+    const div = document.createElement('div');
+    div.innerHTML = `
+        <div class="slider-container">
+            <label>最小輝度閾値: <span id="minThreshold${oscillatorNum}Value">0</span></label>
+            <input type="range" id="minThreshold${oscillatorNum}" min="0" max="255" value="0">
+        </div>
+        <div class="slider-container">
+            <label>最大輝度閾値: <span id="maxThreshold${oscillatorNum}Value">255</span></label>
+            <input type="range" id="maxThreshold${oscillatorNum}" min="0" max="255" value="255">
+        </div>
+    `;
+    return div;
 }
 
 // フレーム処理
@@ -208,7 +392,6 @@ function processFrame() {
     if (!isPlaying) return;
 
     try {
-        // ビデオをキャンバスに描画
         ctx.save();
         ctx.scale(-1, 1);
         ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
@@ -240,17 +423,13 @@ function calculateAverageBrightness(data) {
 
 // 閾値内の明るさを正規化
 function normalizeBrightness(brightness, minThreshold, maxThreshold) {
-    // 閾値の範囲内に収める
     brightness = Math.max(minThreshold, Math.min(maxThreshold, brightness));
-    
-    // 閾値の範囲で正規化（0-1の範囲に変換）
     return (brightness - minThreshold) / (maxThreshold - minThreshold);
 }
 
 // 周波数計算（反転）
 function calculateFrequency(brightness, minFreq, maxFreq, sensitivity, minThreshold, maxThreshold) {
     const normalized = normalizeBrightness(brightness, minThreshold, maxThreshold);
-    // 1 - normalizedで明るさと周波数を反転させる
     const invertedNormalized = Math.pow(1 - normalized, sensitivity / 50);
     return minFreq + (maxFreq - minFreq) * invertedNormalized;
 }
@@ -344,8 +523,7 @@ function updateEffectRouting() {
     if (!audioCtx) return;
 
     try {
-		
-		// LFOルーティング
+        // LFOルーティング
         const lfoRate = parseFloat(document.getElementById('lfoRate').value);
         const lfoDepth = parseFloat(document.getElementById('lfoDepth').value);
         
@@ -377,42 +555,46 @@ function updateEffectRouting() {
         }
 
         // AMルーティング
-        const amRate = parseFloat(document.getElementById('amRate').value);
-        const amDepth = parseFloat(document.getElementById('amDepth').value) / 100;
-        
-        am1.frequency.setValueAtTime(amRate, audioCtx.currentTime);
-        am2.frequency.setValueAtTime(amRate, audioCtx.currentTime);
-        
+        const amRate1 = parseFloat(document.getElementById('amRate1').value);
+        const amDepth1 = parseFloat(document.getElementById('amDepth1').value) / 100;
+        const amRate2 = parseFloat(document.getElementById('amRate2').value);
+        const amDepth2 = parseFloat(document.getElementById('amDepth2').value) / 100;
+
+        am1.frequency.setValueAtTime(amRate1, audioCtx.currentTime);
+        am2.frequency.setValueAtTime(amRate2, audioCtx.currentTime);
+
         if (document.getElementById('am-osc1').checked) {
             am1.connect(amGain1.gain);
-            amGain1.gain.setValueAtTime(amDepth, audioCtx.currentTime);
+            amGain1.gain.setValueAtTime(amDepth1, audioCtx.currentTime);
         } else {
             am1.disconnect();
             amGain1.gain.setValueAtTime(1, audioCtx.currentTime);
         }
-        
+
         if (document.getElementById('am-osc2').checked) {
             am2.connect(amGain2.gain);
-            amGain2.gain.setValueAtTime(amDepth, audioCtx.currentTime);
+            amGain2.gain.setValueAtTime(amDepth2, audioCtx.currentTime);
         } else {
             am2.disconnect();
             amGain2.gain.setValueAtTime(1, audioCtx.currentTime);
         }
 
         // ディレイルーティング
-        const delayTime = parseFloat(document.getElementById('delayTime').value);
-        const delayFeedback = parseFloat(document.getElementById('delayFeedback').value);
-        
+        const delayTime1 = parseFloat(document.getElementById('delayTime1').value);
+        const delayFeedback1 = parseFloat(document.getElementById('delayFeedback1').value);
+        const delayTime2 = parseFloat(document.getElementById('delayTime2').value);
+        const delayFeedback2 = parseFloat(document.getElementById('delayFeedback2').value);
+
         if (document.getElementById('delay-osc1').checked) {
-            delay1.delayTime.setValueAtTime(delayTime, audioCtx.currentTime);
-            delayGain1.gain.setValueAtTime(delayFeedback, audioCtx.currentTime);
+            delay1.delayTime.setValueAtTime(delayTime1, audioCtx.currentTime);
+            delayGain1.gain.setValueAtTime(delayFeedback1, audioCtx.currentTime);
         } else {
             delayGain1.gain.setValueAtTime(0, audioCtx.currentTime);
         }
-        
+
         if (document.getElementById('delay-osc2').checked) {
-            delay2.delayTime.setValueAtTime(delayTime, audioCtx.currentTime);
-            delayGain2.gain.setValueAtTime(delayFeedback, audioCtx.currentTime);
+            delay2.delayTime.setValueAtTime(delayTime2, audioCtx.currentTime);
+            delayGain2.gain.setValueAtTime(delayFeedback2, audioCtx.currentTime);
         } else {
             delayGain2.gain.setValueAtTime(0, audioCtx.currentTime);
         }
@@ -464,12 +646,16 @@ function setupEventListeners() {
             const buttonGroup = e.target.closest('.wave-selector');
             
             setWaveType(oscillator, waveType, buttonGroup);
+            saveSettings();
         });
     });
 
     // エフェクト切り替え
     document.querySelectorAll('.effect-toggle input').forEach(toggle => {
-        toggle.addEventListener('change', updateEffectRouting);
+        toggle.addEventListener('change', () => {
+            updateEffectRouting();
+            saveSettings();
+        });
     });
 
     // スライダー値の表示更新とエフェクト更新
@@ -482,46 +668,13 @@ function setupEventListeners() {
             if (audioCtx) {
                 updateEffectRouting();
             }
+            saveSettings();
         });
     });
 
-    // オシレータのオン/オフ切り替え
-    document.getElementById('osc1-enabled').addEventListener('change', function() {
-        if (!this.checked && gainNode1) {
-            gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
-        }
-    });
-
-    document.getElementById('osc2-enabled').addEventListener('change', function() {
-        if (!this.checked && gainNode2) {
-            gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
-        }
-    });
-
-    // オシレータのカメラ制御切り替え時の波形維持
-    document.getElementById('osc1-camera-control').addEventListener('change', function() {
-        if (oscillator1 && oscillator1.currentWaveType) {
-            oscillator1.type = oscillator1.currentWaveType;
-        }
-    });
-
-    document.getElementById('osc2-camera-control').addEventListener('change', function() {
-        if (oscillator2 && oscillator2.currentWaveType) {
-            oscillator2.type = oscillator2.currentWaveType;
-        }
-    });
-
-    // 閾値スライダーのイベントリスナー
-    ['minThreshold1', 'maxThreshold1', 'minThreshold2', 'maxThreshold2'].forEach(id => {
-        const slider = document.getElementById(id);
-        if (slider) {
-            slider.addEventListener('input', function(e) {
-                const valueElement = document.getElementById(e.target.id + 'Value');
-                if (valueElement) {
-                    valueElement.textContent = e.target.value;
-                }
-            });
-        }
+    // その他の設定変更時の保存
+    document.querySelectorAll('input').forEach(input => {
+        input.addEventListener('change', saveSettings);
     });
 
     // Safari対応
@@ -529,5 +682,24 @@ function setupEventListeners() {
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
+	});
+	window.addEventListener('beforeunload', () => {
+        if (isPlaying) {
+            // 再生中なら停止
+            isPlaying = false;
+            cancelAnimationFrame(animationId);
+            if (gainNode1) gainNode1.gain.setValueAtTime(0, audioCtx.currentTime);
+            if (gainNode2) gainNode2.gain.setValueAtTime(0, audioCtx.currentTime);
+        }
+        // 設定を保存
+        saveSettings();
     });
 }
+
+// 初期化
+document.addEventListener('DOMContentLoaded', function() {
+    initVideo();
+    setupEventListeners();
+    addThresholdControls();
+    loadSettings();
+});

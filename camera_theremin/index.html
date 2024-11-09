@@ -37,12 +37,12 @@
             overflow: hidden;
         }
 
-#video {
-    width: 100%;
-    height: 100%;
-    transform: scaleX(-1); /* 左右反転 */
-    object-fit: cover;
-}
+        #video {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            object-fit: cover;
+        }
 
         #overlay {
             position: absolute;
@@ -190,6 +190,7 @@
     </div>
 
     <div id="controls">
+        <!-- オシレータ1設定 -->
         <div class="control-group">
             <h3>オシレータ1設定</h3>
             <div class="switch-container">
@@ -199,10 +200,10 @@
                 </label>
                 <span>音声オン/オフ</span>
             </div>
-                <div class="slider-container">
-    <label>ボリューム: <span id="volume1Value">50</span></label>
-    <input type="range" id="volume1" min="0" max="100" value="50">
-</div>
+            <div class="slider-container">
+                <label>ボリューム: <span id="volume1Value">50</span></label>
+                <input type="range" id="volume1" min="0" max="100" value="50">
+            </div>
             <div class="switch-container">
                 <label class="switch">
                     <input type="checkbox" id="osc1-camera-control" checked>
@@ -228,8 +229,37 @@
                 <label>感度: <span id="sensitivity1Value">50</span></label>
                 <input type="range" id="sensitivity1" min="1" max="100" value="50">
             </div>
+
+            <!-- AM設定 -->
+            <h4>AM設定</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="am-osc1" checked> 有効</label>
+            </div>
+            <div class="slider-container">
+                <label>レート (Hz): <span id="amRate1Value">2</span></label>
+                <input type="range" id="amRate1" min="0.01" max="20" step="0.01" value="2">
+            </div>
+            <div class="slider-container">
+                <label>深さ: <span id="amDepth1Value">50</span></label>
+                <input type="range" id="amDepth1" min="0" max="100" value="50">
+            </div>
+
+            <!-- ディレイ設定 -->
+            <h4>ディレイ設定</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="delay-osc1" checked> 有効</label>
+            </div>
+            <div class="slider-container">
+                <label>時間 (秒): <span id="delayTime1Value">0.3</span></label>
+                <input type="range" id="delayTime1" min="0" max="1" step="0.01" value="0.3">
+            </div>
+            <div class="slider-container">
+                <label>フィードバック: <span id="delayFeedback1Value">0.3</span></label>
+                <input type="range" id="delayFeedback1" min="0" max="0.9" step="0.1" value="0.3">
+            </div>
         </div>
 
+        <!-- オシレータ2設定 -->
         <div class="control-group">
             <h3>オシレータ2設定</h3>
             <div class="switch-container">
@@ -239,10 +269,10 @@
                 </label>
                 <span>音声オン/オフ</span>
             </div>
-                <div class="slider-container">
-    <label>ボリューム: <span id="volume2Value">50</span></label>
-    <input type="range" id="volume2" min="0" max="100" value="50">
-</div>
+            <div class="slider-container">
+                <label>ボリューム: <span id="volume2Value">50</span></label>
+                <input type="range" id="volume2" min="0" max="100" value="50">
+            </div>
             <div class="switch-container">
                 <label class="switch">
                     <input type="checkbox" id="osc2-camera-control" checked>
@@ -268,8 +298,37 @@
                 <label>感度: <span id="sensitivity2Value">50</span></label>
                 <input type="range" id="sensitivity2" min="1" max="100" value="50">
             </div>
+
+            <!-- AM設定 -->
+            <h4>AM設定</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="am-osc2" checked> 有効</label>
+            </div>
+            <div class="slider-container">
+                <label>レート (Hz): <span id="amRate2Value">2</span></label>
+                <input type="range" id="amRate2" min="0.01" max="20" step="0.01" value="2">
+            </div>
+            <div class="slider-container">
+                <label>深さ: <span id="amDepth2Value">50</span></label>
+                <input type="range" id="amDepth2" min="0" max="100" value="50">
+            </div>
+
+            <!-- ディレイ設定 -->
+            <h4>ディレイ設定</h4>
+            <div class="effect-toggle">
+                <label><input type="checkbox" id="delay-osc2" checked> 有効</label>
+            </div>
+            <div class="slider-container">
+                <label>時間 (秒): <span id="delayTime2Value">0.3</span></label>
+                <input type="range" id="delayTime2" min="0" max="1" step="0.01" value="0.3">
+            </div>
+            <div class="slider-container">
+                <label>フィードバック: <span id="delayFeedback2Value">0.3</span></label>
+                <input type="range" id="delayFeedback2" min="0" max="0.9" step="0.1" value="0.3">
+            </div>
         </div>
 
+        <!-- エフェクト設定 -->
         <div class="control-group">
             <h3>エフェクト設定</h3>
             
@@ -299,34 +358,6 @@
             <div class="slider-container">
                 <label>レゾナンス: <span id="filterQValue">1</span></label>
                 <input type="range" id="filterQ" min="0" max="20" step="0.1" value="1">
-            </div>
-
-            <h4>AM</h4>
-            <div class="effect-toggle">
-                <label><input type="checkbox" id="am-osc1" checked> Osc1</label>
-                <label><input type="checkbox" id="am-osc2" checked> Osc2</label>
-            </div>
-            <div class="slider-container">
-                <label>レート (Hz): <span id="amRateValue">2</span></label>
-                <input type="range" id="amRate" min="0.1" max="20" step="0.1" value="2">
-            </div>
-            <div class="slider-container">
-                <label>深さ: <span id="amDepthValue">50</span></label>
-                <input type="range" id="amDepth" min="0" max="100" value="50">
-            </div>
-            
-            <h4>ディレイ</h4>
-            <div class="effect-toggle">
-                <label><input type="checkbox" id="delay-osc1" checked> Osc1</label>
-                <label><input type="checkbox" id="delay-osc2" checked> Osc2</label>
-            </div>
-            <div class="slider-container">
-                <label>時間 (秒): <span id="delayTimeValue">0.3</span></label>
-                <input type="range" id="delayTime" min="0" max="1" step="0.01" value="0.3">
-            </div>
-            <div class="slider-container">
-                <label>フィードバック: <span id="delayFeedbackValue">0.3</span></label>
-                <input type="range" id="delayFeedback" min="0" max="0.9" step="0.1" value="0.3">
             </div>
         </div>
     </div>
