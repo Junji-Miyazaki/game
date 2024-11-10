@@ -27,6 +27,7 @@
         video {
             width: 100%;
             filter: grayscale(1) brightness(1.2);
+            transform: scaleX(-1) !important; 
         }
         .controls {
             background: #111;
@@ -87,7 +88,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Electronic Rhythm Generator</h1>
+
         
         <div class="video-container">
             <video id="video" playsinline autoplay muted></video>
