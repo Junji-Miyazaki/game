@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electronic Rhythm Generator</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #000;
+            color: #fff;
+        }
+        .container {
+            display: grid;
+            gap: 20px;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+            border: 1px solid #333;
+        }
+        video {
+            width: 100%;
+            filter: grayscale(1) contrast(1.2);
+            transform: scaleX(-1) !important; 
+        }
+        .controls {
+            background: #111;
+            padding: 20px;
+            border: 1px solid #333;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        button {
+            background: #000;
+            color: #fff;
+            border: 1px solid #333;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 5px;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: #222;
+            border-color: #fff;
+        }
+        button.muted {
+            background: #fff;
+            color: #000;
+        }
+        .slider-container {
+            display: grid;
+            gap: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+            -webkit-appearance: none;
+            background: #333;
+            height: 2px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #fff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        .visualization {
+            width: 100%;
+            height: 150px;
+            background: #000;
+            border: 1px solid #333;
+            margin-top: 10px;
+        }
+        .track-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .track-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-container">
+            <video id="video" playsinline autoplay muted></video>
+            <canvas id="visualizer" class="visualization"></canvas>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <button id="startStop">Start</button>
+                <button id="toggleCamera">Switch Camera</button>
+            </div>
+
+            <div class="track-controls">
+                <div class="track-control">
+                    <button id="muteHihat1">Hihat 1</button>
+                    <button id="autoMuteHihat1">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteHihat2">Hihat 2</button>
+                    <button id="autoMuteHihat2">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteOpenHihat1">Open HH 1</button>
+                    <button id="autoMuteOpenHihat1">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteOpenHihat2">Open HH 2</button>
+                    <button id="autoMuteOpenHihat2">Auto</button>
+                </div>
+                <div class="track-control">
+                    <button id="muteSignal">Signal</button>
+                    <button id="autoMuteSignal">Auto</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <button id="toggleAutoDensity">Auto Density: ON</button>
+            </div>
+
+            <div class="control-group">
+                <div class="slider-container">
+                    <div>
+                        <label for="tempo">Tempo: <span id="tempoValue">200</span> BPM</label>
+                        <input type="range" id="tempo" min="60" max="200" value="200">
+                    </div>
+                    <div>
+                        <label for="density">Pattern Density: <span id="densityValue">100</span>%</label>
+                        <input type="range" id="density" min="0" max="100" value="100">
+                    </div>
+                    <div>
+                        <label for="randomness">Randomness: <span id="randomnessValue">100</span>%</label>
+                        <input type="range" id="randomness" min="0" max="100" value="100">
+                    </div>
+
+                    <!-- ディレイコントロールセクション -->
+                    <div class="delay-controls">
+                        <div class="section-title">Delay Controls</div>
+                        <div>
+                            <label for="delayTime">Roll Time: <span id="delayTimeValue">160</span>ms</label>
+                            <input type="range" id="delayTime" min="50" max="500" value="160">
+                        </div>
+                        <div>
+                            <label for="delayFeedback">Roll Decay: <span id="delayFeedbackValue">40</span>%</label>
+                            <input type="range" id="delayFeedback" min="0" max="90" value="40">
+                        </div>
+                        <div>
+                            <label for="delayChance">Roll Chance: <span id="delayChanceValue">15</span>%</label>
+                            <input type="range" id="delayChance" min="0" max="100" value="15">
+                        </div>
+                        <div>
+                            <label for="delayRolls">Roll Count: <span id="delayRollsValue">3</span></label>
+                            <input type="range" id="delayRolls" min="1" max="8" value="3">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+    /* 既存のスタイルに追加 */
+    .delay-controls {
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid #333;
+    }
+
+    .section-title {
+        color: #fff;
+        font-size: 12px;
+        margin-bottom: 15px;
+        font-family: 'Courier New', monospace;
+        opacity: 0.8;
+    }
+
+    .delay-controls div {
+        margin-bottom: 12px;
+    }
+
+    .delay-controls label {
+        font-size: 11px;
+    }
+    </style>
+</body>
+
+   <script>
+class ElectronicSounds {
+    constructor(audioContext) {
+        this.audioContext = audioContext;
+        this.delaySettings = {
+            time: 0.16,
+            feedback: 0.4,
+            chance: 0.15,
+            rolls: 3
+        };
+        this.setupDelayEffect();
+    }
+        setupDelayEffect() {
+        // ディレイエフェクトのセットアップ
+        this.delayNode = this.audioContext.createDelay();
+        this.feedbackNode = this.audioContext.createGain();
+        this.wetGainNode = this.audioContext.createGain();
+
+        // ディレイの初期設定
+        this.delayNode.delayTime.value = this.delaySettings.time;
+        this.feedbackNode.gain.value = this.delaySettings.feedback;
+        this.wetGainNode.gain.value = 0.5;
+
+        // エフェクトチェーンの接続
+        this.delayNode.connect(this.feedbackNode);
+        this.feedbackNode.connect(this.delayNode);
+    }
+
+    createSound(frequency, time, duration, brightness = 0.5, waveType = 'sine') {
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+        const filter = this.audioContext.createBiquadFilter();
+        
+        osc.type = waveType;
+        osc.frequency.setValueAtTime(frequency, time);
+        
+        filter.type = 'lowpass';
+        if (waveType === 'square' && frequency < 100) {
+            filter.frequency.value = 500 + (brightness * 1000);
+            filter.Q.value = 1;
+        } else {
+            filter.frequency.value = 1000 + (brightness * 7000);
+        }
+        
+        const volume = waveType === 'square' ? 
+            (0.05 + (brightness * 0.2)) : 
+            (0.1 + (brightness * 0.3));
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(volume, time + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
+
+        // ディレイエフェクトの適用（ランダムに）
+        if (Math.random() < this.delaySettings.chance) {
+            // ロールエフェクトの生成
+            for (let i = 1; i <= this.delaySettings.rolls; i++) {
+                const delayGain = this.audioContext.createGain();
+                const delayTime = time + (i * this.delaySettings.time);
+                const delayVolume = volume * Math.pow(this.delaySettings.feedback, i);
+
+                delayGain.gain.setValueAtTime(0, delayTime);
+                delayGain.gain.linearRampToValueAtTime(delayVolume, delayTime + 0.005);
+                delayGain.gain.exponentialRampToValueAtTime(0.01, delayTime + duration);
+
+                osc.connect(filter);
+                filter.connect(delayGain);
+                delayGain.connect(this.audioContext.destination);
+            }
+        }
+        
+        // メインの出力チェーン
+        osc.connect(filter);
+        filter.connect(gain);
+        
+        // ディレイエフェクトチェーンの接続
+        gain.connect(this.audioContext.destination);
+        gain.connect(this.delayNode);
+        this.delayNode.connect(this.wetGainNode);
+        this.wetGainNode.connect(this.audioContext.destination);
+        
+        osc.start(time);
+        osc.stop(time + duration + (this.delaySettings.time * this.delaySettings.rolls));
+        
+        return gain;
+    }
+
+        updateDelaySettings(settings) {
+        Object.assign(this.delaySettings, settings);
+        
+        // ディレイパラメータの更新
+        if (this.delayNode && this.feedbackNode) {
+            if (settings.time !== undefined) {
+                this.delayNode.delayTime.value = settings.time;
+            }
+            if (settings.feedback !== undefined) {
+                this.feedbackNode.gain.value = settings.feedback;
+            }
+        }
+    }
+
+    getModulatedFrequency(baseFreq, brightness) {
+        const modulation = 1 + ((brightness - 0.5) * 0.5);
+        return baseFreq * modulation;
+    }
+
+    hihat1(time, brightness = 0.5) {
+        return this.createSound(
+            this.getModulatedFrequency(8000, brightness),
+            time, 0.03, brightness, 'triangle'
+        );
+    }
+
+    hihat2(time, brightness = 0.5) {
+        return this.createSound(
+            this.getModulatedFrequency(10000, brightness),
+            time, 0.06, brightness, 'sawtooth'
+        );
+    }
+
+    openHihat1(time, brightness = 0.5) {
+        return this.createSound(
+            this.getModulatedFrequency(1000, brightness),
+            time, 0.015, brightness, 'sawtooth'
+        );
+    }
+
+    openHihat2(time, brightness = 0.5) {
+        return this.createSound(
+            this.getModulatedFrequency(9000, brightness),
+            time, 0.08, brightness, 'sine'
+        );
+    }
+
+    signal(time, brightness = 0.5) {
+        return this.createSound(
+            this.getModulatedFrequency(30 + Math.random() * 80, brightness),
+            time, 0.15, brightness, 'square'
+        );
+    }
+
+    updateDelaySettings(settings) {
+        Object.assign(this.delaySettings, settings);
+    }
+}
+        
+class RhythmGenerator {
+    constructor() {
+        this.audioContext = null;
+    this.sounds = null;
+    this.isPlaying = false;
+        this.isPlaying = false;
+        this.tempo = 200;
+        this.density = 1.0;
+        this.randomness = 1.0;
+        this.stepsPerBar = 16;
+        this.barsPerPhrase = 2;
+        this.totalSteps = this.stepsPerBar * this.barsPerPhrase;
+        this.currentStep = 0;
+        this.phraseCount = 0;
+        this.lastBrightness = null;
+        this.lastAreaBrightness = null;
+        this.autoDensityChange = true;
+        this.densityChangeInterval = 20000;
+
+        this.muteStates = {
+            hihat1: false,
+            hihat2: false,
+            openHihat1: false,
+            openHihat2: false,
+            signal: false
+        };
+        
+                
+        this.autoMuteStates = {
+            hihat1: true,
+            hihat2: true,
+            openHihat1: true,
+            openHihat2: true,
+            signal: true
+        };
+
+        // ディレイ設定の初期化を追加
+    this.delaySettings = {
+        time: 0.16,
+        feedback: 0.4,
+        chance: 0.15,
+        rolls: 3
+    };
+        
+        this.pattern = this.generateInitialPattern();
+        this.setupCamera();
+        this.setupVisualizer();
+        this.startAutoDensityChange();
+    }
+
+    setupVisualizer() {
+        this.visualizer = document.getElementById('visualizer');
+        this.visualizerCtx = this.visualizer.getContext('2d');
+        this.visualizer.width = this.visualizer.offsetWidth;
+        this.visualizer.height = this.visualizer.offsetHeight;
+    }
+
+    generateInitialPattern() {
+        const pattern = Array(this.totalSteps).fill().map(() => ({
+            hihat1: false,
+            hihat2: false,
+            openHihat1: false,
+            openHihat2: false,
+            signal: false
+        }));
+
+        for (let i = 0; i < this.totalSteps; i++) {
+            if (Math.random() < this.density) {
+                const sound = ['hihat1', 'hihat2', 'openHihat1', 'openHihat2', 'signal'][
+                    Math.floor(Math.random() * 5)
+                ];
+                pattern[i][sound] = true;
+            }
+        }
+
+        return pattern;
+    }
+
+    startAutoDensityChange() {
+        if (this.densityChangeTimer) {
+            clearInterval(this.densityChangeTimer);
+        }
+        
+        this.densityChangeTimer = setInterval(() => {
+            if (this.autoDensityChange && this.isPlaying) {
+                const newDensity = Math.floor(Math.random() * 91 + 10);
+                this.setDensity(newDensity);
+
+                const densitySlider = document.getElementById('density');
+                const densityValue = document.getElementById('densityValue');
+                if (densitySlider && densityValue) {
+                    densitySlider.value = newDensity;
+                    densityValue.textContent = newDensity;
+                }
+            }
+        }, this.densityChangeInterval);
+    }
+
+    async setupCamera() {
+        this.video = document.getElementById('video');
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.isFrontCamera = false;
+
+        try {
+            await this.startCamera();
+            this.canvas.width = this.video.videoWidth || 640;
+            this.canvas.height = this.video.videoHeight || 480;
+            console.log('Camera setup successful');
+        } catch (err) {
+            console.error('Camera setup failed:', err);
+            this.useFallbackMode();
+        }
+    }
+    async startCamera() {
+        try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('このブラウザはカメラをサポートしていません。');
+            }
+
+            const constraints = {
+                video: {
+                    facingMode: this.isFrontCamera ? "user" : "environment",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.video.srcObject = stream;
+            
+            return new Promise((resolve) => {
+                this.video.onloadedmetadata = () => {
+                    this.video.play()
+                        .then(resolve)
+                        .catch(err => {
+                            console.error('Video play failed:', err);
+                            this.useFallbackMode();
+                            resolve();
+                        });
+                };
+            });
+        } catch (err) {
+            this.useFallbackMode();
+            throw err;
+        }
+    }
+
+        useFallbackMode() {
+        this.fallbackMode = true;
+        this.canvas.width = 640;
+        this.canvas.height = 480;
+        this.lastBrightness = 0.5;
+        this.lastAreaBrightness = Array(16).fill(0.5);
+    }
+        
+    toggleCamera() {
+        this.isFrontCamera = !this.isFrontCamera;
+        if (this.video.srcObject) {
+            const tracks = this.video.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+        }
+        this.startCamera();
+    }
+
+    analyzeVideo() {
+        if (!this.video || !this.video.videoWidth) {
+            return {
+                brightness: 0.5,
+                changed: false
+            };
+        }
+
+        try {
+            this.ctx.drawImage(this.video, 0, 0);
+            const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+            const data = imageData.data;
+            
+            const areaSize = 4;
+            const areaWidth = this.canvas.width / areaSize;
+            const areaHeight = this.canvas.height / areaSize;
+            let areaBrightness = [];
+            
+            for (let y = 0; y < areaSize; y++) {
+                for (let x = 0; x < areaSize; x++) {
+                    let brightness = 0;
+                    let count = 0;
+                    
+                    for (let py = y * areaHeight; py < (y + 1) * areaHeight; py++) {
+                        for (let px = x * areaWidth; px < (x + 1) * areaWidth; px++) {
+                            const i = (Math.floor(py) * this.canvas.width + Math.floor(px)) * 4;
+                            brightness += (data[i] + data[i + 1] + data[i + 2]) / 3;
+                            count++;
+                        }
+                    }
+                    
+                    areaBrightness.push(brightness / count);
+                }
+            }
+            
+            const brightness = areaBrightness.reduce((a, b) => a + b) / (areaSize * areaSize) / 255;
+            
+            const changed = !this.lastBrightness || 
+                Math.abs(brightness - this.lastBrightness) > 0.01 ||
+                areaBrightness.some((b, i) => 
+                    !this.lastAreaBrightness || 
+                    Math.abs(b/255 - this.lastAreaBrightness[i]/255) > 0.03
+                );
+            
+            this.lastBrightness = brightness;
+            this.lastAreaBrightness = areaBrightness;
+            
+            return {
+                brightness,
+                changed
+            };
+        } catch (err) {
+            console.error('Video analysis failed:', err);
+            return {
+                brightness: 0.5,
+                changed: false
+            };
+        }
+    }
+
+    async start() {
+        try {
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.sounds = new ElectronicSounds(this.audioContext);
+            }
+
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
+            this.isPlaying = true;
+            this.startTime = this.audioContext.currentTime;
+            this.currentStep = 0;
+            this.phraseCount = 0;
+            this.startAutoDensityChange();
+            this.scheduleNext();
+        } catch (err) {
+            console.error('Failed to start audio context:', err);
+        }
+    }
+
+    stop() {
+        this.isPlaying = false;
+        if (this.densityChangeTimer) {
+            clearInterval(this.densityChangeTimer);
+        }
+    }
+
+    updatePattern(brightness, changed) {
+        if (changed) {
+            const activeSounds = Object.keys(this.pattern[0]).filter(sound => 
+                !this.muteStates[sound]
+            );
+            
+            if (activeSounds.length > 0) {
+                const soundToChange = activeSounds[Math.floor(Math.random() * activeSounds.length)];
+                
+                const shouldChange = Math.random() < this.randomness;
+                if (shouldChange) {
+                    const increase = Math.random() < 0.5;
+                    
+                    const currentNotes = this.pattern.reduce((count, step) => 
+                        count + (step[soundToChange] ? 1 : 0), 0
+                    );
+                    
+                    const minNotes = Math.floor(this.totalSteps * 0.1);
+                    const maxNotes = Math.floor(this.totalSteps * 0.7);
+                    
+                    if ((increase && currentNotes < maxNotes) || (!increase && currentNotes > minNotes)) {
+                        for (let i = 0; i < this.totalSteps; i++) {
+                            if (increase) {
+                                if (!this.pattern[i][soundToChange] && Math.random() < 0.3) {
+                                    this.pattern[i][soundToChange] = true;
+                                }
+                            } else {
+                                if (this.pattern[i][soundToChange] && Math.random() < 0.3) {
+                                    this.pattern[i][soundToChange] = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    handleAutoMutes() {
+    // カメラの変化があった時は即座に反応
+    if (this.lastVideoChange) {
+        const autoMutedSounds = Object.keys(this.autoMuteStates).filter(sound => 
+            this.autoMuteStates[sound]
+        );
+        
+        if (autoMutedSounds.length > 0) {
+            // 変化確率を調整（現在の明るさに応じて）
+            const changeProb = this.lastBrightness ? 0.3 + (this.lastBrightness * 0.4) : 0.5;
+            
+            if (Math.random() < changeProb) {  // 明るいほど変化しやすい
+                // Auto ON の音から1-2個をランダムに選択
+                const numChanges = Math.random() < 0.3 ? 2 : 1;  // 30%の確率で2つ変化
+                const shuffledSounds = [...autoMutedSounds].sort(() => Math.random() - 0.5);
+                
+                for (let i = 0; i < Math.min(numChanges, shuffledSounds.length); i++) {
+                    const soundToToggle = shuffledSounds[i];
+                    const currentMutes = this.countActiveMutes();
+                    const currentlyMuted = this.muteStates[soundToToggle];
+
+                    // ミュート解除は常に可能、ミュートは3未満の時のみ
+                    if (currentlyMuted || (!currentlyMuted && currentMutes < 3)) {
+                        this.muteStates[soundToToggle] = !this.muteStates[soundToToggle];
+                        const button = document.getElementById(`mute${soundToToggle.charAt(0).toUpperCase() + soundToToggle.slice(1)}`);
+                        if (button) {
+                            button.classList.toggle('muted', this.muteStates[soundToToggle]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+    updateVisualization(currentStep, brightness) {
+    const ctx = this.visualizerCtx;
+    const width = this.visualizer.width;
+    const height = this.visualizer.height;
+    const stepWidth = width / this.totalSteps;
+    
+    // 背景のフェードアウト効果
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.fillRect(0, 0, width, height);
+    
+    this.pattern.forEach((step, index) => {
+        const x = index * stepWidth;
+        Object.entries(step).forEach(([sound, isActive], soundIndex) => {
+            if (isActive && !this.muteStates[sound]) {
+                const baseIntensity = Math.floor(brightness * 200); // 最大値を200に抑える
+                let intensity;
+                
+                if (index === currentStep) {
+                    // アクティブなステップは明るく
+                    intensity = Math.min(255, baseIntensity + 55);
+                    // パルスエフェクト
+                    ctx.fillStyle = `rgba(255, 255, 255, 0.1)`;
+                    ctx.fillRect(x - 1, 0, stepWidth + 2, height);
+                } else {
+                    intensity = baseIntensity;
+                }
+                
+                // グレースケールでブロックを描画
+                ctx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
+                ctx.fillRect(x, soundIndex * 30, stepWidth - 1, 25);
+                
+                // 微妙な影効果
+                ctx.fillStyle = `rgba(0, 0, 0, 0.2)`;
+                ctx.fillRect(x, soundIndex * 30 + 24, stepWidth - 1, 1);
+            }
+        });
+    });
+}
+
+    scheduleNext() {
+        if (!this.isPlaying) return;
+        const stepTime = 60 / this.tempo / 4;
+        const time = this.audioContext.currentTime;
+        const { brightness, changed } = this.analyzeVideo();
+        
+        this.updateVisualization(this.currentStep, brightness);
+        this.lastVideoChange = changed;
+        
+        if (changed) {
+            this.updatePattern(brightness, changed);
+            this.handleAutoMutes();
+        }
+
+        Object.entries(this.pattern[this.currentStep]).forEach(([sound, isActive]) => {
+            if (isActive && !this.muteStates[sound]) {
+                const output = this.sounds[sound](time, brightness);
+                output.connect(this.audioContext.destination);
+            }
+        });
+
+        if (brightness > 0.6 && Math.random() < 0.3) {
+            const availableSounds = Object.keys(this.pattern[this.currentStep])
+                .filter(sound => !this.muteStates[sound]);
+            if (availableSounds.length > 0) {
+                const randomSound = availableSounds[Math.floor(Math.random() * availableSounds.length)];
+                const output = this.sounds[randomSound](time, brightness);
+                output.connect(this.audioContext.destination);
+            }
+        }
+
+        this.currentStep = (this.currentStep + 1) % this.totalSteps;
+        if (this.currentStep === 0) {
+            this.phraseCount++;
+        }
+        
+        setTimeout(() => this.scheduleNext(), stepTime * 1000);
+    }
+
+    setTempo(newTempo) {
+        this.tempo = Math.max(60, Math.min(200, newTempo));
+    }
+
+    setDensity(newDensity) {
+        this.density = newDensity / 100;
+        this.pattern = this.generateInitialPattern();
+    }
+
+    setRandomness(newRandomness) {
+        this.randomness = newRandomness / 100;
+    }
+
+    countActiveMutes() {
+        return Object.values(this.muteStates).filter(state => state).length;
+    }
+
+    toggleMute(sound) {
+        const currentlyMuted = this.muteStates[sound];
+        if (!currentlyMuted && this.countActiveMutes() >= 3) {
+            return this.muteStates[sound];
+        }
+        this.muteStates[sound] = !currentlyMuted;
+        return this.muteStates[sound];
+    }
+
+    toggleAutoMute(sound) {
+        this.autoMuteStates[sound] = !this.autoMuteStates[sound];
+        return this.autoMuteStates[sound];
+    }
+
+    cleanup() {
+        if (this.densityChangeTimer) {
+            clearInterval(this.densityChangeTimer);
+        }
+    }
+}
+
+
+// UIコントロールの設定
+document.addEventListener('DOMContentLoaded', () => {
+    const generator = new RhythmGenerator();
+    let isPlaying = false;
+
+    // Start/Stop ボタン
+    const startStopButton = document.getElementById('startStop');
+    startStopButton.addEventListener('click', () => {
+        if (!isPlaying) {
+            generator.start();
+            startStopButton.textContent = 'Stop';
+        } else {
+            generator.stop();
+            startStopButton.textContent = 'Start';
+        }
+        isPlaying = !isPlaying;
+    });
+
+    // Auto Density ボタン
+    const autoDensityButton = document.getElementById('toggleAutoDensity');
+    if (autoDensityButton) {
+        autoDensityButton.addEventListener('click', () => {
+            generator.autoDensityChange = !generator.autoDensityChange;
+            autoDensityButton.textContent = `Auto Density: ${generator.autoDensityChange ? 'ON' : 'OFF'}`;
+            if (generator.autoDensityChange) {
+                generator.startAutoDensityChange();
+            } else if (generator.densityChangeTimer) {
+                clearInterval(generator.densityChangeTimer);
+            }
+        });
+    }
+
+    // カメラ切り替えボタン
+    document.getElementById('toggleCamera').addEventListener('click', () => {
+        generator.toggleCamera();
+    });
+
+    // サウンドコントロール
+    const sounds = ['hihat1', 'hihat2', 'openHihat1', 'openHihat2', 'signal'];
+    sounds.forEach(sound => {
+        const capitalizedSound = sound.charAt(0).toUpperCase() + sound.slice(1);
+        
+        const muteButton = document.getElementById(`mute${capitalizedSound}`);
+        muteButton.addEventListener('click', () => {
+            const isMuted = generator.toggleMute(sound);
+            muteButton.classList.toggle('muted', isMuted);
+        });
+
+        const autoMuteButton = document.getElementById(`autoMute${capitalizedSound}`);
+        autoMuteButton.classList.add('muted');
+        autoMuteButton.addEventListener('click', () => {
+            const isAutoMuted = generator.toggleAutoMute(sound);
+            autoMuteButton.classList.toggle('muted', isAutoMuted);
+        });
+    });
+
+    // スライダーコントロール
+    const tempoSlider = document.getElementById('tempo');
+    const tempoValue = document.getElementById('tempoValue');
+    tempoSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        tempoValue.textContent = value;
+        generator.setTempo(value);
+    });
+
+    const densitySlider = document.getElementById('density');
+    const densityValue = document.getElementById('densityValue');
+    densitySlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        densityValue.textContent = value;
+        generator.setDensity(value);
+    });
+
+    const randomnessSlider = document.getElementById('randomness');
+    const randomnessValue = document.getElementById('randomnessValue');
+    randomnessSlider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        randomnessValue.textContent = value;
+        generator.setRandomness(value);
+    });
+
+    // ディレイコントロール
+    const delayControls = {
+        'delayTime': { min: 50, max: 500, transform: v => v / 1000 },
+        'delayFeedback': { min: 0, max: 90, transform: v => v / 100 },
+        'delayChance': { min: 0, max: 100, transform: v => v / 100 },
+        'delayRolls': { min: 1, max: 8, transform: v => v }
+    };
+
+    Object.entries(delayControls).forEach(([control, config]) => {
+        const slider = document.getElementById(control);
+        const value = document.getElementById(`${control}Value`);
+        
+        if (slider && value) {
+            slider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                value.textContent = val;
+                
+                const settings = {};
+                const paramName = control.replace('delay', '').toLowerCase();
+                settings[paramName] = config.transform(val);
+                
+                if (generator.sounds && typeof generator.sounds.updateDelaySettings === 'function') {
+                    generator.sounds.updateDelaySettings(settings);
+                }
+            });
+        }
+    });
+});
+        
+    const startStopButton = document.getElementById('startStop');
+    startStopButton.addEventListener('click', () => {
+        if (!isPlaying) {
+            generator.start();
+            startStopButton.textContent = 'Stop';
+        } else {
+            generator.stop();
+            startStopButton.textContent = 'Start';
+        }
+        isPlaying = !isPlaying;
+    });
+
+    // UIコントロールの設定 - 一箇所にまとめる
+document.addEventListener('DOMContentLoaded', () => {
+    const generator = new RhythmGenerator();
+    let isPlaying = false;
+
+    // Start/Stop ボタン
+    const startStopButton = document.getElementById('startStop');
+    startStopButton.addEventListener('click', () => {
+        if (!isPlaying) {
+            generator.start();
+            startStopButton.textContent = 'Stop';
+        } else {
+            generator.stop();
+            startStopButton.textContent = 'Start';
+        }
+        isPlaying = !isPlaying;
+    });
+
+    // Auto Density ボタン
+    const autoDensityButton = document.getElementById('toggleAutoDensity');
+    if (autoDensityButton) {
+        autoDensityButton.addEventListener('click', () => {
+            generator.autoDensityChange = !generator.autoDensityChange;
+            autoDensityButton.textContent = `Auto Density: ${generator.autoDensityChange ? 'ON' : 'OFF'}`;
+            if (generator.autoDensityChange) {
+                generator.startAutoDensityChange();
+            } else if (generator.densityChangeTimer) {
+                clearInterval(generator.densityChangeTimer);
+            }
+        });
+    }
+
+    // カメラ切り替え
+    document.getElementById('toggleCamera').addEventListener('click', () => {
+        generator.toggleCamera();
+    });
+
+    // サウンドコントロール
+    const sounds = ['hihat1', 'hihat2', 'openHihat1', 'openHihat2', 'signal'];
+    sounds.forEach(sound => {
+        const capitalizedSound = sound.charAt(0).toUpperCase() + sound.slice(1);
+        
+        const muteButton = document.getElementById(`mute${capitalizedSound}`);
+        muteButton.addEventListener('click', () => {
+            const isMuted = generator.toggleMute(sound);
+            muteButton.classList.toggle('muted', isMuted);
+        });
+
+        const autoMuteButton = document.getElementById(`autoMute${capitalizedSound}`);
+        autoMuteButton.classList.add('muted');
+        autoMuteButton.addEventListener('click', () => {
+            const isAutoMuted = generator.toggleAutoMute(sound);
+            autoMuteButton.classList.toggle('muted', isAutoMuted);
+        });
+    });
+
+    // スライダーコントロール
+    const setupSlider = (id, valueid, callback) => {
+        const slider = document.getElementById(id);
+        const value = document.getElementById(valueid);
+        slider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            value.textContent = val;
+            callback(val);
+        });
+    };
+
+    setupSlider('tempo', 'tempoValue', val => generator.setTempo(val));
+    setupSlider('density', 'densityValue', val => generator.setDensity(val));
+    setupSlider('randomness', 'randomnessValue', val => generator.setRandomness(val));
+
+    // ディレイコントロール
+    const delayControls = {
+        'delayTime': { min: 50, max: 500, transform: v => v / 1000 },
+        'delayFeedback': { min: 0, max: 90, transform: v => v / 100 },
+        'delayChance': { min: 0, max: 100, transform: v => v / 100 },
+        'delayRolls': { min: 1, max: 8, transform: v => v }
+    };
+
+    Object.entries(delayControls).forEach(([control, config]) => {
+        const slider = document.getElementById(control);
+        const value = document.getElementById(`${control}Value`);
+        
+        if (slider && value) {
+            slider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                value.textContent = val;
+                
+                const settings = {};
+                const paramName = control.replace('delay', '').toLowerCase();
+                settings[paramName] = config.transform(val);
+                
+                if (generator.sounds) {
+                    generator.sounds.updateDelaySettings(settings);
+                }
+            });
+        }
+    });
+});
+</script>
+        
+</body>
+</html>
