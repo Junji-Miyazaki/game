@@ -198,23 +198,23 @@ getModulatedFrequency(baseFreq, brightness) {
     }
 
     hihat1(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(8000, brightness), time, 0.03, brightness);
+    return this.createSound(this.getModulatedFrequency(8000, brightness), time, 0.03, brightness, 'triangle' );
 }
 
 hihat2(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(10000, brightness), time, 0.06, brightness);
+    return this.createSound(this.getModulatedFrequency(10000, brightness), time, 0.06, brightness, 'sawtooth');
 }
 
 openHihat1(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(1000, brightness), time, 0.015, brightness);
+    return this.createSound(this.getModulatedFrequency(1000, brightness), time, 0.015, brightness, 'sawtooth');
 }
 
 openHihat2(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(9000, brightness), time, 0.08, brightness);
+    return this.createSound(this.getModulatedFrequency(9000, brightness), time, 0.08, brightness, 'sine' );
 }
 
 signal(time, brightness = 0.5) {
-    return this.createSound(this.getModulatedFrequency(50 + Math.random() * 100, brightness), time, 0.15, brightness);
+    return this.createSound(this.getModulatedFrequency(30 + Math.random() * 100, brightness), time, 0.15, brightness, 'square');
 }
 }
 
