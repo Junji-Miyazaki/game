@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Electric Piano</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #2c3e50;
+            color: white;
+        }
+        .piano {
+            background: #34495e;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .effect-control {
+            background: #2c3e50;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .sequence-controls {
+            margin-top: 20px;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        .sequence {
+            background: #34495e;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="piano">
+        <h2>Electric Piano</h2>
+        <div class="controls">
+            <div class="effect-control">
+                <h3>Tremolo</h3>
+                <input type="range" id="tremoloDepth" min="0" max="1" step="0.1" value="0">
+                <label>Depth</label>
+                <input type="range" id="tremoloRate" min="0" max="20" step="0.1" value="0">
+                <label>Rate</label>
+            </div>
+            <div class="effect-control">
+                <h3>Chorus</h3>
+                <input type="range" id="chorusDepth" min="0" max="1" step="0.1" value="0">
+                <label>Depth</label>
+                <input type="range" id="chorusRate" min="0" max="10" step="0.1" value="0">
+                <label>Rate</label>
+            </div>
+            <div class="effect-control">
+                <h3>Delay</h3>
+                <input type="range" id="delayTime" min="0" max="1" step="0.1" value="0">
+                <label>Time</label>
+                <input type="range" id="delayFeedback" min="0" max="0.9" step="0.1" value="0">
+                <label>Feedback</label>
+            </div>
+        </div>
+        <div class="sequence-controls">
+            <button id="recordBtn">Record Sequence</button>
+            <button id="stopBtn">Stop</button>
+            <button id="playBtn">Play All Sequences</button>
+            <div id="sequences"></div>
+        </div>
+    </div>
+
+    <script>
+        let audioContext;
+        let masterGain;
+        let tremolo;
+        let chorus;
+        let delay;
+        let currentSequence = [];
+        let sequences = [];
+        let isRecording = false;
+        let startTime;
+
+        // キー配列の定義
+        const keys = {
+            'a': 60, 'w': 61, 's': 62, 'e': 63, 'd': 64, 'f': 65, 't': 66,
+            'g': 67, 'y': 68, 'h': 69, 'u': 70, 'j': 71, 'k': 72
+        };
+
+        // オーディオコンテキストの初期化
+        async function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioContext.createGain();
+            masterGain.connect(audioContext.destination);
+
+            // エフェクトの初期化
+            setupEffects();
+
+            // イベントリスナーの設定
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+            setupControls();
+        }
+
+        // エフェクトのセットアップ
+        function setupEffects() {
+            // トレモロ
+            tremolo = {
+                gain: audioContext.createGain(),
+                oscillator: audioContext.createOscillator()
+            };
+            tremolo.oscillator.connect(tremolo.gain.gain);
+            tremolo.gain.connect(masterGain);
+            tremolo.oscillator.start();
+
+            // コーラス
+            chorus = audioContext.createDelay();
+            chorus.delayTime.value = 0.03;
+            chorus.connect(masterGain);
+
+            // ディレイ
+            delay = audioContext.createDelay();
+            const feedback = audioContext.createGain();
+            delay.connect(feedback);
+            feedback.connect(delay);
+            delay.connect(masterGain);
+        }
+
+        // コントロールのセットアップ
+        function setupControls() {
+            document.getElementById('tremoloDepth').addEventListener('input', (e) => {
+                tremolo.gain.gain.value = e.target.value;
+            });
+
+            document.getElementById('tremoloRate').addEventListener('input', (e) => {
+                tremolo.oscillator.frequency.value = e.target.value;
+            });
+
+            document.getElementById('chorusDepth').addEventListener('input', (e) => {
+                chorus.delayTime.value = e.target.value * 0.03;
+            });
+
+            document.getElementById('delayTime').addEventListener('input', (e) => {
+                delay.delayTime.value = e.target.value;
+            });
+
+            document.getElementById('delayFeedback').addEventListener('input', (e) => {
+                feedback.gain.value = e.target.value;
+            });
+
+            document.getElementById('recordBtn').addEventListener('click', startRecording);
+            document.getElementById('stopBtn').addEventListener('click', stopRecording);
+            document.getElementById('playBtn').addEventListener('click', playAllSequences);
+        }
+
+        // 音を生成する関数
+        function createNote(frequency) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = 'triangle';
+            oscillator.frequency.value = frequency;
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(tremolo.gain);
+            gainNode.connect(chorus);
+            gainNode.connect(delay);
+            
+            oscillator.start();
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+            
+            return { oscillator, gainNode };
+        }
+
+        // キーダウンハンドラー
+        function handleKeyDown(event) {
+            const key = event.key.toLowerCase();
+            if (keys[key] && !event.repeat) {
+                const frequency = 440 * Math.pow(2, (keys[key] - 69) / 12);
+                const note = createNote(frequency);
+                
+                if (isRecording) {
+                    currentSequence.push({
+                        note: keys[key],
+                        startTime: audioContext.currentTime - startTime,
+                        type: 'noteOn'
+                    });
+                }
+            }
+        }
+
+        // キーアップハンドラー
+        function handleKeyUp(event) {
+            const key = event.key.toLowerCase();
+            if (keys[key]) {
+                if (isRecording) {
+                    currentSequence.push({
+                        note: keys[key],
+                        startTime: audioContext.currentTime - startTime,
+                        type: 'noteOff'
+                    });
+                }
+            }
+        }
+
+        // 録音開始
+        function startRecording() {
+            currentSequence = [];
+            isRecording = true;
+            startTime = audioContext.currentTime;
+        }
+
+        // 録音停止
+        function stopRecording() {
+            if (isRecording) {
+                isRecording = false;
+                sequences.push(currentSequence);
+                displaySequences();
+            }
+        }
+
+        // シーケンスの表示
+        function displaySequences() {
+            const container = document.getElementById('sequences');
+            container.innerHTML = '';
+            sequences.forEach((seq, index) => {
+                const div = document.createElement('div');
+                div.className = 'sequence';
+                div.textContent = `Sequence ${index + 1}`;
+                container.appendChild(div);
+            });
+        }
+
+        // 全シーケンスの再生
+        function playAllSequences() {
+            const startTime = audioContext.currentTime;
+            sequences.forEach(sequence => {
+                sequence.forEach(event => {
+                    if (event.type === 'noteOn') {
+                        const frequency = 440 * Math.pow(2, (event.note - 69) / 12);
+                        setTimeout(() => {
+                            createNote(frequency);
+                        }, event.startTime * 1000);
+                    }
+                });
+            });
+        }
+
+        // 初期化
+        window.onload = initAudio;
+    </script>
+</body>
+</html>

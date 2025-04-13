@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Advanced Electric Piano</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            padding: 20px;
+            background: #111111;
+            color: #e0e0e0;
+            margin: 0;
+        }
+        .piano {
+            background: #1a1a1a;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            max-width: 1400px;
+            margin: 20px auto;
+        }
+        h2, h3 {
+            color: #ffffff;
+            font-weight: 600;
+            margin-top: 0;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .effect-control {
+            background: #222222;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333333;
+        }
+        .effect-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .effect-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .effect-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .effect-switch-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333333;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .effect-switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #808080;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        .effect-switch input:checked + .effect-switch-slider {
+            background-color: #4a4a4a;
+        }
+        .effect-switch input:checked + .effect-switch-slider:before {
+            transform: translateX(20px);
+            background-color: #ffffff;
+        }
+        .control-group {
+            margin: 12px 0;
+        }
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            color: #b0b0b0;
+            font-size: 0.9em;
+        }
+        .control-value {
+            color: #ffffff;
+            font-family: monospace;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: #333333;
+            border-radius: 2px;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #ffffff;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #e0e0e0;
+        }
+        select {
+            width: 100%;
+            padding: 5px;
+            background: #333333;
+            color: white;
+            border: 1px solid #444444;
+            border-radius: 4px;
+        }
+        .sequence-controls {
+            margin-top: 30px;
+            padding: 20px;
+            background: #222222;
+            border-radius: 8px;
+            border: 1px solid #333333;
+        }
+        button {
+            background: #333333;
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background 0.2s ease;
+            font-size: 0.9em;
+        }
+        button:hover {
+            background: #444444;
+        }
+        button.active {
+            background: #4a4a4a;
+            border: 1px solid #666666;
+        }
+        .sequences {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .sequence {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #333333;
+        }
+        .keyboard-map {
+            background: #222222;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+            border: 1px solid #333333;
+        }
+        .key {
+            display: inline-block;
+            margin: 5px;
+            padding: 8px 12px;
+            background: #333333;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .octave-selector {
+            margin-top: 20px;
+            text-align: center;
+            background: #222222;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333333;
+        }
+    </style>
+</head>
+<body>
+    <div class="piano">
+        <h2>Advanced Electric Piano</h2>
+        
+        <div class="controls">
+            <!-- ADSRエンベロープ -->
+            <div class="effect-control">
+                <div class="effect-header">
+                    <h3>ADSR Envelope</h3>
+                    <label class="effect-switch">
+                        <input type="checkbox" id="adsrEnabled" checked>
+                        <span class="effect-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Attack</span>
+                        <span class="control-value" id="attackValue">0.05</span>
+                    </div>
+                    <input type="range" id="attack" min="0" max="2" step="0.01" value="0.05">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Decay</span>
+                        <span class="control-value" id="decayValue">0.1</span>
+                    </div>
+                    <input type="range" id="decay" min="0" max="2" step="0.01" value="0.1">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Sustain</span>
+                        <span class="control-value" id="sustainValue">0.7</span>
+                    </div>
+                    <input type="range" id="sustain" min="0" max="1" step="0.01" value="0.7">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Release</span>
+                        <span class="control-value" id="releaseValue">0.2</span>
+                    </div>
+                    <input type="range" id="release" min="0" max="2" step="0.01" value="0.2">
+                </div>
+            </div>
+
+            <!-- フィルター -->
+            <div class="effect-control">
+                <div class="effect-header">
+                    <h3>Filter</h3>
+                    <label class="effect-switch">
+                        <input type="checkbox" id="filterEnabled">
+                        <span class="effect-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Type</span>
+                    </div>
+                    <select id="filterType">
+                        <option value="lowpass">Low Pass</option>
+                        <option value="highpass">High Pass</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Cutoff</span>
+                        <span class="control-value" id="filterCutoffValue">2000</span>
+                    </div>
+                    <input type="range" id="filterCutoff" min="20" max="20000" step="1" value="2000">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Resonance</span>
+                        <span class="control-value" id="filterResonanceValue">1</span>
+                    </div>
+                    <input type="range" id="filterResonance" min="0" max="20" step="0.1" value="1">
+                </div>
+            </div>
+
+            <!-- ワウペダル -->
+            <div class="effect-control">
+                <div class="effect-header">
+                    <h3>Wah Pedal (Space Key)</h3>
+                    <label class="effect-switch">
+                        <input type="checkbox" id="wahEnabled">
+                        <span class="effect-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Frequency Range</span>
+                        <span class="control-value" id="wahRangeValue">2000</span>
+                    </div>
+                    <input type="range" id="wahRange" min="500" max="5000" step="100" value="2000">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Q Factor</span>
+                        <span class="control-value" id="wahQValue">5</span>
+                    </div>
+                    <input type="range" id="wahQ" min="1" max="20" step="0.1" value="5">
+                </div>
+            </div>
+
+            <!-- リバーブ -->
+            <div class="effect-control">
+                <div class="effect-header">
+                    <h3>Reverb</h3>
+                    <label class="effect-switch">
+                        <input type="checkbox" id="reverbEnabled">
+                        <span class="effect-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Mix</span>
+                        <span class="control-value" id="reverbMixValue">0.3</span>
+                    </div>
+                    <input type="range" id="reverbMix" min="0" max="1" step="0.01" value="0.3">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Decay Time</span>
+                        <span class="control-value" id="reverbDecayValue">2</span>
+                    </div>
+                    <input type="range" id="reverbDecay" min="0.1" max="10" step="0.1" value="2">
+                </div>
+            </div>
+
+            <!-- ディレイ -->
+            <div class="effect-control">
+                <div class="effect-header">
+                    <h3>Delay</h3>
+                    <label class="effect-switch">
+                        <input type="checkbox" id="delayEnabled">
+                        <span class="effect-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Time</span>
+                        <span class="control-value" id="delayTimeValue">0.3</span>
+                    </div>
+                    <input type="range" id="delayTime" min="0" max="1" step="0.01" value="0.3">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Feedback</span>
+                        <span class="control-value" id="delayFeedbackValue">0.4</span>
+                    </div>
+                    <input type="range" id="delayFeedback" min="0" max="0.9" step="0.01" value="0.4">
+                </div>
+            </div>
+
+            <!-- ロータリースピーカー -->
+            <div class="effect-control">
+                <div class="effect-header">
+                    <h3>Rotary Speaker</h3>
+                    <label class="effect-switch">
+                        <input type="checkbox" id="rotaryEnabled">
+                        <span class="effect-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Speed</span>
+                        <span class="control-value" id="rotarySpeedValue">0</span>
+                    </div>
+                    <input type="range" id="rotarySpeed" min="0" max="10" step="0.1" value="0">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Intensity</span>
+                        <span class="control-value" id="rotaryIntensityValue">0</span>
+                    </div>
+                    <input type="range" id="rotaryIntensity" min="0" max="1" step="0.01" value="0">
+                </div>
+            </div>
+        </div>
+
+        <div class="octave-selector">
+            <h3>Octave Select (Number Keys 1-4)</h3>
+            <button id="octave1" class="active">1</button>
+            <button id="octave2">2</button>
+            <button id="octave3">3</button>
+            <button id="octave4">4</button>
+        </div>
+
+        <div class="sequence-controls">
+            <button id="recordBtn">Record Sequence</button>
+            <button id="stopBtn">Stop Recording</button>
+            <button id="clearBtn">Clear All</button>
+            <button id="saveBtn">Save Sequences</button>
+            <button id="loadBtn">Load Sequences</button>
+            <input type="file" id="loadFile" style="display: none" accept=".json">
+            <div id="sequences" class="sequences"></div>
+        </div>
+
+        <div class="keyboard-map">
+            <h3>Keyboard Map</h3>
+            <div>
+                <span class="key">W</span>
+                <span class="key">E</span>
+                <span class="key">T</span>
+                <span class="key">Y</span>
+                <span class="key">U</span>
+                <span>: Black Keys (Sharp)</span>
+            </div>
+            <div>
+                <span class="key">A</span>
+                <span class="key">S</span>
+                <span class="key">D</span>
+                <span class="key">F</span>
+                <span class="key">G</span>
+                <span class="key">H</span>
+                <span class="key">J</span>
+                <span class="key">K</span>
+                <span>: White Keys</span>
+            </div>
+            <div style="margin-top: 10px">
+                <span class="key">Space</span>
+                <span>: Wah Pedal</span>
+            </div>
+        </div>
+    </div>
+
+        <script>
+let audioContext;
+let masterGain;
+let rotaryEffect;
+let delay;
+let reverb;
+let filter;
+let wahFilter;
+let currentSequence = [];
+let sequences = [];
+let isRecording = false;
+let startTime;
+let activeNotes = new Map();
+let feedback;
+let currentOctave = 1;
+let loopingSequences = new Set();
+let loopIntervals = new Map();
+let wahIsPressed = false;
+
+// キー配列の基本定義（オクターブ1の場合）
+const baseKeys = {
+    'a': 60,  // C4
+    'w': 61,  // C#4
+    's': 62,  // D4
+    'e': 63,  // D#4
+    'd': 64,  // E4
+    'f': 65,  // F4
+    't': 66,  // F#4
+    'g': 67,  // G4
+    'y': 68,  // G#4
+    'h': 69,  // A4
+    'u': 70,  // A#4
+    'j': 71,  // B4
+    'k': 72   // C5
+};
+
+// 現在のキー配列を取得する関数
+function getCurrentKeys() {
+    const offset = (currentOctave - 1) * 12;
+    let currentKeys = {};
+    for (let [key, value] of Object.entries(baseKeys)) {
+        currentKeys[key] = value + offset;
+    }
+    return currentKeys;
+}
+
+// ADSR設定
+let adsr = {
+    attack: 0.05,
+    decay: 0.1,
+    sustain: 0.7,
+    release: 0.2
+};
+
+// エフェクトの有効/無効状態を管理
+let effectsState = {
+    adsr: true,
+    rotary: false,
+    delay: false,
+    reverb: false,
+    filter: false,
+    wah: false
+};
+
+// オーディオコンテキストの初期化
+async function initAudio() {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = 0.7;
+    masterGain.connect(audioContext.destination);
+
+    await setupEffects();
+    setupControls();
+    updateControlValues();
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+}
+
+// リバーブの作成
+async function createReverb() {
+    const reverbLength = 2;
+    const sampleRate = audioContext.sampleRate;
+    const numChannels = 2;
+    const length = sampleRate * reverbLength;
+    const impulseResponse = audioContext.createBuffer(numChannels, length, sampleRate);
+
+    for (let channel = 0; channel < numChannels; channel++) {
+        const channelData = impulseResponse.getChannelData(channel);
+        for (let i = 0; i < length; i++) {
+            channelData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * reverbLength/2));
+        }
+    }
+
+    const convolver = audioContext.createConvolver();
+    convolver.buffer = impulseResponse;
+    return convolver;
+}
+
+// エフェクトのセットアップ
+async function setupEffects() {
+    // フィルター
+    filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2000;
+    filter.Q.value = 1;
+
+    // ワウフィルター
+    wahFilter = audioContext.createBiquadFilter();
+    wahFilter.type = 'bandpass';
+    wahFilter.frequency.value = 2000;
+    wahFilter.Q.value = 5;
+
+    // リバーブ
+    reverb = await createReverb();
+    const reverbGain = audioContext.createGain();
+    reverbGain.gain.value = 0.3;
+    reverb.connect(reverbGain);
+    reverbGain.connect(masterGain);
+
+    // ロータリースピーカー
+    rotaryEffect = {
+        tremolo: audioContext.createGain(),
+        panner: audioContext.createStereoPanner(),
+        lfo: audioContext.createOscillator(),
+        depthGain: audioContext.createGain()
+    };
+
+    rotaryEffect.lfo.connect(rotaryEffect.depthGain);
+    rotaryEffect.depthGain.connect(rotaryEffect.tremolo.gain);
+    rotaryEffect.depthGain.connect(rotaryEffect.panner.pan);
+    rotaryEffect.tremolo.connect(rotaryEffect.panner);
+    rotaryEffect.panner.connect(masterGain);
+    rotaryEffect.lfo.start();
+
+    // ディレイ
+    delay = audioContext.createDelay(2.0);
+    feedback = audioContext.createGain();
+    feedback.gain.value = 0.4;
+    delay.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(masterGain);
+}
+
+// WAHペダルの更新
+function updateWahFrequency(isPressed) {
+    const minFreq = 500;
+    const maxFreq = document.getElementById('wahRange').value;
+    wahFilter.frequency.value = isPressed ? maxFreq : minFreq;
+}
+
+// 音を生成する関数
+function createNote(frequency, velocity = 0.7) {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.type = 'triangle';
+    oscillator.frequency.value = frequency;
+
+    // エフェクトチェーンの構築
+    let currentNode = oscillator;
+    currentNode.connect(gainNode);
+    currentNode = gainNode;
+
+    if (effectsState.filter) {
+        currentNode.connect(filter);
+        currentNode = filter;
+    }
+
+    if (effectsState.wah) {
+        currentNode.connect(wahFilter);
+        currentNode = wahFilter;
+    }
+
+    if (effectsState.rotary) {
+        currentNode.connect(rotaryEffect.tremolo);
+        currentNode = rotaryEffect.panner;
+    }
+
+    if (effectsState.delay) {
+        currentNode.connect(delay);
+    }
+
+    if (effectsState.reverb) {
+        currentNode.connect(reverb);
+    }
+
+    currentNode.connect(masterGain);
+
+    // ADSRエンベロープの適用
+    const now = audioContext.currentTime;
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(velocity, now + adsr.attack);
+    gainNode.gain.linearRampToValueAtTime(velocity * adsr.sustain, now + adsr.attack + adsr.decay);
+    
+    oscillator.start();
+    
+    return { oscillator, gainNode };
+}
+
+// リリースノート
+function releaseNote(note) {
+    const now = audioContext.currentTime;
+    note.gainNode.gain.cancelScheduledValues(now);
+    note.gainNode.gain.setValueAtTime(note.gainNode.gain.value, now);
+    note.gainNode.gain.linearRampToValueAtTime(0, now + adsr.release);
+    setTimeout(() => {
+        note.oscillator.stop();
+    }, adsr.release * 1000);
+}
+
+// キーダウンハンドラー
+function handleKeyDown(event) {
+    const key = event.key.toLowerCase();
+    
+    // オクターブ切り替え
+    if (['1', '2', '3', '4'].includes(event.key)) {
+        const octave = parseInt(event.key);
+        changeOctave(octave);
+        return;
+    }
+
+    // WAHペダル
+    if (event.code === 'Space' && effectsState.wah) {
+        event.preventDefault();
+        if (!wahIsPressed) {
+            wahIsPressed = true;
+            updateWahFrequency(true);
+        }
+        return;
+    }
+
+    const currentKeys = getCurrentKeys();
+    if (currentKeys[key] && !event.repeat && !activeNotes.has(key)) {
+        const frequency = 440 * Math.pow(2, (currentKeys[key] - 69) / 12);
+        const note = createNote(frequency, 0.7);
+        activeNotes.set(key, note);
+        
+        if (isRecording) {
+            currentSequence.push({
+                note: currentKeys[key],
+                startTime: audioContext.currentTime - startTime,
+                velocity: 0.7,
+                type: 'noteOn',
+                octave: currentOctave
+            });
+        }
+    }
+}
+
+// キーアップハンドラー
+function handleKeyUp(event) {
+    const key = event.key.toLowerCase();
+
+    // WAHペダル
+    if (event.code === 'Space' && effectsState.wah) {
+        event.preventDefault();
+        wahIsPressed = false;
+        updateWahFrequency(false);
+        return;
+    }
+
+    if (activeNotes.has(key)) {
+        const note = activeNotes.get(key);
+        releaseNote(note);
+        activeNotes.delete(key);
+        
+        if (isRecording) {
+            const currentKeys = getCurrentKeys();
+            currentSequence.push({
+                note: currentKeys[key],
+                startTime: audioContext.currentTime - startTime,
+                type: 'noteOff',
+                octave: currentOctave
+            });
+        }
+    }
+}
+
+// オクターブ変更
+function changeOctave(octave) {
+    currentOctave = octave;
+    document.querySelectorAll('.octave-selector button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`octave${octave}`).classList.add('active');
+}
+
+// コントロールの更新
+function updateControlValues() {
+    document.getElementById('attackValue').textContent = adsr.attack.toFixed(2);
+    document.getElementById('decayValue').textContent = adsr.decay.toFixed(2);
+    document.getElementById('sustainValue').textContent = adsr.sustain.toFixed(2);
+    document.getElementById('releaseValue').textContent = adsr.release.toFixed(2);
+}
+
+// エフェクトコントロールのセットアップ
+function setupControls() {
+    // エフェクトのオン/オフ
+    document.getElementById('filterEnabled').addEventListener('change', (e) => {
+        effectsState.filter = e.target.checked;
+    });
+
+    document.getElementById('wahEnabled').addEventListener('change', (e) => {
+        effectsState.wah = e.target.checked;
+    });
+
+    document.getElementById('reverbEnabled').addEventListener('change', (e) => {
+        effectsState.reverb = e.target.checked;
+    });
+
+    document.getElementById('rotaryEnabled').addEventListener('change', (e) => {
+        effectsState.rotary = e.target.checked;
+    });
+
+    document.getElementById('delayEnabled').addEventListener('change', (e) => {
+        effectsState.delay = e.target.checked;
+    });
+
+    // フィルターコントロール
+    document.getElementById('filterType').addEventListener('change', (e) => {
+        filter.type = e.target.value;
+    });
+
+    document.getElementById('filterCutoff').addEventListener('input', (e) => {
+        filter.frequency.value = parseFloat(e.target.value);
+        document.getElementById('filterCutoffValue').textContent = e.target.value;
+    });
+
+    document.getElementById('filterResonance').addEventListener('input', (e) => {
+        filter.Q.value = parseFloat(e.target.value);
+        document.getElementById('filterResonanceValue').textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    // WAHコントロール
+    document.getElementById('wahRange').addEventListener('input', (e) => {
+        document.getElementById('wahRangeValue').textContent = e.target.value;
+        if (wahIsPressed) {
+            wahFilter.frequency.value = parseFloat(e.target.value);
+        }
+    });
+
+    document.getElementById('wahQ').addEventListener('input', (e) => {
+        wahFilter.Q.value = parseFloat(e.target.value);
+        document.getElementById('wahQValue').textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    // リバーブコントロール
+    document.getElementById('reverbMix').addEventListener('input', (e) => {
+        const mix = parseFloat(e.target.value);
+        reverb.connect(masterGain).gain.value = mix;
+        document.getElementById('reverbMixValue').textContent = mix.toFixed(2);
+    });
+
+    document.getElementById('reverbDecay').addEventListener('input', (e) => {
+        document.getElementById('reverbDecayValue').textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    // ADSRコントロール
+    ['attack', 'decay', 'sustain', 'release'].forEach(param => {
+        document.getElementById(param).addEventListener('input', (e) => {
+            adsr[param] = parseFloat(e.target.value);
+            document.getElementById(`${param}Value`).textContent = adsr[param].toFixed(2);
+        });
+    });
+
+    // ロータリースピーカーコントロール
+    document.getElementById('rotarySpeed').addEventListener('input', (e) => {
+        const speed = parseFloat(e.target.value);
+        rotaryEffect.lfo.frequency.value = speed;
+        document.getElementById('rotarySpeedValue').textContent = speed.toFixed(1);
+    });
+
+    document.getElementById('rotaryIntensity').addEventListener('input', (e) => {
+        const intensity = parseFloat(e.target.value);
+        rotaryEffect.depthGain.gain.value = intensity;
+        document.getElementById('rotaryIntensityValue').textContent = intensity.toFixed(2);
+    });
+
+    // ディレイコントロール
+    document.getElementById('delayTime').addEventListener('input', (e) => {
+        const time = parseFloat(e.target.value);
+        delay.delayTime.value = time;
+        document.getElementById('delayTimeValue').textContent = time.toFixed(2);
+    });
+
+    document.getElementById('delayFeedback').addEventListener('input', (e) => {
+        const fb = parseFloat(e.target.value);
+        feedback.gain.value = fb;
+        document.getElementById('delayFeedbackValue').textContent = fb.toFixed(2);
+    });
+
+    // シーケンスコントロール
+    document.getElementById('recordBtn').addEventListener('click', startRecording);
+    document.getElementById('stopBtn').addEventListener('click', stopRecording);
+    document.getElementById('clearBtn').addEventListener('click', clearSequences);
+    document.getElementById('saveBtn').addEventListener('click', saveSequences);
+    document.getElementById('loadBtn').addEventListener('click', () => {
+        document.getElementById('loadFile').click();
+    });
+    document.getElementById('loadFile').addEventListener('change', loadSequences);
+}
+
+// シーケンス録音開始
+function startRecording() {
+    currentSequence = [];
+    isRecording = true;
+    startTime = audioContext.currentTime;
+    document.getElementById('recordBtn').style.background = '#662222';
+}
+
+// シーケンス録音停止
+function stopRecording() {
+    if (isRecording) {
+        isRecording = false;
+        sequences.push(currentSequence);
+        document.getElementById('recordBtn').style.background = '#333333';
+        displaySequences();
+    }
+}
+
+// シーケンスのクリア
+function clearSequences() {
+    sequences = [];
+    loopingSequences.clear();
+    loopIntervals.forEach(interval => clearInterval(interval));
+    loopIntervals.clear();
+    displaySequences();
+}
+
+// シーケンスの保存
+function saveSequences() {
+    const data = JSON.stringify(sequences);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'piano-sequences.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// シーケンスの読み込み
+function loadSequences(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                sequences = JSON.parse(e.target.result);
+                displaySequences();
+            } catch (error) {
+                console.error('Invalid file format');
+            }
+        };
+        reader.readAsText(file);
+    }
+}
+
+// シーケンスの表示
+function displaySequences() {
+    const container = document.getElementById('sequences');
+    container.innerHTML = '';
+    sequences.forEach((seq, index) => {
+        const sequenceDiv = document.createElement('div');
+        sequenceDiv.className = 'sequence';
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = `Sequence ${index + 1}`;
+        
+        const playButton = document.createElement('button');
+        playButton.textContent = 'Play Once';
+        playButton.onclick = () => playSequence(index, false);
+        
+        const loopButton = document.createElement('button');
+        loopButton.textContent = loopingSequences.has(index) ? 'Stop Loop' : 'Loop';
+        loopButton.classList.toggle('active', loopingSequences.has(index));
+        loopButton.onclick = () => toggleLoop(index);
+        
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = 'Delete';
+        deleteButton.onclick = () => {
+            if (loopingSequences.has(index)) {
+                toggleLoop(index);
+            }
+            sequences.splice(index, 1);
+            displaySequences();
+        };
+        
+        sequenceDiv.appendChild(titleSpan);
+        sequenceDiv.appendChild(playButton);
+        sequenceDiv.appendChild(loopButton);
+        sequenceDiv.appendChild(deleteButton);
+        container.appendChild(sequenceDiv);
+    });
+}
+
+// ループの切り替え
+function toggleLoop(index) {
+    if (loopingSequences.has(index)) {
+        loopingSequences.delete(index);
+        if (loopIntervals.has(index)) {
+            clearInterval(loopIntervals.get(index));
+            loopIntervals.delete(index);
+        }
+    } else {
+        loopingSequences.add(index);
+        playSequence(index, true);
+    }
+    displaySequences();
+}
+
+// シーケンスの再生
+function playSequence(index, loop = false) {
+    const sequence = sequences[index];
+    const startTime = audioContext.currentTime;
+    
+    const playNotes = () => {
+        sequence.forEach(event => {
+            setTimeout(() => {
+                if (event.type === 'noteOn') {
+                    const originalOctave = currentOctave;
+                    currentOctave = event.octave;
+                    const frequency = 440 * Math.pow(2, (event.note - 69) / 12);
+                    const note = createNote(frequency, event.velocity);
+                    setTimeout(() => {
+                        releaseNote(note);
+                        currentOctave = originalOctave;
+                    }, 500);
+                }
+            }, event.startTime * 1000);
+        });
+    };
+
+    playNotes();
+
+    if (loop && !loopIntervals.has(index)) {
+        const sequenceDuration = Math.max(...sequence.map(e => e.startTime)) * 1000 + 500;
+        const intervalId = setInterval(playNotes, sequenceDuration);
+        loopIntervals.set(index, intervalId);
+    }
+}
+
+// アプリケーションの初期化
+window.onload = initAudio;
+
+</script>
+        
+</body>
+</html>

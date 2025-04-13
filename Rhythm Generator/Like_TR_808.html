@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>TR-808風ドラムマシン</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .tempo-control {
+            margin: 10px 0;
+        }
+        .sequence-grid {
+            display: grid;
+            grid-template-columns: repeat(17, 1fr);
+            gap: 2px;
+            margin-bottom: 10px;
+        }
+        .sequence-grid div:first-child {
+            font-weight: bold;
+            text-align: right;
+            padding-right: 10px;
+        }
+        .step {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #ccc;
+            background: #fff;
+            cursor: pointer;
+        }
+        .step.active {
+            background: #007bff;
+        }
+        .step.current {
+            border: 2px solid #ff0000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TR-808風ドラムマシン</h1>
+        <div class="controls">
+            <button id="playButton">再生/停止</button>
+            <button id="clearButton">クリア</button>
+            <div class="tempo-control">
+                テンポ: <input type="range" id="tempoSlider" min="60" max="200" value="120">
+                <span id="tempoDisplay">120</span> BPM
+            </div>
+        </div>
+        <div id="sequencer"></div>
+    </div>
+
+    <script>
+        class DrumMachine {
+            constructor() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.masterGain = this.audioContext.createGain();
+                this.masterGain.connect(this.audioContext.destination);
+                
+                this.instruments = {
+                    'Kick': this.createKick.bind(this),
+                    'Snare': this.createSnare.bind(this),
+                    'HiHat': this.createHihat.bind(this),
+                    'Clap': this.createClap.bind(this)
+                };
+                
+                this.patterns = {};
+                Object.keys(this.instruments).forEach(inst => {
+                    this.patterns[inst] = new Array(16).fill(0);
+                });
+                
+                this.currentStep = 0;
+                this.isPlaying = false;
+                this.tempo = 120;
+                
+                this.setupUI();
+                this.setupEventListeners();
+            }
+            
+            setupUI() {
+                const sequencer = document.getElementById('sequencer');
+                Object.keys(this.instruments).forEach(inst => {
+                    const row = document.createElement('div');
+                    row.className = 'sequence-grid';
+                    
+                    // インストゥルメント名
+                    const label = document.createElement('div');
+                    label.textContent = inst;
+                    row.appendChild(label);
+                    
+                    // ステップボタン
+                    for (let i = 0; i < 16; i++) {
+                        const step = document.createElement('div');
+                        step.className = 'step';
+                        step.dataset.instrument = inst;
+                        step.dataset.step = i;
+                        row.appendChild(step);
+                    }
+                    sequencer.appendChild(row);
+                });
+            }
+            
+            setupEventListeners() {
+                document.getElementById('playButton').addEventListener('click', () => this.togglePlay());
+                document.getElementById('clearButton').addEventListener('click', () => this.clearPattern());
+                
+                const tempoSlider = document.getElementById('tempoSlider');
+                tempoSlider.addEventListener('input', (e) => {
+                    this.tempo = parseInt(e.target.value);
+                    document.getElementById('tempoDisplay').textContent = this.tempo;
+                });
+                
+                document.querySelectorAll('.step').forEach(step => {
+                    step.addEventListener('click', (e) => {
+                        const inst = e.target.dataset.instrument;
+                        const stepNum = parseInt(e.target.dataset.step);
+                        this.patterns[inst][stepNum] = !this.patterns[inst][stepNum];
+                        e.target.classList.toggle('active');
+                    });
+                });
+            }
+            
+            createKick() {
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                
+                oscillator.frequency.setValueAtTime(150, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+                
+                gainNode.gain.setValueAtTime(1, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.masterGain);
+                
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.5);
+            }
+            
+            createSnare() {
+                const bufferSize = this.audioContext.sampleRate * 0.2;
+                const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                
+                const noise = this.audioContext.createBufferSource();
+                noise.buffer = buffer;
+                
+                const noiseGain = this.audioContext.createGain();
+                noiseGain.gain.setValueAtTime(0.5, this.audioContext.currentTime);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+                
+                noise.connect(noiseGain);
+                noiseGain.connect(this.masterGain);
+                
+                noise.start(this.audioContext.currentTime);
+                noise.stop(this.audioContext.currentTime + 0.2);
+            }
+            
+            createHihat() {
+                const bufferSize = this.audioContext.sampleRate * 0.1;
+                const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                
+                const noise = this.audioContext.createBufferSource();
+                noise.buffer = buffer;
+                
+                const gainNode = this.audioContext.createGain();
+                const filter = this.audioContext.createBiquadFilter();
+                
+                filter.type = 'highpass';
+                filter.frequency.value = 7000;
+                
+                gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+                
+                noise.connect(filter);
+                filter.connect(gainNode);
+                gainNode.connect(this.masterGain);
+                
+                noise.start(this.audioContext.currentTime);
+                noise.stop(this.audioContext.currentTime + 0.1);
+            }
+            
+            createClap() {
+                const bufferSize = this.audioContext.sampleRate * 0.2;
+                const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                
+                const noise = this.audioContext.createBufferSource();
+                noise.buffer = buffer;
+                
+                const gainNode = this.audioContext.createGain();
+                const filter = this.audioContext.createBiquadFilter();
+                
+                filter.type = 'bandpass';
+                filter.frequency.value = 1000;
+                
+                gainNode.gain.setValueAtTime(0.4, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+                
+                noise.connect(filter);
+                filter.connect(gainNode);
+                gainNode.connect(this.masterGain);
+                
+                noise.start(this.audioContext.currentTime);
+                noise.stop(this.audioContext.currentTime + 0.2);
+            }
+            
+            step() {
+                // 現在のステップの表示を更新
+                document.querySelectorAll('.step').forEach(step => {
+                    step.classList.remove('current');
+                    if (parseInt(step.dataset.step) === this.currentStep) {
+                        step.classList.add('current');
+                    }
+                });
+                
+                // 各インストゥルメントの音を鳴らす
+                Object.keys(this.patterns).forEach(inst => {
+                    if (this.patterns[inst][this.currentStep]) {
+                        this.instruments[inst]();
+                    }
+                });
+                
+                this.currentStep = (this.currentStep + 1) % 16;
+            }
+            
+            togglePlay() {
+                if (this.isPlaying) {
+                    this.stop();
+                } else {
+                    this.play();
+                }
+            }
+            
+            play() {
+                this.isPlaying = true;
+                this.currentStep = 0;
+                this.tick();
+            }
+            
+            stop() {
+                this.isPlaying = false;
+                document.querySelectorAll('.step').forEach(step => {
+                    step.classList.remove('current');
+                });
+            }
+            
+            tick() {
+                if (!this.isPlaying) return;
+                
+                this.step();
+                
+                setTimeout(() => {
+                    this.tick();
+                }, (60 / this.tempo) * 1000 / 4); // 16分音符のタイミング
+            }
+            
+            clearPattern() {
+                Object.keys(this.patterns).forEach(inst => {
+                    this.patterns[inst].fill(0);
+                });
+                document.querySelectorAll('.step').forEach(step => {
+                    step.classList.remove('active');
+                });
+            }
+        }
+
+        // DrumMachineのインスタンスを作成
+        window.addEventListener('load', () => {
+            const drumMachine = new DrumMachine();
+        });
+    </script>
+</body>
+</html>

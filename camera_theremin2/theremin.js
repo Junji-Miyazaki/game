@@ -409,28 +409,20 @@ function processFrame() {
 
     // カメラ映像の表示
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // グレースケール変換
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const pixels = imageData.data;
-    
-    for (let i = 0; i < pixels.length; i += 4) {
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        // グレースケール値の計算（輝度）
-        const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        
-        pixels[i] = gray;     // R
-        pixels[i + 1] = gray; // G
-        pixels[i + 2] = gray; // B
-        // pixels[i + 3] はアルファ値なので変更しない
-    }
-    
-    // グレースケール画像を描画
-    ctx.putImageData(imageData, 0, 0);
-
-    // 左右の領域の明るさを計算
+	
+	// グレースケール効果を強化
+const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+const data = imageData.data;
+for (let i = 0; i < data.length; i += 4) {
+    const gray = data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+    data[i] = gray;     // 赤
+    data[i + 1] = gray; // 緑
+    data[i + 2] = gray; // 青
+    // data[i + 3]はアルファ値なので変更しない
+}
+ctx.putImageData(imageData, 0, 0);
+	
+   // 左右の領域の輝度を直接計算
     const leftData = ctx.getImageData(0, 0, canvas.width / 2, canvas.height);
     const rightData = ctx.getImageData(canvas.width / 2, 0, canvas.width / 2, canvas.height);
 
@@ -446,10 +438,10 @@ function processFrame() {
 
     // ノイズのスピードとドットサイズをオシレータの周波数で調整
     const noiseSpeed = defaultSpeed * (1000 / osc1Freq); // オシレータ1でスピード調整
-    const dotSize = 1 + Math.floor((osc2Freq / 2000) * 4); // オシレータ2でドットサイズ調整
+    const dotSize = 1 + Math.floor((osc2Freq / 3000) * 5); // オシレータ2でドットサイズ調整
 
     // デフォルトのノイズを細かく設定（音に反応がないとき）
-    const defaultDotSize = 5;
+    const defaultDotSize = 4;
 
     // 一定の間隔ごとにノイズエフェクトを描画
     if (currentTime - lastNoiseUpdate > noiseSpeed) {
@@ -481,14 +473,14 @@ function processFrame() {
 
 
 // 明るさの計算
+// 輝度計算関数の最適化
 function calculateAverageBrightness(data) {
     let total = 0;
     for (let i = 0; i < data.length; i += 4) {
-        total += (data[i] + data[i + 1] + data[i + 2]) / 3;
+        total += data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
     }
     return total / (data.length / 4);
 }
-
 // 閾値内の明るさを正規化
 function normalizeBrightness(brightness, minThreshold, maxThreshold) {
     brightness = Math.max(minThreshold, Math.min(maxThreshold, brightness));

@@ -143,8 +143,8 @@
             <div class="control-group">
                 <div class="slider-container">
                     <div>
-                        <label for="tempo">Tempo: <span id="tempoValue">200</span> BPM</label>
-                        <input type="range" id="tempo" min="60" max="200" value="200">
+                        <label for="tempo">Tempo: <span id="tempoValue">300</span> BPM</label>
+                        <input type="range" id="tempo" min="60" max="300" value="250">
                     </div>
                     <div>
                         <label for="density">Pattern Density: <span id="densityValue">100</span>%</label>
@@ -157,28 +157,24 @@
 
                     <!-- ディレイコントロールセクション -->
                     <div class="delay-controls">
-                        <div class="section-title">Delay Controls</div>
-                        <div>
-                            <label for="delayTime">Roll Time: <span id="delayTimeValue">160</span>ms</label>
-                            <input type="range" id="delayTime" min="50" max="500" value="160">
-                        </div>
-                        <div>
-                            <label for="delayFeedback">Roll Decay: <span id="delayFeedbackValue">40</span>%</label>
-                            <input type="range" id="delayFeedback" min="0" max="90" value="40">
-                        </div>
-                        <div>
-                            <label for="delayChance">Roll Chance: <span id="delayChanceValue">15</span>%</label>
-                            <input type="range" id="delayChance" min="0" max="100" value="15">
-                        </div>
-                        <div>
-                            <label for="delayRolls">Roll Count: <span id="delayRollsValue">3</span></label>
-                            <input type="range" id="delayRolls" min="1" max="8" value="3">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="section-title">Roll Controls</div>
+    <div>
+        <label for="delayTime">Roll Time: <span id="delayTimeValue">160</span>ms</label>
+        <input type="range" id="delayTime" min="50" max="500" value="160">
     </div>
+    <div>
+        <label for="delayFeedback">Roll Decay: <span id="delayFeedbackValue">20</span>%</label>
+        <input type="range" id="delayFeedback" min="0" max="50" value="20">
+    </div>
+    <div>
+        <label for="delayChance">Roll Chance: <span id="delayChanceValue">3</span>%</label>
+        <input type="range" id="delayChance" min="0" max="10" value="3">
+    </div>
+    <div>
+        <label for="delayRolls">Roll Count: <span id="delayRollsValue">2</span></label>
+        <input type="range" id="delayRolls" min="1" max="4" value="2">
+    </div>
+</div>
 
     <style>
     /* 既存のスタイルに追加 */
@@ -211,25 +207,27 @@ class ElectronicSounds {
     constructor(audioContext) {
         this.audioContext = audioContext;
         this.delaySettings = {
-            time: 0.16,
-            feedback: 0.4,
-            chance: 0.15,
-            rolls: 3
+            time: 0.16,              // 160ms
+            feedback: 0.2,           // 20%
+            chance: 0.03,            // 3%
+            rolls: 2,                // 2回
+            wetDryMix: 0.3          // 30%
         };
-        this.setupDelayEffect();
+        this.setupDelayEffect();     // 初期化時に必ず呼び出す
     }
-        setupDelayEffect() {
-        // ディレイエフェクトのセットアップ
+
+    setupDelayEffect() {
+        // ディレイノードの作成と設定
         this.delayNode = this.audioContext.createDelay();
         this.feedbackNode = this.audioContext.createGain();
         this.wetGainNode = this.audioContext.createGain();
 
-        // ディレイの初期設定
+        // 初期設定
         this.delayNode.delayTime.value = this.delaySettings.time;
         this.feedbackNode.gain.value = this.delaySettings.feedback;
-        this.wetGainNode.gain.value = 0.5;
+        this.wetGainNode.gain.value = this.delaySettings.wetDryMix;
 
-        // エフェクトチェーンの接続
+        // ディレイチェーンの接続
         this.delayNode.connect(this.feedbackNode);
         this.feedbackNode.connect(this.delayNode);
     }
@@ -244,27 +242,27 @@ class ElectronicSounds {
         
         filter.type = 'lowpass';
         if (waveType === 'square' && frequency < 100) {
-            filter.frequency.value = 500 + (brightness * 1000);
+            filter.frequency.value = 500 + (brightness * 1000); // 低周波用
             filter.Q.value = 1;
         } else {
             filter.frequency.value = 1000 + (brightness * 7000);
         }
         
         const volume = waveType === 'square' ? 
-            (0.05 + (brightness * 0.2)) : 
-            (0.1 + (brightness * 0.3));
+            (0.05 + (brightness * 0.2)) : // 矩形波は音量を抑える
+            (0.1 + (brightness * 0.3));   // その他の波形
         
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(volume, time + 0.005);
         gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
 
-        // ディレイエフェクトの適用（ランダムに）
+        // ディレイエフェクトの適用（確率に基づいて）
         if (Math.random() < this.delaySettings.chance) {
             // ロールエフェクトの生成
             for (let i = 1; i <= this.delaySettings.rolls; i++) {
                 const delayGain = this.audioContext.createGain();
                 const delayTime = time + (i * this.delaySettings.time);
-                const delayVolume = volume * Math.pow(this.delaySettings.feedback, i);
+                const delayVolume = volume * Math.pow(this.delaySettings.feedback, i) * 0.5;
 
                 delayGain.gain.setValueAtTime(0, delayTime);
                 delayGain.gain.linearRampToValueAtTime(delayVolume, delayTime + 0.005);
@@ -275,42 +273,31 @@ class ElectronicSounds {
                 delayGain.connect(this.audioContext.destination);
             }
         }
-        
+
         // メインの出力チェーン
         osc.connect(filter);
         filter.connect(gain);
-        
-        // ディレイエフェクトチェーンの接続
         gain.connect(this.audioContext.destination);
+
+        // ディレイエフェクトへの接続
         gain.connect(this.delayNode);
         this.delayNode.connect(this.wetGainNode);
         this.wetGainNode.connect(this.audioContext.destination);
-        
+
         osc.start(time);
         osc.stop(time + duration + (this.delaySettings.time * this.delaySettings.rolls));
         
         return gain;
     }
 
-        updateDelaySettings(settings) {
-        Object.assign(this.delaySettings, settings);
-        
-        // ディレイパラメータの更新
-        if (this.delayNode && this.feedbackNode) {
-            if (settings.time !== undefined) {
-                this.delayNode.delayTime.value = settings.time;
-            }
-            if (settings.feedback !== undefined) {
-                this.feedbackNode.gain.value = settings.feedback;
-            }
-        }
-    }
-
     getModulatedFrequency(baseFreq, brightness) {
-        const modulation = 1 + ((brightness - 0.5) * 0.5);
+        const modulation = baseFreq < 100 ?
+            1 + ((brightness - 0.5) * 0.3) :  // 低周波は±15%
+            1 + ((brightness - 0.5) * 0.5);   // 高周波は±25%
         return baseFreq * modulation;
     }
 
+    // 各音色の生成メソッド
     hihat1(time, brightness = 0.5) {
         return this.createSound(
             this.getModulatedFrequency(8000, brightness),
@@ -341,65 +328,68 @@ class ElectronicSounds {
 
     signal(time, brightness = 0.5) {
         return this.createSound(
-            this.getModulatedFrequency(30 + Math.random() * 80, brightness),
+            this.getModulatedFrequency(30 + Math.random() * 50, brightness),
             time, 0.15, brightness, 'square'
         );
     }
 
     updateDelaySettings(settings) {
         Object.assign(this.delaySettings, settings);
+        
+        if (this.delayNode && this.feedbackNode && this.wetGainNode) {
+            if (settings.time !== undefined) {
+                this.delayNode.delayTime.value = settings.time;
+            }
+            if (settings.feedback !== undefined) {
+                this.feedbackNode.gain.value = settings.feedback;
+            }
+            if (settings.wetDryMix !== undefined) {
+                this.wetGainNode.gain.value = settings.wetDryMix;
+            }
+        }
     }
 }
-        
+                        
 class RhythmGenerator {
-    constructor() {
-        this.audioContext = null;
+  constructor() {
+    this.audioContext = null;
     this.sounds = null;
     this.isPlaying = false;
-        this.isPlaying = false;
-        this.tempo = 200;
-        this.density = 1.0;
-        this.randomness = 1.0;
-        this.stepsPerBar = 16;
-        this.barsPerPhrase = 2;
-        this.totalSteps = this.stepsPerBar * this.barsPerPhrase;
-        this.currentStep = 0;
-        this.phraseCount = 0;
-        this.lastBrightness = null;
-        this.lastAreaBrightness = null;
-        this.autoDensityChange = true;
-        this.densityChangeInterval = 20000;
+    this.tempo = 250;
+    this.density = 1.0;
+    this.randomness = 1.0;
+    this.stepsPerBar = 16;
+    this.barsPerPhrase = 2;
+    this.totalSteps = this.stepsPerBar * this.barsPerPhrase;
+    this.currentStep = 0;
+    this.phraseCount = 0;
+    this.lastBrightness = null;
+    this.lastAreaBrightness = null;
+    this.autoDensityChange = true;
+    this.densityChangeInterval = 20000;
+    this.fallbackMode = false;  // 追加
 
-        this.muteStates = {
-            hihat1: false,
-            hihat2: false,
-            openHihat1: false,
-            openHihat2: false,
-            signal: false
-        };
-        
-                
-        this.autoMuteStates = {
-            hihat1: true,
-            hihat2: true,
-            openHihat1: true,
-            openHihat2: true,
-            signal: true
-        };
-
-        // ディレイ設定の初期化を追加
-    this.delaySettings = {
-        time: 0.16,
-        feedback: 0.4,
-        chance: 0.15,
-        rolls: 3
+    this.muteStates = {
+        hihat1: false,
+        hihat2: false,
+        openHihat1: false,
+        openHihat2: false,
+        signal: false
     };
-        
-        this.pattern = this.generateInitialPattern();
-        this.setupCamera();
-        this.setupVisualizer();
-        this.startAutoDensityChange();
-    }
+
+    this.autoMuteStates = {
+        hihat1: true,
+        hihat2: true,
+        openHihat1: true,
+        openHihat2: true,
+        signal: true
+    };
+
+    this.pattern = this.generateInitialPattern();
+    this.setupCamera();
+    this.setupVisualizer();
+    this.startAutoDensityChange();
+}
 
     setupVisualizer() {
         this.visualizer = document.getElementById('visualizer');
@@ -449,86 +439,105 @@ class RhythmGenerator {
         }, this.densityChangeInterval);
     }
 
-    async setupCamera() {
-        this.video = document.getElementById('video');
-        this.canvas = document.createElement('canvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.isFrontCamera = false;
+    // RhythmGeneratorクラス内のカメラ関連メソッドを修正
+async setupCamera() {
+    this.video = document.getElementById('video');
+    this.canvas = document.createElement('canvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.isFrontCamera = false;
+    this.fallbackMode = false;
 
-        try {
-            await this.startCamera();
-            this.canvas.width = this.video.videoWidth || 640;
-            this.canvas.height = this.video.videoHeight || 480;
-            console.log('Camera setup successful');
-        } catch (err) {
-            console.error('Camera setup failed:', err);
+    try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('このブラウザはカメラをサポートしていません。');
             this.useFallbackMode();
+            return;
         }
-    }
-    async startCamera() {
-        try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('このブラウザはカメラをサポートしていません。');
-            }
 
-            const constraints = {
-                video: {
-                    facingMode: this.isFrontCamera ? "user" : "environment",
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                }
-            };
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.video.srcObject = stream;
-            
-            return new Promise((resolve) => {
-                this.video.onloadedmetadata = () => {
-                    this.video.play()
-                        .then(resolve)
-                        .catch(err => {
-                            console.error('Video play failed:', err);
-                            this.useFallbackMode();
-                            resolve();
-                        });
-                };
-            });
-        } catch (err) {
-            this.useFallbackMode();
-            throw err;
-        }
+        await this.startCamera();
+        console.log('Camera setup successful');
+    } catch (err) {
+        console.error('Camera setup failed:', err);
+        alert('カメラの起動に失敗しました: ' + err.message);
+        this.useFallbackMode();
     }
+}
 
-        useFallbackMode() {
-        this.fallbackMode = true;
-        this.canvas.width = 640;
-        this.canvas.height = 480;
-        this.lastBrightness = 0.5;
-        this.lastAreaBrightness = Array(16).fill(0.5);
-    }
-        
-    toggleCamera() {
-        this.isFrontCamera = !this.isFrontCamera;
+async startCamera() {
+    try {
+        // 既存のストリームを停止
         if (this.video.srcObject) {
             const tracks = this.video.srcObject.getTracks();
             tracks.forEach(track => track.stop());
         }
-        this.startCamera();
+
+        const constraints = {
+            video: {
+                facingMode: this.isFrontCamera ? "user" : "environment",
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        this.video.srcObject = stream;
+        
+        return new Promise((resolve, reject) => {
+            this.video.onloadedmetadata = () => {
+                this.canvas.width = this.video.videoWidth || 640;
+                this.canvas.height = this.video.videoHeight || 480;
+                
+                this.video.play()
+                    .then(resolve)
+                    .catch(err => {
+                        console.error('Video play failed:', err);
+                        reject(err);
+                    });
+            };
+        });
+    } catch (err) {
+        if (err.name === 'NotAllowedError') {
+            alert('カメラの使用が許可されていません。ブラウザの設定でカメラへのアクセスを許可してください。');
+        } else if (err.name === 'NotFoundError') {
+            alert('カメラが見つかりません。デバイスにカメラが接続されているか確認してください。');
+        } else {
+            alert('カメラの起動に失敗しました: ' + err.message);
+        }
+        throw err;
+    }
+}
+
+useFallbackMode() {
+    console.log('Switching to fallback mode');
+    this.fallbackMode = true;
+    this.canvas.width = 640;
+    this.canvas.height = 480;
+    this.lastBrightness = 0.5;
+    this.lastAreaBrightness = Array(16).fill(0.5);
+}
+
+toggleCamera() {
+    this.isFrontCamera = !this.isFrontCamera;
+    this.setupCamera().catch(err => {
+        console.error('Camera toggle failed:', err);
+        alert('カメラの切り替えに失敗しました。');
+    });
+}
+
+analyzeVideo() {
+    if (this.fallbackMode || !this.video || !this.video.videoWidth) {
+        return {
+            brightness: 0.5,
+            changed: false
+        };
     }
 
-    analyzeVideo() {
-        if (!this.video || !this.video.videoWidth) {
-            return {
-                brightness: 0.5,
-                changed: false
-            };
-        }
-
-        try {
-            this.ctx.drawImage(this.video, 0, 0);
-            const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            const data = imageData.data;
-            
+    try {
+        this.ctx.drawImage(this.video, 0, 0);
+        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const data = imageData.data;
+        
+       
             const areaSize = 4;
             const areaWidth = this.canvas.width / areaSize;
             const areaHeight = this.canvas.height / areaSize;
@@ -567,14 +576,15 @@ class RhythmGenerator {
                 brightness,
                 changed
             };
-        } catch (err) {
-            console.error('Video analysis failed:', err);
-            return {
-                brightness: 0.5,
-                changed: false
-            };
-        }
+        
+    } catch (err) {
+        console.error('Video analysis failed:', err);
+        return {
+            brightness: 0.5,
+            changed: false
+        };
     }
+}
 
     async start() {
         try {
@@ -756,7 +766,7 @@ class RhythmGenerator {
     }
 
     setTempo(newTempo) {
-        this.tempo = Math.max(60, Math.min(200, newTempo));
+        this.tempo = Math.max(60, Math.min(300, newTempo));
     }
 
     setDensity(newDensity) {
@@ -795,11 +805,12 @@ class RhythmGenerator {
 
 
 // UIコントロールの設定
+// DOMContentLoadedイベントリスナー（一箇所にまとめる）
 document.addEventListener('DOMContentLoaded', () => {
     const generator = new RhythmGenerator();
     let isPlaying = false;
 
-    // Start/Stop ボタン
+    // Start/Stop ボタン（重複を削除）
     const startStopButton = document.getElementById('startStop');
     startStopButton.addEventListener('click', () => {
         if (!isPlaying) {
@@ -837,178 +848,90 @@ document.addEventListener('DOMContentLoaded', () => {
         const capitalizedSound = sound.charAt(0).toUpperCase() + sound.slice(1);
         
         const muteButton = document.getElementById(`mute${capitalizedSound}`);
-        muteButton.addEventListener('click', () => {
-            const isMuted = generator.toggleMute(sound);
-            muteButton.classList.toggle('muted', isMuted);
-        });
+        if (muteButton) {
+            muteButton.addEventListener('click', () => {
+                const isMuted = generator.toggleMute(sound);
+                muteButton.classList.toggle('muted', isMuted);
+            });
+        }
 
         const autoMuteButton = document.getElementById(`autoMute${capitalizedSound}`);
-        autoMuteButton.classList.add('muted');
-        autoMuteButton.addEventListener('click', () => {
-            const isAutoMuted = generator.toggleAutoMute(sound);
-            autoMuteButton.classList.toggle('muted', isAutoMuted);
-        });
-    });
-
-    // スライダーコントロール
-    const tempoSlider = document.getElementById('tempo');
-    const tempoValue = document.getElementById('tempoValue');
-    tempoSlider.addEventListener('input', (e) => {
-        const value = parseInt(e.target.value);
-        tempoValue.textContent = value;
-        generator.setTempo(value);
-    });
-
-    const densitySlider = document.getElementById('density');
-    const densityValue = document.getElementById('densityValue');
-    densitySlider.addEventListener('input', (e) => {
-        const value = parseInt(e.target.value);
-        densityValue.textContent = value;
-        generator.setDensity(value);
-    });
-
-    const randomnessSlider = document.getElementById('randomness');
-    const randomnessValue = document.getElementById('randomnessValue');
-    randomnessSlider.addEventListener('input', (e) => {
-        const value = parseInt(e.target.value);
-        randomnessValue.textContent = value;
-        generator.setRandomness(value);
-    });
-
-    // ディレイコントロール
-    const delayControls = {
-        'delayTime': { min: 50, max: 500, transform: v => v / 1000 },
-        'delayFeedback': { min: 0, max: 90, transform: v => v / 100 },
-        'delayChance': { min: 0, max: 100, transform: v => v / 100 },
-        'delayRolls': { min: 1, max: 8, transform: v => v }
-    };
-
-    Object.entries(delayControls).forEach(([control, config]) => {
-        const slider = document.getElementById(control);
-        const value = document.getElementById(`${control}Value`);
-        
-        if (slider && value) {
-            slider.addEventListener('input', (e) => {
-                const val = parseInt(e.target.value);
-                value.textContent = val;
-                
-                const settings = {};
-                const paramName = control.replace('delay', '').toLowerCase();
-                settings[paramName] = config.transform(val);
-                
-                if (generator.sounds && typeof generator.sounds.updateDelaySettings === 'function') {
-                    generator.sounds.updateDelaySettings(settings);
-                }
+        if (autoMuteButton) {
+            autoMuteButton.classList.add('muted');
+            autoMuteButton.addEventListener('click', () => {
+                const isAutoMuted = generator.toggleAutoMute(sound);
+                autoMuteButton.classList.toggle('muted', isAutoMuted);
             });
         }
     });
-});
-        
-    const startStopButton = document.getElementById('startStop');
-    startStopButton.addEventListener('click', () => {
-        if (!isPlaying) {
-            generator.start();
-            startStopButton.textContent = 'Stop';
-        } else {
-            generator.stop();
-            startStopButton.textContent = 'Start';
-        }
-        isPlaying = !isPlaying;
-    });
 
-    // UIコントロールの設定 - 一箇所にまとめる
-document.addEventListener('DOMContentLoaded', () => {
-    const generator = new RhythmGenerator();
-    let isPlaying = false;
-
-    // Start/Stop ボタン
-    const startStopButton = document.getElementById('startStop');
-    startStopButton.addEventListener('click', () => {
-        if (!isPlaying) {
-            generator.start();
-            startStopButton.textContent = 'Stop';
-        } else {
-            generator.stop();
-            startStopButton.textContent = 'Start';
-        }
-        isPlaying = !isPlaying;
-    });
-
-    // Auto Density ボタン
-    const autoDensityButton = document.getElementById('toggleAutoDensity');
-    if (autoDensityButton) {
-        autoDensityButton.addEventListener('click', () => {
-            generator.autoDensityChange = !generator.autoDensityChange;
-            autoDensityButton.textContent = `Auto Density: ${generator.autoDensityChange ? 'ON' : 'OFF'}`;
-            if (generator.autoDensityChange) {
-                generator.startAutoDensityChange();
-            } else if (generator.densityChangeTimer) {
-                clearInterval(generator.densityChangeTimer);
-            }
-        });
-    }
-
-    // カメラ切り替え
-    document.getElementById('toggleCamera').addEventListener('click', () => {
-        generator.toggleCamera();
-    });
-
-    // サウンドコントロール
-    const sounds = ['hihat1', 'hihat2', 'openHihat1', 'openHihat2', 'signal'];
-    sounds.forEach(sound => {
-        const capitalizedSound = sound.charAt(0).toUpperCase() + sound.slice(1);
-        
-        const muteButton = document.getElementById(`mute${capitalizedSound}`);
-        muteButton.addEventListener('click', () => {
-            const isMuted = generator.toggleMute(sound);
-            muteButton.classList.toggle('muted', isMuted);
-        });
-
-        const autoMuteButton = document.getElementById(`autoMute${capitalizedSound}`);
-        autoMuteButton.classList.add('muted');
-        autoMuteButton.addEventListener('click', () => {
-            const isAutoMuted = generator.toggleAutoMute(sound);
-            autoMuteButton.classList.toggle('muted', isAutoMuted);
-        });
-    });
-
-    // スライダーコントロール
-    const setupSlider = (id, valueid, callback) => {
+    // 基本スライダーコントロール
+    const setupBasicSlider = (id, valueId, callback) => {
         const slider = document.getElementById(id);
-        const value = document.getElementById(valueid);
-        slider.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value);
-            value.textContent = val;
-            callback(val);
-        });
+        const value = document.getElementById(valueId);
+        if (slider && value) {
+            slider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                value.textContent = val;
+                callback(val);
+            });
+        }
     };
 
-    setupSlider('tempo', 'tempoValue', val => generator.setTempo(val));
-    setupSlider('density', 'densityValue', val => generator.setDensity(val));
-    setupSlider('randomness', 'randomnessValue', val => generator.setRandomness(val));
+    // テンポ、密度、ランダム性のスライダー設定
+    setupBasicSlider('tempo', 'tempoValue', val => generator.setTempo(val));
+    setupBasicSlider('density', 'densityValue', val => generator.setDensity(val));
+    setupBasicSlider('randomness', 'randomnessValue', val => generator.setRandomness(val));
 
-    // ディレイコントロール
+    // ディレイコントロールの設定
     const delayControls = {
-        'delayTime': { min: 50, max: 500, transform: v => v / 1000 },
-        'delayFeedback': { min: 0, max: 90, transform: v => v / 100 },
-        'delayChance': { min: 0, max: 100, transform: v => v / 100 },
-        'delayRolls': { min: 1, max: 8, transform: v => v }
+        'delayTime': { 
+            min: 50, 
+            max: 500, 
+            transform: v => v / 1000,
+            default: 160
+        },
+        'delayFeedback': { 
+            min: 0, 
+            max: 50,
+            transform: v => v / 100,
+            default: 20
+        },
+        'delayChance': { 
+            min: 0, 
+            max: 10,
+            transform: v => v / 100,
+            default: 3
+        },
+        'delayRolls': { 
+            min: 1, 
+            max: 4,
+            transform: v => v,
+            default: 2
+        }
     };
 
+    // ディレイスライダーの設定
     Object.entries(delayControls).forEach(([control, config]) => {
         const slider = document.getElementById(control);
         const value = document.getElementById(`${control}Value`);
         
         if (slider && value) {
+            // 初期値の設定
+            slider.min = config.min;
+            slider.max = config.max;
+            slider.value = config.default;
+            value.textContent = config.default;
+            
+            // イベントリスナーの設定
             slider.addEventListener('input', (e) => {
                 const val = parseInt(e.target.value);
                 value.textContent = val;
                 
-                const settings = {};
-                const paramName = control.replace('delay', '').toLowerCase();
-                settings[paramName] = config.transform(val);
-                
                 if (generator.sounds) {
+                    const settings = {};
+                    const paramName = control.replace('delay', '').toLowerCase();
+                    settings[paramName] = config.transform(val);
                     generator.sounds.updateDelaySettings(settings);
                 }
             });

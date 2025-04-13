@@ -144,8 +144,8 @@
             <div class="control-group">
                 <div class="slider-container">
     <div>
-        <label for="tempo">Tempo: <span id="tempoValue">300</span> BPM</label>
-        <input type="range" id="tempo" min="60" max="300" value="300">
+        <label for="tempo">Tempo: <span id="tempoValue">200</span> BPM</label>
+        <input type="range" id="tempo" min="60" max="200" value="200">
     </div>
     <div>
         <label for="density">Pattern Density: <span id="densityValue">100</span>%</label>
@@ -223,7 +223,7 @@ class RhythmGenerator {
         this.audioContext = null;
         this.sounds = null;
         this.isPlaying = false;
-        this.tempo = 300;
+        this.tempo = 200;
         this.density = 1.0;
         this.randomness = 1.0;
         this.stepsPerBar = 16;
@@ -510,7 +510,7 @@ class RhythmGenerator {
                     const currentlyMuted = this.muteStates[soundToToggle];
 
                     // ミュート解除は常に可能、ミュートは3未満の時のみ
-                    if (currentlyMuted || (!currentlyMuted && currentMutes < 5)) {
+                    if (currentlyMuted || (!currentlyMuted && currentMutes < 3)) {
                         this.muteStates[soundToToggle] = !this.muteStates[soundToToggle];
                         const button = document.getElementById(`mute${soundToToggle.charAt(0).toUpperCase() + soundToToggle.slice(1)}`);
                         if (button) {
@@ -602,7 +602,7 @@ class RhythmGenerator {
     }
 
     setTempo(newTempo) {
-        this.tempo = Math.max(60, Math.min(300, newTempo));
+        this.tempo = Math.max(60, Math.min(200, newTempo));
     }
 
     setDensity(newDensity) {
