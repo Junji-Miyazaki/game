@@ -439,13 +439,14 @@ class RhythmGenerator {
         }, this.densityChangeInterval);
     }
 
-   // RhythmGeneratorクラス内のカメラ関連メソッドの修正版
+// RhythmGeneratorクラス内のカメラ関連メソッドの修正版 (iOS対応)
 
 async setupCamera() {
     this.video = document.getElementById('video');
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.isFrontCamera = false;
+    this.cameraToggling = false; // カメラ切り替え中フラグ
 
     try {
         await this.startCamera();
@@ -461,32 +462,55 @@ async setupCamera() {
 
 async startCamera() {
     try {
-        // 既存のストリームを停止
+        // 既存のストリームを確実に停止
         if (this.video.srcObject) {
             const tracks = this.video.srcObject.getTracks();
             tracks.forEach(track => track.stop());
+            this.video.srcObject = null; // 重要: srcObjectをnullに設定
         }
 
+        // iOSに最適化したfacingMode指定
+        const exactConstraint = this.isFrontCamera ? 
+            { exact: "user" } : 
+            { exact: "environment" };
+            
         const constraints = {
+            audio: false,
             video: {
-                facingMode: this.isFrontCamera ? "user" : "environment",
+                facingMode: exactConstraint,
                 width: { ideal: 640 },
                 height: { ideal: 480 }
             }
         };
 
+        console.log('Requesting camera with constraints:', JSON.stringify(constraints));
+
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log('Got new media stream with tracks:', stream.getVideoTracks().length);
+        
+        // ストリームをビデオ要素に設定
         this.video.srcObject = stream;
         
         return new Promise((resolve) => {
             this.video.onloadedmetadata = () => {
                 this.video.play()
-                    .then(resolve)
+                    .then(() => {
+                        console.log('Video playback started');
+                        resolve();
+                    })
                     .catch(err => {
                         console.error('Video play failed:', err);
                         resolve(); // エラーでも処理を継続
                     });
             };
+            
+            // メタデータロードのタイムアウト処理
+            setTimeout(() => {
+                if (!this.video.videoWidth) {
+                    console.warn('Video metadata timeout - using fallback dimensions');
+                    resolve();
+                }
+            }, 3000);
         });
     } catch (err) {
         console.error('Getting user media failed:', err);
@@ -495,29 +519,44 @@ async startCamera() {
 }
 
 toggleCamera() {
+    // 連続した切り替えを防止
+    if (this.cameraToggling) {
+        console.log('Camera toggle in progress, ignoring request');
+        return;
+    }
+    
+    this.cameraToggling = true;
+    console.log('Toggling camera from', this.isFrontCamera ? 'front' : 'back', 
+                'to', !this.isFrontCamera ? 'front' : 'back');
+    
+    // フラグを切り替え
     this.isFrontCamera = !this.isFrontCamera;
+    
+    // 既存のストリームを停止
     if (this.video.srcObject) {
         const tracks = this.video.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
+        tracks.forEach(track => {
+            console.log('Stopping track:', track.kind, track.label);
+            track.stop();
+        });
+        this.video.srcObject = null; // 重要: srcObjectをnullに設定
     }
-    this.startCamera(); // シンプルに直接呼び出し
-}
-
-useFallbackMode() {
-    console.log('Switching to fallback mode');
-    this.fallbackMode = true;
-    this.canvas.width = 640;
-    this.canvas.height = 480;
-    this.lastBrightness = 0.5;
-    this.lastAreaBrightness = Array(16).fill(0.5);
-}
-
-toggleCamera() {
-    this.isFrontCamera = !this.isFrontCamera;
-    this.setupCamera().catch(err => {
-        console.error('Camera toggle failed:', err);
-        alert('カメラの切り替えに失敗しました。');
-    });
+    
+    // iOSデバイスでは、カメラハードウェア解放と再取得の間に
+    // 短い遅延が必要なことがある
+    setTimeout(() => {
+        this.startCamera()
+            .then(() => {
+                console.log('Camera switched successfully');
+                this.cameraToggling = false;
+            })
+            .catch(err => {
+                console.error('Camera toggle failed:', err);
+                this.cameraToggling = false;
+                // 失敗した場合はフラグを元に戻す
+                this.isFrontCamera = !this.isFrontCamera;
+            });
+    }, 300); // 300msの遅延を追加
 }
 
 analyzeVideo() {
