@@ -438,6 +438,21 @@
     background-color: rgba(60, 60, 60, 0.5);
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
 }
+
+/* Camera switch icon */
+.camera-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    position: relative;
+    background-color: rgba(255, 255, 255, 0.7);
+    transition: all 0.3s ease;
+}
+
+.camera-icon.back {
+    background-color: rgba(0, 0, 0, 0.7);
+    border: 2px solid rgba(255, 255, 255, 0.7);
+}
     </style>
 </head>
 <body>
@@ -512,10 +527,10 @@
     </div>
 </div>
         
-        <!-- Camera switch button -->
+<!-- Camera switch button -->
 <div class="camera-switch-container" id="cameraSwitchContainer">
     <div id="cameraSwitchBtn" class="camera-switch" title="Switch Camera">
-        <span id="cameraIcon">🔄</span>
+        <div id="cameraIcon" class="camera-icon"></div>
     </div>
 </div>
         
@@ -1554,6 +1569,120 @@ function initCamera(facingMode = 'user') {
             config.analyzeCamera = false;
             return false;
         });
+}function initCamera(facingMode = 'user') {
+    console.log("Initializing camera with facingMode:", facingMode);
+    
+    // Safari互換性のためのビデオ要素の属性設定
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+    
+    // Explicit constraints for camera switching
+    const constraints = { 
+        video: { 
+            width: { ideal: 320 }, 
+            height: { ideal: 240 },
+            facingMode: { exact: facingMode }  // Use exact for better mobile compatibility
+        },
+        audio: false // オーディオは不要
+    };
+    
+    console.log("Requesting camera with constraints:", constraints);
+    
+    // 既存のストリームがあれば停止
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+    }
+    
+    return navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+            console.log("Camera access granted:", stream);
+            videoStream = stream;
+            video.srcObject = stream;
+            
+            // Check camera capabilities
+            const track = stream.getVideoTracks()[0];
+            if (track) {
+                const settings = track.getSettings();
+                console.log("Camera settings:", settings);
+                // Update actual facing mode based on what was actually set
+                currentFacingMode = settings.facingMode || facingMode;
+            }
+            
+            // 確実にビデオが読み込まれたことを確認
+            video.onloadedmetadata = () => {
+                console.log("Video metadata loaded, video size:", video.videoWidth, "x", video.videoHeight);
+                video.play().catch(e => console.error("Error playing video:", e));
+            };
+            
+            analysisCanvas.width = 320;
+            analysisCanvas.height = 240;
+            
+            // カメラ認識成功メッセージ
+            console.log("Camera successfully initialized");
+            document.getElementById('toggleCamera').textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+            document.getElementById('toggleCamera').disabled = false;
+            document.getElementById('toggleAnalysis').disabled = false;
+            
+            // カメラスイッチボタンを表示
+            document.getElementById('cameraSwitchContainer').style.display = 'block';
+            
+            return true;
+        })
+        .catch(err => {
+            console.error("Camera access denied or not available:", err);
+            
+            // Try fallback with ideal constraint instead of exact
+            if (constraints.video.facingMode.exact) {
+                constraints.video.facingMode = { ideal: facingMode };  // Fallback to ideal
+                return navigator.mediaDevices.getUserMedia(constraints)
+                    .then(stream => {
+                        console.log("Camera access granted with fallback:", stream);
+                        videoStream = stream;
+                        video.srcObject = stream;
+                        
+                        video.onloadedmetadata = () => {
+                            console.log("Video metadata loaded (fallback), video size:", video.videoWidth, "x", video.videoHeight);
+                            video.play().catch(e => console.error("Error playing video:", e));
+                        };
+                        
+                        analysisCanvas.width = 320;
+                        analysisCanvas.height = 240;
+                        
+                        document.getElementById('cameraSwitchContainer').style.display = 'block';
+                        return true;
+                    })
+                    .catch(fallbackErr => {
+                        console.error("Fallback camera access also failed:", fallbackErr);
+                        handleCameraError();
+                        return false;
+                    });
+            } else {
+                handleCameraError();
+                return false;
+            }
+        });
+}
+
+function handleCameraError() {
+    // カメラエラーメッセージをUIに表示
+    const errorMsg = document.createElement('div');
+    errorMsg.style.position = 'absolute';
+    errorMsg.style.top = '10px';
+    errorMsg.style.left = '10px';
+    errorMsg.style.padding = '10px';
+    errorMsg.style.backgroundColor = 'rgba(255,0,0,0.7)';
+    errorMsg.style.color = 'white';
+    errorMsg.style.borderRadius = '5px';
+    errorMsg.innerHTML = 'カメラへのアクセスができません。<br>ブラウザの設定を確認してください。';
+    document.body.appendChild(errorMsg);
+    
+    // カメラが使用不可に設定
+    document.getElementById('toggleCamera').textContent = 'Camera unavailable';
+    document.getElementById('toggleCamera').disabled = true;
+    document.getElementById('toggleAnalysis').disabled = true;
+    
+    // カメラなしで続行
+    config.analyzeCamera = false;
 }
 
 // Force camera initialization on page load
@@ -2036,7 +2165,7 @@ cameraSwitchBtn.addEventListener('click', function() {
     
     // Update button icon and state
     cameraSwitchBtn.classList.add('active');
-    cameraIcon.textContent = currentFacingMode === 'user' ? '🤳' : '📷';
+    cameraIcon.classList.toggle('back');
     
     // Reinitialize camera with new facing mode
     initCamera(currentFacingMode)
@@ -2050,13 +2179,15 @@ cameraSwitchBtn.addEventListener('click', function() {
             console.error('Failed to switch camera:', err);
             // If switch failed, revert to previous facing mode
             currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-            cameraIcon.textContent = currentFacingMode === 'user' ? '🤳' : '📷';
+            cameraIcon.classList.toggle('back');
             cameraSwitchBtn.classList.remove('active');
         });
 });
 
 // Update camera icon initially
-cameraIcon.textContent = currentFacingMode === 'user' ? '🤳' : '📷';
+if (currentFacingMode === 'environment') {
+    cameraIcon.classList.add('back');
+}
             
     </script>
 </body>
