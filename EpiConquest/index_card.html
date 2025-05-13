@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>疫学要因分類ゲーム</title>
+    <style>
+        :root {
+            --primary: #2c2c2c;
+            --secondary: #444444;
+            --accent: #666666;
+            --light: #f5f5f5;
+            --success: #5a5a5a;
+            --warning: #888888;
+            --danger: #222222;
+            --neutral: #aaaaaa;
+            --selected: rgba(100, 100, 100, 0.1);
+            --highlight-match: rgba(150, 150, 150, 0.2);
+            --highlight-diff: rgba(100, 100, 100, 0.2);
+            --border: #e0e0e0;
+        }
+        
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--light);
+            color: var(--primary);
+            margin: 0;
+            padding: 10px;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+        
+        h1, h2, h3, h4 {
+            color: var(--primary);
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            font-size: 22px;
+            text-align: center;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+        
+        h2 {
+            font-size: 20px;
+        }
+        
+        h3 {
+            font-size: 18px;
+        }
+        
+        h4 {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        button {
+            background-color: var(--secondary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: var(--primary);
+        }
+        
+        button:disabled {
+            background-color: var(--neutral);
+            cursor: not-allowed;
+        }
+        
+        .game-setup, .game-board, .results {
+            margin-bottom: 15px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .team-section {
+            margin-bottom: 12px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f8f8f8;
+            border: 1px solid var(--border);
+        }
+        
+        .team-section h3 {
+            margin-top: 0;
+        }
+        
+        input[type="text"] {
+            padding: 6px;
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        .card {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px;
+            margin: 8px 0;
+            background-color: white;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+        }
+        
+        .exposure-outcome {
+            text-align: center;
+            margin: 12px 0;
+            padding: 10px;
+            background-color: var(--secondary);
+            color: white;
+            border-radius: 6px;
+        }
+        
+        .exposure-outcome p {
+            margin: 5px 0;
+        }
+        
+        .factor-cards {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .factor-card {
+            background-color: white;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            width: calc(20% - 8px);
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+        
+        .factor-card:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .factor-card.selected {
+            border-color: var(--secondary);
+            background-color: var(--selected);
+        }
+        
+        .classification-area {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 12px;
+        }
+        
+        .classification-box {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            min-height: 100px;
+            background-color: #fafafa;
+        }
+        
+        .classification-box h3 {
+            margin-top: 0;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px;
+            margin-bottom: 6px;
+        }
+        
+        .classified-card {
+            display: inline-block;
+            margin: 3px;
+            padding: 3px 8px;
+            background-color: white;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+        }
+        
+        .results-comparison {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        .team-results {
+            padding: 12px;
+            border-radius: 6px;
+            background-color: #f8f8f8;
+            border: 1px solid var(--border);
+        }
+        
+        .team-results h3 {
+            margin-top: 0;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        .result-section {
+            margin-bottom: 10px;
+        }
+        
+        .navigation-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+        }
+        
+        .step-indicator {
+            text-align: center;
+            margin: 12px 0;
+        }
+        
+        .step-dots {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .step-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #ddd;
+        }
+        
+        .step-dot.active {
+            background-color: var(--secondary);
+        }
+        
+        #problemButtons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        #problemButtons button {
+            min-width: auto;
+        }
+        
+        .factor-selection h3 {
+            margin-bottom: 6px;
+        }
+        
+        .category-btn {
+            background-color: var(--secondary);
+        }
+        
+        .category-btn:hover {
+            background-color: var(--primary);
+        }
+        
+        #cancelBtn {
+            background-color: var(--neutral);
+        }
+        
+        #cancelBtn:hover {
+            background-color: var(--accent);
+        }
+        
+        @media (max-width: 768px) {
+            .classification-area, .results-comparison {
+                grid-template-columns: 1fr;
+            }
+            
+            .factor-card {
+                width: calc(33.33% - 8px);
+            }
+            
+            .container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>疫学要因分類ゲーム</h1>
+        
+        <!-- ゲームセットアップ画面 -->
+        <div id="gameSetup" class="game-setup">
+            <h2>ゲーム設定</h2>
+            <div class="team-section">
+                <h3>チーム1</h3>
+                <input type="text" id="team1Name" placeholder="チーム1の名前" value="チーム1">
+            </div>
+            <div class="team-section">
+                <h3>チーム2</h3>
+                <input type="text" id="team2Name" placeholder="チーム2の名前" value="チーム2">
+            </div>
+            <button id="startGameBtn">ゲームを開始</button>
+        </div>
+        
+        <!-- ゲームボード画面 -->
+        <div id="gameBoard" class="game-board hidden">
+            <div class="team-indicator">
+                <h2 id="currentTeam">チーム1のターン</h2>
+            </div>
+            
+            <div class="step-indicator">
+                <div class="step-dots" id="stepDots">
+                    <div class="step-dot active"></div>
+                    <div class="step-dot"></div>
+                    <div class="step-dot"></div>
+                    <div class="step-dot"></div>
+                    <div class="step-dot"></div>
+                    <div class="step-dot"></div>
+                </div>
+                <p style="margin: 5px 0;">課題 <span id="currentProblem">1</span> / 6</p>
+            </div>
+            
+            <div class="exposure-outcome">
+                <p><strong>曝露：</strong> <span id="exposure">喫煙</span></p>
+                <p><strong>アウトカム：</strong> <span id="outcome">肺がん</span></p>
+            </div>
+            
+            <div class="factor-selection">
+                <h3>要因カード</h3>
+                <div id="factorCards" class="factor-cards">
+                    <!-- カードはJavaScriptで動的に生成 -->
+                </div>
+            </div>
+            
+            <div class="classification-area">
+                <div class="classification-box">
+                    <h3>交絡因子</h3>
+                    <div id="confoundingFactors" class="classification-result"></div>
+                </div>
+                <div class="classification-box">
+                    <h3>修飾因子</h3>
+                    <div id="modifyingFactors" class="classification-result"></div>
+                </div>
+                <div class="classification-box">
+                    <h3>中間因子</h3>
+                    <div id="mediatingFactors" class="classification-result"></div>
+                </div>
+                <div class="classification-box">
+                    <h3>関係ない変数</h3>
+                    <div id="unrelatedFactors" class="classification-result"></div>
+                </div>
+            </div>
+            
+            <div class="navigation-buttons">
+                <button id="resetBtn">リセット</button>
+                <button id="nextBtn">次へ</button>
+                <button id="submitBtn" class="hidden">回答を提出</button>
+            </div>
+        </div>
+        
+        <!-- 結果表示画面 -->
+        <div id="results" class="results hidden">
+            <h2>結果比較</h2>
+            
+            <div id="problemSelector">
+                <h3>課題を選択</h3>
+                <div id="problemButtons"></div>
+            </div>
+            
+            <div id="comparisonResults">
+                <div class="exposure-outcome" id="resultExposureOutcome">
+                    <p><strong>曝露：</strong> <span id="resultExposure"></span></p>
+                    <p><strong>アウトカム：</strong> <span id="resultOutcome"></span></p>
+                </div>
+                
+                <div class="results-comparison">
+                    <div class="team-results" id="team1Results">
+                        <h3 id="team1ResultsTitle">チーム1の回答</h3>
+                        <div class="result-section">
+                            <h4>交絡因子</h4>
+                            <div id="team1Confounding"></div>
+                        </div>
+                        <div class="result-section">
+                            <h4>修飾因子</h4>
+                            <div id="team1Modifying"></div>
+                        </div>
+                        <div class="result-section">
+                            <h4>中間因子</h4>
+                            <div id="team1Mediating"></div>
+                        </div>
+                        <div class="result-section">
+                            <h4>関係ない変数</h4>
+                            <div id="team1Unrelated"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="team-results" id="team2Results">
+                        <h3 id="team2ResultsTitle">チーム2の回答</h3>
+                        <div class="result-section">
+                            <h4>交絡因子</h4>
+                            <div id="team2Confounding"></div>
+                        </div>
+                        <div class="result-section">
+                            <h4>修飾因子</h4>
+                            <div id="team2Modifying"></div>
+                        </div>
+                        <div class="result-section">
+                            <h4>中間因子</h4>
+                            <div id="team2Mediating"></div>
+                        </div>
+                        <div class="result-section">
+                            <h4>関係ない変数</h4>
+                            <div id="team2Unrelated"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="navigation-buttons">
+                <button id="newGameBtn">新しいゲーム</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ゲームの状態を管理するオブジェクト
+        const gameState = {
+            currentTeam: 1,
+            currentProblem: 1,
+            totalProblems: 6,
+            selectedFactors: {
+                confounding: [],
+                modifying: [],
+                mediating: [],
+                unrelated: []
+            },
+            // チームの回答を保存
+            teamAnswers: {
+                team1: [],
+                team2: []
+            },
+            // 曝露とアウトカムのペアを保存
+            problems: []
+        };
+
+        // 曝露のリスト
+        const exposures = [
+            // 生活習慣関連
+            "喫煙", "受動喫煙", "電子タバコ使用", "過度のアルコール摂取", "アルコールの定期的摂取",
+            "高脂肪食", "過剰な砂糖摂取", "塩分の過剰摂取", "赤肉の過剰摂取", "加工肉の摂取",
+            "炭酸飲料の摂取", "カフェイン過剰摂取", "菜食主義", "低炭水化物食", "断続的断食",
+            "運動不足", "座りがちな生活", "過度な運動", "長時間のスクリーン使用", "スマートフォン依存",
+            "睡眠不足", "睡眠薬の長期使用", "不規則な食事時間", "夜間のブルーライト曝露",
+            
+            // 環境曝露
+            "大気汚染", "室内空気汚染", "二酸化窒素曝露", "微小粒子状物質(PM2.5)", "オゾン曝露",
+            "紫外線曝露", "電磁波曝露", "騒音汚染", "光害", "放射線曝露",
+            "農薬使用", "除草剤曝露", "工業化学物質への曝露", "重金属曝露", "アスベスト曝露",
+            "プラスチック添加物曝露", "マイクロプラスチック摂取", "水質汚染物質", "内分泌かく乱物質", 
+            
+            // 社会的要因
+            "職業的ストレス", "職場でのハラスメント", "長時間労働", "交代制勤務", "仕事の不安定性",
+            "社会的孤立", "経済的困窮", "教育機会の欠如", "差別経験", "社会的排除",
+            "児童期の逆境体験", "トラウマ体験", "慢性的ストレス", "デジタルメディア依存",
+            
+            // 薬剤・治療
+            "非ステロイド性抗炎症薬の長期使用", "ステロイド薬の長期使用", "抗生物質の過剰使用",
+            "ホルモン補充療法", "制酸薬の長期使用", "向精神薬の長期使用", "医原性介入"
+        ];
+
+        // アウトカムのリスト
+        const outcomes = [
+            // がん関連
+            "肺がん", "大腸がん", "乳がん", "前立腺がん", "胃がん", "膵臓がん", "肝臓がん",
+            "食道がん", "白血病", "皮膚がん", "子宮頸がん", "卵巣がん", "腎臓がん", "膀胱がん",
+            
+            // 循環器疾患
+            "心臓病", "冠動脈疾患", "高血圧", "脳卒中", "不整脈", "心不全", "末梢動脈疾患",
+            "静脈血栓症", "肺塞栓症", "大動脈瘤", "心筋梗塞",
+            
+            // 代謝性疾患
+            "2型糖尿病", "肥満", "メタボリックシンドローム", "高コレステロール血症", "脂肪肝", 
+            "痛風", "甲状腺機能障害", "骨粗鬆症",
+            
+            // 呼吸器疾患
+            "慢性閉塞性肺疾患", "気管支炎", "気管支喘息", "肺線維症", "アレルギー性鼻炎",
+            "睡眠時無呼吸症候群", "結核",
+            
+            // 消化器疾患
+            "過敏性腸症候群", "炎症性腸疾患", "胃食道逆流症", "消化性潰瘍", "胆石症",
+            "非アルコール性脂肪肝炎", "肝硬変",
+            
+            // 神経・精神疾患
+            "うつ病", "不安障害", "認知症", "アルツハイマー病", "パーキンソン病", "多発性硬化症",
+            "てんかん", "不眠症", "慢性疲労症候群", "統合失調症", "双極性障害", "注意欠陥多動性障害",
+            "自閉症スペクトラム障害", "強迫性障害",
+            
+            // 自己免疫疾患
+            "関節リウマチ", "全身性エリテマトーデス", "乾癬", "多発性筋炎", "1型糖尿病",
+            "クローン病", "潰瘍性大腸炎", "シェーグレン症候群",
+            
+            // その他の健康問題
+            "腰痛", "慢性頭痛", "偏頭痛", "視力低下", "聴力低下", "慢性腎臓病", "アレルギー反応",
+            "皮膚炎", "不妊", "早産", "低出生体重", "先天異常", "認知機能低下", "骨折"
+        ];
+
+        // 要因のリスト
+        const factors = [
+            // 人口統計学的要因
+            "年齢", "性別", "遺伝的素因", "人種/民族", "生物学的性差", "家族歴", "出生順位",
+            "身長", "出生体重", "早産歴", "母体年齢", "父親年齢", 
+            
+            // 生活習慣要因
+            "BMI", "ウエスト周囲径", "体脂肪率", "除脂肪体重", "身体活動レベル", 
+            "運動習慣", "運動強度", "運動頻度", "食事習慣", "食事パターン", 
+            "菜食主義", "グルテン摂取", "乳製品摂取", "飽和脂肪摂取", "トランス脂肪摂取",
+            "オメガ3脂肪酸摂取", "食物繊維摂取", "抗酸化物質摂取", "フリーラジカル曝露",
+            "睡眠の質", "睡眠時間", "睡眠パターン", "アルコール消費", "アルコール消費パターン",
+            "喫煙歴", "喫煙量", "喫煙期間", "禁煙歴", "薬物使用", "カフェイン摂取",
+            
+            // 社会経済的要因
+            "教育レベル", "社会経済的地位", "世帯収入", "職業", "雇用状態", "労働条件",
+            "居住地域", "住宅環境", "居住密度", "都市/農村居住", "社会資本", "医療へのアクセス",
+            "健康保険の状況", "社会的支援", "結婚状態", "家族構成", "子供の数", "介護責任",
+            "経済的ストレス", "貧困状態", "食料不安", "移民状態", "言語障壁",
+            
+            // 心理社会的要因
+            "ストレスレベル", "ストレス対処能力", "ソーシャルサポート", "対人関係の質", "社会的孤立",
+            "社会的統合", "自己効力感", "心理的回復力", "心理的要因", "性格特性", 
+            "楽観主義/悲観主義", "敵意", "怒りの表出", "タイプA行動パターン", "うつ症状",
+            "不安症状", "心的外傷後ストレス", "幼少期の逆境体験", "児童虐待歴",
+            
+            // 環境要因
+            "環境汚染", "地理的位置", "気候条件", "標高", "温度", "湿度", "季節変動",
+            "日光曝露", "紫外線指数", "大気質指数", "花粉量", "屋内空気質", "水質",
+            "騒音レベル", "電磁場曝露", "住宅の質", "職場環境", "通勤時間と方法",
+            
+            // 医学的要因
+            "既往歴", "慢性疾患の有無", "免疫状態", "炎症マーカー", "アレルギー状態",
+            "自己免疫状態", "薬物療法", "ホルモン療法", "ワクチン接種状況", "手術歴",
+            "入院歴", "健康管理状態", "ビタミンD摂取", "ビタミンDレベル", "血圧", 
+            "安静時心拍数", "コレステロール値", "血糖値", "インスリン抵抗性", "糖化ヘモグロビン",
+            "肝機能検査値", "腎機能検査値", "甲状腺機能", "性ホルモンレベル", "ストレスホルモン",
+            "酸化ストレス", "ホルモンレベル", "テロメア長", "エピジェネティック変化",
+            
+            // 生物学的要因
+            "腸内細菌叢", "遺伝子発現", "遺伝子多型", "エピジェネティックマーカー", "ミトコンドリア機能",
+            "テロメア長", "細胞老化", "DNAメチル化", "タンパク質代謝", "胎内環境曝露",
+            
+            // 文化・情報要因
+            "文化的背景", "宗教的信念", "健康リテラシー", "メディア曝露", "健康情報へのアクセス",
+            "ヘルスケア制度の理解", "デジタルリテラシー", "インターネット使用パターン", "医療従事者との関係"
+        ];
+        
+        // ランダムな整数を生成する関数
+        function getRandomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+        
+        // 配列からランダムに要素を取得する関数
+        function getRandomElement(array) {
+            return array[Math.floor(Math.random() * array.length)];
+        }
+        
+        // 配列からランダムにn個の要素を取得する関数
+        function getRandomElements(array, n) {
+            const shuffled = [...array].sort(() => 0.5 - Math.random());
+            return shuffled.slice(0, n);
+        }
+        
+        // ゲーム開始時に実行する関数
+        function initGame() {
+            // ゲーム状態をリセット
+            gameState.currentTeam = 1;
+            gameState.currentProblem = 1;
+            gameState.teamAnswers = {
+                team1: [],
+                team2: []
+            };
+            gameState.problems = [];
+            
+            // 6つの課題を生成
+            for (let i = 0; i < gameState.totalProblems; i++) {
+                const exposure = getRandomElement(exposures);
+                let outcome = getRandomElement(outcomes);
+                
+                // 同じ曝露-アウトカムの組み合わせが出ないようにする
+                while (gameState.problems.some(problem => problem.exposure === exposure && problem.outcome === outcome)) {
+                    outcome = getRandomElement(outcomes);
+                }
+                
+                gameState.problems.push({
+                    exposure: exposure,
+                    outcome: outcome,
+                    factors: getRandomElements(factors, 10)
+                });
+            }
+            
+            // 最初の問題を表示
+            displayProblem();
+            
+            // チーム名を表示
+            const team1Name = document.getElementById('team1Name').value || 'チーム1';
+            const team2Name = document.getElementById('team2Name').value || 'チーム2';
+            document.getElementById('currentTeam').textContent = `${team1Name}のターン`;
+            
+            // ゲーム設定画面を非表示、ゲームボード画面を表示
+            document.getElementById('gameSetup').classList.add('hidden');
+            document.getElementById('gameBoard').classList.remove('hidden');
+        }
+        
+        // 問題を表示する関数
+        function displayProblem() {
+            // 現在の問題のインデックス（0から始まる）
+            const problemIndex = gameState.currentProblem - 1;
+            const problem = gameState.problems[problemIndex];
+            
+            // 曝露とアウトカムを表示
+            document.getElementById('exposure').textContent = problem.exposure;
+            document.getElementById('outcome').textContent = problem.outcome;
+            
+            // 要因カードを表示
+            const factorCardsContainer = document.getElementById('factorCards');
+            factorCardsContainer.innerHTML = '';
+            
+            problem.factors.forEach((factor, index) => {
+                const card = document.createElement('div');
+                card.className = 'factor-card';
+                card.textContent = factor;
+                card.dataset.factor = factor;
+                card.addEventListener('click', () => selectFactor(card));
+                factorCardsContainer.appendChild(card);
+            });
+            
+            // 選択状態をリセット
+            gameState.selectedFactors = {
+                confounding: [],
+                modifying: [],
+                mediating: [],
+                unrelated: []
+            };
+                
+                // 分類結果表示をクリア
+            document.getElementById('confoundingFactors').innerHTML = '';
+            document.getElementById('modifyingFactors').innerHTML = '';
+            document.getElementById('mediatingFactors').innerHTML = '';
+            document.getElementById('unrelatedFactors').innerHTML = '';
+            
+            // 進行状況を更新
+            document.getElementById('currentProblem').textContent = gameState.currentProblem;
+            updateStepDots();
+            
+            // 最後の問題の場合は「次へ」ボタンを「回答を提出」に変更
+            const nextBtn = document.getElementById('nextBtn');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            if (gameState.currentProblem === gameState.totalProblems) {
+                nextBtn.classList.add('hidden');
+                submitBtn.classList.remove('hidden');
+            } else {
+                nextBtn.classList.remove('hidden');
+                submitBtn.classList.add('hidden');
+            }
+        }
+        
+        // 進行状況のドットを更新する関数
+        function updateStepDots() {
+            const stepDots = document.getElementById('stepDots').children;
+            for (let i = 0; i < stepDots.length; i++) {
+                if (i < gameState.currentProblem) {
+                    stepDots[i].classList.add('active');
+                } else {
+                    stepDots[i].classList.remove('active');
+                }
+            }
+        }
+        
+        // 要因を選択する関数
+        function selectFactor(card) {
+            // 既に分類された要因は選択できないようにする
+            if (card.classList.contains('selected')) {
+                return;
+            }
+            
+            // モーダルでカテゴリーを選択
+            const factor = card.dataset.factor;
+            const categoryModal = document.createElement('div');
+            categoryModal.style.position = 'fixed';
+            categoryModal.style.top = '0';
+            categoryModal.style.left = '0';
+            categoryModal.style.width = '100%';
+            categoryModal.style.height = '100%';
+            categoryModal.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            categoryModal.style.display = 'flex';
+            categoryModal.style.justifyContent = 'center';
+            categoryModal.style.alignItems = 'center';
+            categoryModal.style.zIndex = '1000';
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.backgroundColor = 'white';
+            modalContent.style.padding = '15px';
+            modalContent.style.borderRadius = '8px';
+            modalContent.style.maxWidth = '320px';
+            modalContent.style.width = '90%';
+            
+            modalContent.innerHTML = `
+                <h3 style="margin-top:0;">「${factor}」を分類</h3>
+                <p style="margin:8px 0;">この要因をどのカテゴリーに分類しますか？</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <button class="category-btn" data-category="confounding">交絡因子</button>
+                    <button class="category-btn" data-category="modifying">修飾因子</button>
+                    <button class="category-btn" data-category="mediating">中間因子</button>
+                    <button class="category-btn" data-category="unrelated">関係ない変数</button>
+                </div>
+                <button id="cancelBtn" style="margin-top: 10px; width: 100%;">キャンセル</button>
+            `;
+            
+            categoryModal.appendChild(modalContent);
+            document.body.appendChild(categoryModal);
+            
+            // カテゴリーボタンのイベントリスナー
+            const categoryBtns = categoryModal.querySelectorAll('.category-btn');
+            categoryBtns.forEach(btn => {
+                btn.style.padding = '6px 0';
+                btn.className = 'category-btn';
+                btn.style.backgroundColor = 'var(--secondary)';
+                btn.style.color = 'white';
+                btn.style.border = 'none';
+                btn.style.borderRadius = '4px';
+                btn.style.cursor = 'pointer';
+                
+                btn.addEventListener('click', () => {
+                    const category = btn.dataset.category;
+                    addFactorToCategory(factor, category);
+                    card.classList.add('selected');
+                    document.body.removeChild(categoryModal);
+                });
+                
+                btn.addEventListener('mouseover', () => {
+                    btn.style.backgroundColor = 'var(--primary)';
+                });
+                
+                btn.addEventListener('mouseout', () => {
+                    btn.style.backgroundColor = 'var(--secondary)';
+                });
+            });
+            
+            // キャンセルボタンのイベントリスナー
+            const cancelBtn = document.getElementById('cancelBtn');
+            cancelBtn.style.backgroundColor = 'var(--neutral)';
+            cancelBtn.style.color = 'white';
+            cancelBtn.style.border = 'none';
+            cancelBtn.style.borderRadius = '4px';
+            cancelBtn.style.padding = '6px 0';
+            cancelBtn.style.cursor = 'pointer';
+            
+            cancelBtn.addEventListener('click', () => {
+                document.body.removeChild(categoryModal);
+            });
+            
+            cancelBtn.addEventListener('mouseover', () => {
+                cancelBtn.style.backgroundColor = 'var(--accent)';
+            });
+            
+            cancelBtn.addEventListener('mouseout', () => {
+                cancelBtn.style.backgroundColor = 'var(--neutral)';
+            });
+        }
+        
+        // 要因をカテゴリーに追加する関数
+        function addFactorToCategory(factor, category) {
+            // 他のカテゴリーから要因を削除
+            Object.keys(gameState.selectedFactors).forEach(key => {
+                const index = gameState.selectedFactors[key].indexOf(factor);
+                if (index !== -1) {
+                    gameState.selectedFactors[key].splice(index, 1);
+                }
+            });
+            
+            // 選択したカテゴリーに要因を追加
+            gameState.selectedFactors[category].push(factor);
+            
+            // UI更新
+            updateCategoryDisplay();
+        }
+        
+        // カテゴリー表示を更新する関数
+        function updateCategoryDisplay() {
+            const categories = {
+                confounding: document.getElementById('confoundingFactors'),
+                modifying: document.getElementById('modifyingFactors'),
+                mediating: document.getElementById('mediatingFactors'),
+                unrelated: document.getElementById('unrelatedFactors')
+            };
+            
+            // 各カテゴリーの表示をクリア
+            Object.values(categories).forEach(element => {
+                element.innerHTML = '';
+            });
+            
+            // 各カテゴリーに分類された要因を表示
+            Object.keys(gameState.selectedFactors).forEach(category => {
+                gameState.selectedFactors[category].forEach(factor => {
+                    const factorElement = document.createElement('div');
+                    factorElement.className = 'classified-card';
+                    factorElement.textContent = factor;
+                    
+                    // 削除ボタン
+                    const removeBtn = document.createElement('span');
+                    removeBtn.textContent = ' ×';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.style.color = 'var(--danger)';
+                    removeBtn.style.marginLeft = '4px';
+                    removeBtn.addEventListener('click', () => {
+                        removeFactorFromCategory(factor, category);
+                    });
+                    
+                    factorElement.appendChild(removeBtn);
+                    categories[category].appendChild(factorElement);
+                });
+            });
+        }
+        
+        // カテゴリーから要因を削除する関数
+        function removeFactorFromCategory(factor, category) {
+            const index = gameState.selectedFactors[category].indexOf(factor);
+            if (index !== -1) {
+                gameState.selectedFactors[category].splice(index, 1);
+                
+                // カードの選択状態を解除
+                const cards = document.querySelectorAll('.factor-card');
+                cards.forEach(card => {
+                    if (card.dataset.factor === factor) {
+                        card.classList.remove('selected');
+                    }
+                });
+                
+                // UI更新
+                updateCategoryDisplay();
+            }
+        }
+        
+        // 次の問題に進む関数
+        function nextProblem() {
+            // 現在の回答を保存
+            const teamKey = gameState.currentTeam === 1 ? 'team1' : 'team2';
+            gameState.teamAnswers[teamKey].push({
+                problem: gameState.currentProblem,
+                exposure: document.getElementById('exposure').textContent,
+                outcome: document.getElementById('outcome').textContent,
+                factors: { ...gameState.selectedFactors }
+            });
+            
+            // 次の問題に進む
+            gameState.currentProblem++;
+            displayProblem();
+        }
+        
+        // 回答を提出する関数
+        function submitAnswers() {
+            // 現在の回答を保存
+            const teamKey = gameState.currentTeam === 1 ? 'team1' : 'team2';
+            gameState.teamAnswers[teamKey].push({
+                problem: gameState.currentProblem,
+                exposure: document.getElementById('exposure').textContent,
+                outcome: document.getElementById('outcome').textContent,
+                factors: { ...gameState.selectedFactors }
+            });
+            
+            // チーム1が終了した場合、チーム2に切り替え
+            if (gameState.currentTeam === 1) {
+                gameState.currentTeam = 2;
+                gameState.currentProblem = 1;
+                
+                // 選択状態をリセット
+                gameState.selectedFactors = {
+                    confounding: [],
+                    modifying: [],
+                    mediating: [],
+                    unrelated: []
+                };
+                
+                // チーム2の名前を表示
+                const team2Name = document.getElementById('team2Name').value || 'チーム2';
+                document.getElementById('currentTeam').textContent = `${team2Name}のターン`;
+                
+                // 最初の問題を表示
+                displayProblem();
+                
+                // 「次へ」ボタンを表示
+                document.getElementById('nextBtn').classList.remove('hidden');
+                document.getElementById('submitBtn').classList.add('hidden');
+            } else {
+                // 両チームが終了した場合、結果画面を表示
+                showResults();
+            }
+        }
+        
+        // 結果を表示する関数
+        function showResults() {
+            // ゲームボード画面を非表示、結果画面を表示
+            document.getElementById('gameBoard').classList.add('hidden');
+            document.getElementById('results').classList.remove('hidden');
+            
+            // 課題選択ボタンを生成
+            const problemButtons = document.getElementById('problemButtons');
+            problemButtons.innerHTML = '';
+            
+            for (let i = 1; i <= gameState.totalProblems; i++) {
+                const button = document.createElement('button');
+                button.textContent = `課題 ${i}`;
+                button.addEventListener('click', () => showProblemComparison(i));
+                problemButtons.appendChild(button);
+            }
+            
+            // 最初の課題の比較を表示
+            showProblemComparison(1);
+            
+            // チーム名を表示
+            const team1Name = document.getElementById('team1Name').value || 'チーム1';
+            const team2Name = document.getElementById('team2Name').value || 'チーム2';
+            document.getElementById('team1ResultsTitle').textContent = `${team1Name}の回答`;
+            document.getElementById('team2ResultsTitle').textContent = `${team2Name}の回答`;
+        }
+        
+        // 特定の課題の比較を表示する関数
+        function showProblemComparison(problemNumber) {
+            const team1Answer = gameState.teamAnswers.team1.find(a => a.problem === problemNumber);
+            const team2Answer = gameState.teamAnswers.team2.find(a => a.problem === problemNumber);
+            
+            // 曝露とアウトカムを表示
+            document.getElementById('resultExposure').textContent = team1Answer.exposure;
+            document.getElementById('resultOutcome').textContent = team1Answer.outcome;
+            
+            // チーム1の回答を表示
+            displayTeamFactors('team1Confounding', team1Answer.factors.confounding);
+            displayTeamFactors('team1Modifying', team1Answer.factors.modifying);
+            displayTeamFactors('team1Mediating', team1Answer.factors.mediating);
+            displayTeamFactors('team1Unrelated', team1Answer.factors.unrelated);
+            
+            // チーム2の回答を表示
+            displayTeamFactors('team2Confounding', team2Answer.factors.confounding);
+            displayTeamFactors('team2Modifying', team2Answer.factors.modifying);
+            displayTeamFactors('team2Mediating', team2Answer.factors.mediating);
+            displayTeamFactors('team2Unrelated', team2Answer.factors.unrelated);
+            
+            // 回答の違いを強調
+            highlightDifferences(team1Answer.factors, team2Answer.factors);
+        }
+        
+        // チームの要因を表示する関数
+        function displayTeamFactors(elementId, factors) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = '';
+            
+            if (factors.length === 0) {
+                const emptyMsg = document.createElement('p');
+                emptyMsg.textContent = '（なし）';
+                emptyMsg.style.fontStyle = 'italic';
+                emptyMsg.style.color = '#999';
+                emptyMsg.style.margin = '3px 0';
+                element.appendChild(emptyMsg);
+                return;
+            }
+            
+            factors.forEach(factor => {
+                const factorElement = document.createElement('div');
+                factorElement.className = 'classified-card';
+                factorElement.textContent = factor;
+                factorElement.dataset.factor = factor;
+                element.appendChild(factorElement);
+            });
+        }
+        
+        // 回答の違いを強調する関数
+        function highlightDifferences(team1Factors, team2Factors) {
+            const categories = ['confounding', 'modifying', 'mediating', 'unrelated'];
+            
+            categories.forEach(category => {
+                const team1Elements = document.querySelectorAll(`#team1${capitalize(category)} .classified-card`);
+                const team2Elements = document.querySelectorAll(`#team2${capitalize(category)} .classified-card`);
+                
+                // チーム1のみに分類された要因を強調
+                team1Elements.forEach(element => {
+                    const factor = element.dataset.factor;
+                    if (!team2Factors[category].includes(factor)) {
+                        element.style.backgroundColor = 'var(--highlight-diff)';
+                        element.style.borderColor = 'var(--danger)';
+                    } else {
+                        element.style.backgroundColor = 'var(--highlight-match)';
+                        element.style.borderColor = 'var(--success)';
+                    }
+                });
+                
+                // チーム2のみに分類された要因を強調
+                team2Elements.forEach(element => {
+                    const factor = element.dataset.factor;
+                    if (!team1Factors[category].includes(factor)) {
+                        element.style.backgroundColor = 'var(--highlight-diff)';
+                        element.style.borderColor = 'var(--danger)';
+                    } else {
+                        element.style.backgroundColor = 'var(--highlight-match)';
+                        element.style.borderColor = 'var(--success)';
+                    }
+                });
+            });
+        }
+        
+        // 文字列の先頭を大文字にする関数
+        function capitalize(string) {
+            return string.charAt(0).toUpperCase() + string.slice(1);
+        }
+        
+        // イベントリスナーの設定
+        document.addEventListener('DOMContentLoaded', () => {
+            // ゲーム開始ボタン
+            document.getElementById('startGameBtn').addEventListener('click', initGame);
+            
+            // 次へボタン
+            document.getElementById('nextBtn').addEventListener('click', nextProblem);
+            
+            // 回答を提出ボタン
+            document.getElementById('submitBtn').addEventListener('click', submitAnswers);
+            
+            // リセットボタン
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                // 現在の問題の選択状態をリセット
+                gameState.selectedFactors = {
+                    confounding: [],
+                    modifying: [],
+                    mediating: [],
+                    unrelated: []
+                };
+                
+                // UI更新
+                updateCategoryDisplay();
+                
+                // カードの選択状態をリセット
+                const cards = document.querySelectorAll('.factor-card');
+                cards.forEach(card => {
+                    card.classList.remove('selected');
+                });
+            });
+            
+            // 新しいゲームボタン
+            document.getElementById('newGameBtn').addEventListener('click', () => {
+                // ゲーム設定画面を表示、結果画面を非表示
+                document.getElementById('results').classList.add('hidden');
+                document.getElementById('gameSetup').classList.remove('hidden');
+            });
+        });
+    </script>
+</body>
+</html>

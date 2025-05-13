@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Five Elements Life Game</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            color: #eee;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+        }
+
+        #ui-toggle {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(60, 60, 60, 0.7);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease;
+        }
+
+        #ui-toggle:hover {
+            transform: scale(1.1);
+            background-color: rgba(80, 80, 80, 0.8);
+        }
+
+        #ui-toggle svg {
+            width: 30px;
+            height: 30px;
+            fill: #ddd;
+        }
+
+        #controls-panel {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background-color: rgba(40, 40, 40, 0.85);
+            border-radius: 10px;
+            padding: 15px;
+            width: 280px;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 900;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+        }
+
+        button {
+            background-color: #444;
+            color: #eee;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 5px;
+            flex: 1;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        button.active {
+            background-color: #2a6c8f;
+        }
+
+        input[type="range"] {
+            width: 150px;
+            accent-color: #2a6c8f;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            max-width: 250px;
+            backdrop-filter: blur(3px);
+        }
+
+        .info-row {
+            margin-bottom: 5px;
+        }
+
+        .population-bar {
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 2px;
+            display: flex;
+        }
+
+        .population-segment {
+            height: 100%;
+        }
+        
+        #seasonDisplay {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <canvas id="lifeCanvas"></canvas>
+        <div id="info-panel">
+            <div class="info-row" id="seasonDisplay">Season: Spring (Wood)</div>
+            <div class="info-row" id="turnCounter">Turn: 0</div>
+            <div class="info-row" id="virusCount">Viruses: 0</div>
+            <div class="info-row">Population:</div>
+            <div id="populationBars"></div>
+        </div>
+
+        <div id="ui-toggle">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12,8a4,4,0,1,0,4,4A4,4,0,0,0,12,8Zm0,6a2,2,0,1,1,2-2A2,2,0,0,1,12,14Z" />
+                <path
+                    d="M21.294,13.9l-.444-.256a9.1,9.1,0,0,0,0-3.29l.444-.256a1,1,0,0,0,.366-1.366l-1-1.732a1,1,0,0,0-1.366-.366l-.445.257A8.977,8.977,0,0,0,16,5.3V4.5a1,1,0,0,0-1-1H13a1,1,0,0,0-1,1V5.3a8.977,8.977,0,0,0-2.848,1.589l-.445-.257a1,1,0,0,0-1.366.366l-1,1.732a1,1,0,0,0,.366,1.366l.444.256a9.1,9.1,0,0,0,0,3.29l-.444.256a1,1,0,0,0-.366,1.366l1,1.732a1,1,0,0,0,1.366.366l.445-.257A8.977,8.977,0,0,0,12,18.7v.8a1,1,0,0,0,1,1h2a1,1,0,0,0,1-1V18.7a8.977,8.977,0,0,0,2.848-1.589l.445.257a1,1,0,0,0,1.366-.366l1-1.732A1,1,0,0,0,21.294,13.9ZM12,15a3,3,0,1,1,3-3A3,3,0,0,1,12,15Z" />
+            </svg>
+        </div>
+
+        <div id="controls-panel">
+            <div class="buttons-row">
+                <button id="startButton">Start</button>
+                <button id="pauseButton">Pause</button>
+                <button id="resetButton">Reset</button>
+            </div>
+            <div class="control-group">
+                <label for="speedSlider">Speed:</label>
+                <div>
+                    <input type="range" id="speedSlider" min="1" max="100" value="5">
+                    <span id="speedValue">x5</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="cellSizeSlider">Grid Scale:</label>
+                <div>
+                    <input type="range" id="cellSizeSlider" min="2" max="10" value="5">
+                    <span id="cellSizeValue">x5</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="five-elements-life-game-sig02.js"></script>
+</body>
+
+</html>

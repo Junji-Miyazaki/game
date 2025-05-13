@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Complex Life Game</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #222;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            border: 1px solid #555;
+            width: 80vw;
+            height: 80vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #controls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        button {
+            background-color: #444;
+            color: #eee;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        input[type="range"] {
+            width: 150px;
+        }
+
+        label {
+            font-size: 14px;
+        }
+
+        #info {
+            margin-top: 10px;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        canvas {
+            background-color: #111;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="container">
+        <canvas id="lifeCanvas"></canvas>
+    </div>
+
+    <div id="controls">
+        <button id="startButton">Start</button>
+        <button id="pauseButton">Pause</button>
+        <div>
+            <label for="speedSlider">Speed:</label>
+            <input type="range" id="speedSlider" min="1" max="10" value="5">
+            <span id="speedValue">x5</span>
+        </div>
+        <div id="turnCounter">Turn: 0</div>
+    </div>
+
+    <div id="info">
+        <div id="populationGraph"></div>
+        <div id="environmentStatus"></div>
+        <div id="latestEvolution"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('lifeCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('container');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValueDisplay = document.getElementById('speedValue');
+        const turnCounterDisplay = document.getElementById('turnCounter');
+        const populationGraphDisplay = document.getElementById('populationGraph');
+        const environmentStatusDisplay = document.getElementById('environmentStatus');
+        const latestEvolutionDisplay = document.getElementById('latestEvolution');
+
+        let GRID_SIZE_X; // グリッドのX方向のサイズ
+        let GRID_SIZE_Y; // グリッドのY方向のサイズ
+        let CELL_SIZE;
+        let grid;
+        let turn = 0;
+        let isRunning = false;
+        let gameInterval; // setInterval の ID
+        let baseInterval = 50; // 1秒 (ミリ秒)
+
+        const VIRUS_TYPES = ['yin', 'yang'];
+        const VIRUS_COLORS = { yin: '#888', yang: '#ccc' };
+        const VIRUS_COUNT = 20;
+
+        const CELL_TYPES = ['wood', 'fire', 'earth', 'metal', 'water'];
+        const CELL_COLORS = { wood: 'green', fire: 'red', earth: 'yellow', metal: 'white', water: 'blue' };
+        const CELL_SHAPES = { wood: 'rect', fire: 'triangle', earth: 'rect', metal: 'circle', water: 'wave' };
+        const CELL_COUNT = 30;
+
+        let entities = [];
+        let viruses = [];
+        let cells = [];
+
+        function resizeCanvas() {
+            canvas.width = container.offsetWidth;
+            canvas.height = container.offsetHeight;
+
+            // グリッドサイズをキャンバスに合わせる
+            GRID_SIZE_X = Math.floor(canvas.width / 10);  // 例: セルサイズを10pxとする
+            GRID_SIZE_Y = Math.floor(canvas.height / 10);
+            CELL_SIZE = Math.min(canvas.width / GRID_SIZE_X, canvas.height / GRID_SIZE_Y);
+
+            initGrid(); // グリッドを再生成
+        }
+
+        function initGrid() {
+            grid = Array(GRID_SIZE_Y).fill(null).map(() => Array(GRID_SIZE_X).fill(null));
+        }
+
+
+        class Entity {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+            }
+
+            draw() {
+                const drawX = this.x * CELL_SIZE;
+                const drawY = this.y * CELL_SIZE;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
+            }
+        }
+
+        class Virus extends Entity {
+            constructor(x, y, type) {
+                super(x, y, type);
+                this.color = VIRUS_COLORS[type];
+                this.lifespan = Math.floor(Math.random() * 21 + 10);
+            }
+
+            move() {
+                let dx = 0;
+                let dy = 0;
+                if (this.type === 'yin') {
+                    dx = Math.sign(GRID_SIZE_X / 2 - this.x);
+                    dy = Math.sign(GRID_SIZE_Y / 2 - this.y);
+                } else if (this.type === 'yang') {
+                    dx = -Math.sign(GRID_SIZE_X / 2 - this.x);
+                    dy = -Math.sign(GRID_SIZE_Y / 2 - this.y);
+                }
+
+                const newX = Math.max(0, Math.min(GRID_SIZE_X - 1, this.x + dx));
+                const newY = Math.max(0, Math.min(GRID_SIZE_Y - 1, this.y + dy));
+
+                if (grid[newY][newX] === null) {
+                    grid[this.y][this.x] = null;
+                    this.x = newX;
+                    this.y = newY;
+                    grid[this.y][this.x] = this;
+                }
+                this.lifespan--;
+            }
+
+            draw() {
+                const drawX = this.x * CELL_SIZE + CELL_SIZE / 4;
+                const drawY = this.y * CELL_SIZE + CELL_SIZE / 4;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(drawX, drawY, CELL_SIZE / 2, CELL_SIZE / 2);
+            }
+        }
+
+        class Cell extends Entity {
+            constructor(x, y, type) {
+                super(x, y, type);
+                this.color = CELL_COLORS[type];
+                this.shape = CELL_SHAPES[type];
+                this.energy = 100;
+                this.maxLifespan = Math.floor(Math.random() * (150 - 50 + 1) + 50);
+                this.lifespan = this.maxLifespan;
+                this.activity = Math.random() * 0.4 + 0.6;
+                this.reproductionRate = 0.005 + (type === 'earth' ? 0.01 : 0);
+                this.generation = 1;
+                this.energyToReproduce = 80;
+            }
+
+            move() {
+                if (Math.random() < this.activity) {
+                    const dx = Math.floor(Math.random() * 3) - 1;
+                    const dy = Math.floor(Math.random() * 3) - 1;
+                    const newX = Math.max(0, Math.min(GRID_SIZE_X - 1, this.x + dx));
+                    const newY = Math.max(0, Math.min(GRID_SIZE_Y - 1, this.y + dy));
+
+                    if (grid[newY][newX] === null) {
+                        grid[this.y][this.x] = null;
+                        this.x = newX;
+                        this.y = newY;
+                        grid[this.y][this.x] = this;
+                    }
+                }
+                this.energy -= Math.floor(Math.random() * 2 + 1) / 100;
+                this.lifespan -= 0.05;
+                if (this.energy < 0 || this.lifespan < 0) {
+                    grid[this.y][this.x] = null;
+                }
+            }
+
+            draw() {
+                const drawX = this.x * CELL_SIZE;
+                const drawY = this.y * CELL_SIZE;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                switch (this.shape) {
+                    case 'rect':
+                        ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
+                        break;
+                    case 'circle':
+                        ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, CELL_SIZE / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        break;
+                    case 'triangle':
+                        ctx.moveTo(drawX + CELL_SIZE / 2, drawY);
+                        ctx.lineTo(drawX + CELL_SIZE, drawY + CELL_SIZE);
+                        ctx.lineTo(drawX, drawY + CELL_SIZE);
+                        ctx.closePath();
+                        ctx.fill();
+                        break;
+                    case 'wave':
+                        ctx.fillRect(drawX, drawY + CELL_SIZE / 4, CELL_SIZE, CELL_SIZE / 2);
+                        break;
+                    default:
+                        ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
+                }
+            }
+        }
+
+        function init() {
+            resizeCanvas(); // ここで GRID_SIZE_X, GRID_SIZE_Y, CELL_SIZE が設定される
+            entities = [];
+            viruses = [];
+            cells = [];
+
+            // ウイルスの初期配置
+            for (let i = 0; i < VIRUS_COUNT; i++) {
+                let x = Math.floor(Math.random() * GRID_SIZE_X);
+                let y = Math.floor(Math.random() * GRID_SIZE_Y);
+                const type = VIRUS_TYPES[Math.floor(Math.random() * VIRUS_TYPES.length)];
+                const newVirus = new Virus(x, y, type);
+                if (grid[y][x] === null) {
+                    grid[y][x] = newVirus;
+                    entities.push(newVirus);
+                    viruses.push(newVirus);
+                }
+            }
+
+            // 単細胞生物の初期配置
+            for (let i = 0; i < CELL_COUNT; i++) {
+                let x = Math.floor(Math.random() * GRID_SIZE_X * 0.3 + Math.random() * GRID_SIZE_X * 0.4); // 中央付近に配置
+                let y = Math.floor(Math.random() * GRID_SIZE_Y * 0.3 + Math.random() * GRID_SIZE_Y * 0.4); // 中央付近に配置
+                const type = CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+                const newCell = new Cell(x, y, type);
+                if (grid[y][x] === null) {
+                    grid[y][x] = newCell;
+                    entities.push(newCell);
+                    cells.push(newCell);
+                }
+            }
+
+            turn = 0;
+            turnCounterDisplay.textContent = `Turn: ${turn}`;
+            isRunning = false;
+        }
+
+        function update() {
+            // ウイルスの行動
+            for (let i = entities.length - 1; i >= 0; i--) {
+                if (entities[i] instanceof Virus) {
+                    entities[i].move();
+                    if (entities[i].lifespan <= 0) {
+                        grid[entities[i].y][entities[i].x] = null;
+                        entities.splice(i, 1);
+                        const index = viruses.indexOf(entities[i]);
+                        if (index > -1) {
+                            viruses.splice(index, 1);
+                        }
+                    }
+                }
+            }
+
+            // 単細胞生物の行動
+            let newCells = [];
+            for (let i = entities.length - 1; i >= 0; i--) {
+                if (entities[i] instanceof Cell) {
+                    entities[i].move();
+                    if (grid[entities[i].y][entities[i].x] === null) {
+                        grid[entities[i].y][entities[i].x] = null;
+                        entities.splice(i, 1);
+                        const index = cells.indexOf(entities[i]);
+                        if (index > -1) {
+                            cells.splice(index, 1);
+                        }
+                        continue;
+                    }
+
+                    // 繁殖
+                    if (entities[i].energy > entities[i].energyToReproduce && Math.random() < entities[i].reproductionRate) {
+                        const neighbors = getNeighboringEmptyCells(entities[i].x, entities[i].y);
+                        if (neighbors.length > 0) {
+                            const randomIndex = Math.floor(Math.random() * neighbors.length);
+                            const [nx, ny] = neighbors[randomIndex];
+                            const childType = Math.random() < 0.8 ? entities[i].type : CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+                            const newCell = new Cell(nx, ny, childType);
+                            grid[ny][nx] = newCell;
+                            entities.push(newCell);
+                            cells.push(newCell);
+                            entities[i].energy -= 30;
+                        }
+                    }
+                }
+            }
+
+            turn++;
+            turnCounterDisplay.textContent = `Turn: ${turn}`;
+            updateInfoPanel();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let y = 0; y < GRID_SIZE_Y; y++) {
+                for (let x = 0; x < GRID_SIZE_X; x++) {
+                    const entity = grid[y][x];
+                    if (entity) {
+                        entity.draw();
+                    }
+                }
+            }
+        }
+
+        function startGame() {
+            if (!isRunning) {
+                isRunning = true;
+                gameInterval = setInterval(() => { // setInterval を使用
+                            update();
+                    draw();
+                }, baseInterval / parseInt(speedSlider.value)); // speedSlider で間隔を調整
+            }
+        }
+
+        function pauseGame() {
+            isRunning = false;
+            clearInterval(gameInterval); // clearInterval で停止
+        }
+
+        function updateInfoPanel() {
+            const population = {};
+            CELL_TYPES.forEach(type => population[type] = cells.filter(cell => cell.type === type).length);
+            environmentStatusDisplay.textContent = `Viruses: ${viruses.length}`;
+            populationGraphDisplay.textContent = `Population: ${JSON.stringify(population)}`;
+            latestEvolutionDisplay.textContent = ``;
+        }
+
+        function getNeighboringEmptyCells(x, y) {
+            const neighbors = [];
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y && grid[ny][nx] === null) {
+                        neighbors.push([nx, ny]);
+                    }
+                }
+            }
+            return neighbors;
+        }
+
+        startButton.addEventListener('click', startGame);
+        pauseButton.addEventListener('click', pauseGame);
+
+        speedSlider.addEventListener('input', () => {
+            clearInterval(gameInterval); // スライダー変更時に既存のインターバルをクリア
+            speedValueDisplay.textContent = `x${speedSlider.value}`;
+            if (isRunning) {
+                gameInterval = setInterval(() => {
+                    update();
+                    draw();
+                }, baseInterval / parseInt(speedSlider.value)); // 新しい間隔で再設定
+            }
+        });
+        window.addEventListener('resize', resizeCanvas);
+
+        init();
+        draw();
+    </script>
+
+</body>
+
+</html>

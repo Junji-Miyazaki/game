@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Five Elements Life Game</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            color: #eee;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+        }
+
+        /* UI トグルの修正（背景を削除） */
+#ui-toggle {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 30px;               /* サイズを指定 */
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    transition: transform 0.2s ease;
+    background: none;          /* 背景を削除 */
+    border-radius: 0;          /* 角丸を削除 */
+    box-shadow: none;          /* 影を削除 */
+    border: none;              /* 境界線を削除 */
+}
+
+#ui-toggle:hover {
+    transform: scale(1.1);     /* ホバー時の拡大効果だけ残す */
+    background: none;          /* ホバー時も背景なし */
+    box-shadow: none;          /* ホバー時も影なし */
+}
+
+#ui-toggle svg {
+    width: 25px;               /* アイコンサイズ */
+    height: 25px;
+    fill: rgba(180, 180, 180, 0.7);  /* アイコンの色を半透明のグレーに */
+    transition: fill 0.2s ease;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5)); /* アイコン自体に影を追加 */
+}
+
+#ui-toggle:hover svg {
+    fill: rgba(220, 220, 220, 0.9);  /* ホバー時はより明るく、不透明に */
+}
+
+        #controls-panel {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background-color: rgba(40, 40, 40, 0.85);
+            border-radius: 10px;
+            padding: 15px;
+            width: 280px;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 900;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+        }
+
+        button {
+            background-color: #444;
+            color: #eee;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 5px;
+            flex: 1;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        button.active {
+            background-color: #2a6c8f;
+        }
+
+        input[type="range"] {
+            width: 150px;
+            accent-color: #2a6c8f;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-width: 250px;
+            backdrop-filter: blur(3px);
+            transition: opacity 0.3s ease;
+        }
+
+        .info-row {
+            margin-bottom: 5px;
+        }
+
+        .population-bar {
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 2px;
+            display: flex;
+        }
+
+        .population-segment {
+            height: 100%;
+        }
+        
+        #seasonDisplay {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .section-header {
+            font-weight: bold;
+            margin-top: 5px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #666;
+            padding-bottom: 5px;
+        }
+
+        select {
+            background-color: #333;
+            color: #eee;
+            border: none;
+            padding: 5px;
+            border-radius: 4px;
+            width: 150px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 5px;
+        }
+        
+        .opacity-toggle {
+            transition: transform 0.2s ease;
+        }
+        
+        .opacity-toggle:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <canvas id="lifeCanvas"></canvas>
+        <div id="info-panel">
+            <div class="info-row" id="seasonDisplay">Season: Spring (Wood)</div>
+            <div class="info-row" id="turnCounter">Turn: 0</div>
+            <div class="info-row" id="virusCount">Viruses: 0</div>
+            <div class="info-row">Population:</div>
+            <div id="populationBars"></div>
+        </div>
+            
+            <!--
+        <div id="ui-toggle">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M9.4,21.5c-0.8-0.2-1.6-0.4-2.3-0.8l0.7-2.4c-0.6-0.5-1.1-1-1.5-1.5l-2.4,0.7c-0.3-0.7-0.6-1.5-0.8-2.3L5.5,14
+            c-0.1-0.7-0.1-1.4,0-2.1l-2.4-1.2c0.2-0.8,0.4-1.6,0.8-2.3l2.4,0.7c0.5-0.6,1-1.1,1.5-1.5l-0.7-2.4c0.7-0.3,1.5-0.6,2.3-0.8
+            L10.6,7c0.7-0.1,1.4-0.1,2.1,0l1.2-2.4c0.8,0.2,1.6,0.4,2.3,0.8l-0.7,2.4c0.6,0.5,1.1,1,1.5,1.5l2.4-0.7
+            c0.3,0.7,0.6,1.5,0.8,2.3L18,12c0.1,0.7,0.1,1.4,0,2.1l2.4,1.2c-0.2,0.8-0.4,1.6-0.8,2.3l-2.4-0.7c-0.5,0.6-1,1.1-1.5,1.5
+            l0.7,2.4c-0.7,0.3-1.5,0.6-2.3,0.8L13,17c-0.7,0.1-1.4,0.1-2.1,0L9.4,21.5z M12,15.5c1.9,0,3.5-1.6,3.5-3.5s-1.6-3.5-3.5-3.5
+            S8.5,10.1,8.5,12S10.1,15.5,12,15.5z"/>
+    </svg>
+        </div>
+            -->
+            
+            <div id="ui-toggle">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12,15.5c1.9,0,3.5-1.6,3.5-3.5s-1.6-3.5-3.5-3.5S8.5,10.1,8.5,12S10.1,15.5,12,15.5z M20,11h-2.3
+            c-0.2-0.8-0.5-1.5-1-2.1l1.6-1.6l-1.4-1.4l-1.6,1.6C14.5,7,13.8,6.7,13,6.5V4h-2v2.5c-0.8,0.2-1.5,0.5-2.1,1l-1.6-1.6
+            l-1.4,1.4l1.6,1.6c-0.5,0.7-0.8,1.4-1,2.1H4v2h2.3c0.2,0.8,0.5,1.5,1,2.1l-1.6,1.6l1.4,1.4l1.6-1.6c0.7,0.5,1.4,0.8,2.1,1
+            V20h2v-2.5c0.8-0.2,1.5-0.5,2.1-1l1.6,1.6l1.4-1.4l-1.6-1.6c0.5-0.7,0.8-1.4,1-2.1H20V11z"/>
+    </svg>
+</div>
+            
+            
+            <!--
+            <div id="ui-toggle">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+    </svg>
+</div>
+
+            -->
+            
+        <div id="controls-panel">
+            <div class="buttons-row">
+                <button id="startButton">Start</button>
+                <button id="pauseButton">Pause</button>
+                <button id="resetButton">Reset</button>
+            </div>
+            <div class="control-group">
+                <label for="speedSlider">Speed:</label>
+                <div>
+                    <input type="range" id="speedSlider" min="1" max="100" value="5">
+                    <span id="speedValue">x5</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="cellSizeSlider">Grid Scale:</label>
+                <div>
+                    <input type="range" id="cellSizeSlider" min="2" max="10" value="5">
+                    <span id="cellSizeValue">x5</span>
+                </div>
+            </div>
+            
+            <!-- サウンド設定セクション - 重複の削除と英語のみに統一 -->
+            <div class="section-header">Sound Settings</div>
+            <div class="control-group">
+                <label>Enable Sound:</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="soundToggle" checked>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="soundVolumeSlider">Volume:</label>
+                <div>
+                    <input type="range" id="soundVolumeSlider" min="0" max="100" value="50">
+                    <span id="soundVolumeValue">50%</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="waveformSelect">Waveform:</label>
+                <div>
+                    <select id="waveformSelect">
+                        <option value="pure">Pure Sine Wave</option>
+                        <option value="mixed">Mixed Waveforms</option>
+                        <option value="square">Square Wave</option>
+                        <option value="sawtooth">Sawtooth Wave</option>
+                        <option value="triangle">Triangle Wave</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control-group">
+                <label>Modulation:</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="modulationToggle">
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="modulationIntensitySlider">Mod Intensity:</label>
+                <div>
+                    <input type="range" id="modulationIntensitySlider" min="0" max="100" value="50" disabled>
+                    <span id="modulationIntensityValue">50%</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="modulationRateSlider">Mod Speed:</label>
+                <div>
+                    <input type="range" id="modulationRateSlider" min="1" max="20" value="5" disabled>
+                    <span id="modulationRateValue">5 Hz</span>
+                </div>
+            </div>
+            <div class="buttons-row">
+                <button id="testSoundButton">Test Sounds</button>
+            </div>
+            
+            <!-- 災害設定セクション - 重複の削除と英語のみに統一 -->
+            <div class="section-header">Disaster Settings</div>
+            <div class="control-group">
+                <label for="disasterFrequencySlider">Occurrence (years):</label>
+                <div>
+                    <input type="range" id="disasterFrequencySlider" min="1" max="5" value="2" step="1">
+                    <span id="disasterFrequencyValue">2</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="disasterProbabilitySlider">Probability:</label>
+                <div>
+                    <input type="range" id="disasterProbabilitySlider" min="0.1" max="1" value="0.8" step="0.1">
+                    <span id="disasterProbabilityValue">0.8</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="disasterDurationSlider">Duration:</label>
+                <div>
+                    <input type="range" id="disasterDurationSlider" min="100" max="5000" value="300" step="50">
+                    <span id="disasterDurationValue">300</span>
+                </div>
+            </div>
+            <div class="buttons-row">
+                <button id="triggerDisasterBtn">Trigger Disaster</button>
+            </div>
+            
+            <!-- 設定保存セクション - 新規追加 -->
+            <div class="section-header">Settings</div>
+            <div class="buttons-row">
+                <button id="saveSettingsBtn">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="five-elements-life-game-sig_sound.js"></script>
+    <script src="life-game-improvements.js"></script>
+</body>
+
+</html>

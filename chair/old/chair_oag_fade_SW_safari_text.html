@@ -1,0 +1,2560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Chair Art with Audio</title>
+    <style>
+        /* Global Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: white;
+        }
+        
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #videoElement {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 240px;
+            height: 180px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            display: none;
+        }
+        /* Adding new styles for the minimal audio controls */
+.minimal-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 100;
+    display: flex;
+    gap: 10px;
+}
+
+.control-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 16px;
+}
+
+.control-button:hover {
+    background-color: rgba(20, 20, 20, 0.5);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.control-button.active {
+    background-color: rgba(60, 60, 60, 0.5);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+/* Redesigning the toggle controls button */
+.toggle-controls {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 101;
+    background-color: rgba(0, 0, 0, 0.3);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.toggle-controls:hover {
+    background-color: rgba(20, 20, 20, 0.5);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.toggle-controls.active {
+    background-color: rgba(60, 60, 60, 0.5);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+        /* Controls Panel */
+        .controls-wrapper {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+        }
+        
+        .toggle-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 101;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-controls:hover {
+            background-color: rgba(50, 50, 50, 0.7);
+        }
+        
+        .controls {
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            width: 300px;
+            display: none;
+            transform: translateY(10px);
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .controls.visible {
+            display: block;
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .control-section {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .control-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        
+        h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            font-weight: 400;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 8px 12px;
+            background-color: rgba(60, 60, 60, 0.5);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 13px;
+        }
+        
+        button:hover {
+            background-color: rgba(80, 80, 80, 0.7);
+        }
+        
+        button.active {
+            background-color: rgba(150, 150, 150, 0.5);
+        }
+        
+        .slider-container {
+            margin: 10px 5px;
+        }
+        
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            background: rgba(60, 60, 60, 0.5);
+            height: 6px;
+            border-radius: 3px;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .status {
+            margin-top: 15px;
+            font-size: 13px;
+            background-color: rgba(30, 30, 30, 0.8);
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .status div {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .status span {
+            opacity: 0.7;
+        }
+        
+        /* Step Sequencer Visualization */
+        #sequencerDisplay {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            width: 300px;
+            height: 80px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            display: none;
+        }
+        
+        .seq-cell {
+            position: absolute;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            background-color: rgba(30, 30, 30, 0.8);
+            box-sizing: border-box;
+        }
+        
+        .seq-cell.active {
+            background-color: rgba(100, 100, 255, 0.4);
+        }
+        
+        .seq-position {
+            position: absolute;
+            width: 2px;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            top: 0;
+        }
+            /* Safari特有のスタイル */
+@supports (-webkit-touch-callout: none) {
+    body {
+        height: -webkit-fill-available;
+    }
+    
+    #canvas {
+        height: -webkit-fill-available;
+    }
+    
+    .controls {
+        -webkit-backdrop-filter: blur(10px);
+        padding-bottom: 30px; /* iOSのための余分なパディング */
+    }
+    
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+    }
+}
+
+/* ビデオ要素のスタイル確認 */
+#videoElement {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 240px;
+    height: 180px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    display: none;
+    transform: scaleX(-1); /* 鏡像効果 */
+    -webkit-transform: scaleX(-1); /* Safari対応 */
+    object-fit: cover;
+}
+            * Adding new styles for the minimal audio controls */
+.minimal-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 100;
+    display: flex;
+    gap: 10px;
+}
+
+.control-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 16px;
+}
+
+.control-button:hover {
+    background-color: rgba(20, 20, 20, 0.5);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.control-button.active {
+    background-color: rgba(60, 60, 60, 0.5);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+/* Play and pause icons */
+.play-icon {
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 7px 0 7px 12px;
+    border-color: transparent transparent transparent rgba(255, 255, 255, 0.7);
+    margin-left: 3px;
+}
+
+.pause-icon {
+    width: 12px;
+    height: 14px;
+    position: relative;
+}
+
+.pause-icon:before, .pause-icon:after {
+    content: '';
+    width: 4px;
+    height: 14px;
+    background-color: rgba(255, 255, 255, 0.7);
+    position: absolute;
+    top: 0;
+}
+
+.pause-icon:before {
+    left: 2px;
+}
+
+.pause-icon:after {
+    right: 2px;
+}
+
+/* Redesigning the toggle controls button */
+.toggle-controls {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 101;
+    background-color: rgba(0, 0, 0, 0.3);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(5px);
+}
+
+.toggle-controls:hover {
+    background-color: rgba(20, 20, 20, 0.5);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.toggle-controls.active {
+    background-color: rgba(60, 60, 60, 0.5);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <video id="videoElement" autoplay playsinline muted></video>
+    <div id="sequencerDisplay"></div>
+
+   <div class="toggle-controls" id="toggleControlsBtn"><span style="font-size:14px;">≡</span></div>
+    
+    <div class="controls-wrapper">
+        <div class="controls" id="controlsPanel">
+            <div class="control-section">
+                <h3>Camera</h3>
+                <button id="toggleCamera">Show Camera</button>
+                <button id="toggleAnalysis">Motion Analysis</button>
+            </div>
+            
+            <div class="control-section">
+                <h3>Grid & Effects</h3>
+                <div class="slider-container">
+                    <label for="gridSize">Grid Size <span id="gridSizeValue">4</span></label>
+                    <input type="range" id="gridSize" min="2" max="16" value="4">
+                </div>
+                <div class="slider-container">
+                    <label for="effectIntensity">Effect Intensity <span id="effectIntensityValue">50%</span></label>
+                    <input type="range" id="effectIntensity" min="0" max="100" value="50">
+                </div>
+                <div class="slider-container">
+                    <label for="motionThreshold">Motion Threshold <span id="motionThresholdValue">0.05</span></label>
+                    <input type="range" id="motionThreshold" min="1" max="20" value="5">
+                </div>
+                   <div class="slider-container">
+    <label for="motionSensitivity">Motion Sensitivity <span id="motionSensitivityValue">1.2x</span></label>
+    <input type="range" id="motionSensitivity" min="1" max="30" value="12">
+</div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Effects</h3>
+                <button id="effect1" class="active">Brightness Map</button>
+                <button id="effect2">Hue Shift</button>
+                <button id="effect3">Mosaic</button>
+                <button id="forceTransition">Force Transition</button>
+                <button id="toggleAutoEffect">Auto Effect ON</button> 
+            </div>
+            
+            <div class="control-section">
+                <h3>Audio</h3>
+                <button id="toggleAudio">Audio ON</button>
+                <button id="audioMode1" class="active">Sequencer</button>
+                <button id="audioMode2">Drone Tones</button>
+                <button id="toggleSequencer">Show Sequencer</button>
+                <div class="slider-container">
+                    <label for="audioVolume">Volume <span id="audioVolumeValue">50%</span></label>
+                    <input type="range" id="audioVolume" min="0" max="100" value="50">
+                </div>
+                <div class="slider-container">
+                    <label for="audioBPM">BPM <span id="audioBPMValue">225</span></label>
+                    <input type="range" id="audioBPM" min="50" max="300" value="225">
+                </div>
+            </div>
+            
+            <div class="status">
+                <div>Motion Level <span id="motionValue">0.000</span></div>
+                <div>Active Images <span id="activeImageInfo">0</span></div>
+                <div>Last Motion <span id="lastMotionInfo">-</span></div>
+                <div>Transition <span id="transitionInfo">-</span></div>
+                <div>Audio Pattern <span id="audioInfo">-</span></div>
+            </div>
+        </div>
+    </div>
+
+        <!-- Minimal audio controls -->
+<div class="minimal-controls">
+    <div id="audioToggleMinimal" class="control-button active" title="Toggle Audio">
+        <div id="audioIcon" class="pause-icon"></div>
+    </div>
+</div>
+        
+
+        
+    <script>
+        // Configuration & Settings
+            // ブラウザ互換性のポリフィル
+function setupMediaDevices() {
+    // Safari向けの古いAPIポリフィル
+    if (navigator.mediaDevices === undefined) {
+        navigator.mediaDevices = {};
+    }
+    
+    if (navigator.mediaDevices.getUserMedia === undefined) {
+        navigator.mediaDevices.getUserMedia = function(constraints) {
+            const getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+            
+            if (!getUserMedia) {
+                return Promise.reject(new Error('getUserMedia is not implemented in this browser'));
+            }
+            
+            return new Promise(function(resolve, reject) {
+                getUserMedia.call(navigator, constraints, resolve, reject);
+            });
+        };
+    }
+}
+
+// ポリフィルのセットアップを実行
+setupMediaDevices();
+            
+        const config = {
+            gridSize: 16,
+            effectIntensity: 0.5,
+            currentEffect: 'brightness',
+            showCamera: false,
+            analyzeCamera: true,
+            fadeSpeed: 0.001,
+            motionThreshold: 0.001,
+            maxActiveImages: 7,
+            inactivityTimeout: 5000, // 5 seconds without motion
+            defaultOpacity: 0.3,
+                motionSensitivity: 1.2,
+            
+            // Audio settings
+            audioEnabled: true,
+            audioMode: 'sequencer',  // 'sequencer' or 'drone'
+            audioVolume: 0.5,        // 0.0-1.0
+            audioBPM: 150,           // 50-300
+            showSequencer: false     // Sequencer visualization
+        };
+        
+
+            
+                        // エフェクト自動変更の設定と実装
+// エフェクト自動変更の設定と実装（修正版）
+const effectsList = ['brightness', 'hueShift', 'mosaic'];
+let effectChangeInterval = null;
+let nextEffectChangeTime = 0;
+let autoChangeEnabled = true; // 自動変更の有効/無効フラグ
+
+// エフェクト自動変更を開始する関数
+function startEffectAutoChange() {
+    // 次のエフェクト変更時間を設定（現在時刻から5-10秒後）
+    const waitTime = 5000 + Math.random() * 5000; // 5000-10000ミリ秒
+    nextEffectChangeTime = Date.now() + waitTime;
+}
+
+// エフェクト変更をチェックする関数
+function checkEffectChange() {
+    if (!autoChangeEnabled) return; // 自動変更が無効の場合は何もしない
+    
+    const now = Date.now();
+    
+    if (now >= nextEffectChangeTime) {
+        // 現在のエフェクトから次のエフェクトを選択
+        const currentIndex = effectsList.indexOf(config.currentEffect);
+        let nextIndex = (currentIndex + 1) % effectsList.length;
+        
+        // 選択したエフェクトに変更
+        const nextEffect = effectsList[nextIndex];
+        config.currentEffect = nextEffect;
+        saveSettings();
+        
+        // UIを更新
+        updateEffectButtons(nextEffect);
+        
+        // 次のエフェクト変更時間を設定
+        startEffectAutoChange();
+    }
+}
+
+// エフェクトボタンのUI更新関数
+function updateEffectButtons(activeEffect) {
+    const buttons = {
+        brightness: document.getElementById('effect1'),
+        hueShift: document.getElementById('effect2'),
+        mosaic: document.getElementById('effect3')
+    };
+    
+    // すべてのボタンから active クラスを削除
+    Object.values(buttons).forEach(btn => btn.classList.remove('active'));
+    
+    // アクティブなエフェクトのボタンに active クラスを追加
+    buttons[activeEffect].classList.add('active');
+}
+                                // Load saved settings if available
+        loadSettings();
+            
+        // Image paths
+        // 画像パスの修正 - よりシンプルに
+const imagePaths = [
+    'IMG_8538.png', 'IMG_7378.png', 
+    'IMG_7456.png', 'IMG_7464.png', 
+    'IMG_7793.png', 'IMG_8505.png', 'IMG_8506.png', 'IMG_8507.png',
+    'IMG_8539.png', 'IMG_8540.png', 'IMG_8541.png', 'IMG_8542.png',
+    'IMG_8543.png', 'IMG_8544.png', 'IMG_8545.png', 'IMG_8546.png'
+];
+
+// 試行パスを環境に合わせて調整
+function tryLoadImage(pathIndex) {
+    // パスの配列を定義（関数の中で定義する）
+    const paths = [
+        `images/${imagePaths[i]}`,  // imagesフォルダ
+        imagePaths[i],             // 直接パス
+        `chair_oag/${imagePaths[i].split('/').pop()}`, // chair_oagフォルダ（パスの最後の部分のみ使用）
+        `../chair_oag/${imagePaths[i].split('/').pop()}`, // 1階層上
+        `/chair_oag/${imagePaths[i].split('/').pop()}`, // ルートから
+        `./chair_oag/${imagePaths[i].split('/').pop()}` // カレントから
+    ];
+
+    if (pathIndex >= paths.length) {
+        console.error(`Failed to load image: ${imagePaths[i]}`);
+        console.log(`Creating placeholder for image ${i}, total loaded: ${loadedImages}/${totalImages}`);
+        
+        // プレースホルダー画像を作成
+        const placeholderCanvas = document.createElement('canvas');
+        placeholderCanvas.width = 300;
+        placeholderCanvas.height = 300;
+        const ctx = placeholderCanvas.getContext('2d');
+        
+        ctx.fillStyle = '#333333'; // 暗めのグレー
+        ctx.fillRect(0, 0, 300, 300);
+        ctx.fillStyle = '#FFFFFF'; // 白色テキスト
+        ctx.font = '20px Arial';
+        ctx.fillText(`Image ${i}`, 100, 150);
+        
+        const placeholderImg = new Image();
+        placeholderImg.src = placeholderCanvas.toDataURL();
+        images.push(placeholderImg);
+        
+        loadedImages++;
+        if (loadedImages === totalImages) {
+            console.log('All images loaded (including placeholders), starting init()');
+            init();
+        }
+        return;
+    }
+    
+    console.log(`Trying to load image from path: ${paths[pathIndex]}`);
+    img.src = paths[pathIndex];
+    
+    img.onload = () => {
+        console.log(`Loaded image: ${paths[pathIndex]}`);
+        loadedImages++;
+        images.push(img);
+        if (loadedImages === totalImages) {
+            console.log('All images successfully loaded, starting init()');
+            init();
+        }
+    };
+    
+    img.onerror = () => {
+        console.warn(`Failed to load from path ${paths[pathIndex]}. Trying next path.`);
+        tryLoadImage(pathIndex + 1);
+    };
+}
+        
+        // Asset loading
+        const images = [];
+        let loadedImages = 0;
+        const totalImages = imagePaths.length;
+        
+            // ドイツ語の引用文リスト（文章と作家の形式）
+const germanQuotes = [
+    { text: "Der Stuhl, der zurückbleibt, wenn alle gegangen sind, trägt die Last der Stille.", author: "Franz Kafka" },
+    { text: "Der alte Holzstuhl erzählt die Geschichte derer, die auf ihm gesessen haben.", author: "Hermann Hesse" },
+    { text: "Ein Stuhl, vom Regen gezeichnet, spricht die Sprache der Vergänglichkeit.", author: "Paul Celan" },
+    { text: "Die Sprache ist das Haus des Seins.", author: "Martin Heidegger" },
+    { text: "Ein König, der auf dem Stuhl sitzt, zu richten, zerstreuet alles Arge mit seinen Augen.", author: "Franz Kafka" },
+    { text: "Alles Vergängliche ist nur ein Gleichnis.", author: "Johann Wolfgang von Goethe" },
+    { text: "Und so im Wandlen eigentlichst belehrt: Unschätzbar ist, was niemals wiederkehrt.", author: "Johann Wolfgang von Goethe" },
+    { text: "Was vergangen ist, kehrt nicht wieder. Aber ging es leuchtend nieder, leuchtet's lange noch zurück.", author: "Johann Wolfgang von Goethe" },
+    { text: "Herbst: Die Blätter fallen, fallen wie von weit.", author: "Rainer Maria Rilke" },
+    { text: "Die Natur ist eine versteinerte Zauberstadt.", author: "Novalis" },
+    { text: "Die Zeit, die ist ein sonderbar Ding.", author: "Richard Strauss" },
+    { text: "Verwandlung ist das Leben der Natur.", author: "Wolfgang Amadeus Mozart" },
+    { text: "Der Mensch muß nicht zu viel an Vergangenes denken; wer sich oben erhalten will, hat mit der Gegenwart genug zu tun.", author: "Richard Wagner" },
+    { text: "Wandel und Wechsel liebt, wer lebt.", author: "Richard Wagner" },
+    { text: "In den Tiefen des Winters erfuhr ich schließlich, dass in mir ein unbesiegbarer Sommer liegt.", author: "Albert Camus" },
+    { text: "Die Natur zeigt uns die Vergänglichkeit und den Neubeginn.", author: "Unbekannt" },
+    { text: "Der Herbst ist ein zweiter Frühling, wo jedes Blatt zur Blüte wird.", author: "Albert Camus" },
+    { text: "Wir begreifen die Ruinen nicht eher, als bis wir selbst Ruinen sind.", author: "Unbekannt" },
+    { text: "Sei allem Abschied voran, als wäre er hinter dir.", author: "Rainer Maria Rilke" },
+    { text: "Auch das Schöne muss sterben.", author: "Hermann Hesse" }
+];
+
+// テーマ別の引用文インデックス
+const themeQuotes = {
+    bright: [5, 7, 14, 15, 16], // 希望的・明るいテーマの引用
+    dark: [0, 1, 8, 17, 19],    // 終わりや変化についての引用
+    nature: [9, 10, 11, 15, 16], // 自然に関する引用
+    chair: [0, 1, 2, 4]         // 椅子に関する引用
+};
+
+// アクティブな引用文を保存する配列
+let activeQuotes = [];
+
+// 最後に表示した引用文のインデックス
+let lastQuoteIndex = -1;
+            
+        // UI Elements
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('videoElement');
+        const analysisCanvas = document.createElement('canvas');
+        const analysisCtx = analysisCanvas.getContext('2d');
+        const toggleControlsBtn = document.getElementById('toggleControlsBtn');
+        const controlsPanel = document.getElementById('controlsPanel');
+        const sequencerDisplay = document.getElementById('sequencerDisplay');
+        
+        // State variables
+        let activeImages = []; // Array of {index, opacity, targetOpacity, state}
+        let motionLevel = 0;
+        let previousGridData = null;
+        let currentGridData = null;
+        let previousGridChanges = null;
+        let lastMotionTime = 0;
+        let nextActionTime = 0;
+        let animationId = null;
+        let videoStream = null;
+   
+            // モーション検出に基づく引用文表示
+function showQuoteBasedOnMotion() {
+    // モーションレベルが閾値を超えた場合にのみ表示
+    if (motionLevel > config.motionThreshold * config.motionSensitivity) {
+        // 新しい引用文をランダムで選ぶ（前回と同じものを避ける）
+        let quoteIndex;
+        do {
+            quoteIndex = Math.floor(Math.random() * germanQuotes.length);
+        } while (quoteIndex === lastQuoteIndex);
+        
+        lastQuoteIndex = quoteIndex;
+        
+        // モーションの強さに基づいて透明度を設定
+        const opacity = Math.min(0.8, motionLevel * 5);
+        const quote = germanQuotes[quoteIndex];
+        
+        // アクティブな引用文に追加
+        activeQuotes.push({
+            text: quote.text,
+            author: quote.author,
+            x: canvas.width * 0.5,
+            y: canvas.height * 0.5,
+            opacity: 0,
+            targetOpacity: opacity,
+            size: 20 + (motionLevel * 30),
+            life: 200,  // 表示時間
+            state: 'fadingIn'
+        });
+    }
+}
+
+// 音響に連動したテキスト表示
+function showQuoteWithAudio() {
+    if (config.audioEnabled && config.audioMode === 'sequencer' && currentStep % 4 === 0) {
+        // 4拍ごとに新しい引用文を表示
+        const quoteIndex = Math.floor(currentStep / 8) % germanQuotes.length;
+        const quote = germanQuotes[quoteIndex];
+        
+        // テキストを単語に分割
+        const words = quote.text.split(' ');
+        
+        // 既に表示中の単語を消去
+        activeQuotes = activeQuotes.filter(q => q.type !== 'word' || q.quoteIndex !== quoteIndex);
+        
+        // 単語ごとに表示位置を計算して表示
+        words.forEach((word, i) => {
+            const angle = (i / words.length) * Math.PI * 2;
+            const radius = Math.min(canvas.width, canvas.height) * 0.25;
+            const x = canvas.width/2 + Math.cos(angle) * radius;
+            const y = canvas.height/2 + Math.sin(angle) * radius;
+            
+            setTimeout(() => {
+                activeQuotes.push({
+                    text: word,
+                    author: "",  // 単語表示では作者名は表示しない
+                    x: x,
+                    y: y,
+                    opacity: 0,
+                    targetOpacity: 0.7,
+                    size: 18,
+                    life: 120,
+                    state: 'fadingIn',
+                    type: 'word',
+                    quoteIndex: quoteIndex
+                });
+            }, i * 200); // 単語ごとに表示を遅らせる
+        });
+        
+        // 作者名を別に表示
+        setTimeout(() => {
+            activeQuotes.push({
+                text: "- " + quote.author,
+                author: "",
+                x: canvas.width/2,
+                y: canvas.height/2 + 80,
+                opacity: 0,
+                targetOpacity: 0.5,
+                size: 16,
+                life: 150,
+                state: 'fadingIn',
+                type: 'author',
+                quoteIndex: quoteIndex
+            });
+        }, words.length * 200 + 500); // 全単語表示後に作者名を表示
+    }
+}
+
+// グリッドセルの明るさに基づいてテキスト表示
+function showQuoteInGridCell(gridX, gridY, cellWidth, cellHeight, brightness) {
+    // グリッドセルのインデックス
+    const gridIndex = gridY * config.gridSize + gridX;
+    
+    // 一定の確率で引用文を表示（すべてのセルに表示すると混雑するため）
+    if (Math.random() > 0.995 && brightness > 0.2) {
+        // 明るさに基づいてテーマを選択
+        let themeIndex;
+        if (brightness > 0.7) {
+            themeIndex = themeQuotes.bright[Math.floor(Math.random() * themeQuotes.bright.length)];
+        } else if (brightness < 0.3) {
+            themeIndex = themeQuotes.dark[Math.floor(Math.random() * themeQuotes.dark.length)];
+        } else {
+            // どのカテゴリからもランダムに選択
+            const allThemes = Object.values(themeQuotes).flat();
+            themeIndex = allThemes[Math.floor(Math.random() * allThemes.length)];
+        }
+        
+        const quote = germanQuotes[themeIndex];
+        
+        // セルの中央に表示位置を設定
+        const cellCenterX = gridX * cellWidth + cellWidth/2;
+        const cellCenterY = gridY * cellHeight + cellHeight/2;
+        
+        // この位置に既にアクティブなテキストがあるか確認
+        const existingQuote = activeQuotes.find(q => 
+            Math.abs(q.x - cellCenterX) < cellWidth && 
+            Math.abs(q.y - cellCenterY) < cellHeight
+        );
+        
+        // 既存のテキストがなければ新しいテキストを追加
+        if (!existingQuote) {
+            activeQuotes.push({
+                text: quote.text,
+                author: quote.author,
+                x: cellCenterX,
+                y: cellCenterY,
+                opacity: 0,
+                targetOpacity: 0.6,
+                size: 14,
+                life: 300,
+                state: 'fadingIn',
+                type: 'grid',
+                gridX: gridX,
+                gridY: gridY
+            });
+        }
+    }
+}
+
+// 引用文の描画
+function drawQuotes() {
+    // アクティブな引用文を処理
+    for (let i = activeQuotes.length - 1; i >= 0; i--) {
+        const quote = activeQuotes[i];
+        
+        // 状態に基づいて不透明度を更新
+        if (quote.state === 'fadingIn') {
+            quote.opacity += 0.02;
+            if (quote.opacity >= quote.targetOpacity) {
+                quote.opacity = quote.targetOpacity;
+                quote.state = 'stable';
+            }
+        } else if (quote.state === 'stable') {
+            // ライフタイムを減少
+            quote.life--;
+            if (quote.life <= 0) {
+                quote.state = 'fadingOut';
+            }
+        } else if (quote.state === 'fadingOut') {
+            quote.opacity -= 0.01;
+            if (quote.opacity <= 0) {
+                // 完全に透明になったら配列から削除
+                activeQuotes.splice(i, 1);
+                continue;
+            }
+        }
+        
+        // テキストを描画
+        ctx.save();
+        ctx.globalAlpha = quote.opacity;
+        ctx.font = `${quote.size}px Georgia`;
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        
+        // テキストタイプに応じた描画
+        if (quote.type === 'word') {
+            // 単語ごとの描画（アニメーション効果を追加可能）
+            ctx.fillText(quote.text, quote.x, quote.y);
+        } else {
+            // 引用文全体を描画（必要に応じて折り返し）
+            const maxWidth = Math.min(canvas.width * 0.8, 600);
+            const words = quote.text.split(' ');
+            let line = '';
+            let y = quote.y;
+            
+            for (let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const metrics = ctx.measureText(testLine);
+                const testWidth = metrics.width;
+                
+                if (testWidth > maxWidth && n > 0) {
+                    ctx.fillText(line, quote.x, y);
+                    line = words[n] + ' ';
+                    y += quote.size * 1.2;
+                } else {
+                    line = testLine;
+                }
+            }
+            ctx.fillText(line, quote.x, y);
+            
+            // 作者名を表示（単語表示モードでなければ）
+            if (quote.type !== 'word' && quote.author && quote.type !== 'author') {
+                ctx.font = `italic ${quote.size * 0.8}px Georgia`;
+                ctx.fillText("- " + quote.author, quote.x, y + quote.size * 1.5);
+            }
+        }
+        
+        ctx.restore();
+    }
+}
+
+// アニメーションループに組み込むためのメイン関数
+function updateAndDrawQuotes() {
+    // モーション検出に基づく引用文表示
+    showQuoteBasedOnMotion();
+    
+    // 音響に連動した引用文表示
+    if (config.audioEnabled) {
+        showQuoteWithAudio();
+    }
+    
+    // 引用文を描画
+    drawQuotes();
+}
+        
+        // Audio context and oscillators
+        let audioContext = null;
+        let masterGainNode = null;
+        let sequencerOscillators = [];
+        let droneOscillators = [];
+        let audioInitialized = false;
+        
+        // Sequencer state
+        let sequencerSteps = 16;  // Number of steps in the sequencer
+        let sequencerTracks = 8;  // Number of tracks (vertical)
+        let sequencerPattern = []; // 2D array of sequencer cells (steps x tracks)
+        let currentStep = 0;      // Current playing step
+        let sequencerIntervalId = null;
+        let sequencerCells = [];  // DOM elements for the sequencer display
+        
+        // Notes for musical scale (pentatonic minor scale - works well for ambient sounds)
+        const baseNotes = [
+            220.00,  // A3
+            261.63,  // C4
+            293.66,  // D4
+            349.23,  // F4
+            392.00,  // G4
+            440.00,  // A4
+            523.25,  // C5
+            587.33   // D5
+        ];
+        
+        // UI Events
+        toggleControlsBtn.addEventListener('click', () => {
+            controlsPanel.classList.toggle('visible');
+        });
+        
+            // 自動エフェクト変更のオン・オフボタン
+document.getElementById('toggleAutoEffect').addEventListener('click', function() {
+    autoChangeEnabled = !autoChangeEnabled;
+    this.textContent = autoChangeEnabled ? 'Auto Effect ON' : 'Auto Effect OFF';
+    this.classList.toggle('active', autoChangeEnabled);
+    
+    // 自動変更を再開する場合
+    if (autoChangeEnabled) {
+        startEffectAutoChange();
+    }
+    
+    saveSettings();
+});
+            
+        document.getElementById('toggleCamera').addEventListener('click', function() {
+            config.showCamera = !config.showCamera;
+            video.style.display = config.showCamera ? 'block' : 'none';
+            this.textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+            saveSettings();
+        });
+        
+        document.getElementById('toggleAnalysis').addEventListener('click', function() {
+            config.analyzeCamera = !config.analyzeCamera;
+            this.classList.toggle('active');
+            saveSettings();
+        });
+        
+        document.getElementById('toggleAudio').addEventListener('click', function() {
+            config.audioEnabled = !config.audioEnabled;
+            this.textContent = config.audioEnabled ? 'Audio ON' : 'Audio OFF';
+            this.classList.toggle('active');
+            
+            if (config.audioEnabled && !audioInitialized) {
+                initAudio();
+            }
+            
+            if (config.audioEnabled) {
+                if (masterGainNode) masterGainNode.gain.value = config.audioVolume;
+                
+                // Restart sequencer if it was running
+                if (config.audioMode === 'sequencer') {
+                    startSequencer();
+                } else if (config.audioMode === 'drone') {
+                    initDroneOscillators();
+                }
+            } else {
+                if (masterGainNode) masterGainNode.gain.value = 0;
+                stopAllOscillators();
+                stopSequencer();
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('toggleSequencer').addEventListener('click', function() {
+            config.showSequencer = !config.showSequencer;
+            sequencerDisplay.style.display = config.showSequencer ? 'block' : 'none';
+            this.textContent = config.showSequencer ? 'Hide Sequencer' : 'Show Sequencer';
+            
+            if (config.showSequencer) {
+                updateSequencerDisplay();
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('audioMode1').addEventListener('click', function() {
+            config.audioMode = 'sequencer';
+            document.getElementById('audioMode1').classList.add('active');
+            document.getElementById('audioMode2').classList.remove('active');
+            document.getElementById('toggleSequencer').style.display = 'inline-block';
+            
+            // Stop drone oscillators
+            stopAllOscillators();
+            
+            // Start sequencer
+            if (config.audioEnabled) {
+                startSequencer();
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('audioMode2').addEventListener('click', function() {
+            config.audioMode = 'drone';
+            document.getElementById('audioMode1').classList.remove('active');
+            document.getElementById('audioMode2').classList.add('active');
+            document.getElementById('toggleSequencer').style.display = 'none';
+            sequencerDisplay.style.display = 'none';
+            
+            // Stop sequencer
+            stopSequencer();
+            
+            // Initialize drone oscillators
+            if (config.audioEnabled && audioInitialized) {
+                initDroneOscillators();
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('gridSize').addEventListener('input', (e) => {
+            config.gridSize = parseInt(e.target.value);
+            document.getElementById('gridSizeValue').textContent = config.gridSize;
+            
+            // Reinitialize audio if needed
+            if (config.audioEnabled) {
+                if (config.audioMode === 'drone') {
+                    stopAllOscillators();
+                    initDroneOscillators();
+                }
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('effectIntensity').addEventListener('input', (e) => {
+            config.effectIntensity = parseInt(e.target.value) / 100;
+            document.getElementById('effectIntensityValue').textContent = parseInt(e.target.value) + '%';
+            saveSettings();
+        });
+        
+        document.getElementById('motionThreshold').addEventListener('input', (e) => {
+            config.motionThreshold = parseInt(e.target.value) / 100;
+            document.getElementById('motionThresholdValue').textContent = config.motionThreshold.toFixed(2);
+            saveSettings();
+        });
+            
+            document.getElementById('motionSensitivity').addEventListener('input', (e) => {
+    config.motionSensitivity = parseInt(e.target.value) / 10; // 0.1 to 3.0
+    document.getElementById('motionSensitivityValue').textContent = config.motionSensitivity.toFixed(1) + 'x';
+    saveSettings();
+});
+        
+        document.getElementById('audioVolume').addEventListener('input', (e) => {
+            config.audioVolume = parseInt(e.target.value) / 100;
+            document.getElementById('audioVolumeValue').textContent = parseInt(e.target.value) + '%';
+            
+            if (masterGainNode && config.audioEnabled) {
+                masterGainNode.gain.value = config.audioVolume;
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('audioBPM').addEventListener('input', (e) => {
+            config.audioBPM = parseInt(e.target.value);
+            document.getElementById('audioBPMValue').textContent = config.audioBPM;
+            
+            // Restart sequencer with new tempo if it's running
+            if (config.audioEnabled && config.audioMode === 'sequencer') {
+                stopSequencer();
+                startSequencer();
+            }
+            
+            saveSettings();
+        });
+        
+        document.getElementById('effect1').addEventListener('click', function() {
+            setActiveEffect('brightness', this);
+        });
+        
+        document.getElementById('effect2').addEventListener('click', function() {
+            setActiveEffect('hueShift', this);
+        });
+        
+        document.getElementById('effect3').addEventListener('click', function() {
+            setActiveEffect('mosaic', this);
+        });
+        
+        document.getElementById('forceTransition').addEventListener('click', () => {
+            handleMotionDetected();
+        });
+        
+        // Initialize sequencer pattern
+        function initSequencerPattern() {
+            sequencerPattern = [];
+            for (let step = 0; step < sequencerSteps; step++) {
+                const trackStates = [];
+                for (let track = 0; track < sequencerTracks; track++) {
+                    // Initially all cells are off (empty)
+                    trackStates.push(false);
+                }
+                sequencerPattern.push(trackStates);
+            }
+        }
+        
+        // Update sequencer display
+        function createSequencerDisplay() {
+            // Clear existing display
+            sequencerDisplay.innerHTML = '';
+            sequencerCells = [];
+            
+            // Set dimensions
+            const cellWidth = sequencerDisplay.clientWidth / sequencerSteps;
+            const cellHeight = sequencerDisplay.clientHeight / sequencerTracks;
+            
+            // Create position indicator
+            const positionIndicator = document.createElement('div');
+            positionIndicator.className = 'seq-position';
+            positionIndicator.style.left = '0px';
+            sequencerDisplay.appendChild(positionIndicator);
+            
+            // Create cells
+            for (let step = 0; step < sequencerSteps; step++) {
+                const stepCells = [];
+                for (let track = 0; track < sequencerTracks; track++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'seq-cell';
+                    cell.style.left = (step * cellWidth) + 'px';
+                    cell.style.top = (track * cellHeight) + 'px';
+                    cell.style.width = cellWidth + 'px';
+                    cell.style.height = cellHeight + 'px';
+                    
+                    sequencerDisplay.appendChild(cell);
+                    stepCells.push(cell);
+                }
+                sequencerCells.push(stepCells);
+            }
+        }
+        
+        // Update sequencer pattern based on grid data
+        function updateSequencerPattern(gridData) {
+            if (!gridData || !sequencerPattern || sequencerPattern.length === 0) return;
+            
+            // Map grid data to sequencer pattern
+            // We'll map each grid cell (config.gridSize x config.gridSize) to the sequencer pattern (sequencerSteps x sequencerTracks)
+            const gridStepRatio = config.gridSize / sequencerSteps;
+            const gridTrackRatio = config.gridSize / sequencerTracks;
+            
+            // For each sequencer cell
+            for (let step = 0; step < sequencerSteps; step++) {
+                for (let track = 0; track < sequencerTracks; track++) {
+                    // Calculate corresponding grid cell range
+                    const gridXStart = Math.floor(step * gridStepRatio);
+                    const gridXEnd = Math.floor((step + 1) * gridStepRatio);
+                    const gridYStart = Math.floor(track * gridTrackRatio);
+                    const gridYEnd = Math.floor((track + 1) * gridTrackRatio);
+                    
+                    // Check motion in this region of the grid
+                    let maxMotion = 0;
+                    for (let gridY = gridYStart; gridY < gridYEnd; gridY++) {
+                        for (let gridX = gridXStart; gridX < gridXEnd; gridX++) {
+                            const gridIndex = gridY * config.gridSize + gridX;
+                            if (gridIndex < gridData.length && previousGridData && gridIndex < previousGridData.length) {
+                                const motion = Math.abs(gridData[gridIndex] - previousGridData[gridIndex]);
+                                maxMotion = Math.max(maxMotion, motion);
+                            }
+                        }
+                    }
+                    
+                    // Update sequencer pattern - if motion exceeds threshold, activate this cell
+                    if (maxMotion > config.motionThreshold * 0.7) {
+                        sequencerPattern[step][track] = true;
+                        
+                        // Update display if visible
+                        if (config.showSequencer && sequencerCells.length > 0) {
+                            sequencerCells[step][track].classList.add('active');
+                        }
+                    } else {
+                        // Randomly deactivate cells over time to prevent overwhelming patterns
+                        if (Math.random() < 0.01) {
+                            sequencerPattern[step][track] = false;
+                            
+                            // Update display
+                            if (config.showSequencer && sequencerCells.length > 0) {
+                                sequencerCells[step][track].classList.remove('active');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Update sequencer display based on current pattern
+        function updateSequencerDisplay() {
+            if (!config.showSequencer || sequencerCells.length === 0) return;
+            
+            // Update position indicator
+            const positionIndicator = sequencerDisplay.querySelector('.seq-position');
+            if (positionIndicator) {
+                const cellWidth = sequencerDisplay.clientWidth / sequencerSteps;
+                positionIndicator.style.left = (currentStep * cellWidth) + 'px';
+            }
+            
+            // Update each cell's appearance based on pattern
+            for (let step = 0; step < sequencerSteps; step++) {
+                for (let track = 0; track < sequencerTracks; track++) {
+                    const isActive = sequencerPattern[step][track];
+                    const cell = sequencerCells[step][track];
+                    
+                    if (isActive) {
+                        cell.classList.add('active');
+                    } else {
+                        cell.classList.remove('active');
+                    }
+                }
+            }
+        }
+        
+        // Start the sequencer
+        function startSequencer() {
+            // Stop if already running
+            stopSequencer();
+            
+            if (!audioInitialized || !config.audioEnabled) return;
+            
+            // Calculate step interval based on BPM
+            const stepInterval = (60 / config.audioBPM) * 1000 / 4; // 16th notes
+            
+            // Start sequencer loop
+            sequencerIntervalId = setInterval(() => {
+                // Play current step
+                playSequencerStep(currentStep);
+                
+                // Advance to next step
+                currentStep = (currentStep + 1) % sequencerSteps;
+                
+                // Update display
+                if (config.showSequencer) {
+                    updateSequencerDisplay();
+                }
+            }, stepInterval);
+        }
+        
+        // Stop the sequencer
+        function stopSequencer() {
+            if (sequencerIntervalId) {
+                clearInterval(sequencerIntervalId);
+                sequencerIntervalId = null;
+            }
+            currentStep = 0;
+            stopAllOscillators();
+        }
+        
+        // Play a single step of the sequencer
+        function playSequencerStep(step) {
+            if (!audioContext || !config.audioEnabled || config.audioMode !== 'sequencer') return;
+            
+            // Play sounds for each active track at this step
+            for (let track = 0; track < sequencerTracks; track++) {
+                if (sequencerPattern[step][track]) {
+                    playNote(track);
+                }
+            }
+        }
+        
+        // Play a note for a specific track
+        function playNote(track) {
+            if (!audioContext || !config.audioEnabled) return;
+            
+            const now = audioContext.currentTime;
+            
+            // Create oscillator
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            // Set frequency based on track (pentatonic scale)
+            const noteIndex = track % baseNotes.length;
+            let frequency = baseNotes[noteIndex];
+            
+            // Add slight detune for variety (microtonal)
+            const detune = (Math.random() - 0.5) * 20; // +/- 20 cents
+            oscillator.detune.value = detune;
+            
+            oscillator.frequency.value = frequency;
+            oscillator.type = 'sine';
+            
+            // Set envelope - quick attack, short decay
+            const noteDuration = 0.2; // 200ms
+            gainNode.gain.value = 0;
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(config.audioVolume * 0.7, now + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + noteDuration);
+            
+            // Connect nodes
+            oscillator.connect(gainNode);
+            gainNode.connect(masterGainNode);
+            
+            // Start and stop
+            oscillator.start(now);
+            oscillator.stop(now + noteDuration + 0.1);
+            
+            // Store reference to remove later
+            sequencerOscillators.push(oscillator);
+            
+            // Clean up oscillator after it's done
+            oscillator.onended = function() {
+                const index = sequencerOscillators.indexOf(oscillator);
+                if (index !== -1) {
+                    sequencerOscillators.splice(index, 1);
+                }
+            };
+        }
+        
+        // Initialize and setup audio context
+        function initAudio() {
+            try {
+                // Create audio context
+                    // initAudio() 関数内の "// Create audio context" の後に追加
+// Safari向けの自動再生ポリシーに対応
+document.addEventListener('touchstart', function resumeAudio() {
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    document.removeEventListener('touchstart', resumeAudio);
+}, {once: true});
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create master gain node
+                masterGainNode = audioContext.createGain();
+                masterGainNode.gain.value = config.audioVolume;
+                masterGainNode.connect(audioContext.destination);
+                
+                // Initialize sequencer pattern
+                initSequencerPattern();
+                
+                // Create sequencer display
+                createSequencerDisplay();
+                
+                // Start appropriate audio mode
+                if (config.audioMode === 'sequencer') {
+                    startSequencer();
+                } else if (config.audioMode === 'drone') {
+                    initDroneOscillators();
+                }
+                
+                // Set sequencer display visibility
+                sequencerDisplay.style.display = config.showSequencer ? 'block' : 'none';
+                document.getElementById('toggleSequencer').style.display = 
+                    config.audioMode === 'sequencer' ? 'inline-block' : 'none';
+                
+                audioInitialized = true;
+                document.getElementById('audioInfo').textContent = 
+                    config.audioMode === 'sequencer' ? 'Sequencer' : 'Drone Tones';
+                
+                // Set active buttons
+                if (config.audioEnabled) {
+                    document.getElementById('toggleAudio').classList.add('active');
+                }
+                
+                console.log('Audio initialized successfully');
+            } catch (e) {
+                console.error('Could not initialize audio:', e);
+                config.audioEnabled = false;
+                document.getElementById('toggleAudio').textContent = 'Audio OFF';
+                document.getElementById('toggleAudio').classList.remove('active');
+            }
+        }
+        
+        // Initialize drone oscillators for continuous sound
+        function initDroneOscillators() {
+            // Stop all existing oscillators
+            stopAllOscillators();
+            droneOscillators = [];
+            
+            if (!audioContext || !config.audioEnabled || config.audioMode !== 'drone') return;
+            
+            // Create three drone oscillators with different frequencies
+            // These will create a rich, evolving texture
+            const now = audioContext.currentTime;
+            const baseFrequencies = [110, 146.83, 174.61]; // A2, D3, F3 - forms a minor chord
+            
+            for (let i = 0; i < 3; i++) {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                const panNode = audioContext.createStereoPanner();
+                
+                // Set initial frequency with slight detuning for richness
+                const baseFreq = baseFrequencies[i];
+                const detune = (Math.random() - 0.5) * 50; // +/- 15 cents JM
+                oscillator.frequency.value = baseFreq;
+                oscillator.detune.value = detune;
+                
+                // Use triangle wave for base note, sine for others
+                oscillator.type = i === 0 ? 'triangle' : 'sine';
+                
+                // Set initial gain (volume)
+                const initialGain = 0.1 + (i * 0.05);
+                gainNode.gain.value = initialGain * config.audioVolume;
+                
+                // Set stereo position (left/right)
+                const panPosition = (i - 1) * 0.7; // -0.7, 0, 0.7
+                panNode.pan.value = panPosition;
+                
+                // Set up LFO for subtle frequency modulation
+                const lfo = audioContext.createOscillator();
+                const lfoGain = audioContext.createGain();
+                
+                lfo.frequency.value = 0.1 + (Math.random() * 0.3); // 0.1-0.4 Hz
+                lfoGain.gain.value = baseFreq * 0.01; // Subtle modulation amount
+                
+                lfo.connect(lfoGain);
+                lfoGain.connect(oscillator.frequency);
+                lfo.start();
+                
+                // Connect the audio nodes
+                oscillator.connect(gainNode);
+                gainNode.connect(panNode);
+                panNode.connect(masterGainNode);
+                
+                // Start the oscillator
+                oscillator.start();
+                
+                // Store oscillator info for later updates
+                droneOscillators.push({
+                    oscillator,
+                    gainNode,
+                    panNode,
+                    lfo,
+                    baseFrequency: baseFreq
+                });
+            }
+        }
+        
+        // Update drone oscillators based on grid data
+        function updateDroneOscillators(gridData) {
+            if (!audioContext || !config.audioEnabled || config.audioMode !== 'drone' || droneOscillators.length === 0) return;
+            
+            const now = audioContext.currentTime;
+            
+            // Calculate average motion and brightness values from the grid
+            let avgMotion = 0;
+            let avgBrightness = 0;
+            
+            if (previousGridData && gridData) {
+                let motionSum = 0;
+                let brightnessSum = 0;
+                let count = 0;
+                
+                for (let i = 0; i < gridData.length; i++) {
+                    if (i < previousGridData.length) {
+                        motionSum += Math.abs(gridData[i] - previousGridData[i]);
+                        brightnessSum += gridData[i];
+                        count++;
+                    }
+                }
+                
+                if (count > 0) {
+                    avgMotion = motionSum / count;
+                    avgBrightness = brightnessSum / count;
+                }
+            }
+            
+            // Update each drone oscillator based on grid data
+            for (let i = 0; i < droneOscillators.length; i++) {
+                const drone = droneOscillators[i];
+                
+                // Modulate frequency based on brightness and oscillator index
+                // Each oscillator responds differently to create evolving harmonics
+                if (i === 0) {
+                    // Base note - less modulation
+                    const freqMod = 1 + ((avgBrightness - 0.5) * 0.2); // +/- 5%
+                    drone.oscillator.frequency.linearRampToValueAtTime(
+                        drone.baseFrequency * freqMod,
+                        now + 0.2
+                    );
+                } else if (i === 1) {
+                    // Middle note - moderate microtonal shifts
+                    const freqMod = 1 + ((avgBrightness - 0.5) * 0.3); // +/- 7.5%
+                    drone.oscillator.frequency.linearRampToValueAtTime(
+                        drone.baseFrequency * freqMod,
+                        now + 0.3
+                    );
+                } else {
+                    // High note - more dramatic modulation
+                    const freqMod = 1 + ((avgBrightness - 0.5) * 0.8); // +/- 10%
+                    drone.oscillator.frequency.linearRampToValueAtTime(
+                        drone.baseFrequency * freqMod,
+                        now + 0.4
+                    );
+                }
+                
+                // Adjust LFO rate based on motion
+                drone.lfo.frequency.linearRampToValueAtTime(
+                    0.1 + (avgMotion * 5), // 0.1-2.1 Hz
+                    now + 0.5
+                );
+                
+                // Adjust gain based on motion
+                const targetGain = (0.1 + (i * 0.05)) * (0.5 + avgMotion * 2) * config.audioVolume;
+                drone.gainNode.gain.linearRampToValueAtTime(
+                    Math.min(targetGain, 0.3 * config.audioVolume), // Limit max volume
+                    now + 0.3
+                );
+            }
+        }
+        
+        // Stop all oscillators
+        function stopAllOscillators() {
+            // Stop sequencer oscillators
+            for (let i = 0; i < sequencerOscillators.length; i++) {
+                try {
+                    sequencerOscillators[i].stop();
+                } catch (e) {
+                    // Ignore errors if already stopped
+                }
+            }
+            sequencerOscillators = [];
+            
+            // Stop drone oscillators and their LFOs
+            for (let i = 0; i < droneOscillators.length; i++) {
+                try {
+                    droneOscillators[i].oscillator.stop();
+                    droneOscillators[i].lfo.stop();
+                } catch (e) {
+                    // Ignore errors if already stopped
+                }
+            }
+            droneOscillators = [];
+        }
+        
+        // Helper function to set active effect
+        function setActiveEffect(effect, button) {
+            // Update config
+            config.currentEffect = effect;
+            saveSettings();
+            
+            // Update UI
+            document.querySelectorAll('.control-section button').forEach(btn => {
+                if (btn.id.startsWith('effect')) {
+                    btn.classList.remove('active');
+                }
+            });
+            button.classList.add('active');
+        }
+        
+        // Settings persistence functions
+        function saveSettings() {
+            const settings = {
+                gridSize: config.gridSize,
+                effectIntensity: config.effectIntensity,
+                currentEffect: config.currentEffect,
+                showCamera: config.showCamera,
+                analyzeCamera: config.analyzeCamera,
+                motionThreshold: config.motionThreshold,
+                    motionSensitivity: config.motionSensitivity,
+                audioEnabled: config.audioEnabled,
+                audioMode: config.audioMode,
+                audioVolume: config.audioVolume,
+                audioBPM: config.audioBPM,
+                showSequencer: config.showSequencer,
+                autoChangeEnabled: autoChangeEnabled
+            };
+            
+            try {
+        localStorage.setItem('chairArtSettings', JSON.stringify(settings));
+    } catch (e) {
+        console.error('Could not save settings:', e);
+    }
+        }
+        
+       function loadSettings() {
+    try {
+        const savedSettings = localStorage.getItem('chairArtSettings');
+        if (savedSettings) {
+            const settings = JSON.parse(savedSettings);
+            
+            // Update config
+            config.gridSize = settings.gridSize || 4;
+            config.effectIntensity = settings.effectIntensity || 0.5;
+            config.currentEffect = settings.currentEffect || 'brightness';
+            config.showCamera = settings.showCamera || false;
+            config.analyzeCamera = settings.analyzeCamera !== undefined ? settings.analyzeCamera : true;
+            config.motionThreshold = settings.motionThreshold || 0.05;
+            config.audioEnabled = settings.audioEnabled !== undefined ? settings.audioEnabled : true;
+            config.audioMode = settings.audioMode || 'sequencer';
+            config.audioVolume = settings.audioVolume || 0.5;
+            config.audioBPM = settings.audioBPM || 225;
+            config.showSequencer = settings.showSequencer || false;
+            // loadSettings() 関数の中で、既存の設定読み込みの後に追加
+config.motionSensitivity = settings.motionSensitivity || 1.2;
+
+// UI更新の部分でも追加
+document.getElementById('motionSensitivity').value = config.motionSensitivity * 10;
+document.getElementById('motionSensitivityValue').textContent = config.motionSensitivity.toFixed(1) + 'x';
+            // Add this line for autoChangeEnabled
+            autoChangeEnabled = settings.autoChangeEnabled !== undefined ? settings.autoChangeEnabled : true;
+            
+            // Update UI to match loaded settings
+            document.getElementById('gridSize').value = config.gridSize;
+            document.getElementById('gridSizeValue').textContent = config.gridSize;
+            
+            document.getElementById('effectIntensity').value = config.effectIntensity * 100;
+            document.getElementById('effectIntensityValue').textContent = Math.round(config.effectIntensity * 100) + '%';
+            
+            document.getElementById('motionThreshold').value = config.motionThreshold * 100;
+            document.getElementById('motionThresholdValue').textContent = config.motionThreshold.toFixed(2);
+            
+            document.getElementById('audioVolume').value = config.audioVolume * 100;
+            document.getElementById('audioVolumeValue').textContent = Math.round(config.audioVolume * 100) + '%';
+            
+            document.getElementById('audioBPM').value = config.audioBPM;
+            document.getElementById('audioBPMValue').textContent = config.audioBPM;
+            
+            document.getElementById('toggleCamera').textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+            video.style.display = config.showCamera ? 'block' : 'none';
+            
+            document.getElementById('toggleAudio').textContent = config.audioEnabled ? 'Audio ON' : 'Audio OFF';
+            document.getElementById('toggleSequencer').textContent = config.showSequencer ? 'Hide Sequencer' : 'Show Sequencer';
+            
+            // Set active effect button
+            const effectButtonId = 
+                config.currentEffect === 'brightness' ? 'effect1' :
+                config.currentEffect === 'hueShift' ? 'effect2' : 'effect3';
+            
+            document.querySelectorAll('.control-section button').forEach(btn => {
+                if (btn.id.startsWith('effect')) {
+                    btn.classList.remove('active');
+                }
+            });
+            document.getElementById(effectButtonId).classList.add('active');
+            
+            // Set audio mode button
+            if (config.audioMode === 'sequencer') {
+                document.getElementById('audioMode1').classList.add('active');
+                document.getElementById('audioMode2').classList.remove('active');
+                document.getElementById('toggleSequencer').style.display = 'inline-block';
+            } else {
+                document.getElementById('audioMode1').classList.remove('active');
+                document.getElementById('audioMode2').classList.add('active');
+                document.getElementById('toggleSequencer').style.display = 'none';
+            }
+            
+            if (config.analyzeCamera) {
+                document.getElementById('toggleAnalysis').classList.add('active');
+            } else {
+                document.getElementById('toggleAnalysis').classList.remove('active');
+            }
+            
+            if (config.audioEnabled) {
+                document.getElementById('toggleAudio').classList.add('active');
+            } else {
+                document.getElementById('toggleAudio').classList.remove('active');
+            }
+            
+            // Update Auto Effect button
+            document.getElementById('toggleAutoEffect').textContent = autoChangeEnabled ? 'Auto Effect ON' : 'Auto Effect OFF';
+            document.getElementById('toggleAutoEffect').classList.toggle('active', autoChangeEnabled);
+        }
+    } catch (e) {
+        console.error('Could not load settings:', e);
+    }
+}
+                   
+        
+        // Load images
+        for (let i = 0; i < imagePaths.length; i++) {
+            const img = new Image();
+            
+            // Try multiple paths
+            const paths = [
+                `chair_oag/${imagePaths[i]}`,
+                imagePaths[i],
+                `/Users/euler_m1/Documents/game/chair/chair_oag/${imagePaths[i]}`
+            ];
+            
+           function tryLoadImage(pathIndex) {
+   const paths = [
+        `images/${imagePaths[i]}`,  // imagesフォルダ
+        imagePaths[i],             // 直接パス
+        `chair_oag/${imagePaths[i].split('/').pop()}`, // chair_oagフォルダ（パスの最後の部分のみ使用）
+        `../chair_oag/${imagePaths[i].split('/').pop()}`, // 1階層上
+        `/chair_oag/${imagePaths[i].split('/').pop()}`, // ルートから
+        `./chair_oag/${imagePaths[i].split('/').pop()}` // カレントから
+    ];
+
+    if (pathIndex >= paths.length) {
+        console.error(`Failed to load image: ${imagePaths[i]}`);
+        console.log(`Creating placeholder for image ${i}, total loaded: ${loadedImages}/${totalImages}`);
+        
+        // プレースホルダー画像を作成
+        const placeholderCanvas = document.createElement('canvas');
+        placeholderCanvas.width = 300;
+        placeholderCanvas.height = 300;
+        const ctx = placeholderCanvas.getContext('2d');
+        
+        ctx.fillStyle = '#333333'; // 暗めのグレー
+        ctx.fillRect(0, 0, 300, 300);
+        ctx.fillStyle = '#FFFFFF'; // 白色テキスト
+        ctx.font = '20px Arial';
+        ctx.fillText(`Image ${i}`, 100, 150);
+        
+        const placeholderImg = new Image();
+        placeholderImg.src = placeholderCanvas.toDataURL();
+        images.push(placeholderImg);
+        
+        loadedImages++;
+        if (loadedImages === totalImages) {
+            console.log('All images loaded (including placeholders), starting init()');
+            init();
+        }
+        return;
+    }
+    
+    console.log(`Trying to load image from path: ${paths[pathIndex]}`);
+    img.src = paths[pathIndex];
+    
+    img.onload = () => {
+        console.log(`Loaded image: ${paths[pathIndex]}`);
+        loadedImages++;
+        images.push(img);
+        if (loadedImages === totalImages) {
+            console.log('All images successfully loaded, starting init()');
+            init();
+        }
+    };
+    
+    img.onerror = () => {
+        console.warn(`Failed to load from path ${paths[pathIndex]}. Trying next path.`);
+        tryLoadImage(pathIndex + 1);
+    };
+}
+            
+            tryLoadImage(0);
+        }
+        
+            // この関数を init() 関数の前に追加
+function initCamera(facingMode = 'user') {
+    console.log("Initializing camera...");
+    
+    // Safari互換性のためのビデオ要素の属性設定
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+    video.setAttribute('webkit-playsinline', ''); // Safari用
+    
+    // Safari用のプレイバック設定
+    video.autoplay = true;
+    video.playsInline = true;
+    
+    // カメラへのアクセスリクエスト
+    const constraints = { 
+        video: { 
+            width: { ideal: 320 }, 
+            height: { ideal: 240 },
+            facingMode: facingMode
+        },
+        audio: false
+    };
+    
+    console.log("Requesting camera with constraints:", constraints);
+    
+    // 既存のストリームがあれば停止
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+    }
+    
+    return navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+            console.log("Camera access granted:", stream);
+            videoStream = stream;
+            video.srcObject = stream;
+            
+            // Safari用の再生確認
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log("Video playing successfully");
+                }).catch(error => {
+                    console.error("Error playing video:", error);
+                    // Safari用のフォールバック
+                    setTimeout(() => {
+                        video.play();
+                    }, 100);
+                });
+            }
+            
+            // 確実にビデオが読み込まれたことを確認
+            video.onloadedmetadata = () => {
+                console.log("Video metadata loaded, video size:", video.videoWidth, "x", video.videoHeight);
+                video.play().catch(e => console.error("Error playing video:", e));
+            };
+            
+            analysisCanvas.width = 320;
+            analysisCanvas.height = 240;
+            
+            // カメラ認識成功メッセージ
+            console.log("Camera successfully initialized");
+            document.getElementById('toggleCamera').textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+            document.getElementById('toggleCamera').disabled = false;
+            document.getElementById('toggleAnalysis').disabled = false;
+            
+            // カメラスイッチボタンを表示
+            document.getElementById('cameraSwitchContainer').style.display = 'block';
+            
+            return true;
+        })
+        .catch(err => {
+            console.error("Camera access denied or not available:", err);
+            
+            // カメラエラーメッセージをUIに表示
+            const errorMsg = document.createElement('div');
+            errorMsg.style.position = 'absolute';
+            errorMsg.style.top = '10px';
+            errorMsg.style.left = '10px';
+            errorMsg.style.padding = '10px';
+            errorMsg.style.backgroundColor = 'rgba(255,0,0,0.7)';
+            errorMsg.style.color = 'white';
+            errorMsg.style.borderRadius = '5px';
+            errorMsg.innerHTML = 'カメラへのアクセスができません。<br>ブラウザの設定を確認してください。';
+            document.body.appendChild(errorMsg);
+            
+            // カメラが使用不可に設定
+            document.getElementById('toggleCamera').textContent = 'Camera unavailable';
+            document.getElementById('toggleCamera').disabled = true;
+            document.getElementById('toggleAnalysis').disabled = true;
+            
+            // カメラなしで続行
+            config.analyzeCamera = false;
+            return false;
+        });
+}
+
+// Force camera initialization on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("DOM loaded, attempting early camera initialization");
+    // すぐにカメラを初期化してみる (Safariでは早期初期化が必要な場合がある)
+    initCamera().catch(e => console.error("Early camera init failed:", e));
+});
+            
+        // Initialize 
+        function init() {
+    // 画面サイズの設定
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // 初期化情報をログに出力
+    console.log(`Canvas size: ${canvas.width}x${canvas.height}`);
+    console.log(`Total images loaded: ${images.length}`);
+    
+    // 音声の初期化
+    document.addEventListener('click', function initOnFirstClick() {
+        if (!audioInitialized && config.audioEnabled) {
+            initAudio();
+        }
+        document.removeEventListener('click', initOnFirstClick);
+    }, { once: true });
+    
+    // 最初の画像を追加
+    if (images.length > 0) {
+        console.log('Adding first image with opacity:', config.defaultOpacity);
+        const added = addNewImage(0, config.defaultOpacity);
+        console.log('First image added:', added);
+    } else {
+        console.error('No images available to display!');
+    }
+    
+    // カメラ初期化
+initCamera()
+    .then((success) => {
+        console.log('Camera initialization:', success ? 'success' : 'failed');
+        // エフェクト自動変更を開始
+        startEffectAutoChange();
+        // アニメーション開始
+        animate();
+    });
+    
+    // 時間を記録
+    lastMotionTime = Date.now();
+    nextActionTime = lastMotionTime + 2000;
+}
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        // Get random unused image index
+        function getRandomUnusedImageIndex() {
+            // Get currently used indices
+            const usedIndices = activeImages.map(img => img.index);
+            
+            // Find unused indices
+            const unusedIndices = [];
+            for (let i = 0; i < images.length; i++) {
+                if (!usedIndices.includes(i)) {
+                    unusedIndices.push(i);
+                }
+            }
+            
+            // Return random unused index or -1 if all used
+            if (unusedIndices.length === 0) return -1;
+            return unusedIndices[Math.floor(Math.random() * unusedIndices.length)];
+        }
+        
+        // Add new image to display
+        function addNewImage(index = -1, targetOpacity = config.defaultOpacity) {
+            // If no specific index provided or index is invalid, get random unused image
+            if (index < 0 || index >= images.length) {
+                index = getRandomUnusedImageIndex();
+                if (index === -1) return false; // No unused images
+            }
+            
+            // Add image with fade-in
+            activeImages.push({
+                index: index,
+                opacity: 0,  // Start invisible
+                targetOpacity: targetOpacity,  // Target opacity
+                state: 'fadingIn'  // Current transition state
+            });
+            
+            return true;
+        }
+        
+        // Remove an image (start fade-out)
+        function removeRandomImage() {
+            if (activeImages.length <= 1) return false; // Keep at least one image
+            
+            // Choose random image
+            const removeIndex = Math.floor(Math.random() * activeImages.length);
+            
+            // Start fade out
+            activeImages[removeIndex].targetOpacity = 0;
+            activeImages[removeIndex].state = 'fadingOut';
+            
+            return true;
+        }
+        
+        // Handle motion detection
+        function handleMotionDetected() {
+            const now = Date.now();
+            lastMotionTime = now;
+            
+            // Update status display
+            document.getElementById('lastMotionInfo').textContent = 
+                new Date(lastMotionTime).toLocaleTimeString();
+            
+            // If we have less than max images, add a new one
+            if (activeImages.length < config.maxActiveImages) {
+                addNewImage();
+            } else {
+                // Otherwise, replace one image with another
+                removeRandomImage();
+                addNewImage();
+            }
+        }
+        
+        // Handle inactivity
+        function handleInactivity() {
+            // If we have more than one image, remove one
+            if (activeImages.length > 1) {
+                removeRandomImage();
+            }
+        }
+        
+        // Analyze camera input for motion
+        // Analyze camera input for motion - Safari対応版
+// Analyze camera input for motion - Safari対応版
+function analyzeVideoFrame() {
+    if (!videoStream || !config.analyzeCamera) return Array(config.gridSize * config.gridSize).fill(0.5);
+    
+    // Safariでビデオが再生中か確認
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        return Array(config.gridSize * config.gridSize).fill(0.5);
+    }
+    
+    try {
+        // Safari用のサイズ調整
+        const videoWidth = video.videoWidth || video.width || 320;
+        const videoHeight = video.videoHeight || video.height || 240;
+        
+        // 描画前にキャンバスサイズを確認/調整
+        if (analysisCanvas.width !== videoWidth || analysisCanvas.height !== videoHeight) {
+            analysisCanvas.width = videoWidth;
+            analysisCanvas.height = videoHeight;
+        }
+        
+        // Draw video frame to analysis canvas
+        analysisCtx.clearRect(0, 0, analysisCanvas.width, analysisCanvas.height);
+        analysisCtx.drawImage(video, 0, 0, videoWidth, videoHeight);
+        
+        // Divide into grid and analyze brightness
+        const cellWidth = analysisCanvas.width / config.gridSize;
+        const cellHeight = analysisCanvas.height / config.gridSize;
+        const gridData = [];
+        const gridChanges = [];
+        
+        for (let y = 0; y < config.gridSize; y++) {
+            for (let x = 0; x < config.gridSize; x++) {
+                // Get pixel data - Safari用の安全な呼び出し
+                let pixelData;
+                try {
+                    pixelData = analysisCtx.getImageData(
+                        Math.floor(x * cellWidth), 
+                        Math.floor(y * cellHeight), 
+                        Math.ceil(cellWidth), 
+                        Math.ceil(cellHeight)
+                    ).data;
+                } catch(e) {
+                    // Safariでエラーが発生した場合のフォールバック
+                    console.warn('getImageData failed, using fallback value');
+                    pixelData = new Uint8ClampedArray(Math.ceil(cellWidth) * Math.ceil(cellHeight) * 4);
+                }
+                
+                // Calculate average brightness
+                let totalBrightness = 0;
+                for (let i = 0; i < pixelData.length; i += 4) {
+                    const r = pixelData[i];
+                    const g = pixelData[i + 1];
+                    const b = pixelData[i + 2];
+                    // Weighted luminance (human eye sensitivity)
+                    totalBrightness += (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+                }
+                
+                // Average brightness (0-1 range)
+                const avgBrightness = totalBrightness / (pixelData.length / 4);
+                gridData.push(avgBrightness);
+                
+                // Calculate change from previous frame
+                const gridIndex = y * config.gridSize + (config.gridSize - 1 - x);
+                let change = 0;
+                
+                if (previousGridData && gridIndex < previousGridData.length) {
+                    change = Math.abs(avgBrightness - previousGridData[gridIndex]);
+                }
+                
+                gridChanges.push(change);
+            }
+        }
+        
+        // Update sequencer pattern based on motion
+        if (config.audioEnabled && config.audioMode === 'sequencer') {
+            updateSequencerPattern(gridData);
+        }
+        
+        // Update drone oscillators
+        if (config.audioEnabled && config.audioMode === 'drone') {
+            updateDroneOscillators(gridData);
+        }
+        
+        // Detect overall motion (difference from previous frame)
+        if (previousGridData) {
+            let totalDifference = 0;
+            for (let i = 0; i < gridData.length; i++) {
+                if (i < previousGridData.length) {
+                    totalDifference += Math.abs(gridData[i] - previousGridData[i]);
+                }
+            }
+            
+            // Calculate average difference (motion amount)
+            motionLevel = totalDifference / gridData.length;
+            
+            // Check for motion threshold
+            // Check for motion threshold - now more sensitive
+const now = Date.now();
+const adjustedThreshold = config.motionThreshold / config.motionSensitivity;
+
+if (motionLevel > adjustedThreshold && now > nextActionTime) {
+    handleMotionDetected();
+    nextActionTime = now + 500; // Reduced cooldown time (was 1000)
+} else if (now - lastMotionTime > config.inactivityTimeout && now > nextActionTime) {
+                // Handle inactivity
+                handleInactivity();
+                lastMotionTime = now; // Reset timer
+                nextActionTime = now + 2000; // Wait before next action
+            }
+        }
+        
+        // Save current frame data and changes
+        previousGridData = [...gridData];
+        previousGridChanges = gridChanges;
+        currentGridData = gridData;
+        
+        return gridData;
+    } catch(e) {
+        console.error('Error in analyzeVideoFrame:', e);
+        return Array(config.gridSize * config.gridSize).fill(0.5);
+    }
+}
+        
+        // Main animation loop
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+            
+            // Analyze camera frame
+            const gridData = analyzeVideoFrame();
+                
+                // エフェクト変更のチェック
+checkEffectChange();
+                
+                // Apply motion sensitivity multiplier
+if (motionLevel > 0) {
+    motionLevel *= config.motionSensitivity;
+}
+            
+            // Update status display
+            document.getElementById('motionValue').textContent = motionLevel.toFixed(3);
+            document.getElementById('activeImageInfo').textContent = activeImages.length;
+            document.getElementById('audioInfo').textContent = 
+                config.audioEnabled ? 
+                    (config.audioMode === 'sequencer' ? 'Sequencer' : 'Drone Tones') : 
+                    'OFF';
+            
+            // Process image transitions
+            updateImageTransitions();
+            
+            // Draw images
+            drawMultipleImagesWithEffects(gridData);
+                updateAndDrawQuotes();
+        }
+        
+        // Update image transitions (fade in/out)
+        function updateImageTransitions() {
+            // Process each active image
+            for (let i = activeImages.length - 1; i >= 0; i--) {
+                const img = activeImages[i];
+                
+                // Process based on state
+                if (img.state === 'fadingIn') {
+                    // Fading in
+                    img.opacity += config.fadeSpeed;
+                    if (img.opacity >= img.targetOpacity) {
+                        img.opacity = img.targetOpacity;
+                        img.state = 'stable';
+                    }
+                } else if (img.state === 'fadingOut') {
+                    // Fading out
+                    img.opacity -= config.fadeSpeed;
+                    if (img.opacity <= 0) {
+                        // Remove completely faded out images
+                        activeImages.splice(i, 1);
+                    }
+                } else if (img.state === 'stable' && img.opacity !== img.targetOpacity) {
+                    // Adjust to target if needed
+                    if (img.opacity < img.targetOpacity) {
+                        img.opacity = Math.min(img.opacity + config.fadeSpeed, img.targetOpacity);
+                    } else {
+                        img.opacity = Math.max(img.opacity - config.fadeSpeed, img.targetOpacity);
+                    }
+                }
+            }
+            
+            // Update transition info
+            let transitionInfo = '-';
+            if (activeImages.some(img => img.state === 'fadingIn')) {
+                transitionInfo = 'Fading In';
+            } else if (activeImages.some(img => img.state === 'fadingOut')) {
+                transitionInfo = 'Fading Out';
+            }
+            document.getElementById('transitionInfo').textContent = transitionInfo;
+        }
+        
+        // Draw multiple images with effects
+        function drawMultipleImagesWithEffects(gridData) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Skip if no images
+            if (activeImages.length === 0) return;
+            
+            // Process each grid cell
+            const cellWidth = canvas.width / config.gridSize;
+            const cellHeight = canvas.height / config.gridSize;
+            
+            for (let y = 0; y < config.gridSize; y++) {
+                for (let x = 0; x < config.gridSize; x++) {
+                    const gridIndex = y * config.gridSize + x;
+                    const value = gridData[gridIndex] || 0.5;
+                    
+                    // Draw images for this cell
+                    drawImagesForCell(x, y, cellWidth, cellHeight, value);
+                }
+            }
+        }
+        
+        // Draw all active images for a single cell
+       // Draw all active images for a single cell - Safari互換版
+// Draw all active images for a single cell - Safari互換版（修正版）
+// より簡易なSafari対応版
+function drawImagesForCell(gridX, gridY, cellWidth, cellHeight, value) {
+    if (activeImages.length === 0) return;
+    
+    for (let i = 0; i < activeImages.length; i++) {
+        const imgInfo = activeImages[i];
+        if (imgInfo.opacity <= 0) continue;
+        
+        const img = images[imgInfo.index];
+        if (!img) continue;
+        
+        // 画像の座標とサイズを計算（既存のコードと同じ）
+        const imgScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+        const imgWidth = img.width * imgScale;
+        const imgHeight = img.height * imgScale;
+        const imgX = (canvas.width - imgWidth) / 2;
+        const imgY = (canvas.height - imgHeight) / 2;
+        
+        const gridWidthInImage = img.width / config.gridSize;
+        const gridHeightInImage = img.height / config.gridSize;
+        const srcX = (config.gridSize - 1 - gridX) * gridWidthInImage;
+        const srcY = gridY * gridHeightInImage;
+        
+        const dstX = imgX + (config.gridSize - 1 - gridX) * (imgWidth / config.gridSize);
+        const dstY = imgY + gridY * (imgHeight / config.gridSize);
+        const dstWidth = imgWidth / config.gridSize;
+        const dstHeight = imgHeight / config.gridSize;
+        
+        ctx.save();
+        ctx.globalAlpha = imgInfo.opacity;
+        
+        // Safariかどうかをチェック
+        const isSafari = navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome');
+        
+        switch (config.currentEffect) {
+            case 'brightness':
+                if (isSafari) {
+                    // Safariでは、透明度を使って明るさエフェクトを近似
+                    const tempOpacity = value > 0.5 ? 
+                        imgInfo.opacity * (1 + (value - 0.5) * config.effectIntensity) :
+                        imgInfo.opacity * Math.max(0.3, 1 - (0.5 - value) * config.effectIntensity);
+                    ctx.globalAlpha = tempOpacity;
+                    
+                    // 明るい場合は白いオーバーレイを追加
+                    if (value > 0.5) {
+                        ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                    dstX, dstY, dstWidth, dstHeight);
+                        ctx.fillStyle = `rgba(255, 255, 255, ${(value - 0.5) * config.effectIntensity * 0.5})`;
+                        ctx.fillRect(dstX, dstY, dstWidth, dstHeight);
+                    } else {
+                        ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                    dstX, dstY, dstWidth, dstHeight);
+                    }
+                } else {
+                    ctx.filter = `brightness(${100 + (value - 0.5) * 200 * config.effectIntensity}%)`;
+                    ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                dstX, dstY, dstWidth, dstHeight);
+                }
+                break;
+                
+            case 'hueShift':
+                if (isSafari) {
+                    // Safariでは色相シフトの代わりに色の色調変更を使用
+                    const time = Date.now() * 0.0002; // 時間ベースの変化
+                    const motion = motionLevel * 5; // モーション検出に基づく変化
+                    const gridPosition = (gridX + gridY) / (config.gridSize * 2); // グリッド位置に基づく変化
+                    
+                    // 複数の波形を組み合わせて複雑な色相変化を作成
+                    let hue = value * 360;
+                    hue += time * 50 + motion * 100 + gridPosition * 180;
+                    hue = hue % 360;
+                    
+                    // 色相をより劇的に変化させる
+                    const hueRad = hue * Math.PI / 180;
+                    const saturation = 0.9 + value * 0.1; // 明るさに基づく彩度調整
+                    
+                    // RGB値を計算
+                    const r = Math.sin(hueRad) * saturation * 0.5 + 0.5;
+                    const g = Math.sin((hueRad + 120 * Math.PI / 180)) * saturation * 0.5 + 0.5;
+                    const b = Math.sin((hueRad + 240 * Math.PI / 180)) * saturation * 0.5 + 0.5;
+                    
+                    // 画像を描画
+                    ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                dstX, dstY, dstWidth, dstHeight);
+                    
+                    // スクリーンモードで色を重ねる
+                    ctx.globalCompositeOperation = 'screen';
+                    const intensity = config.effectIntensity * (0.3 + value * 0.3);
+                    ctx.fillStyle = `rgba(${r * 255 * intensity}, ${g * 255 * intensity}, ${b * 255 * intensity}, ${intensity})`;
+                    ctx.fillRect(dstX, dstY, dstWidth, dstHeight);
+                    
+                    // さらにハードライトモードでコントラストを追加
+                    ctx.globalCompositeOperation = 'hard-light';
+                    const contrastColor = `rgba(${(1-r) * 255 * 0.1}, ${(1-g) * 255 * 0.1}, ${(1-b) * 255 * 0.1}, ${intensity * 0.5})`;
+                    ctx.fillStyle = contrastColor;
+                    ctx.fillRect(dstX, dstY, dstWidth, dstHeight);
+                    
+                    ctx.globalCompositeOperation = 'source-over';
+                } else {
+                    // 通常のブラウザでは、より複雑な色相変化を実現
+                    const time = Date.now() * 0.0002;
+                    const motion = motionLevel * 5;
+                    const gridPosition = (gridX + gridY) / (config.gridSize * 2);
+                    
+                    // 複数のフィルターを組み合わせる
+                    let hueRotation = value * 180;
+                    hueRotation += time * 50 + motion * 100 + gridPosition * 180;
+                    hueRotation = hueRotation % 360;
+                    
+                    // 彩度とコントラストも動的に変化
+                    const saturation = 100 + value * 50 + motion * 30;
+                    const contrast = 100 + (1 - value) * 30 + motion * 20;
+                    
+                    ctx.filter = `hue-rotate(${hueRotation * config.effectIntensity}deg) saturate(${saturation}%) contrast(${contrast}%)`;
+                    ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                dstX, dstY, dstWidth, dstHeight);
+                }
+                break;
+                
+            case 'mosaic':
+                // モザイクは既存のコードと同じ
+                const pixelSize = Math.max(1, Math.floor((1 - value) * 10 * config.effectIntensity));
+                if (pixelSize > 1) {
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = Math.ceil(dstWidth / pixelSize);
+                    tempCanvas.height = Math.ceil(dstHeight / pixelSize);
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    tempCtx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                    0, 0, tempCanvas.width, tempCanvas.height);
+                    
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, 
+                                dstX, dstY, dstWidth, dstHeight);
+                    ctx.imageSmoothingEnabled = true;
+                    
+                    ctx.restore();
+                    continue;
+                }
+                // fall through to default
+                
+            default:
+                ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                            dstX, dstY, dstWidth, dstHeight);
+        }
+        
+        ctx.restore();
+    }
+showQuoteInGridCell(gridX, gridY, cellWidth, cellHeight, value);
+            }
+
+
+// Set up minimal audio toggle
+const audioToggleMinimal = document.getElementById('audioToggleMinimal');
+const audioIcon = document.getElementById('audioIcon');
+
+// Initialize with proper state
+function updateAudioIcon() {
+    if (config.audioEnabled) {
+        audioToggleMinimal.classList.add('active');
+        audioIcon.className = 'pause-icon';
+    } else {
+        audioToggleMinimal.classList.remove('active');
+        audioIcon.className = 'play-icon';
+    }
+}
+
+// Initial state
+updateAudioIcon();
+
+// Add event listener for minimal audio toggle
+audioToggleMinimal.addEventListener('click', function() {
+    config.audioEnabled = !config.audioEnabled;
+    
+    if (config.audioEnabled) {
+        document.getElementById('toggleAudio').textContent = 'Audio ON';
+        document.getElementById('toggleAudio').classList.add('active');
+        
+        if (!audioInitialized) {
+            initAudio();
+        }
+        
+        if (masterGainNode) masterGainNode.gain.value = config.audioVolume;
+        
+        // Restart audio based on mode
+        if (config.audioMode === 'sequencer') {
+            startSequencer();
+        } else if (config.audioMode === 'drone') {
+            initDroneOscillators();
+        }
+    } else {
+        document.getElementById('toggleAudio').textContent = 'Audio OFF';
+        document.getElementById('toggleAudio').classList.remove('active');
+        
+        if (masterGainNode) masterGainNode.gain.value = 0;
+        stopAllOscillators();
+        stopSequencer();
+    }
+    
+    updateAudioIcon();
+    saveSettings();
+});
+
+// Update toggle controls to use icon instead of emoji
+document.getElementById('toggleControlsBtn').innerHTML = '<span style="font-size:14px;">≡</span>';
+document.getElementById('toggleControlsBtn').classList.add(controlsPanel.classList.contains('visible') ? 'active' : '');
+
+// Update toggle controls click handler to add active class
+document.getElementById('toggleControlsBtn').addEventListener('click', function() {
+    controlsPanel.classList.toggle('visible');
+    this.classList.toggle('active');
+});
+
+
+            
+            function initCamera() {
+    console.log("Initializing camera...");
+    
+    // Safari互換性のためのビデオ要素の属性設定
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+    video.setAttribute('webkit-playsinline', ''); // Safari用
+    
+    // Safari用のプレイバック設定
+    video.autoplay = true;
+    video.playsInline = true;
+    
+    // カメラへのアクセスリクエスト - Safariに最適化
+    const constraints = { 
+        video: { 
+            width: { ideal: 320 }, 
+            height: { ideal: 240 },
+            facingMode: 'user' // 常にフロントカメラを使用
+        },
+        audio: false
+    };
+    
+    console.log("Requesting camera with constraints:", constraints);
+    
+    // 既存のストリームがあれば停止
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+    }
+    
+    return navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+            console.log("Camera access granted:", stream);
+            videoStream = stream;
+            video.srcObject = stream;
+            
+            // Safari用の再生確認
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log("Video playing successfully");
+                }).catch(error => {
+                    console.error("Error playing video:", error);
+                    // Safari用のフォールバック
+                    setTimeout(() => {
+                        video.play();
+                    }, 100);
+                });
+            }
+            
+            // 確実にビデオが読み込まれたことを確認
+            video.onloadedmetadata = () => {
+                console.log("Video metadata loaded, video size:", video.videoWidth, "x", video.videoHeight);
+                video.play().catch(e => console.error("Error playing video:", e));
+            };
+            
+            analysisCanvas.width = 320;
+            analysisCanvas.height = 240;
+            
+            // カメラ認識成功メッセージ
+            console.log("Camera successfully initialized");
+            document.getElementById('toggleCamera').textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+            document.getElementById('toggleCamera').disabled = false;
+            document.getElementById('toggleAnalysis').disabled = false;
+            
+            return true;
+        })
+        .catch(err => {
+            console.error("Camera access denied or not available:", err);
+            
+            // カメラエラーメッセージをUIに表示
+            const errorMsg = document.createElement('div');
+            errorMsg.style.position = 'absolute';
+            errorMsg.style.top = '10px';
+            errorMsg.style.left = '10px';
+            errorMsg.style.padding = '10px';
+            errorMsg.style.backgroundColor = 'rgba(255,0,0,0.7)';
+            errorMsg.style.color = 'white';
+            errorMsg.style.borderRadius = '5px';
+            errorMsg.innerHTML = 'Access to the camera is not available.<br>Check your browser settings.';
+            document.body.appendChild(errorMsg);
+            
+            // カメラが使用不可に設定
+            document.getElementById('toggleCamera').textContent = 'Camera unavailable';
+            document.getElementById('toggleCamera').disabled = true;
+            document.getElementById('toggleAnalysis').disabled = true;
+            
+            // カメラなしで続行
+            config.analyzeCamera = false;
+            return false;
+        });
+}
+    
+            
+    </script>
+</body>
+</html>

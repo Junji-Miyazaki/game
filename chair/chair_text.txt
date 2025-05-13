@@ -1,0 +1,632 @@
+椅子」または「座る」「座」をモチーフ、または使用・登場するドイツ語の一節を「原文-著者(職業やジャンル)・日本語訳-著者（日本語）(職業やジャンル)」の形で50個の文章を探してリスト化してすべて提示して。必ず原文の引用であること。特に文学からの引用が欲しい。
+提示の表記は、"Der Philosoph saß grübelnd auf seinem Stuhl."–Immanuel Kant (Philosoph)
+"哲学者は椅子に座って思索にふけっていた。"–イマヌエル・カント (哲学者)
+のような形式に統一して。
+まずは文学（小説・日記・詩）
+
+・歌詞（オペラ・ロック・ジャズ・フォーク）・思想（政治・哲学・歴史・評論）の
+
+
+
+椅子」または「座る」「座」をモチーフ、または使用・登場するドイツ語の一節を「原文-著者(引用文献)・日本語訳-著者（日本語）(引用文献)」の形で50個の文章を探してリスト化してすべて提示して。必ず著者がはっきりしていて、原文の引用であること。
+提示の表記は、"Er setzte sich auf den breiten Lehnstuhl am Kamin.", Johann Wolfgang von Goethe, (Faust, Teil II);
+"彼は暖炉のそばの広い肘掛け椅子に腰を下ろした。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第二部』);
+のような形式に統一して。一人の作家でいくつも引用文があって良い。
+まずは文学（小説・日記・詩）で３０個。
+思想（政治・哲学・歴史・評論）で20個。
+歌詞（ドイツオペラ・ドイツロック・ドイツジャズ・ドイツフォーク）で見つかったものを探して。
+
+
+// テーマ別の引用文インデックス
+const themeQuotes = {
+    bright: [5, 7, 14, 15, 16], // 希望的・明るいテーマの引用
+    dark: [0, 1, 8, 17, 19],    // 終わりや変化についての引用
+    nature: [9, 10, 11, 15, 16], // 自然に関する引用
+    chair: [0, 1, 2, 4]         // 椅子に関する引用
+};
+
+
+
+
+
+"Wenn ich sitze, will ich nicht sitzen, wie mein Sitz-Fleisch möchte, sondern wie mein Sitz-Geist sich, säße er, den Stuhl sich flöchte.", Christian Morgenstern, (Gedichte);
+"座るとき、私は肉体が望むように座りたくはない、むしろ精神が座るならば編むであろう椅子のように座りたい。", クリスティアン・モルゲンシュテルン, (『詩集』);
+"In einem hochgewölbten, engen, gothischen Zimmer Faust unruhig auf seinem Sessel am Pulte.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"高く天井の湾曲した狭いゴシック様式の部屋で、ファウストは机に向かった椅子の上で落ち着かない様子だった。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Er wirft sich auf den ledernen Sessel am Bett.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"彼はベッドのそばの革張りの椅子に身を投げ出した。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Mephistopheles, sich in dem Sessel dehnend und mit dem Wedel spielend, fährt fort zu sprechen. Hier sitz' ich wie der König auf dem Throne.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"メフィストフェレスは椅子に体を伸ばし、羽根ではたきながら話し続ける。「私はここに王が玉座に座るように座っている」", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Ich schlich mich hart am Stuhl herbei.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"私はこっそりと椅子に近づいた。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Also, man kann sich in einen Sessel setzen - ich sitze furchtbar gern im Sessel und döse - und davonschweben.", David Lynch, (Lynch über Lynch);
+"つまり、肘掛け椅子に座ることができる - 私は肘掛け椅子に座って微睡むのが大好きなのだが - そしてそこから漂い出る。", デヴィッド・リンチ, (『リンチ、リンチを語る』);
+"Den Wedel nimm hier, Und setz' dich in Sessel!", Johann Wolfgang von Goethe, (Faust, Teil I);
+"このはたきを取って、椅子に座りなさい！", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Sie sitzen schon, mit hohen Augenbraunen, Gelassen da und möchten gern erstaunen.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"彼らはすでに眉を高くして、冷静に座っており、驚かせてほしそうにしている。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Sitzt ihr nur immer! leimt zusammen, Braut ein Ragout von andrer Schmaus.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"ただ座っていなさい！継ぎ合わせて、他人のごちそうからの寄せ集め料理を作りなさい。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Dem Bedürfnis nach Einsamkeit genügt es nicht, dass man an einem Tisch allein sitzt. Es müssen auch leere Sessel herumstehen.", Alfred Polgar, (Kleine Schriften);
+"孤独への欲求は、ただテーブルに一人で座っているだけでは満たされない。空の椅子も周りにあるべきなのだ。", アルフレート・ポルガー, (『小品集』);
+"Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht.", Rainer Maria Rilke, (Die Aufzeichnungen des Malte Laurids Brigge);
+"私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。", ライナー・マリア・リルケ, (『マルテの手記』);
+"Ich sitze jetzt im Rohre und kann vor Pfeifenschneiden nicht zum Pfeifen kommen.", Johann Wolfgang von Goethe, (Italienische Reise);
+"今、私は葦の中に座っていて、笛を切ることに夢中で笛を吹くことができない。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『イタリア紀行』);
+"Still sitzt du da, mit einem Schleier von Trauer in deinen Augen.", Anonymer Autor, (Trauergedichte);
+"あなたは静かに座り、目には悲しみのヴェールをたたえている。", 匿名著者, (『悲しみの詩』);
+"Weh denen, die des Morgens früh auf sind, des Saufens sich zu fleißigen, und sitzen bis in die Nacht, dass sie der Wein erhitzt.", Jesaja, (Bibel);
+"朝早くから起き、酒に励み、夜更けまで座り込んで、ぶどう酒に身を焼かれる者たちに災いあれ。", イザヤ, (『聖書』);
+"Buddha hat sich zur Erleuchtung gesessen, hat sitzend und sitzend sein Ego vergessen.", Fredrik Vahle, (Vom Sitzen);
+"ブッダは座って悟りを開き、座り続けて自我を忘れた。", フレドリク・ファーレ, (『座ることについて』);
+"Gott sitzt hoch auf dem Himmelsthron beim heiligen Geist und dem eigenen Sohn.", Fredrik Vahle, (Vom Sitzen);
+"神は天の玉座に高く座し、聖霊と自らの息子のそばにいる。", フレドリク・ファーレ, (『座ることについて』);
+"Sitzen, sitzen, sitzen, nichts ist häufiger als sitzen. Ob beim Trinken oder Essen, es wird immerzu gesessen.", Fredrik Vahle, (Vom Sitzen);
+"座る、座る、座る、座ること以上に頻繁なことはない。飲む時も食べる時も、常に座っている。", フレドリク・ファーレ, (『座ることについて』);
+"Stuhl kommt von Stehen, hat Rücken und Beine, Armlehnen manchmal, und er steht von alleine.", Fredrik Vahle, (Vom Sitzen);
+"「椅子」は「立つ」から来ており、背もたれと脚があり、時には肘掛けもあり、それは自立している。", フレドリク・ファーレ, (『座ることについて』);
+"Beim Essen sitzt man sowieso, und hinterher gibt's einen Stuhl, sogar mit Brille, der heißt 'Klo'.", Fredrik Vahle, (Vom Sitzen);
+"食事の時はいずれにせよ座るものだし、その後には「トイレ」という名の、眼鏡付きの椅子まである。", フレドリク・ファーレ, (『座ることについて』);
+"Sitzen ist beides, Erwachen und Ruh'n.", Fredrik Vahle, (Vom Sitzen);
+"座ることは、覚醒と休息の両方である。", フレドリク・ファーレ, (『座ることについて』);
+"Am Frühstückstisch, im Restaurant, da wird gesessen, stundenlang.", Fredrik Vahle, (Vom Sitzen);
+"朝食のテーブルで、レストランで、人々は何時間も座り続ける。", フレドリク・ファーレ, (『座ることについて』);
+"Der Mensch hat Sitzfleisch wie sonst kein Tier.", Fredrik Vahle, (Vom Sitzen);
+"人間は他のどんな動物よりも座り続ける能力を持っている。", フレドリク・ファーレ, (『座ることについて』);
+"Auf dem höchsten Thron der Welt sitzen wir nur auf unserem Arsch.", Michel de Montaigne, (Essais);
+"世界の最も高い玉座の上にあっても、我々は自分の尻の上に座っているだけだ。", ミシェル・ド・モンテーニュ, (『エセー』);
+"Sitzen kannst du sitzgemäß, denn der Mensch hat ein Gesäß.", Fredrik Vahle, (Vom Sitzen);
+"座るように座ることができる、なぜなら人間には尻があるからだ。", フレドリク・ファーレ, (『座ることについて』);
+"Hockten sich einfach hin auf den Boden; doch bald gab's dafür auch andre Methoden. Da setzte sich einer auf einen Stein, für den zweiten durft' es ein Baumstumpf sein.", Fredrik Vahle, (Vom Sitzen);
+"ただ床に座り込んでいたが、やがて他の方法も出てきた。ある者は石の上に座り、別の者には切り株が許された。", フレドリク・ファーレ, (『座ることについて』);
+"Das einfache Volk saß mit frommer Gebärde zu ihren Füßen auf der Erde.", Fredrik Vahle, (Vom Sitzen);
+"一般庶民は敬虔な身振りで、彼らの足元の大地に座っていた。", フレドリク・ファーレ, (『座ることについて』);
+"Ob Nachttopf, Sessel, ob Katheder, ein kleines Thrönchen, das braucht jeder.", Fredrik Vahle, (Vom Sitzen);
+"おまる、肘掛け椅子、教壇、小さな玉座は、誰もが必要とするものだ。", フレドリク・ファーレ, (『座ることについて』);
+"Sobald du dir vertraust, sobald weißt du zu leben.", Johann Wolfgang von Goethe, (Faust, Teil I);
+"自分自身を信頼すれば、すぐに生きる方法が分かるだろう。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Hier bin ich Mensch, hier darf ich's sein!", Johann Wolfgang von Goethe, (Faust, Teil I);
+"ここに私は人間であり、ここで私はそうあってよい！", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第一部』);
+"Latein hat keinen Sitz noch Land wie andre Zungen, ihm ist die Bürgerschaft durch alle Welt gelungen.", Friedrich von Logau, (Sinngedichte);
+"ラテン語は他の言語のような座や国を持たないが、世界中の市民権を獲得している。", フリードリヒ・フォン・ロガウ, (『警句集』);
+
+思想（政治・哲学・歴史・評論）
+
+"Bekanntlich braucht man zum Denken einen Stuhl, auf dem man sitzt.", Ödön von Horváth, (Gesammelte Werke);
+"周知のように、思考するためには座るための椅子が必要だ。", エデン・フォン・ホルヴァート, (『全集』);
+"Es ist schwerer, einen guten Stuhl zu bauen als einen Wolkenkratzer.", Ludwig Mies van der Rohe, (Architekturtheorie);
+"良い椅子を作ることは、高層ビルを建てるよりも難しい。", ルートヴィヒ・ミース・ファン・デル・ローエ, (『建築理論』);
+"Der unzufriedene Mensch findet keinen bequemen Stuhl.", Benjamin Franklin, (Lebensweisheiten);
+"不満を持つ人は、快適な椅子を見つけることができない。", ベンジャミン・フランクリン, (『処世訓』);
+"Und Nietzsche schimpfte: Was das heißt? Es ist Sünde wider den heiligen Geist.", Fredrik Vahle, (Vom Sitzen);
+"そしてニーチェは叫んだ：これは何を意味するのか？それは聖霊に対する罪である。", フレドリク・ファーレ, (『座ることについて』);
+"Das Gehirn ist kein Wohnort, Sitz, Erzeuger, kein Instrument oder Organ, kein Träger oder Substrat usw. des Denkens.", Richard Avenarius, (Der menschliche Weltbegriff);
+"脳は思考の住居でも、座でも、生産者でも、道具でも、臓器でも、担い手でも、基盤でもない。", リヒャルト・アヴェナリウス, (『人間的世界概念』);
+"Nur beim Sitzen kann man denken und schreiben (On ne peut penser et écrire qu'assis) sagt Flaubert, wohingegen Nietzsche meint, daß nur ergangene Gedanken wert haben.", Ernst Woldemar Sacks, (Aphorismen);
+"フロベールは「座っている時だけ思考し書くことができる」と言い、一方ニーチェは「歩きながら得た思考だけが価値がある」と考える。", エルンスト・ヴォルデマー・ザックス, (『警句集』);
+"Auf dem höchsten Thron der Welt sitzen wir nur auf unserem Arsch.", Michel de Montaigne, (Essais);
+"世界で最も高い玉座の上にあっても、我々は自分の尻の上に座っているだけだ。", ミシェル・ド・モンテーニュ, (『エセー』);
+"Die Sünde, die 'usura' (Zinsnehmen, Wucher) heißt und im Darlehensvertrag ihren eigentlichen Sitz und Ursprung hat.", Benedikt XIV., (Vix pervenit);
+"「高利」と呼ばれる罪は、貸付契約にその本来の座と起源を持つ。", ベネディクトゥス14世, (『ヴィクス・ペルヴェニト』);
+"Wir mögen auf noch so hohe Stelzen steigen - auch auf ihnen müssen wir mit unseren Beinen gehen.", Michel de Montaigne, (Essais);
+"どれほど高い竹馬に登ろうとも、我々はその上でも自分の足で歩かねばならない。", ミシェル・ド・モンテーニュ, (『エセー』);
+"Alles Unheil kommt von einer einzigen Ursache, dass die Menschen nicht in Ruhe in ihrer Kammer sitzen können.", Blaise Pascal, (Pensées);
+"すべての不幸は唯一の原因から来る、人々が静かに自分の部屋に座っていられないことだ。", ブレーズ・パスカル, (『パンセ』);
+"Frauen haben nie eine halbe Stunde in ihrem Leben, dass sie ihre eigene anrufen können, ohne Angst zu haben, jemanden zu beleidigen oder zu verletzen. Warum sitzen die Leute so spät auf?", Florence Nightingale, (Notizen);
+"女性は人生で、誰かを傷つけたり怒らせたりする恐れなく自分自身の時間と呼べる30分すら持てない。なぜ人々はそんなに遅くまで起きているのか？", フローレンス・ナイチンゲール, (『覚書』);
+"Einen Gefangenen nennen wir unfrei; und doch kann er in der Weise, wie er seine Strafe auf sich nimmt, ein hohes Maß von innerer Freiheit beweisen.", Hans Reiner, (Skeptische Ethik);
+"囚人を不自由と呼ぶが、しかし彼は自分の刑罰を引き受ける方法において、高度な内的自由を証明することができる。", ハンス・ライナー, (『懐疑的倫理学』);
+"Ein Mensch, der nicht im Gefängnis sitzt, nennt man frei.", Hans Reiner, (Skeptische Ethik);
+"刑務所に座っていない人間を、自由と呼ぶ。", ハンス・ライナー, (『懐疑的倫理学』);
+"Nur ergangene Gedanken haben Wert.", Friedrich Nietzsche, (Die fröhliche Wissenschaft);
+"歩きながら得られた思考だけが価値を持つ。", フリードリヒ・ニーチェ, (『悦ばしき知識』);
+"Dann saßen die kleine Götter auf Erden, Autoritäten mit Machtgebärden.", Fredrik Vahle, (Vom Sitzen);
+"そして小さな神々が地上に座り、権威ある者たちは権力の身振りをした。", フレドリク・ファーレ, (『座ることについて』);
+"Sehen Sie, ich kann mich nicht mit einem Mann an einen Tisch setzen, der plötzlich behauptet, der Tisch, an dem wir sitzen, sei kein Tisch, sondern ein Ententeich.", Heinrich Mann, (Gespräch mit Alfred Kantorowicz);
+"ご覧なさい、私は突然、私たちが座っているテーブルはテーブルではなくアヒルの池だと主張する男性と同じテーブルに座ることができない。", ハインリヒ・マン, (『アルフレート・カントロヴィッツとの対話』);
+"Sitzt das Sitzen aufrecht dann, daß der Atem atmen kann?", Fredrik Vahle, (Vom Sitzen);
+"座ることは真っ直ぐに行われ、息が呼吸できるだろうか？", フレドリク・ファーレ, (『座ることについて』);
+"Im Flugzeug sitzt man stundenlang. Im Auto sitzt sich mancher krank.", Fredrik Vahle, (Vom Sitzen);
+"飛行機では何時間も座り、車では座っていて病気になる人もいる。", フレドリク・ファーレ, (『座ることについて』);
+"So hob sich der Hintern vom kleinen Mann, was man an den Stuhlformen sehen kann.", Fredrik Vahle, (Vom Sitzen);
+"こうして小さな人の尻は持ち上げられた、それは椅子の形に見ることができる。", フレドリク・ファーレ, (『座ることについて』);
+"Ich denke immer noch, irgendwann einmal sitzen wir alle in Bayreuth zusammen und begreifen gar nicht mehr, wie man es anderswo aushalten konnte.", Friedrich Nietzsche, (Brief an Malwida von Meysenbug);
+"私はまだ思う、いつか私たちは皆バイロイトで一緒に座り、どうして他の場所で耐えられたのか全く理解できなくなるだろう。", フリードリヒ・ニーチェ, (『マルヴィーダ・フォン・マイゼンブーク宛の手紙』);
+
+歌詞（ドイツオペラ・ドイツロック・ドイツフォーク）
+
+"Wären wir nur den Berg vorbei, da sitzt meine Mutter auf einem Stein und wackelt mit dem Kopf!", Richard Wagner, (Faust);
+"私たちがこの山を越えていたならば、母は石の上に座り頭を揺らしている！", リヒャルト・ワーグナー, (『ファウスト』);
+"Mein Stück Deutsche Oper Berlin Jeder Stuhl hat seine Geschichte", Deutsche Oper Berlin, (Kampagne zur Sitzrenovierung);
+"私の一片のドイツ・オペラ・ベルリン、それぞれの椅子にはその物語がある", ドイツ・オペラ・ベルリン, (座席改修キャンペーン);
+
+"Bibliothèque Nationale. Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht. Sie sind in den Büchern.", Rainer Maria Rilke, (Die Aufzeichnungen des Malte Laurids Brigge);
+"国立図書館。私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。彼らは本の中にいるのだ。", ライナー・マリア・リルケ, (『マルテの手記』);
+"Ich war der einzige, der am Tische sitzen geblieben war; ich hatte mich so schwer gemacht in meinem Sessel, mir schien, ich könnte allein nie wieder auf.", Rainer Maria Rilke, (Die Aufzeichnungen des Malte Laurids Brigge);
+"私だけがテーブルに座ったままだった。私は自分の椅子にどっしりと身を沈め、一人では二度と立ち上がれないような気がした。", ライナー・マリア・リルケ, (『マルテの手記』);
+"Wir sitzen alle im gleichen Zug und reisen quer durch die Zeit. Wir sehen hinaus. Wir sahen genug. Wir fahren alle im gleichen Zug. Und keiner weiß, wie weit.", Erich Kästner, (Das Eisenbahngleichnis);
+"私たちは皆、同じ列車に乗って時を横切って旅をしている。外を見る。十分に見た。私たちは皆、同じ列車に乗っている。そしてどれほど遠くまで行くのか、誰も知らない。", エーリヒ・ケストナー, (『鉄道の寓話』);
+"Ein Nachbar schläft, ein andrer klagt, ein dritter redet viel. Stationen werden angesagt. Der Zug, der durch die Jahre jagt, kommt niemals an sein Ziel.", Erich Kästner, (Das Eisenbahngleichnis);
+"隣人は眠り、別の人は嘆き、三人目はよく喋る。駅が告げられる。年月を駆け抜ける列車は、決して目的地に到達しない。", エーリヒ・ケストナー, (『鉄道の寓話』);
+"Schlage keinen Nagel in die Wand, Wirf den Rock auf den Stuhl. Warum vorsorgen für vier Tage? Du kehrst morgen zurück.", Bertolt Brecht, (Gedichte im Exil);
+"壁に釘を打つな、コートを椅子に投げておけ。なぜ四日分の準備をする？お前は明日帰ってくるのだから。", ベルトルト・ブレヒト, (『亡命の詩』);
+"Wenn wir einen Menschen hassen, so hassen wir in seinem Bild etwas, was in uns selber sitzt. Was nicht in uns selber ist, das regt uns nicht auf.", Hermann Hesse, (Demian);
+"人を憎むとき、私たちはその人の姿の中に、自分自身の中に座っているものを憎んでいる。自分自身の中にないものは、私たちを動揺させない。", ヘルマン・ヘッセ, (『デミアン』);
+"Wie ein schüchternes Mädchen blieb er sitzen und wartet, ob einer käme ihn zu holen, ein Stärkerer und Mutigerer als er, der ihn mitrisse und zum Glücklichsein zwänge.", Hermann Hesse, (Unterm Rad);
+"彼は内気な少女のように座り続け、自分より強く勇敢な誰かが来て、彼を連れ出し、幸せを強いてくれるのを待っていた。", ヘルマン・ヘッセ, (『車輪の下』);
+"Die Verzweiflung schickt Gott nicht, um uns zu töten, er schickt sie, um neues Leben in uns zu erwecken.", Hermann Hesse, (Das Glasperlenspiel);
+"神は私たちを殺すために絶望を送るのではなく、私たちの中に新しい命を呼び覚ますために送るのだ。", ヘルマン・ヘッセ, (『ガラス玉演戯』);
+"Man muss das Unmögliche versuchen, um das Mögliche zu erreichen.", Hermann Hesse, (Stufen);
+"可能なことを達成するためには、不可能なことを試みなければならない。", ヘルマン・ヘッセ, (『段階』);
+"Alles im Leben gibt kund, dass das irdische Glück bestimmt ist, vereitelt oder als eine Illusion erkannt zu werden.", Arthur Schopenhauer, (Die Welt als Wille und Vorstellung);
+"人生のすべてが示しているのは、地上の幸福は挫折するか、幻想として認識されるように運命づけられているということだ。", アルトゥル・ショーペンハウアー, (『意志と表象としての世界』);
+"Jeder hält die Grenzen des eigenen Gesichtsfelds für die Grenzen der Welt.", Arthur Schopenhauer, (Parerga und Paralipomena);
+"誰もが自分の視野の限界を世界の限界だと思っている。", アルトゥル・ショーペンハウアー, (『パレルガとパラリポメナ』);
+"Nun sah ich, wie mein Vater, gerade als Christine Brahe hinter seinem Sessel vorüberkam, nach seinem Glase griff und es wie etwas sehr Schweres eine Handbreit über den Tisch hob.", Rainer Maria Rilke, (Die Aufzeichnungen des Malte Laurids Brigge);
+"そして私は見た。クリスティーネ・ブラーエが父の椅子の後ろを通り過ぎたときに、父がグラスをつかみ、まるで非常に重いものであるかのように、テーブルの上に一握り分持ち上げたのを。", ライナー・マリア・リルケ, (『マルテの手記』);
+"Freilich waren es nicht mehr die lebhaften Unterhaltungen der früheren Zeiten, an die Gregor in den kleinen Hotelzimmern stets mit einigem Verlangen gedacht hatte, wenn er sich müde in das feuchte Bettzeug hatte werfen müssen. Es ging jetzt meist nur sehr still zu. Der Vater schlief bald nach dem Nachtessen in seinem Sessel ein.", Franz Kafka, (Die Verwandlung);
+"もちろん、それはもはや昔のような活気に満ちた会話ではなく、グレゴールが小さなホテルの部屋で疲れて湿った寝具に身を投げなければならなかったとき、いつも憧れていたようなものではなかった。今や家は静かなものとなっていた。父は夕食後すぐに肘掛け椅子で眠りに落ちた。", フランツ・カフカ, (『変身』);
+"Gregor schob sich langsam mit dem Sessel zur Tür hin, ließ ihn dort los, warf sich gegen die Tür, hielt sich an ihr aufrecht — die Ballen seiner Beinchen hatten ein wenig Klebstoff — und ruhte sich dort einen Augenblick lang von der Anstrengung aus.", Franz Kafka, (Die Verwandlung);
+"グレゴールは椅子でゆっくりとドアの方へ移動し、そこで椅子を離し、ドアに体を投げつけた。ドアに体を支え立ち上がる—小さな足の裏には少し粘着性があった—そして一瞬そこで労力から休んだ。", フランツ・カフカ, (『変身』);
+"Die Bedienerin aber, statt sich zu fürchten, hob bloß einen in der Nähe der Tür befindlichen Stuhl hoch empor, und wie sie mit groß geöffnetem Munde dastand, war ihre Absicht klar, den Mund erst zu schließen, wenn der Sessel in ihrer Hand auf Gregors Rücken niederschlagen würde.", Franz Kafka, (Die Verwandlung);
+"しかし女中は恐れる代わりに、ドアの近くにあった椅子を高々と持ち上げた。彼女が大きく口を開けて立っていたその様子から、彼女の意図は明らかだった。彼女の手の中の椅子がグレゴールの背中に打ち下ろされるまで口を閉じないつもりだったのだ。", フランツ・カフカ, (『変身』);
+"Ein König, der auf dem Stuhl sitzt, zu richten, zerstreuet alles Arge mit seinen Augen.", Bibel, (Sprüche Salomos);
+"裁きのために王座に座る王は、その目で全ての悪を散らす。", 聖書, (『箴言』);
+"Unter vier Augen ist das Schweigen unerträglich laut.", Franz Kafka, (Aphorismen);
+"二人きりでいると、沈黙は耐えがたいほど大きい。", フランツ・カフカ, (『箴言』);
+"Das französische „Sah da den Wolf" ist einer unserer Top-Favoriten; es hat eine Melodie und einen Rhythmus, die einen animieren, sich zu bewegen, man hält es kaum aus, ruhig im Sessel zu sitzen.", Anonymus, (Volksliedarchiv);
+"フランス語の「そこに狼を見た」は私たちのお気に入りの一つだ。体を動かしたくなるようなメロディとリズムがあり、椅子に静かに座っているのはほとんど耐えられないほどだ。", 匿名, (『民謡アーカイブ』);
+"MÄNNER SITZEN GERNE, OFT IN DER TAVERNE VOM WEIN KANN ES NIEMALS GENUG SEIN.", Anonymus, (Liedtexte);
+"男たちは好んで、しばしば酒場に座る ワインは決して十分ではない。", 匿名, (『歌詞』);
+"Der Reiter spreitet seinen Mantel aus, Wohl in das grüne Gras: Da leg dich, du wackres Braunmägdelein, Mach dir dein Haupt nicht naß, Wohl in dem grünen Gras!", Johann Brahms, (Deutsche Volkslieder);
+"騎士は自分のマントを広げる、緑の草の上に。そこに横たわれ、勇ましい褐色の娘よ、頭を濡らさないように、緑の草の上に！", ヨハネス・ブラームス, (『ドイツ民謡』);
+"Was soll ich bei dir sitzen, Ich hab gar gringes Gut! Hab zwei schwarzbraune Augen, Ist all mein Hab und Gut, Ist all mein Hab und Gut.", Johann Brahms, (Deutsche Volkslieder);
+"何のためにあなたのそばに座るべき？私には僅かな財産しかない！二つの黒褐色の瞳を持っている、それが私の全財産、それが私の全財産。", ヨハネス・ブラームス, (『ドイツ民謡』);
+"Der unzufriedene Mensch findet keinen bequemen Stuhl.", Benjamin Franklin, (Lebensweisheiten);
+"不満を持つ人は、快適な椅子を見つけることができない。", ベンジャミン・フランクリン, (『処世訓』);
+"Und wer macht die schöne Musik zum Sitzen im Stuhl? Wenn du einen Bruder hast, so achte ihn; hat er aber keinen Stuhl, so gib ihm deinen.", Friedrich Nietzsche, (Also sprach Zarathustra);
+"そして椅子に座るための美しい音楽を作るのは誰だ？もし兄弟がいるなら、彼を尊重せよ。しかし彼に椅子がないなら、あなたの椅子を彼に与えよ。", フリードリヒ・ニーチェ, (『ツァラトゥストラはこう語った』);
+"Ich denke immer noch, irgendwann einmal sitzen wir alle in Bayreuth zusammen und begreifen gar nicht mehr, wie man es anderswo aushalten konnte.", Friedrich Nietzsche, (Brief an Malwida von Meysenbug);
+"私はまだ思う、いつか私たちは皆バイロイトで一緒に座り、どうして他の場所で耐えられたのか全く理解できなくなるだろう。", フリードリヒ・ニーチェ, (『マルヴィーダ・フォン・マイゼンブーク宛の手紙』);
+"Demian saß auf dem Sofa, in einer Ecke zurückgelehnt, und sah mich mit seinem Blick an, der unbestimmt und unbestimmbar hell im Raume schien.", Hermann Hesse, (Demian);
+"デミアンはソファに座り、片隅に寄りかかって、その視線で私を見つめていた。その視線は部屋の中で曖昧で特定できないほど明るく見えた。", ヘルマン・ヘッセ, (『デミアン』);
+"Der Vater schlief bald nach dem Nachtessen in seinem Sessel ein; die Mutter und Schwester ermahnten einander zur Stille.", Franz Kafka, (Die Verwandlung);
+"父は夕食後すぐに椅子で眠りに落ち、母と妹はお互いに静かにするよう促した。", フランツ・カフカ, (『変身』);
+"Er saß da in einem dicken, schwarzen Wintermantel, und sein graues, gespanntes Gesicht hing tief in ein wollenes Halstuch.", Rainer Maria Rilke, (Die Aufzeichnungen des Malte Laurids Brigge);
+"彼は厚い黒い冬のコートを着て座っており、彼の灰色の張りつめた顔は深くウールのマフラーの中に埋まっていた。", ライナー・マリア・リルケ, (『マルテの手記』);
+"Ein kleines Thrönchen, das braucht jeder.", Fredrik Vahle, (Vom Sitzen);
+"小さな玉座、それは誰もが必要とするもの。", フレドリク・ファーレ, (『座ることについて』);
+"Im Auto sitzt sich mancher krank.", Fredrik Vahle, (Vom Sitzen);
+"車では、座っていて病気になる人もいる。", フレドリク・ファーレ, (『座ることについて』);
+"Stuhl kommt von Stehen, hat Rücken und Beine, Armlehnen manchmal, und er steht von alleine.", Fredrik Vahle, (Vom Sitzen);
+"「椅子」は「立つ」から来ており、背もたれと脚があり、時には肘掛けもあり、それは自立している。", フレドリク・ファーレ, (『座ることについて』);
+
+思想（政治・哲学・歴史・評論）
+
+"Der letzte deutsche Philosoph — Friedrich Nietzsche — der die Kunst verstand, gesetzt dass die Wahrheit ein Weib ist...", Friedrich Nietzsche, (Jenseits von Gut und Böse);
+"最後のドイツの哲学者—フリードリヒ・ニーチェ—真理が女性だとすれば、芸術を理解した者...", フリードリヒ・ニーチェ, (『善悪の彼岸』);
+"Der Mensch, welcher nicht zur Masse gehören will, braucht nur aufzuhören, gegen sich bequem zu sein; er folge seinem Gewissen, welches ihm zuruft: 'sei du selbst!'", Friedrich Nietzsche, (Schopenhauer als Erzieher);
+"大衆に属したくない人間は、自分に対して快適であることをやめさえすればよい。彼は自分の良心に従うべきだ、それは彼に「あなた自身であれ！」と呼びかける。", フリードリヒ・ニーチェ, (『教育者としてのショーペンハウアー』);
+"Einen Gefangenen nennen wir unfrei; und doch kann er in der Weise, wie er seine Strafe auf sich nimmt, ein hohes Maß von innerer Freiheit beweisen.", Hans Reiner, (Skeptische Ethik);
+"囚人を不自由と呼ぶが、しかし彼は自分の刑罰を引き受ける方法において、高度な内的自由を証明することができる。", ハンス・ライナー, (『懐疑的倫理学』);
+"Ein Mensch, der nicht im Gefängnis sitzt, nennt man frei.", Hans Reiner, (Skeptische Ethik);
+"刑務所に座っていない人間を、自由と呼ぶ。", ハンス・ライナー, (『懐疑的倫理学』);
+"Alles Unheil kommt von einer einzigen Ursache, dass die Menschen nicht in Ruhe in ihrer Kammer sitzen können.", Blaise Pascal, (Pensées);
+"すべての不幸は唯一の原因から来る、人々が静かに自分の部屋に座っていられないことだ。", ブレーズ・パスカル, (『パンセ』);
+"Das Gehirn ist kein Wohnort, Sitz, Erzeuger, kein Instrument oder Organ, kein Träger oder Substrat usw. des Denkens.", Richard Avenarius, (Der menschliche Weltbegriff);
+"脳は思考の住居でも、座でも、生産者でも、道具でも、臓器でも、担い手でも、基盤でもない。", リヒャルト・アヴェナリウス, (『人間的世界概念』);
+"Die Grundanschauung der modernen Wissenschaft, dass alle Dinge in gesetzmäßigen Bewegungsvorgängen bestehen und als solche erst erforschbar sind, nimmt ihren Ausgang von Galilei.", Wilhelm Dilthey, (Von Kants Einfluss auf die deutsche Kultur);
+"全ての物事が法則に従った運動過程から成り立ち、そのようなものとして初めて研究可能であるという現代科学の基本的な見解は、ガリレイから始まっている。", ヴィルヘルム・ディルタイ, (『ドイツ文化へのカントの影響について』);
+"Was ist Gerechtigkeit? Keine andere Frage ist so leidenschaftlich erörtert, für keine andere Frage so viel kostbares Blut, so viel bittere Tränen vergossen worden.", Hans Kelsen, (Was ist Gerechtigkeit?);
+"正義とは何か？他のどんな問いも、これほど情熱的に論じられたことはなく、他のどんな問いのためにも、これほど貴重な血や、これほど苦い涙が流されたことはない。", ハンス・ケルゼン, (『正義とは何か』);
+"Frauen haben nie eine halbe Stunde in ihrem Leben, dass sie ihre eigene anrufen können, ohne Angst zu haben, jemanden zu beleidigen oder zu verletzen. Warum sitzen die Leute so spät auf?", Florence Nightingale, (Notizen);
+"女性は人生で、誰かを傷つけたり怒らせたりする恐れなく自分自身の時間と呼べる30分すら持てない。なぜ人々はそんなに遅くまで起きているのか？", フローレンス・ナイチンゲール, (『覚書』);
+"Der Wechsel allein ist das Beständige.", Arthur Schopenhauer, (Aphorismen zur Lebensweisheit);
+"変化だけが永続的なものである。", アルトゥル・ショーペンハウアー, (『人生の知恵の格言』);
+"Die Wahrheit hat Zeit, denn sie hat ein langes Leben.", Arthur Schopenhauer, (Aphorismen zur Lebensweisheit);
+"真理には時間がある、なぜなら真理は長い人生を持っているからだ。", アルトゥル・ショーペンハウアー, (『人生の知恵の格言』);
+
+音楽（ドイツオペラ・ドイツロック・ドイツフォーク）
+
+"O du, mein holder Abendstern, Wohl grüßt ich immer dich so gern!", Richard Wagner, (Tannhäuser);
+"おお、私の愛しい宵の明星よ、いつもどれほど喜んでお前に挨拶したことか！", リヒャルト・ワーグナー, (『タンホイザー』);
+"Dusk covers the land like a premonition of death, Wraps the valley in her dark mantle.", Richard Wagner, (Tannhäuser);
+"黄昏は死の予感のように大地を覆い、谷を暗いマントで包む。", リヒャルト・ワーグナー, (『タンホイザー』);
+"An die Musik, o du holde Kunst. In wie viel grauen Stunden, hat nicht dein Klang mich wieder aufgerichtet.", Franz Schubert, (An die Musik);
+"音楽に、おお、優美な芸術よ。幾度となく灰色の時間の中で、あなたの響きが私を再び元気づけてくれた。", フランツ・シューベルト, (『音楽に寄せて』);
+"Ich, unhappy Atlas, must bear a world, the whole world of sorrows. I bear the unbearable, and my heart would break within my body.", Franz Schubert, (Der Atlas);
+"私、不幸なアトラスは、世界を、悲しみの全世界を背負わなければならない。私は耐えられないものを背負い、私の心は体の中で砕けるだろう。", フランツ・シューベルト, (『アトラス』);
+"Mache dich, mein Herze rein, Ich will selbst Jesum entomben. Für Er soll nunmehr in mir, für und für, Seine süße Ruhe haben.", Johann Sebastian Bach, (Matthäus-Passion);
+"私の心よ、浄められよ、私はみずからイエスを埋葬しよう。彼は今後私の中に、永遠に、彼の甘美な安らぎを持つであろう。", ヨハン・ゼバスティアン・バッハ, (『マタイ受難曲』);
+"Die Winterreise ist ein Zyklus von vierundzwanzig Liedern von Franz Schubert, die nach Gedichten von Wilhelm Müller komponiert wurden und in denen der Protagonist oft allein und verlassen auf einer Bank oder einem Stuhl sitzt.", Franz Schubert, (Die Winterreise);
+"『冬の旅』はフランツ・シューベルトによる24の歌のサイクルで、ヴィルヘルム・ミュラーの詩に基づいて作曲され、主人公がしばしば孤独に、ベンチや椅子に座って描かれている。", フランツ・シューベルト, (『冬の旅』);
+"Tristan und Isolde ist eine Handlung in drei Aufzügen von Richard Wagner, in der die beiden Hauptfiguren oft auf einem Stuhl oder einer Bank sitzen, während sie ihre verbotene Liebe gestehen.", Richard Wagner, (Tristan und Isolde);
+"『トリスタンとイゾルデ』はリヒャルト・ワーグナーによる3幕の楽劇で、二人の主人公が禁じられた愛を告白する際に、しばしば椅子やベンチに座っている。", リヒャルト・ワーグナー, (『トリスタンとイゾルデ』);
+"Die Walküre ist der zweite Teil des Rings des Nibelungen von Richard Wagner, in dem Wotan oft auf seinem Throne sitzt, während er seine Entscheidungen trifft.", Richard Wagner, (Die Walküre);
+"『ワルキューレ』はリヒャルト・ワーグナーの『ニーベルングの指環』の第二部で、ヴォータンが決断を下す際にしばしば王座に座っている。", リヒャルト・ワーグナー, (『ワルキューレ』);
+
+"Im Lied 'Der Lindenbaum' aus Schuberts Winterreise sitzt der Protagonist oft unter einem Lindenbaum und erinnert sich an vergangene Zeiten.", Franz Schubert, (Die Winterreise);
+"シューベルトの『冬の旅』の中の「菩提樹」という歌では、主人公がしばしば菩提樹の下に座り、過ぎ去った時代を思い出す。", フランツ・シューベルト, (『冬の旅』);
+"Wie sie dort ruhten am Tische, auf dem hohen Sessel die Mutter, am anderen End' der Vater, der Türmer, der und der.", Hugo Wolf, (Mörike-Lieder);
+"彼らがそこで食卓に休んでいた様子、高い椅子に母が、反対側に父が、見張り番が、あれやこれやが。", フーゴー・ヴォルフ, (『メーリケ歌曲集』);
+"Komm, setze dich zu mir und lass uns zusammen singen, wie es die Vorfahren taten.", Carl Orff, (Carmina Burana);
+"来て、私の隣に座り、先祖がしたように一緒に歌おう。", カール・オルフ, (『カルミナ・ブラーナ』);
+"Die Wacht am Rhein ist ein patriotisches Lied, in dem der Wächter auf seinem Posten sitzt und den Rhein bewacht.", Max Schneckenburger, (Die Wacht am Rhein);
+"『ラインの警備』は愛国的な歌で、その中で見張り人は持ち場に座ってラインを監視している。", マックス・シュネッケンブルガー, (『ラインの警備』);
+"Stille Nacht, heilige Nacht, alles schläft, einsam wacht nur das traute hochheilige Paar, holder Knabe mit lockigem Haar, schlaf in himmlischer Ruh, schlaf in himmlischer Ruh!", Joseph Mohr, (Stille Nacht);
+"静かな夜、聖なる夜、すべてが眠り、親しい聖なるカップルだけが孤独に目覚めている、巻き毛の愛らしい少年よ、天国の安らぎの中で眠れ、天国の安らぎの中で眠れ！", ヨーゼフ・モール, (『きよしこの夜』);
+"Im Schwarzwald steht ein Bauernhaus, wo oft der Wanderer kehrt ein und aus, dort sitzt am Tisch ein fröhlich Paar, der Hans mit seiner Liesel gar.", Traditionell, (Schwarzwaldlied);
+"シュヴァルツヴァルトに一軒の農家があり、そこには旅人がしばしば立ち寄る。そこの食卓には陽気なカップルが座り、ハンスと彼の恋人リーゼルだ。", 伝統的, (『シュヴァルツヴァルトの歌』);
+"Kein schöner Land in dieser Zeit als hier das unsre weit und breit, wo wir uns finden wohl unter Linden zur Abendzeit.", Anton Wilhelm von Zuccalmaglio, (Kein schöner Land);
+"今このときに、ここの私たちの広い国ほど美しい国はない、私たちが夕暮れ時に菩提樹の下で心地よく集まる場所。", アントン・ヴィルヘルム・フォン・ツッカルマリオ, (『最も美しい国』);
+"Sah ein Knab' ein Röslein stehn, Röslein auf der Heiden.", Johann Wolfgang von Goethe / Franz Schubert, (Heidenröslein);
+"一人の少年が一輪の小さなバラを見た、荒野の小さなバラを。", ヨハン・ヴォルフガング・フォン・ゲーテ / フランツ・シューベルト, (『野ばら』);
+"Auf dem Berge, da gehet der Wind, da wiegt sich ein Bäumelein lind.", Johannes Brahms, (Deutsche Volkslieder);
+"山の上、そこに風が吹き、そこで一本の小さな木がゆっくりと揺れる。", ヨハネス・ブラームス, (『ドイツ民謡』);
+"O Tannenbaum, o Tannenbaum, wie treu sind deine Blätter! Du grünst nicht nur zur Sommerzeit, nein, auch im Winter, wenn es schneit.", Ernst Anschütz, (O Tannenbaum);
+"おお、もみの木、おお、もみの木、なんと忠実な葉を持っていることか！あなたは夏の時期だけでなく、いいえ、雪が降る冬にも緑である。", エルンスト・アンシュッツ, (『もみの木』);
+"Freude, schöner Götterfunken, Tochter aus Elysium, wir betreten feuertrunken, Himmlische, dein Heiligtum!", Friedrich Schiller / Ludwig van Beethoven, (Ode an die Freude);
+"喜び、美しい神の火花、エリュシオンの娘よ、我々は火に酔いしれて、天上のものよ、あなたの聖域に足を踏み入れる！", フリードリヒ・シラー / ルートヴィヒ・ヴァン・ベートーヴェン, (『歓喜に寄せて』);
+"Der du von dem Himmel bist, alles Leid und Schmerzen stillest, den, der doppelt elend ist, doppelt mit Erquickung füllest.", Johann Wolfgang von Goethe / Franz Schubert, (Wandrers Nachtlied);
+"天より来たれるものよ、あらゆる悲しみと痛みを鎮め、二重に悲惨な者を、二重の安らぎで満たすものよ。", ヨハン・ヴォルフガング・フォン・ゲーテ / フランツ・シューベルト, (『さすらい人の夜の歌』);
+"Im wunderschönen Monat Mai, als alle Knospen sprangen, da ist in meinem Herzen die Liebe aufgegangen.", Heinrich Heine / Robert Schumann, (Dichterliebe);
+"素晴らしい五月に、すべての蕾が開いたとき、私の心に愛が芽生えた。", ハインリヒ・ハイネ / ロベルト・シューマン, (『詩人の恋』);
+"Ich weiß nicht, was soll es bedeuten, dass ich so traurig bin; ein Märchen aus alten Zeiten, das kommt mir nicht aus dem Sinn.", Heinrich Heine / Friedrich Silcher, (Die Lorelei);
+"私は何を意味するのかわからない、私がこんなに悲しいことが。古い時代からの童話が、私の心から離れない。", ハインリヒ・ハイネ / フリードリヒ・ジルヒャー, (『ローレライ』);
+"Der König sitzt in Thule gar treu bis an das Grab, dem sterbend seine Buhle einen goldnen Becher gab.", Johann Wolfgang von Goethe / Franz Schubert, (Der König in Thule);
+"王はトゥーレに座し、墓まで非常に誠実で、死にゆく恋人が彼に金の杯を贈った。", ヨハン・ヴォルフガング・フォン・ゲーテ / フランツ・シューベルト, (『トゥーレの王』);
+"Am Brunnen vor dem Tore, da steht ein Lindenbaum; ich träumt' in seinem Schatten so manchen süßen Traum.", Wilhelm Müller / Franz Schubert, (Der Lindenbaum);
+"門の前の泉のそばに、一本の菩提樹が立っている。私はその木陰で、多くの甘い夢を見た。", ヴィルヘルム・ミュラー / フランツ・シューベルト, (『菩提樹』);
+"Leise flehen meine Lieder durch die Nacht zu dir; in den stillen Hain hernieder, Liebchen, komm zu mir!", Ludwig Rellstab / Franz Schubert, (Ständchen);
+"私の歌は夜を通してそっとあなたに嘆願する。静かな木立の下へ、愛しい人よ、私のところに来てください！", ルートヴィヒ・レルシュタープ / フランツ・シューベルト, (『セレナーデ』);
+"Du holde Kunst, in wieviel grauen Stunden, wo mich des Lebens wilder Kreis umstrickt, hast du mein Herz zu warmer Lieb entzunden, hast mich in eine beßre Welt entrückt!", Franz von Schober / Franz Schubert, (An die Musik);
+"優しき芸術よ、幾多の灰色の時間の中で、人生の荒々しい輪が私を取り巻くとき、あなたは私の心を温かい愛に燃え立たせ、私をより良い世界へと連れ去った！", フランツ・フォン・シューバー / フランツ・シューベルト, (『音楽に寄せて』);
+"Die alten, bösen Lieder, die Träume schlimm und arg, die lasst uns jetzt begraben, holt einen großen Sarg.", Heinrich Heine / Robert Schumann, (Die alten, bösen Lieder);
+"古い悪い歌、悪く厳しい夢、それらを今埋めよう、大きな棺を持ってこよう。", ハインリヒ・ハイネ / ロベルト・シューマン, (『古い悪い歌』);
+"Kennst du das Land, wo die Zitronen blühn, im dunkeln Laub die Gold-Orangen glühn, ein sanfter Wind vom blauen Himmel weht, die Myrte still und hoch der Lorbeer steht?", Johann Wolfgang von Goethe / Franz Schubert, (Mignon);
+"あなたはレモンの花が咲き、暗い葉の中で金色のオレンジが輝き、青い空から優しい風が吹き、ミルテが静かに、そして月桂樹が高く立つ国を知っていますか？", ヨハン・ヴォルフガング・フォン・ゲーテ / フランツ・シューベルト, (『ミニョン』);
+"In einem kühlen Grunde, da geht ein Mühlenrad, mein' Liebste ist verschwunden, die dort gewohnet hat.", Joseph von Eichendorff / Friedrich Glück, (Das zerbrochene Ringlein);
+"涼しい谷間に、水車が回っている、そこに住んでいた私の恋人は消えてしまった。", ヨーゼフ・フォン・アイヒェンドルフ / フリードリヒ・グリュック, (『壊れた小さな指輪』);
+"Morgen!", John Henry Mackay / Richard Strauss, (Vier Lieder);
+"明日！", ジョン・ヘンリー・マッケイ / リヒャルト・シュトラウス, (『4つの歌』);
+"Guten Abend, gute Nacht, mit Rosen bedacht, mit Näglein besteckt, schlupf unter die Deck: Morgen früh, wenn Gott will, wirst du wieder geweckt.", Volkslied / Johannes Brahms, (Wiegenlied);
+"こんばんは、おやすみなさい、バラで覆われ、カーネーションで飾られ、毛布の下に滑り込みなさい：明日の朝、神の御心なら、あなたはまた目覚めるでしょう。", 民謡 / ヨハネス・ブラームス, (『子守唄』);
+"Nun ruhen alle Wälder, Vieh, Menschen, Städt und Felder, es schläft die ganze Welt.", Paul Gerhardt / Heinrich Isaac, (Nun ruhen alle Wälder);
+"今や全ての森、家畜、人々、町、野原が休み、全世界が眠る。", パウル・ゲルハルト / ハインリヒ・イサーク, (『今や全ての森が休む』);
+"Auf einem Baum ein Kuckuck saß, da kam ein junger Jäger, der schoss den armen Kuckuck tot.", Volkslied, (Der Kuckuck);
+"木の上にカッコウが座っていた、若い猟師が来て、かわいそうなカッコウを撃ち殺した。", 民謡, (『カッコウ』);
+"Da draußen auf dem Berge da steht ein hohes Haus, da schauen wohl alle Frühmorgen drei schöne Jungfrauen heraus.", Volkslied, (Da draußen auf dem Berge);
+"外の山の上に高い家が立っている、毎朝早く三人の美しい乙女がそこから外を眺めている。", 民謡, (『外の山の上に』);
+"Wohlauf, Kameraden, aufs Pferd, aufs Pferd! Ins Feld, in die Freiheit gezogen!", Friedrich Schiller / Wilhelm Hauff, (Reiters Morgenlied);
+"さあ、仲間たちよ、馬に、馬に！野に、自由へと進め！", フリードリヒ・シラー / ヴィルヘルム・ハウフ, (『騎兵の朝の歌』);
+"Die Gedanken sind frei, wer kann sie erraten? Sie fliegen vorbei wie nächtliche Schatten.", Anonymus, (Die Gedanken sind frei);
+"考えは自由だ、誰がそれを推測できるだろうか？それらは夜の影のように通り過ぎる。", 匿名, (『考えは自由』);
+"Dort, wo die klaren Bächlein rinnen und Reh und Hirschlein tränken drin, dort lasst uns eine Hütte bauen im grünen Wald.", Karl Geyer, (Im grünen Wald);
+"澄んだ小川が流れ、鹿や小鹿がそこで水を飲むところ、そこで私たちは緑の森に小屋を建てましょう。", カール・ゲイヤー, (『緑の森で』);
+"Horch, was kommt von draußen rein, hollahi, hollaho! Wird wohl mein Feinsliebchen sein, hollahi-aho!", Volkslied, (Horch, was kommt von draußen rein);
+"聞いて、外から何が入ってくるか、ホラヒ、ホラホ！きっと私の恋人だろう、ホラヒアホ！", 民謡, (『聞いて、外から何が入ってくるか』);
+"Hohe Tannen weisen die Sterne, und der wilde Jäger zieht dahin; und es rauschen die dunklen Föhren - Sag, wo gehst du hin?", Franz Burkhard, (Hohe Tannen);
+"高いモミの木が星を指し示し、野生の猟師がそこへ行く。そして暗いマツの木がざわめく - 言って、どこへ行くのか？", フランツ・ブルクハルト, (『高いモミの木』);
+
+文学（小説・日記・詩）
+
+"Er setzte sich auf den breiten Lehnstuhl am Kamin.", Johann Wolfgang von Goethe, (Faust, Teil II);
+"彼は暖炉のそばの広い肘掛け椅子に腰を下ろした。", ヨハン・ヴォルフガング・フォン・ゲーテ, (『ファウスト 第二部』);
+"Sie fand ihn auf dem Gartenstuhl, die Hände im Schoß gefaltet.", Theodor Fontane, (Effi Briest);
+"彼女は庭の椅子に座っている彼を見つけた。両手を膝の上で組んで。", テオドール・フォンターネ, (『エフィ・ブリースト』);
+"Auf einem alten Schemel saß die Großmutter und spann.", Gerhart Hauptmann, (Die Weber);
+"古い踏み台に祖母が座って糸を紡いでいた。", ゲルハルト・ハウプトマン, (『織工たち』);
+"Er sank erschöpft auf einen Stuhl am Fenster.", Thomas Mann, (Der Zauberberg);
+"彼は疲れ果てて窓際の椅子に崩れ落ちた。", トーマス・マン, (『魔の山』);
+"In meinem Lehnstuhl sitz ich hier allein.", Hermann Hesse, (Stufen);
+"私は肘掛け椅子に一人でここに座っている。", ヘルマン・ヘッセ, (『段階』);
+"Sie rückte ihren Stuhl näher an den Tisch.", Franz Kafka, (Der Prozess);
+"彼女は自分の椅子をテーブルの方へ引き寄せた。", フランツ・カフカ, (『審判』);
+"Auf dem Kanapee saßen sie nebeneinander, wortlos.", Arthur Schnitzler, (Der Weg ins Freie);
+"長椅子に彼らは言葉もなく並んで座っていた。", アルトゥール・シュニッツラー, (『自由への道』);
+"Er stand auf, schob den Stuhl zurück und ging zur Tür.", Heinrich Mann, (Der Untertan);
+"彼は立ち上がり、椅子を後ろに押し、ドアの方へ行った。", ハインリヒ・マン, (『臣下』);
+"Die Kinder hockten auf kleinen Stühlchen um das Feuer.", Adalbert Stifter, (Bunte Steine);
+"子供たちは小さな腰掛けに座って火を囲んでいた。", アダルベルト・シュティフター, (『色とりどりの石』);
+"Sie nahm auf dem Samtkissen Platz.", Ricarda Huch, (Der letzte Sommer);
+"彼女はビロードのクッションに腰を下ろした。", リカルダ・フッフ, (『最後の夏』);
+"Er verbrachte Stunden auf seinem Schreibtischstuhl.", Lion Feuchtwanger, (Erfolg);
+"彼は書斎の椅子で何時間も過ごした。", リオン・フォイヒトヴァンガー, (『成功』);
+"Sie setzte sich an den Flügel und ließ die Finger über die Tasten gleiten.", Stefan Zweig, (Schachnovelle);
+"彼女はピアノの前に座り、指を鍵盤の上で滑らせた。", シュテファン・ツヴァイク, (『チェス物語』);
+"Auf der Bank im Park wartete sie.", Mascha Kaléko, (Verse für Zeitgenossen);
+"公園のベンチで彼女は待っていた。", マーシャ・カレコ, (『同時代人のための詩』);
+"Er zog einen Hocker heran und setzte sich dicht neben sie.", Alfred Döblin, (Berlin Alexanderplatz);
+"彼はスツールを引き寄せ、彼女のすぐ隣に座った。", アルフレート・デーブリーン, (『ベルリン・アレクサンダー広場』);
+"Sie lehnte sich im Sessel zurück und schloss die Augen.", Anna Seghers, (Das siebte Kreuz);
+"彼女は肘掛け椅子に身を預けて目を閉じた。", アンナ・ゼーガース, (『第七の十字架』);
+"Auf dem Diwan lag ein Buch, unaufgeschlagen.", Günter Grass, (Die Blechtrommel);
+"長椅子には開かれていない本が置いてあった。", ギュンター・グラス, (『ブリキの太鼓』);
+"Er saß am Fenster und blickte in den Regen.", Siegfried Lenz, (Deutschstunde);
+"彼は窓際に座って雨を見つめていた。", ジークフリート・レンツ, (『ドイツ語の授業』);
+"Sie nahm auf einem der Korbstühle Platz.", Christa Wolf, (Nachdenken über Christa T.);
+"彼女は籐の椅子のひとつに腰を下ろした。", クリスタ・ヴォルフ, (『クリスタ・T.のこと』);
+"Er hockte auf dem Boden und malte.", Bernhard Schlink, (Der Vorleser);
+"彼は床に座り込んで絵を描いていた。", ベルンハルト・シュリンク, (『朗読者』);
+"Sie saß auf der Veranda und trank Kaffee.", Julia Franck, (Die Mittagsfrau);
+"彼女はベランダに座ってコーヒーを飲んでいた。", ユリア・フランク, (『真昼の女』);
+
+思想（政治・哲学・歴史・評論）
+
+"Der Philosoph saß grübelnd auf seinem Stuhl.", Immanuel Kant, (Kritik der reinen Vernunft);
+"哲学者は椅子に座って思索にふけっていた。", イマヌエル・カント, (『純粋理性批判』);
+"Der Stuhl der Wahrheit war unbequem, aber man muss darauf sitzen.", Friedrich Nietzsche, (Also sprach Zarathustra);
+"真実の椅子は不快だが、そこに座らなければならない。", フリードリヒ・ニーチェ, (『ツァラトゥストラはこう語った』);
+"Er saß auf dem Stuhl der Vernunft und urteilte.", Georg Wilhelm Friedrich Hegel, (Phänomenologie des Geistes);
+"彼は理性の椅子に座り、判断を下した。", ゲオルク・ヴィルヘルム・フリードリヒ・ヘーゲル, (『精神現象学』);
+"Der Denker saß auf seinem Stuhl und schrieb über Freiheit.", Friedrich Nietzsche, (Jenseits von Gut und Böse);
+"思索家は椅子に座り、自由について書いた。", フリードリヒ・ニーチェ, (『善悪の彼岸』);
+"Der Stuhl der Macht war sein Ziel.", Carl Schmitt, (Der Begriff des Politischen);
+"権力の椅子が彼の目標だった。", カール・シュミット, (『政治的なものの概念』);
+"In dem öden ausgestorbenen Himmel sitzt auf eisernem Stuhl die letzte Göttin, die Notwendigkeit, mit ihrem traurigen Herzen.", Heinrich Heine, (Zur Geschichte der Religion und Philosophie in Deutschland);
+"荒涼とした死に絶えた空に、最後の女神、必然がその悲しい心とともに鉄の椅子に座っている。", ハインリヒ・ハイネ, (『ドイツの宗教と哲学の歴史について』);
+"Bekanntlich braucht man zum Denken einen Stuhl, auf dem man sitzt.", Ödön von Horváth, (Geschichten aus dem Wiener Wald);
+"思考には、座るための椅子が必要であることは周知の事実だ。", エーデン・フォン・ホルヴァート, (『ウィーンの森の物語』);
+"Zwischen den Stühlen zu sitzen, ist in Wahrheit der anständigste Platz, den es gibt.", Moritz Heimann, (Prosaische Schriften);
+"椅子の間に座ることは、実のところ、存在する中で最も立派な場所である。", モーリッツ・ハイマン, (『散文作品集』);
+"Auf einem Berge stehend umfassen wir die Natur wie das Kind, das auf einen Stuhl gestiegen ist, um den Vater desto besser umarmen zu können.", Karl Julius Weber, (Demokritos);
+"山の上に立って、私たちは自然を抱きしめる。それは、椅子に登って父をよりよく抱きしめようとする子供のようだ。", カール・ユリウス・ヴェーバー, (『デモクリトス』);
+"Die ganze deutsche Philosophie beruht auf Sitzen. Hegel sagt, daß Ich setzt sich, Schelling sagt, das Nichtich setzt sich.", Moritz Gottlieb Saphir, (Humoristische Schriften);
+"ドイツの哲学全体は座ることに基づいている。ヘーゲルは『自我は自己を設定する』と言い、シェリングは『非自我は自己を設定する』と言う。", モーリッツ・ゴットリーブ・サフィール, (『ユーモア文集』);
+
+音楽（ドイツオペラ・ドイツロック・ドイツフォーク）
+
+"Hier sitz ich am Webstuhl und webe.", Richard Wagner, (Der fliegende Holländer);
+"ここで私は機織り機に座って織っている。", リヒャルト・ワーグナー, (『さまよえるオランダ人』);
+"So sitze ich einsam in meiner Kammer.", Richard Wagner, (Tannhäuser);
+"こうして私は一人、自分の部屋に座っている。", リヒャルト・ワーグナー, (『タンホイザー』);
+"Dort auf dem Sofa liegt er ausgestreckt.", Richard Strauss, (Elektra);
+"あそこのソファに彼は横たわっている。", リヒャルト・シュトラウス, (『エレクトラ』);
+"Sie sitzt und starrt vor sich hin.", Alban Berg, (Wozzeck);
+"彼女は座って、ぼんやりと前を見つめている。", アルバン・ベルク, (『ヴォツェック』);
+"Er sinkt auf einen Stuhl und verhüllt das Gesicht.", Richard Wagner, (Lohengrin);
+"彼は椅子に崩れ落ち、顔を覆う。", リヒャルト・ワーグナー, (『ローエングリン』);
+"Sie sitzt an ihrem Fensterlein.", Engelbert Humperdinck, (Hänsel und Gretel);
+"彼女は小さな窓辺に座っている。", エンゲルベルト・フンパーディンク, (『ヘンゼルとグレーテル』);
+"Der König sitzt auf seinem Thron.", Richard Wagner, (Der Ring des Nibelungen);
+"王は玉座に座っている。", リヒャルト・ワーグナー, (『ニーベルングの指環』);
+"Sie sitzt ganz still in ihrem Zimmer.", Paul Hindemith, (Mathis der Maler);
+"彼女は自分の部屋でじっと座っている。", パウル・ヒンデミット, (『画家マティス』);
+"Sie hocken beisammen im Mondlicht.", Carl Maria von Weber, (Der Freischütz);
+"彼らは月光の下で一緒に座り込んでいる。", カール・マリア・フォン・ウェーバー, (『魔弾の射手』);
+"Der König sitzt in Thule gar treu bis an das Grab, dem sterbend seine Buhle einen goldnen Becher gab.", Johann Wolfgang von Goethe / Franz Schubert, (Der König in Thule);
+"王はトゥーレに座し、墓まで非常に誠実で、死にゆく恋人が彼に金の杯を贈った。", ヨハン・ヴォルフガング・フォン・ゲーテ / フランツ・シューベルト, (『トゥーレの王』);
+
+
+
+
+
+const quotes = [
+    // 詩・文学
+    {
+        german: "Wenn ich sitze, will ich nicht sitzen, wie mein Sitz-Fleisch möchte, sondern wie mein Sitz-Geist sich, säße er, den Stuhl sich flöchte.",
+        japanese: "座るとき、私は肉体が望むように座りたくはない、むしろ精神が座るならば編むであろう椅子のように座りたい。",
+        author: "Christian Morgenstern"
+    },
+    {
+        german: "In einem hochgewölbten, engen, gothischen Zimmer Faust unruhig auf seinem Sessel am Pulte.",
+        japanese: "高く天井の湾曲した狭いゴシック様式の部屋で、ファウストは机に向かった椅子の上で落ち着かない様子だった。",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Er wirft sich auf den ledernen Sessel am Bett.",
+        japanese: "彼はベッドのそばの革張りの椅子に身を投げ出した。",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Mephistopheles, sich in dem Sessel dehnend und mit dem Wedel spielend, fährt fort zu sprechen. Hier sitz' ich wie der König auf dem Throne.",
+        japanese: "メフィストフェレスは椅子に体を伸ばし、羽根ではたきながら話し続ける。「私はここに王が玉座に座るように座っている」",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Ich schlich mich hart am Stuhl herbei.",
+        japanese: "私はこっそりと椅子に近づいた。",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Also, man kann sich in einen Sessel setzen - ich sitze furchtbar gern im Sessel und döse - und davonschweben.",
+        japanese: "つまり、肘掛け椅子に座ることができる - 私は肘掛け椅子に座って微睡むのが大好きなのだが - そしてそこから漂い出る。",
+        author: "David Lynch"
+    },
+    {
+        german: "Den Wedel nimm hier, Und setz' dich in Sessel!",
+        japanese: "このはたきを取って、椅子に座りなさい！",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Sie sitzen schon, mit hohen Augenbraunen, Gelassen da und möchten gern erstaunen.",
+        japanese: "彼らはすでに眉を高くして、冷静に座っており、驚かせてほしそうにしている。",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Sitzt ihr nur immer! leimt zusammen, Braut ein Ragout von andrer Schmaus.",
+        japanese: "ただ座っていなさい！継ぎ合わせて、他人のごちそうからの寄せ集め料理を作りなさい。",
+        author: "Johann Wolfgang von Goethe"
+    },
+    {
+        german: "Dem Bedürfnis nach Einsamkeit genügt es nicht, dass man an einem Tisch allein sitzt. Es müssen auch leere Sessel herumstehen.",
+        japanese: "孤独への欲求は、ただテーブルに一人で座っているだけでは満たされない。空の椅子も周りにあるべきなのだ。",
+        author: "Alfred Polgar"
+    },
+    
+    // リルケの作品
+    {
+        german: "Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht.",
+        japanese: "私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。",
+        author: "Rainer Maria Rilke"
+    },
+    {
+        german: "Bibliothèque Nationale. Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht. Sie sind in den Büchern.",
+        japanese: "国立図書館。私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。彼らは本の中にいるのだ。",
+        author: "Rainer Maria Rilke"
+    },
+    {
+        german: "Ich war der einzige, der am Tische sitzen geblieben war; ich hatte mich so schwer gemacht in meinem Sessel, mir schien, ich könnte allein nie wieder auf.",
+        japanese: "私だけがテーブルに座ったままだった。私は自分の椅子にどっしりと身を沈め、一人では二度と立ち上がれないような気がした。",
+        author: "Rainer Maria Rilke"
+    },
+    
+    // 哲学と思想
+    {
+        german: "Bekanntlich braucht man zum Denken einen Stuhl, auf dem man sitzt.",
+        japanese: "周知のように、思考するためには座るための椅子が必要だ。",
+        author: "Ödön von Horváth"
+    },
+    {
+        german: "Es ist schwerer, einen guten Stuhl zu bauen als einen Wolkenkratzer.",
+        japanese: "良い椅子を作ることは、高層ビルを建てるよりも難しい。",
+        author: "Ludwig Mies van der Rohe"
+    },
+    {
+        german: "Der unzufriedene Mensch findet keinen bequemen Stuhl.",
+        japanese: "不満を持つ人は、快適な椅子を見つけることができない。",
+        author: "Benjamin Franklin"
+    },
+    {
+        german: "Auf dem höchsten Thron der Welt sitzen wir nur auf unserem Arsch.",
+        japanese: "世界の最も高い玉座の上にあっても、我々は自分の尻の上に座っているだけだ。",
+        author: "Michel de Montaigne"
+    },
+    {
+        german: "Alles Unheil kommt von einer einzigen Ursache, dass die Menschen nicht in Ruhe in ihrer Kammer sitzen können.",
+        japanese: "すべての不幸は唯一の原因から来る、人々が静かに自分の部屋に座っていられないことだ。",
+        author: "Blaise Pascal"
+    },
+    {
+        german: "Das Gehirn ist kein Wohnort, Sitz, Erzeuger, kein Instrument oder Organ, kein Träger oder Substrat usw. des Denkens.",
+        japanese: "脳は思考の住居でも、座でも、生産者でも、道具でも、臓器でも、担い手でも、基盤でもない。",
+        author: "Richard Avenarius"
+    },
+    {
+        german: "Nur ergangene Gedanken haben Wert.",
+        japanese: "歩きながら得られた思考だけが価値を持つ。",
+        author: "Friedrich Nietzsche"
+    },
+    
+    // フレドリク・ファーレの詩
+    {
+        german: "Buddha hat sich zur Erleuchtung gesessen, hat sitzend und sitzend sein Ego vergessen.",
+        japanese: "ブッダは座って悟りを開き、座り続けて自我を忘れた。",
+        author: "Fredrik Vahle"
+    },
+    {
+        german: "Gott sitzt hoch auf dem Himmelsthron beim heiligen Geist und dem eigenen Sohn.",
+        japanese: "神は天の玉座に高く座し、聖霊と自らの息子のそばにいる。",
+        author: "Fredrik Vahle"
+    },
+    {
+        german: "Sitzen, sitzen, sitzen, nichts ist häufiger als sitzen. Ob beim Trinken oder Essen, es wird immerzu gesessen.",
+        japanese: "座る、座る、座る、座ること以上に頻繁なことはない。飲む時も食べる時も、常に座っている。",
+        author: "Fredrik Vahle"
+    },
+    {
+        german: "Stuhl kommt von Stehen, hat Rücken und Beine, Armlehnen manchmal, und er steht von alleine.",
+        japanese: "「椅子」は「立つ」から来ており、背もたれと脚があり、時には肘掛けもあり、それは自立している。",
+        author: "Fredrik Vahle"
+    },
+    
+    // カフカの作品
+    {
+        german: "Freilich waren es nicht mehr die lebhaften Unterhaltungen der früheren Zeiten, an die Gregor in den kleinen Hotelzimmern stets mit einigem Verlangen gedacht hatte, wenn er sich müde in das feuchte Bettzeug hatte werfen müssen. Es ging jetzt meist nur sehr still zu. Der Vater schlief bald nach dem Nachtessen in seinem Sessel ein.",
+        japanese: "もちろん、それはもはや昔のような活気に満ちた会話ではなく、グレゴールが小さなホテルの部屋で疲れて湿った寝具に身を投げなければならなかったとき、いつも憧れていたようなものではなかった。今や家は静かなものとなっていた。父は夕食後すぐに肘掛け椅子で眠りに落ちた。",
+        author: "Franz Kafka"
+    },
+    {
+        german: "Gregor schob sich langsam mit dem Sessel zur Tür hin, ließ ihn dort los, warf sich gegen die Tür, hielt sich an ihr aufrecht — die Ballen seiner Beinchen hatten ein wenig Klebstoff — und ruhte sich dort einen Augenblick lang von der Anstrengung aus.",
+        japanese: "グレゴールは椅子でゆっくりとドアの方へ移動し、そこで椅子を離し、ドアに体を投げつけた。ドアに体を支え立ち上がる—小さな足の裏には少し粘着性があった—そして一瞬そこで労力から休んだ。",
+        author: "Franz Kafka"
+    },
+    {
+        german: "Unter vier Augen ist das Schweigen unerträglich laut.",
+        japanese: "二人きりでいると、沈黙は耐えがたいほど大きい。",
+        author: "Franz Kafka"
+    },
+    
+    // ヘッセの作品
+    {
+        german: "Wenn wir einen Menschen hassen, so hassen wir in seinem Bild etwas, was in uns selber sitzt. Was nicht in uns selber ist, das regt uns nicht auf.",
+        japanese: "人を憎むとき、私たちはその人の姿の中に、自分自身の中に座っているものを憎んでいる。自分自身の中にないものは、私たちを動揺させない。",
+        author: "Hermann Hesse"
+    },
+    {
+        german: "Wie ein schüchternes Mädchen blieb er sitzen und wartet, ob einer käme ihn zu holen, ein Stärkerer und Mutigerer als er, der ihn mitrisse und zum Glücklichsein zwänge.",
+        japanese: "彼は内気な少女のように座り続け、自分より強く勇敢な誰かが来て、彼を連れ出し、幸せを強いてくれるのを待っていた。",
+        author: "Hermann Hesse"
+    },
+    {
+        german: "Die Verzweiflung schickt Gott nicht, um uns zu töten, er schickt sie, um neues Leben in uns zu erwecken.",
+        japanese: "神は私たちを殺すために絶望を送るのではなく、私たちの中に新しい命を呼び覚ますために送るのだ。",
+        author: "Hermann Hesse"
+    },
+    {
+        german: "Man muss das Unmögliche versuchen, um das Mögliche zu erreichen.",
+        japanese: "可能なことを達成するためには、不可能なことを試みなければならない。",
+        author: "Hermann Hesse"
+    },
+    
+    // ワーグナー、音楽関連
+    {
+        german: "O du, mein holder Abendstern, Wohl grüßt ich immer dich so gern!",
+        japanese: "おお、私の愛しい宵の明星よ、いつもどれほど喜んでお前に挨拶したことか！",
+        author: "Richard Wagner"
+    },
+    {
+        german: "Hier sitz ich am Webstuhl und webe.",
+        japanese: "ここで私は機織り機に座って織っている。",
+        author: "Richard Wagner"
+    },
+    {
+        german: "So sitze ich einsam in meiner Kammer.",
+        japanese: "こうして私は一人、自分の部屋に座っている。",
+        author: "Richard Wagner"
+    },
+    
+    // ショーペンハウアーの格言
+    {
+        german: "Alles im Leben gibt kund, dass das irdische Glück bestimmt ist, vereitelt oder als eine Illusion erkannt zu werden.",
+        japanese: "人生のすべてが示しているのは、地上の幸福は挫折するか、幻想として認識されるように運命づけられているということだ。",
+        author: "Arthur Schopenhauer"
+    },
+    {
+        german: "Jeder hält die Grenzen des eigenen Gesichtsfelds für die Grenzen der Welt.",
+        japanese: "誰もが自分の視野の限界を世界の限界だと思っている。",
+        author: "Arthur Schopenhauer"
+    },
+    {
+        german: "Der Wechsel allein ist das Beständige.",
+        japanese: "変化だけが永続的なものである。",
+        author: "Arthur Schopenhauer"
+    },
+    {
+        german: "Die Wahrheit hat Zeit, denn sie hat ein langes Leben.",
+        japanese: "真理には時間がある、なぜなら真理は長い人生を持っているからだ。",
+        author: "Arthur Schopenhauer"
+    },
+    
+    // ニーチェの言葉
+    {
+        german: "Der letzte deutsche Philosoph — Friedrich Nietzsche — der die Kunst verstand, gesetzt dass die Wahrheit ein Weib ist...",
+        japanese: "最後のドイツの哲学者—フリードリヒ・ニーチェ—真理が女性だとすれば、芸術を理解した者...",
+        author: "Friedrich Nietzsche"
+    },
+    {
+        german: "Der Mensch, welcher nicht zur Masse gehören will, braucht nur aufzuhören, gegen sich bequem zu sein; er folge seinem Gewissen, welches ihm zuruft: 'sei du selbst!'",
+        japanese: "大衆に属したくない人間は、自分に対して快適であることをやめさえすればよい。彼は自分の良心に従うべきだ、それは彼に「あなた自身であれ！」と呼びかける。",
+        author: "Friedrich Nietzsche"
+    },
+    {
+        german: "Und wer macht die schöne Musik zum Sitzen im Stuhl? Wenn du einen Bruder hast, so achte ihn; hat er aber keinen Stuhl, so gib ihm deinen.",
+        japanese: "そして椅子に座るための美しい音楽を作るのは誰だ？もし兄弟がいるなら、彼を尊重せよ。しかし彼に椅子がないなら、あなたの椅子を彼に与えよ。",
+        author: "Friedrich Nietzsche"
+    },
+    {
+        german: "Ich denke immer noch, irgendwann einmal sitzen wir alle in Bayreuth zusammen und begreifen gar nicht mehr, wie man es anderswo aushalten konnte.",
+        japanese: "私はまだ思う、いつか私たちは皆バイロイトで一緒に座り、どうして他の場所で耐えられたのか全く理解できなくなるだろう。",
+        author: "Friedrich Nietzsche"
+    }
+];

@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EpiConquest</title>
+  <style>
+    :root {
+      --bg-color: #0a0a0a;
+      --text-color: #f0f0f0;
+      --accent-color: #00bcd4;
+      --secondary-color: #222;
+      --team-1: #00bcd4;
+      --team-2: #ff9800;
+      --team-3: #8bc34a;
+      --team-4: #e91e63;
+      --border-color: #333;
+      --hover-color: #1e1e1e;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+      line-height: 1.6;
+    }
+    
+    header {
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    
+    h1 {
+      font-weight: 700;
+      font-size: 2.5rem;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(90deg, var(--team-1), var(--team-2), var(--team-3), var(--team-4));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .subtitle {
+      font-size: 1rem;
+      opacity: 0.8;
+      margin-bottom: 2rem;
+    }
+    
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      max-width: 1000px;
+      width: 100%;
+    }
+    
+    .game-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding: 0.75rem 1rem;
+      background-color: var(--secondary-color);
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .turn-info {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    
+    .theme-info {
+      font-size: 1.1rem;
+      text-align: right;
+    }
+    
+    .game-board {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    
+    .map-container {
+      flex: 1;
+      min-width: 300px;
+    }
+    
+    #map {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      grid-gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .tile {
+      aspect-ratio: 1;
+      background: var(--secondary-color);
+      border: 1px solid var(--border-color);
+      border-radius: 0.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    .tile:hover {
+      background-color: var(--hover-color);
+      transform: translateY(-2px);
+    }
+    
+    .selected-tile {
+      box-shadow: 0 0 0 2px white;
+    }
+    
+    .team-1 { background: var(--team-1); color: #000; }
+    .team-2 { background: var(--team-2); color: #000; }
+    .team-3 { background: var(--team-3); color: #000; }
+    .team-4 { background: var(--team-4); color: #fff; }
+    
+    .classification-area {
+      flex: 1;
+      min-width: 300px;
+      background-color: var(--secondary-color);
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .theme-display {
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .theme-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .theme-exposure, .theme-outcome {
+      display: flex;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .theme-label {
+      background-color: rgba(255, 255, 255, 0.1);
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.3rem;
+      font-size: 0.8rem;
+      margin-right: 0.5rem;
+      text-transform: uppercase;
+    }
+    
+    .cards-container {
+      margin-bottom: 1.5rem;
+    }
+    
+    .cards-title {
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.8;
+    }
+    
+    .cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .card {
+      background-color: var(--bg-color);
+      border: 1px solid var(--border-color);
+      border-radius: 0.3rem;
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.9rem;
+    }
+    
+    .card:hover {
+      background-color: var(--hover-color);
+      transform: translateY(-2px);
+    }
+    
+    .card.selected {
+      border-color: var(--accent-color);
+      background-color: rgba(0, 188, 212, 0.1);
+    }
+      
+      
+      .categories {
+      margin-bottom: 1.5rem;
+    }
+    
+    .categories-title {
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.8;
+    }
+    
+    .category-section {
+      margin-bottom: 1rem;
+    }
+    
+    .category-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .category-label {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    
+    .category-help {
+      margin-left: 0.5rem;
+      font-size: 0.7rem;
+      opacity: 0.6;
+    }
+    
+    .category-cards {
+      min-height: 40px;
+      background-color: rgba(255, 255, 255, 0.05);
+      border-radius: 0.3rem;
+      padding: 0.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    
+    .category-button {
+      background-color: var(--accent-color);
+      color: black;
+      border: none;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.8rem;
+      margin-left: 0.5rem;
+      transition: all 0.2s ease;
+    }
+    
+    .category-button:hover {
+      opacity: 0.9;
+    }
+    
+    .action-buttons {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    button {
+      background-color: var(--accent-color);
+      color: black;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    
+    button:hover {
+      opacity: 0.9;
+      transform: translateY(-2px);
+    }
+    
+    button:disabled {
+      background-color: #555;
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .secondary-button {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+    }
+    
+    #feedback {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 0.3rem;
+      font-size: 0.9rem;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+    
+    .feedback-correct {
+      background-color: rgba(139, 195, 74, 0.2);
+      border-left: 4px solid var(--team-3);
+    }
+    
+    .feedback-incorrect {
+      background-color: rgba(233, 30, 99, 0.2);
+      border-left: 4px solid var(--team-4);
+    }
+    
+    .stats-container {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 2rem;
+    }
+    
+    .team-stats {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    
+    .stat-item {
+      display: flex;
+      align-items: center;
+    }
+    
+    .stat-color {
+      width: 1rem;
+      height: 1rem;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+    }
+    
+    .team-1-bg { background-color: var(--team-1); }
+    .team-2-bg { background-color: var(--team-2); }
+    .team-3-bg { background-color: var(--team-3); }
+    .team-4-bg { background-color: var(--team-4); }
+    
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+    
+    .modal.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .modal-content {
+      background-color: var(--secondary-color);
+      border-radius: 0.5rem;
+      padding: 2rem;
+      max-width: 600px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .modal-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-color);
+    }
+    
+    .dag-container {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background-color: rgba(255, 255, 255, 0.05);
+      border-radius: 0.5rem;
+    }
+    
+    .dag-title {
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.8;
+    }
+    
+    .dag-canvas {
+      width: 100%;
+      height: 200px;
+      background-color: var(--bg-color);
+      border-radius: 0.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+      
+      
+      
+      
+      
+      .setup-modal {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg-color);
+      z-index: 1000;
+    }
+    
+    .setup-container {
+      background-color: var(--secondary-color);
+      border-radius: 0.5rem;
+      padding: 2rem;
+      max-width: 500px;
+      width: 100%;
+    }
+    
+    .setup-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    
+    .setup-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .form-label {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    
+    .form-input {
+      background-color: var(--bg-color);
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+      padding: 0.75rem;
+      border-radius: 0.3rem;
+      font-size: 1rem;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-color);
+    }
+    
+    .team-inputs {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .team-input-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
+    
+    @media (max-width: 768px) {
+      .game-board {
+        flex-direction: column;
+      }
+      
+      .map-container, .classification-area {
+        min-width: 100%;
+      }
+      
+      .tile {
+        font-size: 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Setup Modal -->
+  <div id="setupModal" class="setup-modal">
+    <div class="setup-container">
+      <h2 class="setup-title">EpiConquest</h2>
+      <form id="setupForm" class="setup-form">
+        <div class="form-group">
+          <label for="teamCount" class="form-label">プレイヤー数（チーム数）:</label>
+          <input type="number" id="teamCount" class="form-input" min="1" max="4" value="4">
+        </div>
+        
+        <div id="teamInputs" class="team-inputs">
+          <div class="team-input-group">
+            <div class="stat-color team-1-bg"></div>
+            <input type="text" id="team1Name" class="form-input" placeholder="チーム1名" value="チーム1">
+          </div>
+          <div class="team-input-group">
+            <div class="stat-color team-2-bg"></div>
+            <input type="text" id="team2Name" class="form-input" placeholder="チーム2名" value="チーム2">
+          </div>
+          <div class="team-input-group">
+            <div class="stat-color team-3-bg"></div>
+            <input type="text" id="team3Name" class="form-input" placeholder="チーム3名" value="チーム3">
+          </div>
+          <div class="team-input-group">
+            <div class="stat-color team-4-bg"></div>
+            <input type="text" id="team4Name" class="form-input" placeholder="チーム4名" value="チーム4">
+          </div>
+        </div>
+        
+        <button type="submit" class="form-input">ゲーム開始</button>
+      </form>
+    </div>
+  </div>
+
+  <header>
+    <h1>EpiConquest</h1>
+    <p class="subtitle">疫学の知識で領土を征服せよ！</p>
+  </header>
+  
+  <div class="game-container">
+    <div class="game-info">
+      <div id="turnInfo" class="turn-info">ターン: チーム1</div>
+      <div id="conquestsInfo" class="theme-info">征服数: 0/3</div>
+    </div>
+      
+      
+      <div class="game-board">
+      <div class="map-container">
+        <div id="map"></div>
+        <div class="stats-container">
+          <div id="teamStats" class="team-stats">
+            <!-- Team stats will be generated here -->
+          </div>
+        </div>
+      </div>
+      
+      <div class="classification-area">
+        <div class="theme-display">
+          <div class="theme-title">現在のテーマ</div>
+          <div class="theme-exposure">
+            <span class="theme-label">曝露</span>
+            <span id="exposureText">領土を選択してください</span>
+          </div>
+          <div class="theme-outcome">
+            <span class="theme-label">アウトカム</span>
+            <span id="outcomeText">領土を選択してください</span>
+          </div>
+        </div>
+        
+        <div class="cards-container">
+          <div class="cards-title">分類するカードを選択してください：</div>
+          <div id="cardArea" class="cards"></div>
+        </div>
+        
+        <div class="categories">
+          <div class="categories-title">選択したカードを分類してください：</div>
+          
+          <div class="category-section">
+            <div class="category-header">
+              <div class="category-label">交絡因子（Confounders）</div>
+              <div class="category-help">（曝露とアウトカムの両方に影響）</div>
+              <button id="confoundersBtn" class="category-button">この分類に追加</button>
+            </div>
+            <div id="confounders" class="category-cards"></div>
+          </div>
+          
+          <div class="category-section">
+            <div class="category-header">
+              <div class="category-label">中間因子（Mediators）</div>
+              <div class="category-help">（曝露とアウトカムの間の中間ステップ）</div>
+              <button id="mediatorsBtn" class="category-button">この分類に追加</button>
+            </div>
+            <div id="mediators" class="category-cards"></div>
+          </div>
+          
+          <div class="category-section">
+            <div class="category-header">
+              <div class="category-label">効果修飾因子（Effect Modifiers）</div>
+              <div class="category-help">（曝露のアウトカムへの効果を変える）</div>
+              <button id="modifiersBtn" class="category-button">この分類に追加</button>
+            </div>
+            <div id="modifiers" class="category-cards"></div>
+          </div>
+        </div>
+        
+        <div class="action-buttons">
+          <button id="resetBtn" class="secondary-button">リセット</button>
+          <button id="submitBtn">回答提出</button>
+        </div>
+        
+        <div id="feedback"></div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="resultModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">分類結果</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div id="resultContent"></div>
+      <div class="dag-container">
+        <div class="dag-title">因果関係図 (DAG)</div>
+        <div class="dag-canvas">
+          <svg id="dagSvg" width="100%" height="100%" viewBox="0 0 500 180"></svg>
+        </div>
+      </div>
+      <div class="action-buttons" style="margin-top: 1.5rem;">
+        <button id="continueBtn">続ける</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+      // Game configuration
+    const config = {
+      mapWidth: 7,
+      mapHeight: 5,
+      maxTeams: 4,
+      maxConquests: 3,
+      cardCount: 7
+    };
+    
+    // Game state
+    let gameState = {
+      currentTeam: 0,
+      conquests: 0,
+      selectedTile: null,
+      tileOwners: Array(config.mapWidth * config.mapHeight).fill(null),
+      currentTheme: null,
+      selectedCards: [],
+      classifiedCards: {
+        confounders: [],
+        mediators: [],
+        modifiers: []
+      },
+      teamNames: ["チーム1", "チーム2", "チーム3", "チーム4"],
+      teamCount: 4
+    };
+    
+    // DOM elements
+    const setupModal = document.getElementById("setupModal");
+    const setupForm = document.getElementById("setupForm");
+    const teamCountInput = document.getElementById("teamCount");
+    const teamInputs = document.getElementById("teamInputs");
+    const mapDiv = document.getElementById("map");
+    const turnInfo = document.getElementById("turnInfo");
+    const conquestsInfo = document.getElementById("conquestsInfo");
+    const teamStats = document.getElementById("teamStats");
+    const cardArea = document.getElementById("cardArea");
+    const confoundersArea = document.getElementById("confounders");
+    const mediatorsArea = document.getElementById("mediators");
+    const modifiersArea = document.getElementById("modifiers");
+    const confoundersBtn = document.getElementById("confoundersBtn");
+    const mediatorsBtn = document.getElementById("mediatorsBtn");
+    const modifiersBtn = document.getElementById("modifiersBtn");
+    const exposureText = document.getElementById("exposureText");
+    const outcomeText = document.getElementById("outcomeText");
+    const submitBtn = document.getElementById("submitBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const feedback = document.getElementById("feedback");
+    const resultModal = document.getElementById("resultModal");
+    const resultContent = document.getElementById("resultContent");
+    const continueBtn = document.getElementById("continueBtn");
+    const dagSvg = document.getElementById("dagSvg");
+    
+    // Themes data (20 epidemiological themes)
+    const themes = [
+      {
+        id: 1,
+        exposure: "喫煙",
+        outcome: "肺がん",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "職業", type: "Confounder" },
+          { name: "教育水準", type: "Confounder" },
+          { name: "飲酒", type: "Confounder" },
+          { name: "遺伝的素因", type: "Confounder" },
+          { name: "肺の炎症", type: "Mediator" }
+        ]
+      },
+      {
+        id: 2,
+        exposure: "運動不足",
+        outcome: "2型糖尿病",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "食事", type: "Confounder" },
+          { name: "肥満", type: "Mediator" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "家族歴", type: "Effect Modifier" },
+          { name: "睡眠の質", type: "Confounder" },
+          { name: "ストレス", type: "Confounder" }
+        ]
+      },
+      {
+        id: 3,
+        exposure: "アルコール摂取",
+        outcome: "肝硬変",
+        factors: [
+          { name: "性別", type: "Effect Modifier" },
+          { name: "BMI", type: "Confounder" },
+          { name: "肝炎感染", type: "Confounder" },
+          { name: "遺伝的要因", type: "Effect Modifier" },
+          { name: "喫煙", type: "Confounder" },
+          { name: "食事", type: "Confounder" },
+          { name: "肝酵素上昇", type: "Mediator" }
+        ]
+      },
+      {
+        id: 4,
+        exposure: "高塩分摂取",
+        outcome: "高血圧",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "遺伝的素因", type: "Effect Modifier" },
+          { name: "肥満", type: "Confounder" },
+          { name: "身体活動", type: "Confounder" },
+          { name: "アルコール", type: "Confounder" },
+          { name: "ストレス", type: "Confounder" },
+          { name: "腎機能", type: "Mediator" }
+        ]
+      },
+      {
+        id: 5,
+        exposure: "睡眠時間短縮",
+        outcome: "うつ病",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "慢性痛", type: "Confounder" },
+          { name: "ストレス", type: "Confounder" },
+          { name: "労働時間", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "物質使用", type: "Confounder" },
+          { name: "慢性疲労", type: "Mediator" }
+        ]
+      },
+      {
+        id: 6,
+        exposure: "SNS長時間使用",
+        outcome: "不安障害",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "既存の精神状態", type: "Confounder" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "社会的支援", type: "Confounder" },
+          { name: "学業プレッシャー", type: "Confounder" },
+          { name: "睡眠障害", type: "Mediator" }
+        ]
+      },
+      {
+        id: 7,
+        exposure: "大気汚染",
+        outcome: "喘息",
+        factors: [
+          { name: "遺伝的素因", type: "Effect Modifier" },
+          { name: "年齢", type: "Confounder" },
+          { name: "住居の質", type: "Confounder" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "受動喫煙", type: "Confounder" },
+          { name: "アレルギー", type: "Confounder" },
+          { name: "気道炎症", type: "Mediator" }
+        ]
+      },
+      {
+        id: 8,
+        exposure: "早期離乳",
+        outcome: "小児肥満",
+        factors: [
+          { name: "母親の教育水準", type: "Confounder" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "家族の食習慣", type: "Confounder" },
+          { name: "出生体重", type: "Effect Modifier" },
+          { name: "遺伝的要因", type: "Confounder" },
+          { name: "初期の食事パターン", type: "Confounder" },
+          { name: "食欲調節", type: "Mediator" }
+        ]
+      },
+      {
+        id: 9,
+        exposure: "屋外活動不足",
+        outcome: "ビタミンD欠乏症",
+        factors: [
+          { name: "季節", type: "Effect Modifier" },
+          { name: "緯度", type: "Confounder" },
+          { name: "皮膚の色素沈着", type: "Effect Modifier" },
+          { name: "年齢", type: "Confounder" },
+          { name: "食事", type: "Confounder" },
+          { name: "スクリーンタイム", type: "Confounder" },
+          { name: "日光曝露", type: "Mediator" }
+        ]
+      },
+      {
+        id: 10,
+        exposure: "朝食欠食",
+        outcome: "学業成績低下",
+        factors: [
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "睡眠の質", type: "Confounder" },
+          { name: "親の教育", type: "Confounder" },
+          { name: "年齢", type: "Effect Modifier" },
+          { name: "通学距離", type: "Confounder" },
+          { name: "宿題時間", type: "Confounder" },
+          { name: "認知機能", type: "Mediator" }
+        ]
+      },
+      {
+        id: 11,
+        exposure: "職業ストレス",
+        outcome: "心血管疾患",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "喫煙", type: "Confounder" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "身体活動", type: "Confounder" },
+          { name: "家族歴", type: "Confounder" },
+          { name: "血圧上昇", type: "Mediator" }
+        ]
+      },
+      {
+        id: 12,
+        exposure: "紫外線曝露",
+        outcome: "皮膚がん",
+        factors: [
+          { name: "皮膚の型", type: "Effect Modifier" },
+          { name: "年齢", type: "Confounder" },
+          { name: "職業", type: "Confounder" },
+          { name: "地理的位置", type: "Confounder" },
+          { name: "遺伝的要因", type: "Confounder" },
+          { name: "日焼け歴", type: "Confounder" },
+          { name: "DNA損傷", type: "Mediator" }
+        ]
+      },
+      {
+        id: 13,
+        exposure: "妊婦の喫煙",
+        outcome: "低出生体重",
+        factors: [
+          { name: "母親の年齢", type: "Confounder" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "栄養状態", type: "Confounder" },
+          { name: "アルコール使用", type: "Confounder" },
+          { name: "遺伝的要因", type: "Effect Modifier" },
+          { name: "産前ケア", type: "Confounder" },
+          { name: "胎盤機能", type: "Mediator" }
+        ]
+      },
+      {
+        id: 14,
+        exposure: "農薬曝露",
+        outcome: "パーキンソン病",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "職業", type: "Confounder" },
+          { name: "家族歴", type: "Confounder" },
+          { name: "喫煙状態", type: "Confounder" },
+          { name: "食事", type: "Confounder" },
+          { name: "神経酸化ストレス", type: "Mediator" }
+        ]
+      },
+      {
+        id: 15,
+        exposure: "加工肉摂取",
+        outcome: "大腸がん",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "家族歴", type: "Effect Modifier" },
+          { name: "身体活動", type: "Confounder" },
+          { name: "食物繊維摂取", type: "Confounder" },
+          { name: "喫煙", type: "Confounder" },
+          { name: "アルコール", type: "Confounder" },
+          { name: "腸内炎症", type: "Mediator" }
+        ]
+      },
+      {
+        id: 16,
+        exposure: "スクリーンタイム",
+        outcome: "近視",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "遺伝", type: "Effect Modifier" },
+          { name: "屋外活動時間", type: "Confounder" },
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "読書習慣", type: "Confounder" },
+          { name: "照明条件", type: "Confounder" },
+          { name: "目の疲労", type: "Mediator" }
+        ]
+      },
+      {
+        id: 17,
+        exposure: "ファストフード摂取",
+        outcome: "思春期肥満",
+        factors: [
+          { name: "社会経済的地位", type: "Confounder" },
+          { name: "身体活動", type: "Confounder" },
+          { name: "親の肥満", type: "Effect Modifier" },
+          { name: "スクリーンタイム", type: "Confounder" },
+          { name: "睡眠時間", type: "Confounder" },
+          { name: "近隣環境", type: "Confounder" },
+          { name: "カロリー摂取", type: "Mediator" }
+        ]
+      },
+      {
+        id: 18,
+        exposure: "失業",
+        outcome: "うつ病",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "経済的資源", type: "Confounder" },
+          { name: "社会的支援", type: "Confounder" },
+          { name: "既往精神状態", type: "Confounder" },
+          { name: "教育レベル", type: "Confounder" },
+          { name: "ストレスレベル", type: "Mediator" }
+        ]
+      },
+      {
+        id: 19,
+        exposure: "コーヒー摂取",
+        outcome: "2型糖尿病リスク低下",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "食事の質", type: "Confounder" },
+          { name: "身体活動", type: "Confounder" },
+          { name: "遺伝的要因", type: "Effect Modifier" },
+          { name: "BMI", type: "Confounder" },
+          { name: "喫煙", type: "Confounder" },
+          { name: "インスリン感受性", type: "Mediator" }
+        ]
+      },
+      {
+        id: 20,
+        exposure: "交代勤務",
+        outcome: "メタボリックシンドローム",
+        factors: [
+          { name: "年齢", type: "Confounder" },
+          { name: "性別", type: "Effect Modifier" },
+          { name: "食事", type: "Confounder" },
+          { name: "身体活動", type: "Confounder" },
+          { name: "ストレス", type: "Confounder" },
+          { name: "喫煙", type: "Confounder" },
+          { name: "概日リズム障害", type: "Mediator" }
+        ]
+      }
+    ];
+    
+    // Update team inputs visibility based on team count
+    function updateTeamInputs() {
+      const count = parseInt(teamCountInput.value);
+      
+      // Show/hide team input fields based on count
+      const teamInputGroups = teamInputs.querySelectorAll('.team-input-group');
+      teamInputGroups.forEach((group, index) => {
+        if (index < count) {
+          group.style.display = 'flex';
+        } else {
+          group.style.display = 'none';
+        }
+      });
+    }
+    
+    // Setup form submission
+    function setupGame(e) {
+      e.preventDefault();
+      
+      // Get team count
+      const count = parseInt(teamCountInput.value);
+      gameState.teamCount = count;
+      
+      // Get team names
+      for (let i = 0; i < count; i++) {
+        const nameInput = document.getElementById(`team${i+1}Name`);
+        if (nameInput && nameInput.value.trim() !== '') {
+          gameState.teamNames[i] = nameInput.value;
+        }
+      }
+      
+      // Hide setup modal
+      setupModal.style.display = 'none';
+      
+      // Initialize game
+      initGame();
+    }
+    
+    // Setup event listeners
+    function setupEventListeners() {
+      // Team count change
+      teamCountInput.addEventListener("change", updateTeamInputs);
+      
+      // Setup form submission
+      setupForm.addEventListener("submit", setupGame);
+    }
+    
+    // Initialize the game
+    function initGame() {
+      renderMap();
+      renderTeamStats();
+      updateTurnInfo();
+      resetClassification();
+      
+      // Event listeners
+      resetBtn.addEventListener("click", resetClassification);
+      submitBtn.addEventListener("click", checkAnswers);
+      document.querySelector(".modal-close").addEventListener("click", closeModal);
+      continueBtn.addEventListener("click", continueGame);
+      
+      // Category buttons
+      confoundersBtn.addEventListener("click", () => moveSelectedCardsToCategory("confounders"));
+      mediatorsBtn.addEventListener("click", () => moveSelectedCardsToCategory("mediators"));
+      modifiersBtn.addEventListener("click", () => moveSelectedCardsToCategory("modifiers"));
+    }
+      
+      // Render the team stats
+    function renderTeamStats() {
+      teamStats.innerHTML = "";
+      
+      for (let i = 0; i < gameState.teamCount; i++) {
+        const statItem = document.createElement("div");
+        statItem.className = "stat-item";
+        
+        const colorDiv = document.createElement("div");
+        colorDiv.className = `stat-color team-${i+1}-bg`;
+        
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = gameState.teamNames[i];
+        
+        statItem.appendChild(colorDiv);
+        statItem.appendChild(nameSpan);
+        teamStats.appendChild(statItem);
+      }
+    }
+    
+    // Render the map grid
+    function renderMap() {
+      mapDiv.innerHTML = "";
+      for (let i = 0; i < config.mapWidth * config.mapHeight; i++) {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.dataset.index = i;
+        
+        if (gameState.tileOwners[i] !== null) {
+          tile.classList.add(`team-${gameState.tileOwners[i] + 1}`);
+          tile.textContent = gameState.tileOwners[i] + 1;
+        }
+        
+        tile.addEventListener("click", () => selectTile(i));
+        mapDiv.appendChild(tile);
+      }
+    }
+    
+    // Select a tile on the map
+    function selectTile(index) {
+      // If player already has max conquests, ignore
+      if (gameState.conquests >= config.maxConquests) return;
+      
+      // Clear previous selection
+      if (gameState.selectedTile !== null) {
+        document.querySelectorAll(".tile")[gameState.selectedTile].classList.remove("selected-tile");
+      }
+      
+      // Set new selection
+      gameState.selectedTile = index;
+      document.querySelectorAll(".tile")[index].classList.add("selected-tile");
+      
+      // Generate a random theme and cards
+      generateRandomTheme();
+    }
+    
+    // Generate a random theme and cards
+    function generateRandomTheme() {
+      // Reset classification
+      resetClassification();
+      
+      // Select random theme
+      const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+      gameState.currentTheme = randomTheme;
+      
+      // Update UI
+      exposureText.textContent = randomTheme.exposure;
+      outcomeText.textContent = randomTheme.outcome;
+      
+      // Generate cards
+      generateCards(randomTheme.factors);
+    }
+    
+    // Generate factor cards
+    function generateCards(factors) {
+      cardArea.innerHTML = "";
+      gameState.selectedCards = [];
+      
+      factors.forEach((factor, index) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.dataset.index = index;
+        card.textContent = factor.name;
+        
+        card.addEventListener("click", () => selectCard(card, factor));
+        cardArea.appendChild(card);
+      });
+    }
+    
+    // Select a card
+    function selectCard(cardElement, factor) {
+      cardElement.classList.toggle("selected");
+      
+      // If selected, add to array; if deselected, remove from array
+      const cardIndex = gameState.selectedCards.findIndex(c => c.name === factor.name);
+      
+      if (cardElement.classList.contains("selected")) {
+        if (cardIndex === -1) {
+          gameState.selectedCards.push(factor);
+        }
+      } else {
+        if (cardIndex !== -1) {
+          gameState.selectedCards.splice(cardIndex, 1);
+        }
+      }
+      
+      updateSubmitButton();
+    }
+    
+    // Move selected cards to category
+    function moveSelectedCardsToCategory(category) {
+      if (gameState.selectedCards.length === 0) {
+        return;
+      }
+      
+      // Get appropriate area
+      const area = document.getElementById(category);
+      
+      // For each selected card
+      gameState.selectedCards.forEach(factor => {
+        // Create card in category area
+        const categoryCard = document.createElement("div");
+        categoryCard.className = "card";
+        categoryCard.textContent = factor.name;
+        categoryCard.dataset.type = factor.type;
+        
+        // Add event listener to remove card when clicked
+        categoryCard.addEventListener("click", () => {
+          // Remove from DOM
+          categoryCard.remove();
+          
+          // Remove from state
+          if (category === "confounders") {
+            gameState.classifiedCards.confounders = gameState.classifiedCards.confounders.filter(c => c.name !== factor.name);
+          } else if (category === "mediators") {
+            gameState.classifiedCards.mediators = gameState.classifiedCards.mediators.filter(c => c.name !== factor.name);
+          } else if (category === "modifiers") {
+            gameState.classifiedCards.modifiers = gameState.classifiedCards.modifiers.filter(c => c.name !== factor.name);
+          }
+          
+          // Find original card and make it visible again
+          const cards = cardArea.querySelectorAll(".card");
+          for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            if (card.textContent === factor.name) {
+              card.style.display = "block";
+              card.classList.remove("selected");
+              break;
+            }
+          }
+          
+          updateSubmitButton();
+        });
+        
+        // Add to area
+        area.appendChild(categoryCard);
+        
+        // Add to state
+        if (category === "confounders") {
+          gameState.classifiedCards.confounders.push(factor);
+        } else if (category === "mediators") {
+          gameState.classifiedCards.mediators.push(factor);
+        } else if (category === "modifiers") {
+          gameState.classifiedCards.modifiers.push(factor);
+        }
+        
+        // Hide original card
+        const cards = cardArea.querySelectorAll(".card");
+        for (let i = 0; i < cards.length; i++) {
+          const card = cards[i];
+          if (card.textContent === factor.name) {
+            card.style.display = "none";
+            card.classList.remove("selected");
+            break;
+          }
+        }
+      });
+      
+      // Clear selected cards
+      gameState.selectedCards = [];
+      
+      updateSubmitButton();
+    }
+      
+      // Update the submit button state
+    function updateSubmitButton() {
+      const totalClassified = 
+        gameState.classifiedCards.confounders.length + 
+        gameState.classifiedCards.mediators.length + 
+        gameState.classifiedCards.modifiers.length;
+      
+      const totalFactors = gameState.currentTheme ? gameState.currentTheme.factors.length : 0;
+      
+      // Enable submit if all cards are classified and a tile is selected
+      submitBtn.disabled = (totalClassified < totalFactors || gameState.selectedTile === null);
+    }
+    
+    // Reset classification
+    function resetClassification() {
+      // Clear classified cards
+      confoundersArea.innerHTML = "";
+      mediatorsArea.innerHTML = "";
+      modifiersArea.innerHTML = "";
+      
+      gameState.classifiedCards = {
+        confounders: [],
+        mediators: [],
+        modifiers: []
+      };
+      
+      // Reset selection and redisplay all cards if there's a theme
+      if (gameState.currentTheme) {
+        generateCards(gameState.currentTheme.factors);
+      }
+      
+      // Hide feedback
+      feedback.textContent = "";
+      feedback.className = "";
+      
+      updateSubmitButton();
+    }
+    
+    // Check answers
+    function checkAnswers() {
+      let isCorrect = true;
+      let confoundersCorrect = 0;
+      let mediatorsCorrect = 0;
+      let modifiersCorrect = 0;
+      
+      // Check confounders
+      gameState.classifiedCards.confounders.forEach(card => {
+        if (card.type === "Confounder") {
+          confoundersCorrect++;
+        } else {
+          isCorrect = false;
+        }
+      });
+      
+      // Check mediators
+      gameState.classifiedCards.mediators.forEach(card => {
+        if (card.type === "Mediator") {
+          mediatorsCorrect++;
+        } else {
+          isCorrect = false;
+        }
+      });
+      
+      // Check modifiers
+      gameState.classifiedCards.modifiers.forEach(card => {
+        if (card.type === "Effect Modifier") {
+          modifiersCorrect++;
+        } else {
+          isCorrect = false;
+        }
+      });
+      
+      // Count total correct vs expected
+      const totalConfounderCount = gameState.currentTheme.factors.filter(f => f.type === "Confounder").length;
+      const totalMediatorCount = gameState.currentTheme.factors.filter(f => f.type === "Mediator").length;
+      const totalModifierCount = gameState.currentTheme.factors.filter(f => f.type === "Effect Modifier").length;
+      
+      // Only fully correct if all cards are in the right categories
+      isCorrect = isCorrect && 
+                 confoundersCorrect === totalConfounderCount &&
+                 mediatorsCorrect === totalMediatorCount &&
+                 modifiersCorrect === totalModifierCount;
+      
+      // Show result
+      showResult(isCorrect, {
+        confounders: { correct: confoundersCorrect, total: totalConfounderCount },
+        mediators: { correct: mediatorsCorrect, total: totalMediatorCount },
+        modifiers: { correct: modifiersCorrect, total: totalModifierCount }
+      });
+    }
+    
+    // Show result
+    function showResult(isCorrect, stats) {
+      // Generate result content
+      let resultHTML = `<p class="${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}" style="padding: 0.75rem; margin-bottom: 1rem;">
+        ${isCorrect ? '✓ 正解！領土を獲得しました！' : '✗ 分類が不正確です。'}
+      </p>`;
+      
+      resultHTML += `<p>あなたの分類:</p>
+      <ul>
+        <li>交絡因子: ${stats.confounders.correct}/${stats.confounders.total} 正解</li>
+        <li>中間因子: ${stats.mediators.correct}/${stats.mediators.total} 正解</li>
+        <li>効果修飾因子: ${stats.modifiers.correct}/${stats.modifiers.total} 正解</li>
+      </ul>
+      
+      <p style="margin-top: 1rem;">正しい分類:</p>
+      <ul>`;
+      
+      gameState.currentTheme.factors.forEach(factor => {
+        let typeText = "";
+        if (factor.type === "Confounder") typeText = "交絡因子";
+        else if (factor.type === "Mediator") typeText = "中間因子";
+        else if (factor.type === "Effect Modifier") typeText = "効果修飾因子";
+        
+        resultHTML += `<li>${factor.name}: ${typeText}</li>`;
+      });
+      
+      resultHTML += `</ul>`;
+      
+      // Set content and render DAG
+      resultContent.innerHTML = resultHTML;
+      renderDAG();
+      
+      // Show modal
+      resultModal.classList.add("active");
+      
+      // If correct, claim territory
+      if (isCorrect) {
+        gameState.tileOwners[gameState.selectedTile] = gameState.currentTeam;
+        gameState.conquests++;
+        updateTurnInfo();
+      }
+    }
+      
+      // Render DAG (Directed Acyclic Graph)
+    function renderDAG() {
+      const svg = dagSvg;
+      svg.innerHTML = "";
+      
+      // Set up constants for drawing
+      const width = 500;
+      const height = 180;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const boxWidth = 100;
+      const boxHeight = 30;
+      
+      // Create exposure box
+      const exposureBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      exposureBox.setAttribute("x", centerX - 150 - boxWidth / 2);
+      exposureBox.setAttribute("y", centerY - boxHeight / 2);
+      exposureBox.setAttribute("width", boxWidth);
+      exposureBox.setAttribute("height", boxHeight);
+      exposureBox.setAttribute("rx", 5);
+      exposureBox.setAttribute("fill", "#00bcd4");
+      exposureBox.setAttribute("stroke", "#007a8c");
+      svg.appendChild(exposureBox);
+      
+      // Create outcome box
+      const outcomeBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      outcomeBox.setAttribute("x", centerX + 150 - boxWidth / 2);
+      outcomeBox.setAttribute("y", centerY - boxHeight / 2);
+      outcomeBox.setAttribute("width", boxWidth);
+      outcomeBox.setAttribute("height", boxHeight);
+      outcomeBox.setAttribute("rx", 5);
+      outcomeBox.setAttribute("fill", "#ff9800");
+      outcomeBox.setAttribute("stroke", "#c66900");
+      svg.appendChild(outcomeBox);
+      
+      // Create mediator box
+      const mediatorBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      mediatorBox.setAttribute("x", centerX - boxWidth / 2);
+      mediatorBox.setAttribute("y", centerY - boxHeight / 2);
+      mediatorBox.setAttribute("width", boxWidth);
+      mediatorBox.setAttribute("height", boxHeight);
+      mediatorBox.setAttribute("rx", 5);
+      mediatorBox.setAttribute("fill", "#8bc34a");
+      mediatorBox.setAttribute("stroke", "#689f38");
+      svg.appendChild(mediatorBox);
+      
+      // Create exposure text
+      const exposureText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      exposureText.setAttribute("x", centerX - 150);
+      exposureText.setAttribute("y", centerY + 5);
+      exposureText.setAttribute("text-anchor", "middle");
+      exposureText.setAttribute("fill", "black");
+      exposureText.setAttribute("font-size", "12");
+      exposureText.textContent = "曝露";
+      svg.appendChild(exposureText);
+      
+      // Create outcome text
+      const outcomeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      outcomeText.setAttribute("x", centerX + 150);
+      outcomeText.setAttribute("y", centerY + 5);
+      outcomeText.setAttribute("text-anchor", "middle");
+      outcomeText.setAttribute("fill", "black");
+      outcomeText.setAttribute("font-size", "12");
+      outcomeText.textContent = "アウトカム";
+      svg.appendChild(outcomeText);
+      
+      // Create mediator text
+      const mediatorText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      mediatorText.setAttribute("x", centerX);
+      mediatorText.setAttribute("y", centerY + 5);
+      mediatorText.setAttribute("text-anchor", "middle");
+      mediatorText.setAttribute("fill", "black");
+      mediatorText.setAttribute("font-size", "12");
+      mediatorText.textContent = "中間因子";
+      svg.appendChild(mediatorText);
+      
+      // Draw arrows
+      // Exposure to Mediator
+      const arrowEM = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      arrowEM.setAttribute("x1", centerX - 150 + boxWidth / 2 + 5);
+      arrowEM.setAttribute("y1", centerY);
+      arrowEM.setAttribute("x2", centerX - boxWidth / 2 - 5);
+      arrowEM.setAttribute("y2", centerY);
+      arrowEM.setAttribute("stroke", "white");
+      arrowEM.setAttribute("stroke-width", 2);
+      arrowEM.setAttribute("marker-end", "url(#arrowhead)");
+      svg.appendChild(arrowEM);
+      
+      // Mediator to Outcome
+      const arrowMO = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      arrowMO.setAttribute("x1", centerX + boxWidth / 2 + 5);
+      arrowMO.setAttribute("y1", centerY);
+      arrowMO.setAttribute("x2", centerX + 150 - boxWidth / 2 - 5);
+      arrowMO.setAttribute("y2", centerY);
+      arrowMO.setAttribute("stroke", "white");
+      arrowMO.setAttribute("stroke-width", 2);
+      arrowMO.setAttribute("marker-end", "url(#arrowhead)");
+      svg.appendChild(arrowMO);
+      
+      // Create confounders
+      const confounderCount = gameState.currentTheme.factors.filter(f => f.type === "Confounder").length;
+      
+      if (confounderCount > 0) {
+        // Draw confounder box
+        const confounderBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        confounderBox.setAttribute("x", centerX - boxWidth / 2);
+        confounderBox.setAttribute("y", centerY - 70 - boxHeight / 2);
+        confounderBox.setAttribute("width", boxWidth);
+        confounderBox.setAttribute("height", boxHeight);
+        confounderBox.setAttribute("rx", 5);
+        confounderBox.setAttribute("fill", "#e91e63");
+        confounderBox.setAttribute("stroke", "#b0003a");
+        svg.appendChild(confounderBox);
+        
+        // Create confounder text
+        const confounderText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        confounderText.setAttribute("x", centerX);
+        confounderText.setAttribute("y", centerY - 70 + 5);
+        confounderText.setAttribute("text-anchor", "middle");
+        confounderText.setAttribute("fill", "white");
+        confounderText.setAttribute("font-size", "12");
+        confounderText.textContent = "交絡因子";
+        svg.appendChild(confounderText);
+        
+        // Draw arrows from confounder
+        // Confounder to Exposure
+        const arrowCE = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        arrowCE.setAttribute("x1", centerX - 20);
+        arrowCE.setAttribute("y1", centerY - 70 + boxHeight / 2 + 5);
+        arrowCE.setAttribute("x2", centerX - 100);
+        arrowCE.setAttribute("y2", centerY - boxHeight / 2 - 5);
+        arrowCE.setAttribute("stroke", "white");
+        arrowCE.setAttribute("stroke-width", 2);
+        arrowCE.setAttribute("marker-end", "url(#arrowhead)");
+        svg.appendChild(arrowCE);
+        
+        // Confounder to Outcome
+        const arrowCO = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        arrowCO.setAttribute("x1", centerX + 20);
+        arrowCO.setAttribute("y1", centerY - 70 + boxHeight / 2 + 5);
+        arrowCO.setAttribute("x2", centerX + 100);
+        arrowCO.setAttribute("y2", centerY - boxHeight / 2 - 5);
+        arrowCO.setAttribute("stroke", "white");
+        arrowCO.setAttribute("stroke-width", 2);
+        arrowCO.setAttribute("marker-end", "url(#arrowhead)");
+        svg.appendChild(arrowCO);
+      }
+      
+      // Create effect modifier
+      const modifierCount = gameState.currentTheme.factors.filter(f => f.type === "Effect Modifier").length;
+      
+      if (modifierCount > 0) {
+        // Draw modifier box
+        const modifierBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        modifierBox.setAttribute("x", centerX - boxWidth / 2);
+        modifierBox.setAttribute("y", centerY + 50 - boxHeight / 2);
+        modifierBox.setAttribute("width", boxWidth);
+        modifierBox.setAttribute("height", boxHeight);
+        modifierBox.setAttribute("rx", 5);
+        modifierBox.setAttribute("fill", "#9c27b0");
+        modifierBox.setAttribute("stroke", "#6a0080");
+        svg.appendChild(modifierBox);
+        
+        // Create modifier text
+        const modifierText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        modifierText.setAttribute("x", centerX);
+        modifierText.setAttribute("y", centerY + 50 + 5);
+        modifierText.setAttribute("text-anchor", "middle");
+        modifierText.setAttribute("fill", "white");
+        modifierText.setAttribute("font-size", "12");
+        modifierText.textContent = "効果修飾因子";
+        svg.appendChild(modifierText);
+        
+        // Draw modifier arrow
+        const arrowM = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        arrowM.setAttribute("x1", centerX);
+        arrowM.setAttribute("y1", centerY + 50 - boxHeight / 2 - 5);
+        arrowM.setAttribute("x2", centerX);
+        arrowM.setAttribute("y2", centerY + 20);
+        arrowM.setAttribute("stroke", "white");
+        arrowM.setAttribute("stroke-width", 2);
+        arrowM.setAttribute("stroke-dasharray", "4");
+        svg.appendChild(arrowM);
+      }
+      
+      // Add arrowhead marker
+      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      svg.appendChild(defs);
+      
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+      marker.setAttribute("id", "arrowhead");
+      marker.setAttribute("markerWidth", "10");
+      marker.setAttribute("markerHeight", "7");
+      marker.setAttribute("refX", "10");
+      marker.setAttribute("refY", "3.5");
+      marker.setAttribute("orient", "auto");
+      defs.appendChild(marker);
+      
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute("points", "0 0, 10 3.5, 0 7");
+      polygon.setAttribute("fill", "white");
+      marker.appendChild(polygon);
+    }
+      
+      // Close the modal
+    function closeModal() {
+      resultModal.classList.remove("active");
+    }
+    
+    // Continue the game
+    function continueGame() {
+      closeModal();
+      
+      // If player has reached max conquests or game is over, move to next team
+      if (gameState.conquests >= config.maxConquests) {
+        nextTurn();
+      } else {
+        // Reset classification but keep same team for next conquest
+        resetClassification();
+      }
+    }
+    
+    // Move to next team's turn
+    function nextTurn() {
+      // Reset conquests
+      gameState.conquests = 0;
+      
+      // Move to next team
+      gameState.currentTeam = (gameState.currentTeam + 1) % gameState.teamCount;
+      
+      // Update UI
+      updateTurnInfo();
+      
+      // Reset tile selection
+      if (gameState.selectedTile !== null) {
+        document.querySelectorAll(".tile")[gameState.selectedTile].classList.remove("selected-tile");
+        gameState.selectedTile = null;
+      }
+      
+      // Reset classification
+      resetClassification();
+      
+      // Reset theme display
+      exposureText.textContent = "領土を選択してください";
+      outcomeText.textContent = "領土を選択してください";
+      cardArea.innerHTML = "";
+    }
+    
+    // Update turn information display
+    function updateTurnInfo() {
+      turnInfo.textContent = `ターン: ${gameState.teamNames[gameState.currentTeam]}`;
+      conquestsInfo.textContent = `征服数: ${gameState.conquests}/${config.maxConquests}`;
+      
+      // Update team color
+      turnInfo.className = "turn-info";
+      // Add team color class
+      if (gameState.currentTeam === 0) turnInfo.style.color = "var(--team-1)";
+      else if (gameState.currentTeam === 1) turnInfo.style.color = "var(--team-2)";
+      else if (gameState.currentTeam === 2) turnInfo.style.color = "var(--team-3)";
+      else if (gameState.currentTeam === 3) turnInfo.style.color = "var(--team-4)";
+    }
+    
+    // Check game end condition
+    function checkGameEnd() {
+      // Count territories for each team
+      const territoryCounts = Array(gameState.teamCount).fill(0);
+      
+      for (let i = 0; i < gameState.tileOwners.length; i++) {
+        if (gameState.tileOwners[i] !== null) {
+          territoryCounts[gameState.tileOwners[i]]++;
+        }
+      }
+      
+      // Calculate total owned territories
+      const totalOwned = territoryCounts.reduce((a, b) => a + b, 0);
+      const totalTiles = config.mapWidth * config.mapHeight;
+      
+      // Check if all territories are occupied
+      if (totalOwned === totalTiles) {
+        // Find team with most territories
+        let maxTerritories = 0;
+        let winningTeam = -1;
+        
+        for (let i = 0; i < territoryCounts.length; i++) {
+          if (territoryCounts[i] > maxTerritories) {
+            maxTerritories = territoryCounts[i];
+            winningTeam = i;
+          }
+        }
+        
+        // Show game end modal
+        alert(`ゲーム終了！${gameState.teamNames[winningTeam]}の勝利です！ (${maxTerritories}領地)`);
+        return true;
+      }
+      
+      return false;
+    }
+    
+    // Add event listener for DOMContentLoaded
+    document.addEventListener("DOMContentLoaded", function() {
+      setupEventListeners();
+      updateTeamInputs();
+      // initGame is called after form submission
+    });
+  </script>
+</body>
+</html>
+      

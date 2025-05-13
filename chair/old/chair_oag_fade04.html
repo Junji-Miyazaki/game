@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Chair Art</title>
+    <style>
+        /* Global Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: white;
+        }
+        
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #videoElement {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 240px;
+            height: 180px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            display: none;
+        }
+        
+        /* Controls Panel */
+        .controls-wrapper {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+        }
+        
+        .toggle-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 101;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-controls:hover {
+            background-color: rgba(50, 50, 50, 0.7);
+        }
+        
+        .controls {
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            width: 300px;
+            display: none;
+            transform: translateY(10px);
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .controls.visible {
+            display: block;
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .control-section {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .control-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        
+        h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            font-weight: 400;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 8px 12px;
+            background-color: rgba(60, 60, 60, 0.5);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 13px;
+        }
+        
+        button:hover {
+            background-color: rgba(80, 80, 80, 0.7);
+        }
+        
+        button.active {
+            background-color: rgba(150, 150, 150, 0.5);
+        }
+        
+        .slider-container {
+            margin: 10px 5px;
+        }
+        
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            background: rgba(60, 60, 60, 0.5);
+            height: 6px;
+            border-radius: 3px;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .status {
+            margin-top: 15px;
+            font-size: 13px;
+            background-color: rgba(30, 30, 30, 0.8);
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .status div {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .status span {
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <video id="videoElement" autoplay playsinline></video>
+
+    <div class="toggle-controls" id="toggleControlsBtn">⚙️</div>
+    
+    <div class="controls-wrapper">
+        <div class="controls" id="controlsPanel">
+            <div class="control-section">
+                <h3>Camera</h3>
+                <button id="toggleCamera">Show Camera</button>
+                <button id="toggleAnalysis">Motion Analysis</button>
+            </div>
+            
+            <div class="control-section">
+                <h3>Grid & Effects</h3>
+                <div class="slider-container">
+                    <label for="gridSize">Grid Size <span id="gridSizeValue">4</span></label>
+                    <input type="range" id="gridSize" min="2" max="16" value="4">
+                </div>
+                <div class="slider-container">
+                    <label for="effectIntensity">Effect Intensity <span id="effectIntensityValue">50%</span></label>
+                    <input type="range" id="effectIntensity" min="0" max="100" value="50">
+                </div>
+                <div class="slider-container">
+                    <label for="motionThreshold">Motion Threshold <span id="motionThresholdValue">0.05</span></label>
+                    <input type="range" id="motionThreshold" min="1" max="20" value="5">
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Effects</h3>
+                <button id="effect1" class="active">Brightness Map</button>
+                <button id="effect2">Hue Shift</button>
+                <button id="effect3">Mosaic</button>
+                <button id="forceTransition">Force Transition</button>
+            </div>
+            
+            <div class="status">
+                <div>Motion Level <span id="motionValue">0.000</span></div>
+                <div>Active Images <span id="activeImageInfo">0</span></div>
+                <div>Last Motion <span id="lastMotionInfo">-</span></div>
+                <div>Transition <span id="transitionInfo">-</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration & Settings
+        const config = {
+            gridSize: 4,
+            effectIntensity: 0.5,
+            currentEffect: 'brightness',
+            showCamera: false,
+            analyzeCamera: true,
+            fadeSpeed: 0.02,
+            motionThreshold: 0.05,
+            maxActiveImages: 4,
+            inactivityTimeout: 5000, // 5 seconds without motion
+            defaultOpacity: 0.5
+        };
+        
+        // Load saved settings if available
+        loadSettings();
+        
+        // Image paths
+        const imagePaths = [
+            'IMG_8538.png', 'IMG_7378.png', 'IMG_7449.png', 'IMG_7450.png',
+            'IMG_7456.png', 'IMG_7464.png', 'IMG_7472.png', 'IMG_7478.png',
+            'IMG_7793.png', 'IMG_8505.png', 'IMG_8506.png', 'IMG_8507.png',
+            'IMG_8539.png', 'IMG_8540.png', 'IMG_8541.png', 'IMG_8542.png',
+            'IMG_8543.png', 'IMG_8544.png', 'IMG_8545.png', 'IMG_8546.png'
+        ];
+        
+        // Asset loading
+        const images = [];
+        let loadedImages = 0;
+        const totalImages = imagePaths.length;
+        
+        // UI Elements
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('videoElement');
+        const analysisCanvas = document.createElement('canvas');
+        const analysisCtx = analysisCanvas.getContext('2d');
+        const toggleControlsBtn = document.getElementById('toggleControlsBtn');
+        const controlsPanel = document.getElementById('controlsPanel');
+        
+        // State variables
+        let activeImages = []; // Array of {index, opacity, targetOpacity, state}
+        let motionLevel = 0;
+        let previousGridData = null;
+        let lastMotionTime = 0;
+        let nextActionTime = 0;
+        let animationId = null;
+        let videoStream = null;
+        
+        // UI Events
+        toggleControlsBtn.addEventListener('click', () => {
+            controlsPanel.classList.toggle('visible');
+        });
+        
+        document.getElementById('toggleCamera').addEventListener('click', function() {
+            config.showCamera = !config.showCamera;
+            video.style.display = config.showCamera ? 'block' : 'none';
+            this.textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+            saveSettings();
+        });
+        
+        document.getElementById('toggleAnalysis').addEventListener('click', function() {
+            config.analyzeCamera = !config.analyzeCamera;
+            this.classList.toggle('active');
+            saveSettings();
+        });
+        
+        document.getElementById('gridSize').addEventListener('input', (e) => {
+            config.gridSize = parseInt(e.target.value);
+            document.getElementById('gridSizeValue').textContent = config.gridSize;
+            saveSettings();
+        });
+        
+        document.getElementById('effectIntensity').addEventListener('input', (e) => {
+            config.effectIntensity = parseInt(e.target.value) / 100;
+            document.getElementById('effectIntensityValue').textContent = parseInt(e.target.value) + '%';
+            saveSettings();
+        });
+        
+        document.getElementById('motionThreshold').addEventListener('input', (e) => {
+            config.motionThreshold = parseInt(e.target.value) / 100;
+            document.getElementById('motionThresholdValue').textContent = config.motionThreshold.toFixed(2);
+            saveSettings();
+        });
+        
+        document.getElementById('effect1').addEventListener('click', function() {
+            setActiveEffect('brightness', this);
+        });
+        
+        document.getElementById('effect2').addEventListener('click', function() {
+            setActiveEffect('hueShift', this);
+        });
+        
+        document.getElementById('effect3').addEventListener('click', function() {
+            setActiveEffect('mosaic', this);
+        });
+        
+        document.getElementById('forceTransition').addEventListener('click', () => {
+            handleMotionDetected();
+        });
+        
+        // Helper function to set active effect
+        function setActiveEffect(effect, button) {
+            // Update config
+            config.currentEffect = effect;
+            saveSettings();
+            
+            // Update UI
+            document.querySelectorAll('.control-section button').forEach(btn => {
+                if (btn.id.startsWith('effect')) {
+                    btn.classList.remove('active');
+                }
+            });
+            button.classList.add('active');
+        }
+        
+        // Settings persistence functions
+        function saveSettings() {
+            const settings = {
+                gridSize: config.gridSize,
+                effectIntensity: config.effectIntensity,
+                currentEffect: config.currentEffect,
+                showCamera: config.showCamera,
+                analyzeCamera: config.analyzeCamera,
+                motionThreshold: config.motionThreshold
+            };
+            
+            try {
+                localStorage.setItem('chairArtSettings', JSON.stringify(settings));
+            } catch (e) {
+                console.error('Could not save settings:', e);
+            }
+        }
+        
+        function loadSettings() {
+            try {
+                const savedSettings = localStorage.getItem('chairArtSettings');
+                if (savedSettings) {
+                    const settings = JSON.parse(savedSettings);
+                    
+                    // Update config
+                    config.gridSize = settings.gridSize || 4;
+                    config.effectIntensity = settings.effectIntensity || 0.5;
+                    config.currentEffect = settings.currentEffect || 'brightness';
+                    config.showCamera = settings.showCamera || false;
+                    config.analyzeCamera = settings.analyzeCamera !== undefined ? settings.analyzeCamera : true;
+                    config.motionThreshold = settings.motionThreshold || 0.05;
+                    
+                    // Update UI to match loaded settings
+                    document.getElementById('gridSize').value = config.gridSize;
+                    document.getElementById('gridSizeValue').textContent = config.gridSize;
+                    
+                    document.getElementById('effectIntensity').value = config.effectIntensity * 100;
+                    document.getElementById('effectIntensityValue').textContent = Math.round(config.effectIntensity * 100) + '%';
+                    
+                    document.getElementById('motionThreshold').value = config.motionThreshold * 100;
+                    document.getElementById('motionThresholdValue').textContent = config.motionThreshold.toFixed(2);
+                    
+                    document.getElementById('toggleCamera').textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
+                    video.style.display = config.showCamera ? 'block' : 'none';
+                    
+                    // Set active effect button
+                    const effectButtonId = 
+                        config.currentEffect === 'brightness' ? 'effect1' :
+                        config.currentEffect === 'hueShift' ? 'effect2' : 'effect3';
+                    
+                    document.querySelectorAll('.control-section button').forEach(btn => {
+                        if (btn.id.startsWith('effect')) {
+                            btn.classList.remove('active');
+                        }
+                    });
+                    document.getElementById(effectButtonId).classList.add('active');
+                    
+                    if (config.analyzeCamera) {
+                        document.getElementById('toggleAnalysis').classList.add('active');
+                    } else {
+                        document.getElementById('toggleAnalysis').classList.remove('active');
+                    }
+                }
+            } catch (e) {
+                console.error('Could not load settings:', e);
+            }
+        }
+        
+        // Load images
+        for (let i = 0; i < imagePaths.length; i++) {
+            const img = new Image();
+            
+            // Try multiple paths
+            const paths = [
+                `chair_oag/${imagePaths[i]}`,
+                imagePaths[i],
+                `/Users/euler_m1/Documents/game/chair/chair_oag/${imagePaths[i]}`
+            ];
+            
+            function tryLoadImage(pathIndex) {
+                if (pathIndex >= paths.length) {
+                    console.error(`Failed to load image: ${imagePaths[i]}`);
+                    loadedImages++;
+                    
+                    // Use placeholder
+                    const placeholderImg = new Image();
+                    placeholderImg.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+                    images.push(placeholderImg);
+                    
+                    if (loadedImages === totalImages) {
+                        init();
+                    }
+                    return;
+                }
+                
+                img.src = paths[pathIndex];
+                img.onload = () => {
+                    console.log(`Loaded image: ${paths[pathIndex]}`);
+                    loadedImages++;
+                    images.push(img);
+                    if (loadedImages === totalImages) {
+                        init();
+                    }
+                };
+                img.onerror = () => {
+                    console.warn(`Failed to load from path ${paths[pathIndex]}. Trying next path.`);
+                    tryLoadImage(pathIndex + 1);
+                };
+            }
+            
+            tryLoadImage(0);
+        }
+        
+        // Initialize 
+        function init() {
+            // Set canvas size
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Add first image
+            if (images.length > 0) {
+                addNewImage(0, config.defaultOpacity);
+            }
+            
+            // Request camera access
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    videoStream = stream;
+                    video.srcObject = stream;
+                    analysisCanvas.width = 320;
+                    analysisCanvas.height = 240;
+                    
+                    // Start animation
+                    animate();
+                })
+                .catch(err => {
+                    console.error("Camera access denied:", err);
+                    // Continue without camera
+                    animate();
+                });
+                
+            // Record current time
+            lastMotionTime = Date.now();
+            nextActionTime = lastMotionTime + 2000;
+        }
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        // Get random unused image index
+        function getRandomUnusedImageIndex() {
+            // Get currently used indices
+            const usedIndices = activeImages.map(img => img.index);
+            
+            // Find unused indices
+            const unusedIndices = [];
+            for (let i = 0; i < images.length; i++) {
+                if (!usedIndices.includes(i)) {
+                    unusedIndices.push(i);
+                }
+            }
+            
+            // Return random unused index or -1 if all used
+            if (unusedIndices.length === 0) return -1;
+            return unusedIndices[Math.floor(Math.random() * unusedIndices.length)];
+        }
+        
+        // Add new image to display
+        function addNewImage(index = -1, targetOpacity = config.defaultOpacity) {
+            // If no specific index provided or index is invalid, get random unused image
+            if (index < 0 || index >= images.length) {
+                index = getRandomUnusedImageIndex();
+                if (index === -1) return false; // No unused images
+            }
+            
+            // Add image with fade-in
+            activeImages.push({
+                index: index,
+                opacity: 0,  // Start invisible
+                targetOpacity: targetOpacity,  // Target opacity
+                state: 'fadingIn'  // Current transition state
+            });
+            
+            return true;
+        }
+        
+        // Remove an image (start fade-out)
+        function removeRandomImage() {
+            if (activeImages.length <= 1) return false; // Keep at least one image
+            
+            // Choose random image
+            const removeIndex = Math.floor(Math.random() * activeImages.length);
+            
+            // Start fade out
+            activeImages[removeIndex].targetOpacity = 0;
+            activeImages[removeIndex].state = 'fadingOut';
+            
+            return true;
+        }
+        
+        // Handle motion detection
+        function handleMotionDetected() {
+            const now = Date.now();
+            lastMotionTime = now;
+            
+            // Update status display
+            document.getElementById('lastMotionInfo').textContent = 
+                new Date(lastMotionTime).toLocaleTimeString();
+            
+            // If we have less than max images, add a new one
+            if (activeImages.length < config.maxActiveImages) {
+                addNewImage();
+            } else {
+                // Otherwise, replace one image with another
+                removeRandomImage();
+                addNewImage();
+            }
+        }
+        
+        // Handle inactivity
+        function handleInactivity() {
+            // If we have more than one image, remove one
+            if (activeImages.length > 1) {
+                removeRandomImage();
+            }
+        }
+        
+        // Analyze camera input for motion
+        function analyzeVideoFrame() {
+            if (!videoStream || !config.analyzeCamera) return Array(config.gridSize * config.gridSize).fill(0.5);
+            
+            // Draw video frame to analysis canvas
+            analysisCtx.drawImage(video, 0, 0, analysisCanvas.width, analysisCanvas.height);
+            
+            // Divide into grid and analyze brightness
+            const cellWidth = analysisCanvas.width / config.gridSize;
+            const cellHeight = analysisCanvas.height / config.gridSize;
+            const gridData = [];
+            
+            for (let y = 0; y < config.gridSize; y++) {
+                for (let x = 0; x < config.gridSize; x++) {
+                    // Get pixel data
+                    const pixelData = analysisCtx.getImageData(
+                        x * cellWidth, y * cellHeight, cellWidth, cellHeight
+                    ).data;
+                    
+                    // Calculate average brightness
+                    let totalBrightness = 0;
+                    for (let i = 0; i < pixelData.length; i += 4) {
+                        const r = pixelData[i];
+                        const g = pixelData[i + 1];
+                        const b = pixelData[i + 2];
+                        // Weighted luminance (human eye sensitivity)
+                        totalBrightness += (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+                    }
+                    
+                    // Average brightness (0-1 range)
+                    const avgBrightness = totalBrightness / (pixelData.length / 4);
+                    gridData.push(avgBrightness);
+                }
+            }
+            
+            // Detect motion (difference from previous frame)
+            if (previousGridData) {
+                let totalDifference = 0;
+                for (let i = 0; i < gridData.length; i++) {
+                    if (i < previousGridData.length) {
+                        totalDifference += Math.abs(gridData[i] - previousGridData[i]);
+                    }
+                }
+                
+                // Calculate average difference (motion amount)
+                motionLevel = totalDifference / gridData.length;
+                
+                // Check for motion threshold
+                const now = Date.now();
+                if (motionLevel > config.motionThreshold && now > nextActionTime) {
+                    handleMotionDetected();
+                    nextActionTime = now + 1000; // Minimum 1 second between transitions
+                } else if (now - lastMotionTime > config.inactivityTimeout && now > nextActionTime) {
+                    // Handle inactivity
+                    handleInactivity();
+                    lastMotionTime = now; // Reset timer
+                    nextActionTime = now + 2000; // Wait before next action
+                }
+            }
+            
+            // Save current frame data
+            previousGridData = [...gridData];
+            
+            return gridData;
+        }
+        
+        // Main animation loop
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+            
+            // Analyze camera frame
+            const gridData = analyzeVideoFrame();
+            
+            // Update status display
+            document.getElementById('motionValue').textContent = motionLevel.toFixed(3);
+            document.getElementById('activeImageInfo').textContent = activeImages.length;
+            
+            // Process image transitions
+            updateImageTransitions();
+            
+            // Draw images
+            drawMultipleImagesWithEffects(gridData);
+        }
+        
+        // Update image transitions (fade in/out)
+        function updateImageTransitions() {
+            // Process each active image
+            for (let i = activeImages.length - 1; i >= 0; i--) {
+                const img = activeImages[i];
+                
+                // Process based on state
+                if (img.state === 'fadingIn') {
+                    // Fading in
+                    img.opacity += config.fadeSpeed;
+                    if (img.opacity >= img.targetOpacity) {
+                        img.opacity = img.targetOpacity;
+                        img.state = 'stable';
+                    }
+                } else if (img.state === 'fadingOut') {
+                    // Fading out
+                    img.opacity -= config.fadeSpeed;
+                    if (img.opacity <= 0) {
+                        // Remove completely faded out images
+                        activeImages.splice(i, 1);
+                    }
+                } else if (img.state === 'stable' && img.opacity !== img.targetOpacity) {
+                    // Adjust to target if needed
+                    if (img.opacity < img.targetOpacity) {
+                        img.opacity = Math.min(img.opacity + config.fadeSpeed, img.targetOpacity);
+                    } else {
+                        img.opacity = Math.max(img.opacity - config.fadeSpeed, img.targetOpacity);
+                    }
+                }
+            }
+            
+            // Update transition info
+            let transitionInfo = '-';
+            if (activeImages.some(img => img.state === 'fadingIn')) {
+                transitionInfo = 'Fading In';
+            } else if (activeImages.some(img => img.state === 'fadingOut')) {
+                transitionInfo = 'Fading Out';
+            }
+            document.getElementById('transitionInfo').textContent = transitionInfo;
+        }
+        
+        // Draw multiple images with effects
+        function drawMultipleImagesWithEffects(gridData) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Skip if no images
+            if (activeImages.length === 0) return;
+            
+            // Process each grid cell
+            const cellWidth = canvas.width / config.gridSize;
+            const cellHeight = canvas.height / config.gridSize;
+            
+            for (let y = 0; y < config.gridSize; y++) {
+                for (let x = 0; x < config.gridSize; x++) {
+                    const gridIndex = y * config.gridSize + x;
+                    const value = gridData[gridIndex] || 0.5;
+                    
+                    // Draw images for this cell
+                    drawImagesForCell(x, y, cellWidth, cellHeight, value);
+                }
+            }
+        }
+        
+        // Draw all active images for a single cell
+        function drawImagesForCell(gridX, gridY, cellWidth, cellHeight, value) {
+            // Draw each active image
+            for (let i = 0; i < activeImages.length; i++) {
+                const imgInfo = activeImages[i];
+                if (imgInfo.opacity <= 0) continue; // Skip invisible
+                
+                const img = images[imgInfo.index];
+                
+                // Calculate image coordinates and size
+                const imgScale = Math.max(
+                    canvas.width / img.width,
+                    canvas.height / img.height
+                );
+                
+                const imgWidth = img.width * imgScale;
+                const imgHeight = img.height * imgScale;
+                const imgX = (canvas.width - imgWidth) / 2;
+                const imgY = (canvas.height - imgHeight) / 2;
+                
+                // Calculate grid cell coordinates and size in source image
+                const gridWidthInImage = img.width / config.gridSize;
+                const gridHeightInImage = img.height / config.gridSize;
+                const srcX = gridX * gridWidthInImage;
+                const srcY = gridY * gridHeightInImage;
+                
+                // Calculate destination coordinates and size
+                const dstX = imgX + gridX * (imgWidth / config.gridSize);
+                const dstY = imgY + gridY * (imgHeight / config.gridSize);
+                const dstWidth = imgWidth / config.gridSize;
+                const dstHeight = imgHeight / config.gridSize;
+                
+                // Apply effects
+                ctx.save();
+                ctx.globalAlpha = imgInfo.opacity;
+                
+                // Apply selected effect
+                switch (config.currentEffect) {
+                    case 'brightness':
+                        // Brightness filter
+                        if (value > 0.5) {
+                            // Brighten lighter areas
+                            ctx.filter = `brightness(${100 + (value - 0.5) * 200 * config.effectIntensity}%)`;
+                        } else {
+                            // Darken darker areas
+                            ctx.filter = `brightness(${100 - (0.5 - value) * 100 * config.effectIntensity}%)`;
+                        }
+                        break;
+                        
+                    case 'hueShift':
+                        // Hue rotation
+                        ctx.filter = `hue-rotate(${value * 360 * config.effectIntensity}deg)`;
+                        break;
+                        
+                    case 'mosaic':
+                        // Mosaic effect (stronger with lower values)
+                        const pixelSize = Math.max(1, Math.floor((1 - value) * 10 * config.effectIntensity));
+                        
+                        if (pixelSize > 1) {
+                            // Implement mosaic effect with temp canvas
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = Math.ceil(dstWidth / pixelSize);
+                            tempCanvas.height = Math.ceil(dstHeight / pixelSize);
+                            const tempCtx = tempCanvas.getContext('2d');
+                            
+                            // Copy to temp canvas at reduced size
+                            tempCtx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                                             0, 0, tempCanvas.width, tempCanvas.height);
+                            
+                            // Draw back at original size (pixelated)
+                            ctx.imageSmoothingEnabled = false;
+                            ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, 
+                                          dstX, dstY, dstWidth, dstHeight);
+                            ctx.imageSmoothingEnabled = true;
+                            
+                            ctx.restore();
+                            continue; // Skip normal drawing
+                        }
+                        break;
+                }
+                
+                // Normal drawing
+                ctx.drawImage(img, srcX, srcY, gridWidthInImage, gridHeightInImage, 
+                             dstX, dstY, dstWidth, dstHeight);
+                ctx.restore();
+            }
+        }
+    </script>
+</body>
+</html>

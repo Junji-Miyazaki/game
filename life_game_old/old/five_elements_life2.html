@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Complex Life Game</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            color: #eee;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+        }
+
+        #ui-toggle {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(60, 60, 60, 0.7);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease;
+        }
+
+        #ui-toggle:hover {
+            transform: scale(1.1);
+            background-color: rgba(80, 80, 80, 0.8);
+        }
+
+        #ui-toggle svg {
+            width: 30px;
+            height: 30px;
+            fill: #ddd;
+        }
+
+        #controls-panel {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background-color: rgba(40, 40, 40, 0.85);
+            border-radius: 10px;
+            padding: 15px;
+            width: 280px;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 900;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+        }
+
+        button {
+            background-color: #444;
+            color: #eee;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 5px;
+            flex: 1;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        button.active {
+            background-color: #2a6c8f;
+        }
+
+        input[type="range"] {
+            width: 150px;
+            accent-color: #2a6c8f;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            max-width: 250px;
+            backdrop-filter: blur(3px);
+        }
+
+        .info-row {
+            margin-bottom: 5px;
+        }
+
+        .population-bar {
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 2px;
+            display: flex;
+        }
+
+        .population-segment {
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <canvas id="lifeCanvas"></canvas>
+        <div id="info-panel">
+            <div class="info-row" id="turnCounter">Turn: 0</div>
+            <div class="info-row" id="virusCount">Viruses: 0</div>
+            <div class="info-row">Population:</div>
+            <div id="populationBars"></div>
+        </div>
+
+        <div id="ui-toggle">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12,8a4,4,0,1,0,4,4A4,4,0,0,0,12,8Zm0,6a2,2,0,1,1,2-2A2,2,0,0,1,12,14Z" />
+                <path
+                    d="M21.294,13.9l-.444-.256a9.1,9.1,0,0,0,0-3.29l.444-.256a1,1,0,0,0,.366-1.366l-1-1.732a1,1,0,0,0-1.366-.366l-.445.257A8.977,8.977,0,0,0,16,5.3V4.5a1,1,0,0,0-1-1H13a1,1,0,0,0-1,1V5.3a8.977,8.977,0,0,0-2.848,1.589l-.445-.257a1,1,0,0,0-1.366.366l-1,1.732a1,1,0,0,0,.366,1.366l.444.256a9.1,9.1,0,0,0,0,3.29l-.444.256a1,1,0,0,0-.366,1.366l1,1.732a1,1,0,0,0,1.366.366l.445-.257A8.977,8.977,0,0,0,12,18.7v.8a1,1,0,0,0,1,1h2a1,1,0,0,0,1-1V18.7a8.977,8.977,0,0,0,2.848-1.589l.445.257a1,1,0,0,0,1.366-.366l1-1.732A1,1,0,0,0,21.294,13.9ZM12,15a3,3,0,1,1,3-3A3,3,0,0,1,12,15Z" />
+            </svg>
+        </div>
+
+        <div id="controls-panel">
+            <div class="buttons-row">
+                <button id="startButton">Start</button>
+                <button id="pauseButton">Pause</button>
+                <button id="resetButton">Reset</button>
+            </div>
+            <div class="control-group">
+                <label for="speedSlider">Speed:</label>
+                <div>
+                    <input type="range" id="speedSlider" min="1" max="20" value="5">
+                    <span id="speedValue">x5</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="cellSizeSlider">Grid Scale:</label>
+                <div>
+                    <input type="range" id="cellSizeSlider" min="2" max="10" value="5">
+                    <span id="cellSizeValue">x5</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('lifeCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('container');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const resetButton = document.getElementById('resetButton');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValueDisplay = document.getElementById('speedValue');
+        const turnCounterDisplay = document.getElementById('turnCounter');
+        const populationBarsDisplay = document.getElementById('populationBars');
+        const virusCountDisplay = document.getElementById('virusCount');
+        const uiToggle = document.getElementById('ui-toggle');
+        const controlsPanel = document.getElementById('controls-panel');
+        const cellSizeSlider = document.getElementById('cellSizeSlider');
+        const cellSizeValueDisplay = document.getElementById('cellSizeValue');
+
+        // UI toggle
+        uiToggle.addEventListener('click', () => {
+            if (controlsPanel.style.display === 'flex') {
+                controlsPanel.style.display = 'none';
+            } else {
+                controlsPanel.style.display = 'flex';
+            }
+        });
+
+        let BASE_CELL_SIZE = 5; // スケーリングファクターの基本値
+        let GRID_SIZE_X;
+        let GRID_SIZE_Y;
+        let CELL_SIZE; // 実際のセルサイズ（BASE_CELL_SIZE に基づいて計算される）
+        let grid;
+        let turn = 0;
+        let isRunning = false;
+        let gameInterval;
+        let baseInterval = 50;
+
+        // パーティクルサイズの定義
+        const VIRUS_SIZE = 1; // ウイルスのドットサイズ
+        const CELL_SIZES = {
+            wood: 5,
+            fire: 3,
+            earth: 10,
+            metal: 8,
+            water: 2
+        };
+
+        const VIRUS_TYPES = ['yin', 'yang'];
+        const VIRUS_COLORS = { yin: '#9370DB', yang: '#4682B4' };
+        const VIRUS_COUNT = 40; // より多くのウイルス
+
+        const CELL_TYPES = ['wood', 'fire', 'earth', 'metal', 'water'];
+        const CELL_COLORS = { wood: '#4CAF50', fire: '#F44336', earth: '#FFD700', metal: '#E0E0E0', water: '#2196F3' };
+        const CELL_SHAPES = { wood: 'rect', fire: 'triangle', earth: 'rect', metal: 'circle', water: 'wave' };
+        const CELL_COUNT = 50; // より多くの細胞
+
+        let entities = [];
+        let viruses = [];
+        let cells = [];
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // グリッドサイズの再計算
+            CELL_SIZE = BASE_CELL_SIZE;
+            GRID_SIZE_X = Math.floor(canvas.width / CELL_SIZE);
+            GRID_SIZE_Y = Math.floor(canvas.height / CELL_SIZE);
+
+            initGrid();
+        }
+
+        function initGrid() {
+            grid = Array(GRID_SIZE_Y).fill(null).map(() => Array(GRID_SIZE_X).fill(null));
+        }
+
+        class Entity {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+            }
+
+            draw() {
+                const drawX = this.x * CELL_SIZE;
+                const drawY = this.y * CELL_SIZE;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
+            }
+        }
+
+        class Virus extends Entity {
+            constructor(x, y, type) {
+                super(x, y, type);
+                this.color = VIRUS_COLORS[type];
+                this.lifespan = Math.floor(Math.random() * 21 + 30); // より長い寿命
+                this.size = VIRUS_SIZE;
+            }
+
+            move() {
+                let dx = 0;
+                let dy = 0;
+                
+                // ランダムな動きを追加
+                const random = Math.random();
+                
+                if (this.type === 'yin') {
+                    dx = Math.sign(GRID_SIZE_X / 2 - this.x);
+                    dy = Math.sign(GRID_SIZE_Y / 2 - this.y);
+                    
+                    // ランダム要素を加える
+                    if (random < 0.3) {
+                        dx += Math.floor(Math.random() * 3) - 1;
+                        dy += Math.floor(Math.random() * 3) - 1;
+                    }
+                } else if (this.type === 'yang') {
+                    dx = -Math.sign(GRID_SIZE_X / 2 - this.x);
+                    dy = -Math.sign(GRID_SIZE_Y / 2 - this.y);
+                    
+                    // ランダム要素を加える
+                    if (random < 0.3) {
+                        dx += Math.floor(Math.random() * 3) - 1;
+                        dy += Math.floor(Math.random() * 3) - 1;
+                    }
+                }
+
+                // 画面外に出ないように制限
+                const newX = Math.max(0, Math.min(GRID_SIZE_X - 1, this.x + dx));
+                const newY = Math.max(0, Math.min(GRID_SIZE_Y - 1, this.y + dy));
+
+                if (grid[newY][newX] === null) {
+                    grid[this.y][this.x] = null;
+                    this.x = newX;
+                    this.y = newY;
+                    grid[this.y][this.x] = this;
+                }
+                
+                // ライフスパンの減少を調整
+                this.lifespan -= 0.5;
+                
+                // 繁殖のチャンス
+                if (Math.random() < 0.001) {
+                    this.reproduce();
+                }
+            }
+            
+            reproduce() {
+                const neighbors = getNeighboringEmptyCells(this.x, this.y);
+                if (neighbors.length > 0) {
+                    const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    const newVirus = new Virus(nx, ny, this.type);
+                    grid[ny][nx] = newVirus;
+                    entities.push(newVirus);
+                    viruses.push(newVirus);
+                }
+            }
+
+            draw() {
+                const drawX = this.x * CELL_SIZE;
+                const drawY = this.y * CELL_SIZE;
+                
+                // サイズに基づいて描画
+                const size = this.size * (CELL_SIZE / 5);
+                const offsetX = (CELL_SIZE - size) / 2;
+                const offsetY = (CELL_SIZE - size) / 2;
+                
+                ctx.fillStyle = this.color;
+                
+                // 円形のウィルス
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE/2, drawY + CELL_SIZE/2, size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 発光効果
+                ctx.globalAlpha = 0.3;
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE/2, drawY + CELL_SIZE/2, size * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        class Cell extends Entity {
+            constructor(x, y, type) {
+                super(x, y, type);
+                this.color = CELL_COLORS[type];
+                this.shape = CELL_SHAPES[type];
+                this.size = CELL_SIZES[type]; // タイプごとのサイズ
+                this.energy = 100;
+                this.maxLifespan = Math.floor(Math.random() * (300 - 100 + 1) + 100); // より長い寿命
+                this.lifespan = this.maxLifespan;
+                this.activity = Math.random() * 0.4 + 0.6;
+                this.reproductionRate = 0.005 + (type === 'earth' ? 0.01 : 0);
+                this.generation = 1;
+                this.energyToReproduce = 80;
+                
+                // タイプごとの特性
+                switch(type) {
+                    case 'wood':
+                        this.activity = 0.8; // より活発
+                        this.energyToReproduce = 70; // 繁殖しやすい
+                        break;
+                    case 'fire':
+                        this.activity = 0.9; // 最も活発
+                        this.reproductionRate = 0.008; // 高い繁殖率
+                        this.maxLifespan = this.maxLifespan * 0.7; // より短い寿命
+                        break;
+                    case 'earth':
+                        this.activity = 0.5; // 中程度の活動性
+                        this.energyToReproduce = 60; // 最も繁殖しやすい
+                        this.maxLifespan = this.maxLifespan * 1.2; // より長い寿命
+                        break;
+                    case 'metal':
+                        this.activity = 0.4; // あまり活発でない
+                        this.energyToReproduce = 90; // 繁殖が難しい
+                        this.maxLifespan = this.maxLifespan * 1.5; // 最も長い寿命
+                        break;
+                    case 'water':
+                        this.activity = 0.7; // 高い活動性
+                        this.energyToReproduce = 75; // 中程度の繁殖しやすさ
+                        break;
+                }
+                
+                this.lifespan = this.maxLifespan;
+                this.pulsePhase = Math.random() * Math.PI * 2; // 脈動のためのランダムな位相
+            }
+
+            move() {
+                if (Math.random() < this.activity) {
+                    const dx = Math.floor(Math.random() * 3) - 1;
+                    const dy = Math.floor(Math.random() * 3) - 1;
+                    const newX = Math.max(0, Math.min(GRID_SIZE_X - 1, this.x + dx));
+                    const newY = Math.max(0, Math.min(GRID_SIZE_Y - 1, this.y + dy));
+
+                    // 隣接するセルを検査して、五行相生相剋の関係を調べる
+                    const neighborCells = getNeighboringCells(this.x, this.y);
+                    for (const cell of neighborCells) {
+                        if (cell instanceof Cell) {
+                            const relation = getFiveElementsRelation(this.type, cell.type);
+                            if (relation === 'generates') {
+                                this.energy += 0.5;
+                                this.lifespan += 0.2;
+                            } else if (relation === 'overrides') {
+                                this.energy -= 0.3;
+                                this.lifespan -= 0.1;
+                            }
+                        }
+                    }
+
+                    if (grid[newY][newX] === null) {
+                        grid[this.y][this.x] = null;
+                        this.x = newX;
+                        this.y = newY;
+                        grid[this.y][this.x] = this;
+                    }
+                }
+                
+                // エネルギーと寿命の減少
+                this.energy -= Math.floor(Math.random() * 2 + 1) / 100;
+                this.lifespan -= 0.05;
+                
+                // 脈動を更新
+                this.pulsePhase += 0.1;
+                if (this.pulsePhase > Math.PI * 2) {
+                    this.pulsePhase = 0;
+                }
+                
+                // 死亡判定
+                if (this.energy < 0 || this.lifespan < 0) {
+                    grid[this.y][this.x] = null;
+                    return false;
+                }
+
+                // 繁殖
+                if (this.energy > this.energyToReproduce && Math.random() < this.reproductionRate) {
+                    this.reproduce();
+                }
+                
+                return true;
+            }
+            
+            reproduce() {
+                const neighbors = getNeighboringEmptyCells(this.x, this.y);
+                if (neighbors.length > 0) {
+                    const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    // 突然変異のチャンス (20%)
+                    const childType = Math.random() < 0.8 ? this.type : CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+                    const newCell = new Cell(nx, ny, childType);
+                    newCell.generation = this.generation + 1;
+                    grid[ny][nx] = newCell;
+                    entities.push(newCell);
+                    cells.push(newCell);
+                    this.energy -= 30;
+                }
+            }
+
+            draw() {
+                const drawX = this.x * CELL_SIZE;
+                const drawY = this.y * CELL_SIZE;
+                
+                // サイズに基づくスケーリング
+                const size = (this.size / 10) * CELL_SIZE;
+                const pulseFactor = 1 + 0.1 * Math.sin(this.pulsePhase); // 脈動効果
+                const finalSize = size * pulseFactor;
+                
+                // 中心からのオフセット計算
+                const offsetX = (CELL_SIZE - finalSize) / 2;
+                const offsetY = (CELL_SIZE - finalSize) / 2;
+                
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                
+                // タイプに基づく形状
+                switch (this.shape) {
+                    case 'rect':
+                        ctx.fillRect(drawX + offsetX, drawY + offsetY, finalSize, finalSize);
+                        break;
+                    case 'circle':
+                        ctx.arc(drawX + CELL_SIZE/2, drawY + CELL_SIZE/2, finalSize/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        break;
+                    case 'triangle':
+                        ctx.moveTo(drawX + CELL_SIZE/2, drawY + offsetY);
+                        ctx.lineTo(drawX + CELL_SIZE/2 + finalSize/2, drawY + offsetY + finalSize);
+                        ctx.lineTo(drawX + CELL_SIZE/2 - finalSize/2, drawY + offsetY + finalSize);
+                        ctx.closePath();
+                        ctx.fill();
+                        break;
+                    case 'wave':
+                        // 波形
+                        ctx.beginPath();
+                        ctx.arc(drawX + CELL_SIZE/2, drawY + CELL_SIZE/2, finalSize/2, 0, Math.PI, true);
+                        ctx.arc(drawX + CELL_SIZE/2, drawY + CELL_SIZE/2 + finalSize/4, finalSize/2, Math.PI, 0, true);
+                        ctx.fill();
+                        break;
+                    default:
+                        ctx.fillRect(drawX + offsetX, drawY + offsetY, finalSize, finalSize);
+                }
+                
+                // エネルギーレベルを示す発光効果
+                const energyRatio = this.energy / 100;
+                if (energyRatio > 0.7) {
+                    ctx.globalAlpha = 0.3 * energyRatio;
+                    ctx.beginPath();
+                    ctx.arc(drawX + CELL_SIZE/2, drawY + CELL_SIZE/2, finalSize * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                }
+            }
+        }
+
+        // 五行の相生相剋関係
+        function getFiveElementsRelation(type1, type2) {
+            const relations = {
+                wood: { generates: 'fire', overrides: 'earth' },
+                fire: { generates: 'earth', overrides: 'metal' },
+                earth: { generates: 'metal', overrides: 'water' },
+                metal: { generates: 'water', overrides: 'wood' },
+                water: { generates: 'wood', overrides: 'fire' }
+            };
+            
+            if (relations[type1].generates === type2) {
+                return 'generates';
+            } else if (relations[type1].overrides === type2) {
+                return 'overrides';
+            } else {
+                return 'neutral';
+            }
+        }
+
+        function getNeighboringCells(x, y) {
+            const neighbors = [];
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y && grid[ny][nx] !== null) {
+                        neighbors.push(grid[ny][nx]);
+                    }
+                }
+            }
+            return neighbors;
+        }
+
+        function init() {
+            resizeCanvas();
+            entities = [];
+            viruses = [];
+            cells = [];
+
+            // ウイルスの初期配置
+            for (let i = 0; i < VIRUS_COUNT; i++) {
+                let x = Math.floor(Math.random() * GRID_SIZE_X);
+                let y = Math.floor(Math.random() * GRID_SIZE_Y);
+                const type = VIRUS_TYPES[Math.floor(Math.random() * VIRUS_TYPES.length)];
+                const newVirus = new Virus(x, y, type);
+                if (grid[y][x] === null) {
+                    grid[y][x] = newVirus;
+                    entities.push(newVirus);
+                    viruses.push(newVirus);
+                }
+            }
+
+            // 単細胞生物の初期配置
+            for (let i = 0; i < CELL_COUNT; i++) {
+                // 中央付近により集中させる
+                let x = Math.floor(GRID_SIZE_X/2 + (Math.random() - 0.5) * GRID_SIZE_X * 0.6);
+                let y = Math.floor(GRID_SIZE_Y/2 + (Math.random() - 0.5) * GRID_SIZE_Y * 0.6);
+                x = Math.max(0, Math.min(GRID_SIZE_X - 1, x));
+                y = Math.max(0, Math.min(GRID_SIZE_Y - 1, y));
+                
+                const type = CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+                const newCell = new Cell(x, y, type);
+                if (grid[y][x] === null) {
+                    grid[y][x] = newCell;
+                    entities.push(newCell);
+                    cells.push(newCell);
+                }
+            }
+
+            turn = 0;
+            turnCounterDisplay.textContent = `Turn: ${turn}`;
+            updateInfoPanel();
+            isRunning = false;
+        }
+
+        function update() {
+            // エンティティのリストの一時コピーを使用して、安全に削除できるようにする
+            const entitiesCopy = [...entities];
+            
+            // ウイルスの処理
+            for (let i = viruses.length - 1; i >= 0; i--) {
+                viruses[i].move();
+                if (viruses[i].lifespan <= 0) {
+                    grid[viruses[i].y][viruses[i].x] = null;
+                    
+                    // entitiesから削除
+                    const indexInEntities = entities.indexOf(viruses[i]);
+                    if (indexInEntities > -1) {
+                        entities.splice(indexInEntities, 1);
+                    }
+                    
+                    // virusesから削除
+                    viruses.splice(i, 1);
+                }
+            }
+
+            // 細胞の処理
+            for (let i = cells.length - 1; i >= 0; i--) {
+                const isAlive = cells[i].move();
+                if (!isAlive) {
+                    // entitiesから削除
+                    const indexInEntities = entities.indexOf(cells[i]);
+                    if (indexInEntities > -1) {
+                        entities.splice(indexInEntities, 1);
+                    }
+                    
+                    // cellsから削除
+                    cells.splice(i, 1);
+                }
+            }
+
+            // 新しいウイルスを生成（低確率）
+            if (viruses.length < VIRUS_COUNT * 2 && Math.random() < 0.02) {
+                let x, y;
+                if (Math.random() < 0.5) {
+                    // 画面の端から生成
+                    const side = Math.floor(Math.random() * 4); // 0: 上, 1: 右, 2: 下, 3: 左
+                    switch(side) {
+                        case 0: x = Math.floor(Math.random() * GRID_SIZE_X); y = 0; break;
+                        case 1: x = GRID_SIZE_X - 1; y = Math.floor(Math.random() * GRID_SIZE_Y); break;
+                        case 2: x = Math.floor(Math.random() * GRID_SIZE_X); y = GRID_SIZE_Y - 1; break;
+                        case 3: x = 0; y = Math.floor(Math.random() * GRID_SIZE_Y); break;
+                    }
+                } else {
+                    // ランダムな位置から生成
+                    x = Math.floor(Math.random() * GRID_SIZE_X);
+                    y = Math.floor(Math.random() * GRID_SIZE_Y);
+                }
+                
+                if (grid[y][x] === null) {
+                    const type = VIRUS_TYPES[Math.floor(Math.random() * VIRUS_TYPES.length)];
+                    const newVirus = new Virus(x, y, type);
+                    grid[y][x] = newVirus;
+                    entities.push(newVirus);
+                    viruses.push(newVirus);
+                }
+            }
+
+            turn++;
+            turnCounterDisplay.textContent = `Turn: ${turn}`;
+            updateInfoPanel();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 背景効果（オプション）
+            drawBackground();
+            
+            // グリッドをループしてエンティティを描画
+            for (let entity of entities) {
+                entity.draw();
+            }
+        }
+        
+        function drawBackground() {
+            // 暗い背景グラデーション
+            const gradient = ctx.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, 0,
+                canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 2
+            );
+            gradient.addColorStop(0, '#1a1a2e');
+            gradient.addColorStop(1, '#0f0f1a');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // グリッドライン（オプション）
+            if (BASE_CELL_SIZE >= 5) {
+                ctx.strokeStyle = 'rgba(50, 50, 80, 0.1)';
+                ctx.lineWidth = 0.5;
+                
+                for (let x = 0; x < canvas.width; x += CELL_SIZE) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+                
+                for (let y = 0; y < canvas.height; y += CELL_SIZE) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+            }
+        }
+        
+        function getNeighboringEmptyCells(x, y) {
+            const neighbors = [];
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y && grid[ny][nx] === null) {
+                        neighbors.push([nx, ny]);
+                    }
+                }
+            }
+            return neighbors;
+        }
+        
+        function updateInfoPanel() {
+            // ウイルス数
+            virusCountDisplay.textContent = `Viruses: ${viruses.length}`;
+            
+            // 細胞タイプごとの個体数
+            const population = {};
+            CELL_TYPES.forEach(type => population[type] = cells.filter(cell => cell.type === type).length);
+            
+            // 個体数グラフ
+            let populationBarsHTML = '';
+            const totalPopulation = cells.length;
+            
+            if (totalPopulation > 0) {
+                populationBarsHTML += '<div class="population-bar">';
+                
+                for (const type of CELL_TYPES) {
+                    const percentage = (population[type] / totalPopulation) * 100;
+                    if (percentage > 0) {
+                        populationBarsHTML += `<div class="population-segment" style="width: ${percentage}%; background-color: ${CELL_COLORS[type]};"></div>`;
+                    }
+                }
+                
+                populationBarsHTML += '</div>';
+                
+                // 詳細情報
+                for (const type of CELL_TYPES) {
+                    populationBarsHTML += `<div style="display: flex; align-items: center; margin-top: 2px;">
+                        <div style="width: 10px; height: 10px; background-color: ${CELL_COLORS[type]}; margin-right: 5px;"></div>
+                        <span>${type}: ${population[type]}</span>
+                    </div>`;
+                }
+            } else {
+                populationBarsHTML = '<div>No cells alive</div>';
+            }
+            
+            populationBarsDisplay.innerHTML = populationBarsHTML;
+        }
+
+        function startGame() {
+            if (!isRunning) {
+                isRunning = true;
+                startButton.classList.add('active');
+                pauseButton.classList.remove('active');
+                gameInterval = setInterval(() => {
+                    update();
+                    draw();
+                }, baseInterval / parseInt(speedSlider.value));
+            }
+        }
+
+        function pauseGame() {
+            if (isRunning) {
+                isRunning = false;
+                startButton.classList.remove('active');
+                pauseButton.classList.add('active');
+                clearInterval(gameInterval);
+            }
+        }
+
+        // イベントリスナー
+        startButton.addEventListener('click', startGame);
+        pauseButton.addEventListener('click', pauseGame);
+        resetButton.addEventListener('click', () => {
+            pauseGame();
+            init();
+            draw();
+        });
+
+        speedSlider.addEventListener('input', () => {
+            speedValueDisplay.textContent = `x${speedSlider.value}`;
+            if (isRunning) {
+                clearInterval(gameInterval);
+                gameInterval = setInterval(() => {
+                    update();
+                    draw();
+                }, baseInterval / parseInt(speedSlider.value));
+            }
+        });
+        
+        cellSizeSlider.addEventListener('input', () => {
+            cellSizeValueDisplay.textContent = `x${cellSizeSlider.value}`;
+            BASE_CELL_SIZE = parseInt(cellSizeSlider.value);
+            
+            // グリッドサイズの再計算
+            pauseGame();
+            resizeCanvas();
+            init();
+            draw();
+        });
+
+        window.addEventListener('resize', () => {
+            pauseGame();
+            resizeCanvas();
+            init();
+            draw();
+        });
+
+        // 初期化と最初の描画
+        init();
+        draw();
+    </script>
+
+</body>
+
+</html>
