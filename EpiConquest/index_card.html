@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>疫学要因分類ゲーム</title>
+    <title>Epidemiological Factor Classification Game</title>
     <style>
         :root {
             --primary: #2c2c2c;
@@ -106,7 +106,7 @@
             margin-top: 0;
         }
         
-        input[type="text"] {
+        input[type="text"], select, input[type="number"] {
             padding: 6px;
             width: 100%;
             border: 1px solid var(--border);
@@ -240,6 +240,9 @@
             display: flex;
             justify-content: center;
             gap: 8px;
+            flex-wrap: wrap;
+            max-width: 500px;
+            margin: 0 auto;
         }
         
         .step-dot {
@@ -283,6 +286,16 @@
         #cancelBtn:hover {
             background-color: var(--accent);
         }
+
+        .setup-option {
+            margin-bottom: 15px;
+        }
+        
+        .setup-option label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
         
         @media (max-width: 768px) {
             .classification-area, .results-comparison {
@@ -301,20 +314,24 @@
 </head>
 <body>
     <div class="container">
-        <h1>疫学要因分類ゲーム</h1>
+        <h1>Epidemiological Factor Classification Game</h1>
         
         <!-- ゲームセットアップ画面 -->
         <div id="gameSetup" class="game-setup">
             <h2>ゲーム設定</h2>
+            <div class="setup-option">
+                <label for="problemCount">課題数:</label>
+                <input type="number" id="problemCount" min="1" max="20" value="6">
+            </div>
             <div class="team-section">
                 <h3>チーム1</h3>
-                <input type="text" id="team1Name" placeholder="チーム1の名前" value="チーム1">
+                <input type="text" id="team1Name" placeholder="チーム1の名前" value="Name1">
             </div>
             <div class="team-section">
                 <h3>チーム2</h3>
-                <input type="text" id="team2Name" placeholder="チーム2の名前" value="チーム2">
+                <input type="text" id="team2Name" placeholder="チーム2の名前" value="Name2">
             </div>
-            <button id="startGameBtn">ゲームを開始</button>
+            <button id="startGameBtn">Game start</button>
         </div>
         
         <!-- ゲームボード画面 -->
@@ -325,14 +342,9 @@
             
             <div class="step-indicator">
                 <div class="step-dots" id="stepDots">
-                    <div class="step-dot active"></div>
-                    <div class="step-dot"></div>
-                    <div class="step-dot"></div>
-                    <div class="step-dot"></div>
-                    <div class="step-dot"></div>
-                    <div class="step-dot"></div>
+                    <!-- ドットはJavaScriptで動的に生成 -->
                 </div>
-                <p style="margin: 5px 0;">課題 <span id="currentProblem">1</span> / 6</p>
+                <p style="margin: 5px 0;">課題 <span id="currentProblem">1</span> / <span id="totalProblems">6</span></p>
             </div>
             
             <div class="exposure-outcome">
@@ -442,7 +454,7 @@
         const gameState = {
             currentTeam: 1,
             currentProblem: 1,
-            totalProblems: 6,
+            totalProblems: 6, // デフォルト値、後でユーザー入力で上書き
             selectedFactors: {
                 confounding: [],
                 modifying: [],
@@ -583,9 +595,32 @@
             return shuffled.slice(0, n);
         }
         
+        // ステップドットを生成する関数
+        function generateStepDots() {
+            const stepDotsContainer = document.getElementById('stepDots');
+            stepDotsContainer.innerHTML = '';
+            
+            for (let i = 0; i < gameState.totalProblems; i++) {
+                const dot = document.createElement('div');
+                dot.className = i < gameState.currentProblem ? 'step-dot active' : 'step-dot';
+                stepDotsContainer.appendChild(dot);
+            }
+        }
+        
         // ゲーム開始時に実行する関数
         function initGame() {
+            // ユーザーが選択した課題数を取得
+            const problemCountInput = document.getElementById('problemCount');
+            const problemCount = parseInt(problemCountInput.value);
+            
+            // 課題数が有効な範囲内かチェック
+            if (isNaN(problemCount) || problemCount < 1 || problemCount > 20) {
+                alert('課題数は1から20の間で設定してください。');
+                return;
+            }
+            
             // ゲーム状態をリセット
+            gameState.totalProblems = problemCount;
             gameState.currentTeam = 1;
             gameState.currentProblem = 1;
             gameState.teamAnswers = {
@@ -594,7 +629,7 @@
             };
             gameState.problems = [];
             
-            // 6つの課題を生成
+            // 選択された課題数に基づいて課題を生成
             for (let i = 0; i < gameState.totalProblems; i++) {
                 const exposure = getRandomElement(exposures);
                 let outcome = getRandomElement(outcomes);
@@ -610,6 +645,13 @@
                     factors: getRandomElements(factors, 10)
                 });
             }
+            
+            // ステップドットを生成
+            generateStepDots();
+            
+            // 総課題数を表示
+            // 総課題数を表示
+            document.getElementById('totalProblems').textContent = gameState.totalProblems;
             
             // 最初の問題を表示
             displayProblem();
@@ -655,7 +697,7 @@
                 unrelated: []
             };
                 
-                // 分類結果表示をクリア
+            // 分類結果表示をクリア
             document.getElementById('confoundingFactors').innerHTML = '';
             document.getElementById('modifyingFactors').innerHTML = '';
             document.getElementById('mediatingFactors').innerHTML = '';
@@ -1028,6 +1070,19 @@
         
         // イベントリスナーの設定
         document.addEventListener('DOMContentLoaded', () => {
+            // 課題数の入力範囲を制限
+            const problemCountInput = document.getElementById('problemCount');
+            problemCountInput.addEventListener('input', () => {
+                let value = parseInt(problemCountInput.value);
+                if (isNaN(value)) {
+                    problemCountInput.value = '';
+                } else if (value < 1) {
+                    problemCountInput.value = 1;
+                } else if (value > 20) {
+                    problemCountInput.value = 20;
+                }
+            });
+            
             // ゲーム開始ボタン
             document.getElementById('startGameBtn').addEventListener('click', initGame);
             
@@ -1064,6 +1119,6 @@
                 document.getElementById('gameSetup').classList.remove('hidden');
             });
         });
-    </script>
+</script>
 </body>
 </html>
