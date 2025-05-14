@@ -109,7 +109,6 @@
       border: 1px solid var(--border-color);
       border-radius: 0.3rem;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       font-weight: bold;
@@ -117,7 +116,6 @@
       transition: all 0.2s ease;
       cursor: pointer;
       user-select: none;
-      padding: 0.25rem;
     }
     
     .tile:hover {
@@ -127,16 +125,6 @@
     
     .selected-tile {
       box-shadow: 0 0 0 2px white;
-    }
-    
-    .tile-team {
-      width: 100%;
-      text-align: center;
-    }
-    
-    .tile-score {
-      font-size: 0.75rem;
-      opacity: 0.9;
     }
     
     .team-1 { background: var(--team-1); color: #000; }
@@ -584,29 +572,6 @@
       border-width: 0;
     }
     
-    .rules-container {
-      background-color: rgba(255, 255, 255, 0.1);
-      padding: 1rem;
-      border-radius: 0.5rem;
-      margin-bottom: 1.5rem;
-    }
-    
-    .rules-title {
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-      font-size: 1rem;
-    }
-    
-    .rules-list {
-      padding-left: 1.5rem;
-      font-size: 0.9rem;
-      opacity: 0.9;
-    }
-    
-    .rules-list li {
-      margin-bottom: 0.25rem;
-    }
-    
     /* アニメーション */
     @keyframes pulse {
       0% { transform: scale(1); }
@@ -683,15 +648,6 @@
     <div class="game-info">
       <div id="turnInfo" class="turn-info">ターン: チーム1</div>
       <div id="conquestsInfo" class="theme-info">スコア: 0</div>
-    </div>
-    
-    <div class="rules-container">
-      <div class="rules-title">ゲームルール:</div>
-      <ul class="rules-list">
-        <li>各要因を正しく分類すると得点が得られます（全問正解で10点、部分正解で正解数に応じた点数）</li>
-        <li>得点は選択した領地に付与され、その領地があなたの所有となります</li>
-        <li>他プレイヤーの領地を選択した場合、その領地の現在の得点以上の得点を獲得すると領地を奪取できます</li>
-      </ul>
     </div>
       
     <div class="game-board">
@@ -803,8 +759,7 @@
       maxConquests: 3,
       cardCount: 7,
       slotAnimationDuration: 3000, // スロットアニメーション時間（ミリ秒）
-      slotDisplayCount: 10, // スロット表示数
-      maxPoints: 10 // 1つの問題で獲得できる最大ポイント
+      slotDisplayCount: 10 // スロット表示数
     };
     
     // Game state
@@ -813,7 +768,6 @@
       conquests: 0,
       selectedTile: null,
       tileOwners: Array(config.mapWidth * config.mapHeight).fill(null),
-      tileScores: Array(config.mapWidth * config.mapHeight).fill(0), // 各タイルのスコア
       tileProgress: Array(config.mapWidth * config.mapHeight).fill(0), // 各タイルの進行状況
       currentTheme: null,
       selectedCards: [],
@@ -929,6 +883,8 @@
           { name: "慢性疲労", type: "Mediator" }
         ]
       },
+          // 以下を挿入（ID 5の定義の後、行数で言うと約677行目付近）
+
       {
         id: 6,
         exposure: "大気汚染",
@@ -1288,22 +1244,10 @@
         tile.className = "tile";
         tile.dataset.index = i;
         
-        // タイルの所有者がいる場合
+        // タイルの所有者がいる場合、そのチームの色にする
         if (gameState.tileOwners[i] !== null) {
           tile.classList.add(`team-${gameState.tileOwners[i] + 1}`);
-          
-          // チーム表示
-          const teamDiv = document.createElement("div");
-          teamDiv.className = "tile-team";
-          teamDiv.textContent = gameState.teamNames[gameState.tileOwners[i]].substring(0, 3); // 略称
-          
-          // スコア表示
-          const scoreDiv = document.createElement("div");
-          scoreDiv.className = "tile-score";
-          scoreDiv.textContent = `${gameState.tileScores[i]}点`;
-          
-          tile.appendChild(teamDiv);
-          tile.appendChild(scoreDiv);
+          tile.textContent = gameState.tileOwners[i] + 1;
         }
         
         tile.addEventListener("click", () => selectTile(i));
@@ -1415,718 +1359,658 @@
     }
     
     // Stop slot animation and show the theme
-function stopSlotAnimation(randomTheme) {
-  // カードを生成
-  generateCards(randomTheme.factors);
-  
-  // アニメーション中フラグを解除
-  gameState.isAnimating = false;
-}
+    function stopSlotAnimation(randomTheme) {
+      // カードを生成
+      generateCards(randomTheme.factors);
+      
+      // アニメーション中フラグを解除
+      gameState.isAnimating = false;
+    }
+    
+    // Generate factor cards
+    function generateCards(factors) {
+      cardArea.innerHTML = "";
+      gameState.selectedCards = [];
+      
+      factors.forEach((factor, index) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.dataset.index = index;
+        card.textContent = factor.name;
         
-      // Generate factor cards
-function generateCards(factors) {
-  cardArea.innerHTML = "";
-  gameState.selectedCards = [];
-  
-  factors.forEach((factor, index) => {
-    const card = document.createElement("div");
-    card.className = "card";
-    card.dataset.index = index;
-    card.textContent = factor.name;
-    
-    card.addEventListener("click", () => selectCard(card, factor));
-    cardArea.appendChild(card);
-  });
-}
-
-// Select a card
-function selectCard(cardElement, factor) {
-  cardElement.classList.toggle("selected");
-  
-  // If selected, add to array; if deselected, remove from array
-  const cardIndex = gameState.selectedCards.findIndex(c => c.name === factor.name);
-  
-  if (cardElement.classList.contains("selected")) {
-    if (cardIndex === -1) {
-      gameState.selectedCards.push(factor);
+        card.addEventListener("click", () => selectCard(card, factor));
+        cardArea.appendChild(card);
+      });
     }
-  } else {
-    if (cardIndex !== -1) {
-      gameState.selectedCards.splice(cardIndex, 1);
-    }
-  }
-  
-  updateSubmitButton();
-}
-
-// Move selected cards to category
-function moveSelectedCardsToCategory(category) {
-  if (gameState.selectedCards.length === 0) {
-    return;
-  }
-  
-  // Get appropriate area
-  const area = document.getElementById(category);
-  
-  // For each selected card
-  gameState.selectedCards.forEach(factor => {
-    // Create card in category area
-    const categoryCard = document.createElement("div");
-    categoryCard.className = "card";
-    categoryCard.textContent = factor.name;
-    categoryCard.dataset.type = factor.type;
     
-    // Add event listener to remove card when clicked
-    categoryCard.addEventListener("click", () => {
-      // Remove from DOM
-      categoryCard.remove();
+    // Select a card
+    function selectCard(cardElement, factor) {
+      cardElement.classList.toggle("selected");
       
-      // Remove from state
-      if (category === "confounders") {
-        gameState.classifiedCards.confounders = gameState.classifiedCards.confounders.filter(c => c.name !== factor.name);
-      } else if (category === "mediators") {
-        gameState.classifiedCards.mediators = gameState.classifiedCards.mediators.filter(c => c.name !== factor.name);
-      } else if (category === "modifiers") {
-        gameState.classifiedCards.modifiers = gameState.classifiedCards.modifiers.filter(c => c.name !== factor.name);
-      }
+      // If selected, add to array; if deselected, remove from array
+      const cardIndex = gameState.selectedCards.findIndex(c => c.name === factor.name);
       
-      // Find original card and make it visible again
-      const cards = cardArea.querySelectorAll(".card");
-      for (let i = 0; i < cards.length; i++) {
-        const card = cards[i];
-        if (card.textContent === factor.name) {
-          card.style.display = "block";
-          card.classList.remove("selected");
-          break;
+      if (cardElement.classList.contains("selected")) {
+        if (cardIndex === -1) {
+          gameState.selectedCards.push(factor);
+        }
+      } else {
+        if (cardIndex !== -1) {
+          gameState.selectedCards.splice(cardIndex, 1);
         }
       }
       
       updateSubmitButton();
-    });
-    
-    // Add to area
-    area.appendChild(categoryCard);
-    
-    // Add to state
-    if (category === "confounders") {
-      gameState.classifiedCards.confounders.push(factor);
-    } else if (category === "mediators") {
-      gameState.classifiedCards.mediators.push(factor);
-    } else if (category === "modifiers") {
-      gameState.classifiedCards.modifiers.push(factor);
     }
     
-    // Hide original card
-    const cards = cardArea.querySelectorAll(".card");
-    for (let i = 0; i < cards.length; i++) {
-      const card = cards[i];
-      if (card.textContent === factor.name) {
-        card.style.display = "none";
-        card.classList.remove("selected");
-        break;
+    // Move selected cards to category
+    function moveSelectedCardsToCategory(category) {
+      if (gameState.selectedCards.length === 0) {
+        return;
       }
-    }
-  });
-  
-  // Clear selected cards
-  gameState.selectedCards = [];
-  
-  updateSubmitButton();
-}
       
+      // Get appropriate area
+      const area = document.getElementById(category);
       
-        // Update the submit button state
-function updateSubmitButton() {
-  const totalClassified = 
-    gameState.classifiedCards.confounders.length + 
-    gameState.classifiedCards.mediators.length + 
-    gameState.classifiedCards.modifiers.length;
-  
-  const totalFactors = gameState.currentTheme ? gameState.currentTheme.factors.length : 0;
-  
-  // Enable submit if all cards are classified and a tile is selected
-  submitBtn.disabled = (totalClassified < totalFactors || gameState.selectedTile === null);
-}
-
-// Reset classification
-function resetClassification() {
-  // Clear classified cards
-  confoundersArea.innerHTML = "";
-  mediatorsArea.innerHTML = "";
-  modifiersArea.innerHTML = "";
-  
-  gameState.classifiedCards = {
-    confounders: [],
-    mediators: [],
-    modifiers: []
-  };
-  
-  // Reset selection and redisplay all cards if there's a theme
-  if (gameState.currentTheme) {
-    generateCards(gameState.currentTheme.factors);
-  }
-  
-  // Hide feedback
-  feedback.textContent = "";
-  feedback.className = "";
-  
-  updateSubmitButton();
-}
-
-// Check answers
-function checkAnswers() {
-  let isCorrect = true;
-  let partiallyCorrect = false;
-  let confoundersCorrect = 0;
-  let mediatorsCorrect = 0;
-  let modifiersCorrect = 0;
-  let incorrectCards = [];
-  
-  // Check confounders
-  gameState.classifiedCards.confounders.forEach(card => {
-    if (card.type === "Confounder") {
-      confoundersCorrect++;
-    } else {
-      isCorrect = false;
-      incorrectCards.push(card);
+      // For each selected card
+      gameState.selectedCards.forEach(factor => {
+        // Create card in category area
+        const categoryCard = document.createElement("div");
+        categoryCard.className = "card";
+        categoryCard.textContent = factor.name;
+        categoryCard.dataset.type = factor.type;
+        
+        // Add event listener to remove card when clicked
+        categoryCard.addEventListener("click", () => {
+          // Remove from DOM
+          categoryCard.remove();
+          
+          // Remove from state
+          if (category === "confounders") {
+            gameState.classifiedCards.confounders = gameState.classifiedCards.confounders.filter(c => c.name !== factor.name);
+          } else if (category === "mediators") {
+            gameState.classifiedCards.mediators = gameState.classifiedCards.mediators.filter(c => c.name !== factor.name);
+          } else if (category === "modifiers") {
+            gameState.classifiedCards.modifiers = gameState.classifiedCards.modifiers.filter(c => c.name !== factor.name);
+          }
+          
+          // Find original card and make it visible again
+          const cards = cardArea.querySelectorAll(".card");
+          for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            if (card.textContent === factor.name) {
+              card.style.display = "block";
+              card.classList.remove("selected");
+              break;
+            }
+          }
+          
+          updateSubmitButton();
+        });
+        
+        // Add to area
+        area.appendChild(categoryCard);
+        
+        // Add to state
+        if (category === "confounders") {
+          gameState.classifiedCards.confounders.push(factor);
+        } else if (category === "mediators") {
+          gameState.classifiedCards.mediators.push(factor);
+        } else if (category === "modifiers") {
+          gameState.classifiedCards.modifiers.push(factor);
+        }
+        
+        // Hide original card
+        const cards = cardArea.querySelectorAll(".card");
+        for (let i = 0; i < cards.length; i++) {
+          const card = cards[i];
+          if (card.textContent === factor.name) {
+            card.style.display = "none";
+            card.classList.remove("selected");
+            break;
+          }
+        }
+      });
+      
+      // Clear selected cards
+      gameState.selectedCards = [];
+      
+      updateSubmitButton();
     }
-  });
-  
-  // Check mediators
-  gameState.classifiedCards.mediators.forEach(card => {
-    if (card.type === "Mediator") {
-      mediatorsCorrect++;
-    } else {
-      isCorrect = false;
-      incorrectCards.push(card);
+    
+    // Update the submit button state
+    function updateSubmitButton() {
+      const totalClassified = 
+        gameState.classifiedCards.confounders.length + 
+        gameState.classifiedCards.mediators.length + 
+        gameState.classifiedCards.modifiers.length;
+      
+      const totalFactors = gameState.currentTheme ? gameState.currentTheme.factors.length : 0;
+      
+      // Enable submit if all cards are classified and a tile is selected
+      submitBtn.disabled = (totalClassified < totalFactors || gameState.selectedTile === null);
     }
-  });
-  
-  // Check modifiers
-  gameState.classifiedCards.modifiers.forEach(card => {
-    if (card.type === "Effect Modifier") {
-      modifiersCorrect++;
-    } else {
-      isCorrect = false;
-      incorrectCards.push(card);
+    
+    // Reset classification
+    function resetClassification() {
+      // Clear classified cards
+      confoundersArea.innerHTML = "";
+      mediatorsArea.innerHTML = "";
+      modifiersArea.innerHTML = "";
+      
+      gameState.classifiedCards = {
+        confounders: [],
+        mediators: [],
+        modifiers: []
+      };
+      
+      // Reset selection and redisplay all cards if there's a theme
+      if (gameState.currentTheme) {
+        generateCards(gameState.currentTheme.factors);
+      }
+      
+      // Hide feedback
+      feedback.textContent = "";
+      feedback.className = "";
+      
+      updateSubmitButton();
     }
-  });
-  
-  // Count total correct vs expected
-  const totalConfounderCount = gameState.currentTheme.factors.filter(f => f.type === "Confounder").length;
-  const totalMediatorCount = gameState.currentTheme.factors.filter(f => f.type === "Mediator").length;
-  const totalModifierCount = gameState.currentTheme.factors.filter(f => f.type === "Effect Modifier").length;
-  
-  // Only fully correct if all cards are in the right categories
-  isCorrect = isCorrect && 
-             confoundersCorrect === totalConfounderCount &&
-             mediatorsCorrect === totalMediatorCount &&
-             modifiersCorrect === totalModifierCount;
-  
-  // 部分的に正解している場合
-  if (confoundersCorrect > 0 || mediatorsCorrect > 0 || modifiersCorrect > 0) {
-    partiallyCorrect = true;
-  }
-  
-  // 正解数を計算
-  const totalCorrect = confoundersCorrect + mediatorsCorrect + modifiersCorrect;
-  const totalFactors = totalConfounderCount + totalMediatorCount + totalModifierCount;
-  
-  // 得点を計算（正解率に応じたポイント - 最大10ポイント）
-  const earnedPoints = Math.round((totalCorrect / totalFactors) * config.maxPoints);
-  
-  // Show result
-  showResult(isCorrect, partiallyCorrect, {
-    confounders: { correct: confoundersCorrect, total: totalConfounderCount },
-    mediators: { correct: mediatorsCorrect, total: totalMediatorCount },
-    modifiers: { correct: modifiersCorrect, total: totalModifierCount }
-  }, incorrectCards, earnedPoints);
-}
+    
+    // Check answers
+    function checkAnswers() {
+      let isCorrect = true;
+      let partiallyCorrect = false;
+      let confoundersCorrect = 0;
+      let mediatorsCorrect = 0;
+      let modifiersCorrect = 0;
+      let incorrectCards = [];
+      
+      // Check confounders
+      gameState.classifiedCards.confounders.forEach(card => {
+        if (card.type === "Confounder") {
+          confoundersCorrect++;
+        } else {
+          isCorrect = false;
+          incorrectCards.push(card);
+        }
+      });
+      
+      // Check mediators
+      gameState.classifiedCards.mediators.forEach(card => {
+        if (card.type === "Mediator") {
+          mediatorsCorrect++;
+        } else {
+          isCorrect = false;
+          incorrectCards.push(card);
+        }
+      });
+      
+      // Check modifiers
+      gameState.classifiedCards.modifiers.forEach(card => {
+        if (card.type === "Effect Modifier") {
+          modifiersCorrect++;
+        } else {
+          isCorrect = false;
+          incorrectCards.push(card);
+        }
+      });
+      
+      // Count total correct vs expected
+      const totalConfounderCount = gameState.currentTheme.factors.filter(f => f.type === "Confounder").length;
+      const totalMediatorCount = gameState.currentTheme.factors.filter(f => f.type === "Mediator").length;
+      const totalModifierCount = gameState.currentTheme.factors.filter(f => f.type === "Effect Modifier").length;
+      
+      // Only fully correct if all cards are in the right categories
+      isCorrect = isCorrect && 
+                 confoundersCorrect === totalConfounderCount &&
+                 mediatorsCorrect === totalMediatorCount &&
+                 modifiersCorrect === totalModifierCount;
+      
+      // 部分的に正解している場合
+      if (confoundersCorrect > 0 || mediatorsCorrect > 0 || modifiersCorrect > 0) {
+        partiallyCorrect = true;
+      }
       
       // Show result
-function showResult(isCorrect, partiallyCorrect, stats, incorrectCards, earnedPoints) {
-  // 現在の選択された領地の所有者と点数
-  const currentOwner = gameState.tileOwners[gameState.selectedTile];
-  const currentScore = gameState.tileScores[gameState.selectedTile];
-  
-  // 領地を奪取できるかどうかの判定
-  let canCapture = false;
-  let resultMessage = "";
-  
-  if (currentOwner === null) {
-    // 無所有の領地の場合は単純に獲得
-    canCapture = true;
-    resultMessage = `✓ ${earnedPoints}点獲得！領土を獲得しました！`;
-  } else if (currentOwner === gameState.currentTeam) {
-    // 自分の領地の場合はポイント追加
-    canCapture = true;
-    resultMessage = `✓ 自分の領土にさらに${earnedPoints}点追加しました！`;
-  } else {
-    // 他プレイヤーの領地の場合
-    if (earnedPoints > currentScore) {
-      // 現在の得点より高ければ奪取成功
-      canCapture = true;
-      resultMessage = `✓ ${earnedPoints}点獲得！${gameState.teamNames[currentOwner]}の領土を奪取しました！`;
-    } else {
-      // そうでなければ奪取失敗
-      canCapture = false;
-      resultMessage = `✗ ${earnedPoints}点獲得しましたが、${gameState.teamNames[currentOwner]}の領土（${currentScore}点）を奪うには不十分でした。`;
+      showResult(isCorrect, partiallyCorrect, {
+        confounders: { correct: confoundersCorrect, total: totalConfounderCount },
+        mediators: { correct: mediatorsCorrect, total: totalMediatorCount },
+        modifiers: { correct: modifiersCorrect, total: totalModifierCount }
+      }, incorrectCards);
     }
-  }
-  
-  // Generate result content
-  let resultHTML = `<p class="${canCapture ? 'feedback-correct' : 'feedback-incorrect'}" style="padding: 0.75rem; margin-bottom: 1rem;">
-    ${resultMessage}
-  </p>`;
-  
-  resultHTML += `<p>あなたの分類:</p>
-  <ul>
-    <li>交絡因子: ${stats.confounders.correct}/${stats.confounders.total} 正解</li>
-    <li>中間因子: ${stats.mediators.correct}/${stats.mediators.total} 正解</li>
-    <li>効果修飾因子: ${stats.modifiers.correct}/${stats.modifiers.total} 正解</li>
-  </ul>
-  
-  <p style="margin-top: 1rem;">正しい分類:</p>
-  <ul>`;
-  
-  gameState.currentTheme.factors.forEach(factor => {
-    let typeText = "";
-    if (factor.type === "Confounder") typeText = "交絡因子";
-    else if (factor.type === "Mediator") typeText = "中間因子";
-    else if (factor.type === "Effect Modifier") typeText = "効果修飾因子";
     
-    resultHTML += `<li>${factor.name}: ${typeText}</li>`;
-  });
-  
-  resultHTML += `</ul>`;
-  
-  // Set content and render DAG
-  resultContent.innerHTML = resultHTML;
-  renderDAG();
-  
-  // Show modal
-  resultModal.classList.add("active");
-  
-  // 領地獲得の処理
-  if (canCapture) {
-    // 獲得した点数をチームスコアに追加
-    updateTeamScore(gameState.currentTeam, earnedPoints);
-    
-    // 領地の所有者と点数を更新
-    gameState.tileOwners[gameState.selectedTile] = gameState.currentTeam;
-    
-    // 新しい得点を設定（累積ではなく置き換え）
-    gameState.tileScores[gameState.selectedTile] = earnedPoints;
-    
-    // タイルを更新
-    updateTileVisual(gameState.selectedTile);
-  } else {
-    // 奪取に失敗した場合でも部分点をチームスコアに追加
-    updateTeamScore(gameState.currentTeam, earnedPoints);
-    
-    // 間違ったカードを元に戻す
-    if (incorrectCards.length > 0) {
-      returnIncorrectCards(incorrectCards);
-    }
-  }
-  
-  updateTurnInfo();
-}
-
-// 間違ったカードを元のデッキに戻す
-function returnIncorrectCards(cards) {
-  // 待機時間をセット（モーダルを見る時間）
-  setTimeout(() => {
-    cards.forEach(card => {
-      // 間違ったカードを分類から削除
-      if (gameState.classifiedCards.confounders.includes(card)) {
-        gameState.classifiedCards.confounders = gameState.classifiedCards.confounders.filter(c => c.name !== card.name);
-        const cardElement = confoundersArea.querySelector(`.card[data-type="${card.type}"]:not(.removed)`);
-        if (cardElement) cardElement.classList.add('removed');
-      } else if (gameState.classifiedCards.mediators.includes(card)) {
-        gameState.classifiedCards.mediators = gameState.classifiedCards.mediators.filter(c => c.name !== card.name);
-        const cardElement = mediatorsArea.querySelector(`.card[data-type="${card.type}"]:not(.removed)`);
-        if (cardElement) cardElement.classList.add('removed');
-      } else if (gameState.classifiedCards.modifiers.includes(card)) {
-        gameState.classifiedCards.modifiers = gameState.classifiedCards.modifiers.filter(c => c.name !== card.name);
-        const cardElement = modifiersArea.querySelector(`.card[data-type="${card.type}"]:not(.removed)`);
-        if (cardElement) cardElement.classList.add('removed');
+    // Show result
+    function showResult(isCorrect, partiallyCorrect, stats, incorrectCards) {
+      // Generate result content
+      let resultHTML = `<p class="${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}" style="padding: 0.75rem; margin-bottom: 1rem;">
+        ${isCorrect ? '✓ 正解！領土を獲得しました！' : '✗ 分類が不正確です。'}
+      </p>`;
+      
+      resultHTML += `<p>あなたの分類:</p>
+      <ul>
+        <li>交絡因子: ${stats.confounders.correct}/${stats.confounders.total} 正解</li>
+        <li>中間因子: ${stats.mediators.correct}/${stats.mediators.total} 正解</li>
+        <li>効果修飾因子: ${stats.modifiers.correct}/${stats.modifiers.total} 正解</li>
+      </ul>
+      
+      <p style="margin-top: 1rem;">正しい分類:</p>
+      <ul>`;
+      
+      gameState.currentTheme.factors.forEach(factor => {
+        let typeText = "";
+        if (factor.type === "Confounder") typeText = "交絡因子";
+        else if (factor.type === "Mediator") typeText = "中間因子";
+        else if (factor.type === "Effect Modifier") typeText = "効果修飾因子";
+        
+        resultHTML += `<li>${factor.name}: ${typeText}</li>`;
+      });
+      
+      resultHTML += `</ul>`;
+      
+      // Set content and render DAG
+      resultContent.innerHTML = resultHTML;
+      renderDAG();
+      
+      // Show modal
+      resultModal.classList.add("active");
+      
+      // 正解の場合
+      if (isCorrect) {
+        // タイルの進行状況を更新
+        gameState.tileProgress[gameState.selectedTile]++;
+        
+        // 1問正解ごとにタイルの色を変更（1問正解すると完全に領有）
+        gameState.tileOwners[gameState.selectedTile] = gameState.currentTeam;
+        
+        // スコアを更新（正解で3点）
+        updateTeamScore(gameState.currentTeam, 3);
+        
+        // タイルを更新
+        updateTileVisual(gameState.selectedTile);
+      } else if (partiallyCorrect) {
+        // 部分的に正解の場合は1点
+        updateTeamScore(gameState.currentTeam, 1);
+        
+        // 間違ったカードを元に戻す
+        returnIncorrectCards(incorrectCards);
+      } else {
+        // 全部不正解の場合
+        returnIncorrectCards(incorrectCards);
       }
       
-      // 元のカードを表示
-      const cards = cardArea.querySelectorAll(".card");
-      for (let i = 0; i < cards.length; i++) {
-        if (cards[i].textContent === card.name) {
-          cards[i].style.display = "block";
-          break;
+      updateTurnInfo();
+    }
+    
+    // 間違ったカードを元のデッキに戻す
+    function returnIncorrectCards(cards) {
+      // 待機時間をセット（モーダルを見る時間）
+      setTimeout(() => {
+        cards.forEach(card => {
+          // 間違ったカードを分類から削除
+          if (gameState.classifiedCards.confounders.includes(card)) {
+            gameState.classifiedCards.confounders = gameState.classifiedCards.confounders.filter(c => c.name !== card.name);
+            const cardElement = confoundersArea.querySelector(`.card[data-type="${card.type}"]:not(.removed)`);
+            if (cardElement) cardElement.classList.add('removed');
+          } else if (gameState.classifiedCards.mediators.includes(card)) {
+            gameState.classifiedCards.mediators = gameState.classifiedCards.mediators.filter(c => c.name !== card.name);
+            const cardElement = mediatorsArea.querySelector(`.card[data-type="${card.type}"]:not(.removed)`);
+            if (cardElement) cardElement.classList.add('removed');
+          } else if (gameState.classifiedCards.modifiers.includes(card)) {
+            gameState.classifiedCards.modifiers = gameState.classifiedCards.modifiers.filter(c => c.name !== card.name);
+            const cardElement = modifiersArea.querySelector(`.card[data-type="${card.type}"]:not(.removed)`);
+            if (cardElement) cardElement.classList.add('removed');
+          }
+          
+          // 元のカードを表示
+          const cards = cardArea.querySelectorAll(".card");
+          for (let i = 0; i < cards.length; i++) {
+            if (cards[i].textContent === card.name) {
+              cards[i].style.display = "block";
+              break;
+            }
+          }
+        });
+        
+        // 削除対象のカードを実際に削除
+        document.querySelectorAll('.card.removed').forEach(element => {
+          element.remove();
+        });
+        
+        updateSubmitButton();
+      }, 500);
+    }
+    
+    // タイルの見た目を更新
+    function updateTileVisual(tileIndex) {
+      const tileElement = document.querySelectorAll(".tile")[tileIndex];
+      if (!tileElement) return;
+      
+      const owner = gameState.tileOwners[tileIndex];
+      
+      // タイルをリセット
+      tileElement.className = "tile";
+      
+      // 所有者がいる場合、そのチームの色にする
+      if (owner !== null) {
+        tileElement.classList.add(`team-${owner + 1}`);
+        tileElement.textContent = owner + 1;
+        
+        // アニメーション効果
+        tileElement.classList.add('pulse');
+        setTimeout(() => {
+          tileElement.classList.remove('pulse');
+        }, 500);
+      }
+    }
+    
+    // Render DAG (Directed Acyclic Graph)
+    function renderDAG() {
+      const svg = dagSvg;
+      svg.innerHTML = "";
+      
+      // Set up constants for drawing
+      const width = 500;
+      const height = 180;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const boxWidth = 100;
+      const boxHeight = 30;
+      
+      // Create exposure box
+      const exposureBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      exposureBox.setAttribute("x", centerX - 150 - boxWidth / 2);
+      exposureBox.setAttribute("y", centerY - boxHeight / 2);
+      exposureBox.setAttribute("width", boxWidth);
+      exposureBox.setAttribute("height", boxHeight);
+      exposureBox.setAttribute("rx", 5);
+      exposureBox.setAttribute("fill", "#00bcd4");
+      exposureBox.setAttribute("stroke", "#007a8c");
+      svg.appendChild(exposureBox);
+      
+      // Create outcome box
+      const outcomeBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      outcomeBox.setAttribute("x", centerX + 150 - boxWidth / 2);
+      outcomeBox.setAttribute("y", centerY - boxHeight / 2);
+      outcomeBox.setAttribute("width", boxWidth);
+      outcomeBox.setAttribute("height", boxHeight);
+      outcomeBox.setAttribute("rx", 5);
+      outcomeBox.setAttribute("fill", "#ff9800");
+      outcomeBox.setAttribute("stroke", "#c66900");
+      svg.appendChild(outcomeBox);
+      
+      // Create mediator box
+      const mediatorBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      mediatorBox.setAttribute("x", centerX - boxWidth / 2);
+      mediatorBox.setAttribute("y", centerY - boxHeight / 2);
+      mediatorBox.setAttribute("width", boxWidth);
+      mediatorBox.setAttribute("height", boxHeight);
+      mediatorBox.setAttribute("rx", 5);
+      mediatorBox.setAttribute("fill", "#8bc34a");
+      mediatorBox.setAttribute("stroke", "#689f38");
+      svg.appendChild(mediatorBox);
+      
+      // Create exposure text
+      const exposureText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      exposureText.setAttribute("x", centerX - 150);
+      exposureText.setAttribute("y", centerY + 5);
+      exposureText.setAttribute("text-anchor", "middle");
+      exposureText.setAttribute("fill", "black");
+      exposureText.setAttribute("font-size", "12");
+      exposureText.textContent = "曝露";
+      svg.appendChild(exposureText);
+      
+      // Create outcome text
+      const outcomeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      outcomeText.setAttribute("x", centerX + 150);
+      outcomeText.setAttribute("y", centerY + 5);
+      outcomeText.setAttribute("text-anchor", "middle");
+      outcomeText.setAttribute("fill", "black");
+      outcomeText.setAttribute("font-size", "12");
+      outcomeText.textContent = "アウトカム";
+      svg.appendChild(outcomeText);
+      
+      // Create mediator text
+      const mediatorText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      mediatorText.setAttribute("x", centerX);
+      mediatorText.setAttribute("y", centerY + 5);
+      mediatorText.setAttribute("text-anchor", "middle");
+      mediatorText.setAttribute("fill", "black");
+      mediatorText.setAttribute("font-size", "12");
+      mediatorText.textContent = "中間因子";
+      svg.appendChild(mediatorText);
+      
+      // Draw arrows
+      // Exposure to Mediator
+      const arrowEM = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      arrowEM.setAttribute("x1", centerX - 150 + boxWidth / 2 + 5);
+      arrowEM.setAttribute("y1", centerY);
+      arrowEM.setAttribute("x2", centerX - boxWidth / 2 - 5);
+      arrowEM.setAttribute("y2", centerY);
+      arrowEM.setAttribute("stroke", "white");
+      arrowEM.setAttribute("stroke-width", 2);
+      arrowEM.setAttribute("marker-end", "url(#arrowhead)");
+      svg.appendChild(arrowEM);
+      
+      // Mediator to Outcome
+      const arrowMO = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      arrowMO.setAttribute("x1", centerX + boxWidth / 2 + 5);
+      arrowMO.setAttribute("y1", centerY);
+      arrowMO.setAttribute("x2", centerX + 150 - boxWidth / 2 - 5);
+      arrowMO.setAttribute("y2", centerY);
+      arrowMO.setAttribute("stroke", "white");
+      arrowMO.setAttribute("stroke-width", 2);
+      arrowMO.setAttribute("marker-end", "url(#arrowhead)");
+      svg.appendChild(arrowMO);
+      
+      // Create confounders
+      const confounderCount = gameState.currentTheme.factors.filter(f => f.type === "Confounder").length;
+      
+      if (confounderCount > 0) {
+        // Draw confounder box
+        const confounderBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        confounderBox.setAttribute("x", centerX - boxWidth / 2);
+        confounderBox.setAttribute("y", centerY - 70 - boxHeight / 2);
+        confounderBox.setAttribute("width", boxWidth);
+        confounderBox.setAttribute("height", boxHeight);
+        confounderBox.setAttribute("rx", 5);
+        confounderBox.setAttribute("fill", "#e91e63");
+        confounderBox.setAttribute("stroke", "#b0003a");
+        svg.appendChild(confounderBox);
+        
+        // Create confounder text
+        const confounderText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        confounderText.setAttribute("x", centerX);
+        confounderText.setAttribute("y", centerY - 70 + 5);
+        confounderText.setAttribute("text-anchor", "middle");
+        confounderText.setAttribute("fill", "white");
+        confounderText.setAttribute("font-size", "12");
+        confounderText.textContent = "交絡因子";
+        svg.appendChild(confounderText);
+        
+        // Draw arrows from confounder
+        // Confounder to Exposure
+        const arrowCE = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        arrowCE.setAttribute("x1", centerX - 20);
+        arrowCE.setAttribute("y1", centerY - 70 + boxHeight / 2 + 5);
+        arrowCE.setAttribute("x2", centerX - 100);
+        arrowCE.setAttribute("y2", centerY - boxHeight / 2 - 5);
+        arrowCE.setAttribute("stroke", "white");
+        arrowCE.setAttribute("stroke-width", 2);
+        arrowCE.setAttribute("marker-end", "url(#arrowhead)");
+        svg.appendChild(arrowCE);
+        
+        // Confounder to Outcome
+        const arrowCO = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        arrowCO.setAttribute("x1", centerX + 20);
+        arrowCO.setAttribute("y1", centerY - 70 + boxHeight / 2 + 5);
+        arrowCO.setAttribute("x2", centerX + 100);
+        arrowCO.setAttribute("y2", centerY - boxHeight / 2 - 5);
+        arrowCO.setAttribute("stroke", "white");
+        arrowCO.setAttribute("stroke-width", 2);
+        arrowCO.setAttribute("marker-end", "url(#arrowhead)");
+        svg.appendChild(arrowCO);
+      }
+      
+      // Create effect modifier
+      const modifierCount = gameState.currentTheme.factors.filter(f => f.type === "Effect Modifier").length;
+      
+      if (modifierCount > 0) {
+        // Draw modifier box
+        const modifierBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        modifierBox.setAttribute("x", centerX - boxWidth / 2);
+        modifierBox.setAttribute("y", centerY + 50 - boxHeight / 2);
+        modifierBox.setAttribute("width", boxWidth);
+        modifierBox.setAttribute("height", boxHeight);
+        modifierBox.setAttribute("rx", 5);
+        modifierBox.setAttribute("fill", "#9c27b0");
+        modifierBox.setAttribute("stroke", "#6a0080");
+        svg.appendChild(modifierBox);
+        
+        // Create modifier text
+        const modifierText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        modifierText.setAttribute("x", centerX);
+        modifierText.setAttribute("y", centerY + 50 + 5);
+        modifierText.setAttribute("text-anchor", "middle");
+        modifierText.setAttribute("fill", "white");
+        modifierText.setAttribute("font-size", "12");
+        modifierText.textContent = "効果修飾因子";
+        svg.appendChild(modifierText);
+        
+        // Draw modifier arrow
+        const arrowM = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        arrowM.setAttribute("x1", centerX);
+        arrowM.setAttribute("y1", centerY + 50 - boxHeight / 2 - 5);
+        arrowM.setAttribute("x2", centerX);
+        arrowM.setAttribute("y2", centerY + 20);
+        arrowM.setAttribute("stroke", "white");
+        arrowM.setAttribute("stroke-width", 2);
+        arrowM.setAttribute("stroke-dasharray", "4");
+        svg.appendChild(arrowM);
+      }
+      
+      // Add arrowhead marker
+      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      svg.appendChild(defs);
+      
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+      marker.setAttribute("id", "arrowhead");
+      marker.setAttribute("markerWidth", "10");
+      marker.setAttribute("markerHeight", "7");
+      marker.setAttribute("refX", "10");
+      marker.setAttribute("refY", "3.5");
+      marker.setAttribute("orient", "auto");
+      defs.appendChild(marker);
+      
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute("points", "0 0, 10 3.5, 0 7");
+      polygon.setAttribute("fill", "white");
+      marker.appendChild(polygon);
+    }
+    
+    // Close the modal
+    function closeModal() {
+      resultModal.classList.remove("active");
+    }
+    
+    // Continue the game
+    function continueGame() {
+      closeModal();
+      
+      // デフォルトでは次のターン
+      nextTurn();
+      
+      // 選択したタイルをリセット
+      if (gameState.selectedTile !== null) {
+        document.querySelectorAll(".tile")[gameState.selectedTile].classList.remove("selected-tile");
+        gameState.selectedTile = null;
+      }
+      
+      // ゲーム終了チェック
+      checkGameEnd();
+    }
+    
+    // Move to next team's turn
+    function nextTurn() {
+      // Move to next team
+      gameState.currentTeam = (gameState.currentTeam + 1) % gameState.teamCount;
+      
+      // Update UI
+      updateTurnInfo();
+      
+      // Reset classification
+      resetClassification();
+      
+      // Reset theme display
+      // スロット表示をリセット
+      exposureWrapper.innerHTML = '';
+      outcomeWrapper.innerHTML = '';
+      cardArea.innerHTML = "";
+    }
+    
+    // Update turn information display
+    function updateTurnInfo() {
+      turnInfo.textContent = `ターン: ${gameState.teamNames[gameState.currentTeam]}`;
+      conquestsInfo.textContent = `スコア: ${gameState.teamScores[gameState.currentTeam]}`;
+      
+      // Update team color
+      turnInfo.className = "turn-info";
+      // Add team color class
+      if (gameState.currentTeam === 0) turnInfo.style.color = "var(--team-1)";
+      else if (gameState.currentTeam === 1) turnInfo.style.color = "var(--team-2)";
+      else if (gameState.currentTeam === 2) turnInfo.style.color = "var(--team-3)";
+      else if (gameState.currentTeam === 3) turnInfo.style.color = "var(--team-4)";
+    }
+    
+    // Check game end condition
+    function checkGameEnd() {
+      // Count territories for each team
+      const territoryCounts = Array(gameState.teamCount).fill(0);
+      
+      for (let i = 0; i < gameState.tileOwners.length; i++) {
+        if (gameState.tileOwners[i] !== null) {
+          territoryCounts[gameState.tileOwners[i]]++;
         }
       }
-    });
-    
-    // 削除対象のカードを実際に削除
-    document.querySelectorAll('.card.removed').forEach(element => {
-      element.remove();
-    });
-    
-    updateSubmitButton();
-  }, 500);
-}
-
-// タイルの見た目を更新
-function updateTileVisual(tileIndex) {
-  const tileElement = document.querySelectorAll(".tile")[tileIndex];
-  if (!tileElement) return;
-  
-  const owner = gameState.tileOwners[tileIndex];
-  const score = gameState.tileScores[tileIndex];
-  
-  // タイルをリセット
-  tileElement.className = "tile";
-  tileElement.innerHTML = "";
-  
-  // 所有者がいる場合、そのチームの色にする
-  if (owner !== null) {
-    tileElement.classList.add(`team-${owner + 1}`);
-    
-    // チーム表示
-    const teamDiv = document.createElement("div");
-    teamDiv.className = "tile-team";
-    teamDiv.textContent = gameState.teamNames[owner].substring(0, 3); // 略称
-    
-    // スコア表示
-    const scoreDiv = document.createElement("div");
-    scoreDiv.className = "tile-score";
-    scoreDiv.textContent = `${score}点`;
-    
-    tileElement.appendChild(teamDiv);
-    tileElement.appendChild(scoreDiv);
-    
-    // アニメーション効果
-    tileElement.classList.add('pulse');
-    setTimeout(() => {
-      tileElement.classList.remove('pulse');
-    }, 500);
-  }
-}
       
+      // Calculate total owned territories
+      const totalOwned = territoryCounts.reduce((a, b) => a + b, 0);
+      const totalTiles = config.mapWidth * config.mapHeight;
       
-      // Render DAG (Directed Acyclic Graph)
-function renderDAG() {
-  const svg = dagSvg;
-  svg.innerHTML = "";
-  
-  // Set up constants for drawing
-  const width = 500;
-  const height = 180;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const boxWidth = 100;
-  const boxHeight = 30;
-  
-  // Create exposure box
-  const exposureBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  exposureBox.setAttribute("x", centerX - 150 - boxWidth / 2);
-  exposureBox.setAttribute("y", centerY - boxHeight / 2);
-  exposureBox.setAttribute("width", boxWidth);
-  exposureBox.setAttribute("height", boxHeight);
-  exposureBox.setAttribute("rx", 5);
-  exposureBox.setAttribute("fill", "#00bcd4");
-  exposureBox.setAttribute("stroke", "#007a8c");
-  svg.appendChild(exposureBox);
-  
-  // Create outcome box
-  const outcomeBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  outcomeBox.setAttribute("x", centerX + 150 - boxWidth / 2);
-  outcomeBox.setAttribute("y", centerY - boxHeight / 2);
-  outcomeBox.setAttribute("width", boxWidth);
-  outcomeBox.setAttribute("height", boxHeight);
-  outcomeBox.setAttribute("rx", 5);
-  outcomeBox.setAttribute("fill", "#ff9800");
-  outcomeBox.setAttribute("stroke", "#c66900");
-  svg.appendChild(outcomeBox);
-  
-  // Create mediator box
-  const mediatorBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  mediatorBox.setAttribute("x", centerX - boxWidth / 2);
-  mediatorBox.setAttribute("y", centerY - boxHeight / 2);
-  mediatorBox.setAttribute("width", boxWidth);
-  mediatorBox.setAttribute("height", boxHeight);
-  mediatorBox.setAttribute("rx", 5);
-  mediatorBox.setAttribute("fill", "#8bc34a");
-  mediatorBox.setAttribute("stroke", "#689f38");
-  svg.appendChild(mediatorBox);
-  
-  // Create exposure text
-  const exposureText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  exposureText.setAttribute("x", centerX - 150);
-  exposureText.setAttribute("y", centerY + 5);
-  exposureText.setAttribute("text-anchor", "middle");
-  exposureText.setAttribute("fill", "black");
-  exposureText.setAttribute("font-size", "12");
-  exposureText.textContent = "曝露";
-  svg.appendChild(exposureText);
-  
-  // Create outcome text
-  const outcomeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  outcomeText.setAttribute("x", centerX + 150);
-  outcomeText.setAttribute("y", centerY + 5);
-  outcomeText.setAttribute("text-anchor", "middle");
-  outcomeText.setAttribute("fill", "black");
-  outcomeText.setAttribute("font-size", "12");
-  outcomeText.textContent = "アウトカム";
-  svg.appendChild(outcomeText);
-  
-  // Create mediator text
-  const mediatorText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  mediatorText.setAttribute("x", centerX);
-  mediatorText.setAttribute("y", centerY + 5);
-  mediatorText.setAttribute("text-anchor", "middle");
-  mediatorText.setAttribute("fill", "black");
-  mediatorText.setAttribute("font-size", "12");
-  mediatorText.textContent = "中間因子";
-  svg.appendChild(mediatorText);
-  
-  // Draw arrows
-  // Exposure to Mediator
-  const arrowEM = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  arrowEM.setAttribute("x1", centerX - 150 + boxWidth / 2 + 5);
-  arrowEM.setAttribute("y1", centerY);
-  arrowEM.setAttribute("x2", centerX - boxWidth / 2 - 5);
-  arrowEM.setAttribute("y2", centerY);
-  arrowEM.setAttribute("stroke", "white");
-  arrowEM.setAttribute("stroke-width", 2);
-  arrowEM.setAttribute("marker-end", "url(#arrowhead)");
-  svg.appendChild(arrowEM);
-  
-  // Mediator to Outcome
-  const arrowMO = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  arrowMO.setAttribute("x1", centerX + boxWidth / 2 + 5);
-  arrowMO.setAttribute("y1", centerY);
-  arrowMO.setAttribute("x2", centerX + 150 - boxWidth / 2 - 5);
-  arrowMO.setAttribute("y2", centerY);
-  arrowMO.setAttribute("stroke", "white");
-  arrowMO.setAttribute("stroke-width", 2);
-  arrowMO.setAttribute("marker-end", "url(#arrowhead)");
-  svg.appendChild(arrowMO);
-  
-  // Create confounders
-  const confounderCount = gameState.currentTheme.factors.filter(f => f.type === "Confounder").length;
-  
-  if (confounderCount > 0) {
-    // Draw confounder box
-    const confounderBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    confounderBox.setAttribute("x", centerX - boxWidth / 2);
-    confounderBox.setAttribute("y", centerY - 70 - boxHeight / 2);
-    confounderBox.setAttribute("width", boxWidth);
-    confounderBox.setAttribute("height", boxHeight);
-    confounderBox.setAttribute("rx", 5);
-    confounderBox.setAttribute("fill", "#e91e63");
-    confounderBox.setAttribute("stroke", "#b0003a");
-    svg.appendChild(confounderBox);
-    
-    // Create confounder text
-    const confounderText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    confounderText.setAttribute("x", centerX);
-    confounderText.setAttribute("y", centerY - 70 + 5);
-    confounderText.setAttribute("text-anchor", "middle");
-    confounderText.setAttribute("fill", "white");
-    confounderText.setAttribute("font-size", "12");
-    confounderText.textContent = "交絡因子";
-    svg.appendChild(confounderText);
-    
-    // Draw arrows from confounder
-    // Confounder to Exposure
-    const arrowCE = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    arrowCE.setAttribute("x1", centerX - 20);
-    arrowCE.setAttribute("y1", centerY - 70 + boxHeight / 2 + 5);
-    arrowCE.setAttribute("x2", centerX - 100);
-    arrowCE.setAttribute("y2", centerY - boxHeight / 2 - 5);
-    arrowCE.setAttribute("stroke", "white");
-    arrowCE.setAttribute("stroke-width", 2);
-    arrowCE.setAttribute("marker-end", "url(#arrowhead)");
-    svg.appendChild(arrowCE);
-    
-    // Confounder to Outcome
-    const arrowCO = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    arrowCO.setAttribute("x1", centerX + 20);
-    arrowCO.setAttribute("y1", centerY - 70 + boxHeight / 2 + 5);
-    arrowCO.setAttribute("x2", centerX + 100);
-    arrowCO.setAttribute("y2", centerY - boxHeight / 2 - 5);
-    arrowCO.setAttribute("stroke", "white");
-    arrowCO.setAttribute("stroke-width", 2);
-    arrowCO.setAttribute("marker-end", "url(#arrowhead)");
-    svg.appendChild(arrowCO);
-  }
-  
-  // Create effect modifier
-  const modifierCount = gameState.currentTheme.factors.filter(f => f.type === "Effect Modifier").length;
-  
-  if (modifierCount > 0) {
-    // Draw modifier box
-    const modifierBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    modifierBox.setAttribute("x", centerX - boxWidth / 2);
-    modifierBox.setAttribute("y", centerY + 50 - boxHeight / 2);
-    modifierBox.setAttribute("width", boxWidth);
-    modifierBox.setAttribute("height", boxHeight);
-    modifierBox.setAttribute("rx", 5);
-    modifierBox.setAttribute("fill", "#9c27b0");
-    modifierBox.setAttribute("stroke", "#6a0080");
-    svg.appendChild(modifierBox);
-    
-    // Create modifier text
-    const modifierText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    modifierText.setAttribute("x", centerX);
-    modifierText.setAttribute("y", centerY + 50 + 5);
-    modifierText.setAttribute("text-anchor", "middle");
-    modifierText.setAttribute("fill", "white");
-    modifierText.setAttribute("font-size", "12");
-    modifierText.textContent = "効果修飾因子";
-    svg.appendChild(modifierText);
-    
-    // Draw modifier arrow
-    const arrowM = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    arrowM.setAttribute("x1", centerX);
-    arrowM.setAttribute("y1", centerY + 50 - boxHeight / 2 - 5);
-    arrowM.setAttribute("x2", centerX);
-    arrowM.setAttribute("y2", centerY + 20);
-    arrowM.setAttribute("stroke", "white");
-    arrowM.setAttribute("stroke-width", 2);
-    arrowM.setAttribute("stroke-dasharray", "4");
-    svg.appendChild(arrowM);
-  }
-  
-  // Add arrowhead marker
-  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-  svg.appendChild(defs);
-  
-  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-  marker.setAttribute("id", "arrowhead");
-  marker.setAttribute("markerWidth", "10");
-  marker.setAttribute("markerHeight", "7");
-  marker.setAttribute("refX", "10");
-  marker.setAttribute("refY", "3.5");
-  marker.setAttribute("orient", "auto");
-  defs.appendChild(marker);
-  
-  const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-  polygon.setAttribute("points", "0 0, 10 3.5, 0 7");
-  polygon.setAttribute("fill", "white");
-  marker.appendChild(polygon);
-}
-
-// Close the modal
-function closeModal() {
-  resultModal.classList.remove("active");
-}
-
-// Continue the game
-function continueGame() {
-  closeModal();
-  
-  // デフォルトでは次のターン
-  nextTurn();
-  
-  // 選択したタイルをリセット
-  if (gameState.selectedTile !== null) {
-    document.querySelectorAll(".tile")[gameState.selectedTile].classList.remove("selected-tile");
-    gameState.selectedTile = null;
-  }
-  
-  // ゲーム終了チェック
-  checkGameEnd();
-}
-
-// Move to next team's turn
-function nextTurn() {
-  // Move to next team
-  gameState.currentTeam = (gameState.currentTeam + 1) % gameState.teamCount;
-  
-  // Update UI
-  updateTurnInfo();
-  
-  // Reset classification
-  resetClassification();
-  
-  // Reset theme display
-  // スロット表示をリセット
-  exposureWrapper.innerHTML = '';
-  outcomeWrapper.innerHTML = '';
-  cardArea.innerHTML = "";
-}
-
-// Update turn information display
-function updateTurnInfo() {
-  turnInfo.textContent = `ターン: ${gameState.teamNames[gameState.currentTeam]}`;
-  conquestsInfo.textContent = `スコア: ${gameState.teamScores[gameState.currentTeam]}`;
-  
-  // Update team color
-  turnInfo.className = "turn-info";
-  // Add team color class
-  if (gameState.currentTeam === 0) turnInfo.style.color = "var(--team-1)";
-  else if (gameState.currentTeam === 1) turnInfo.style.color = "var(--team-2)";
-  else if (gameState.currentTeam === 2) turnInfo.style.color = "var(--team-3)";
-  else if (gameState.currentTeam === 3) turnInfo.style.color = "var(--team-4)";
-}
-      
-      
-      // Check game end condition
-function checkGameEnd() {
-  // Count territories for each team
-  const territoryCounts = Array(gameState.teamCount).fill(0);
-  const territoryScores = Array(gameState.teamCount).fill(0);
-  
-  for (let i = 0; i < gameState.tileOwners.length; i++) {
-    if (gameState.tileOwners[i] !== null) {
-      territoryCounts[gameState.tileOwners[i]]++;
-      territoryScores[gameState.tileOwners[i]] += gameState.tileScores[i];
-    }
-  }
-  
-  // Calculate total owned territories
-  const totalOwned = territoryCounts.reduce((a, b) => a + b, 0);
-  const totalTiles = config.mapWidth * config.mapHeight;
-  
-  // Check if all territories are occupied
-  if (totalOwned === totalTiles) {
-    // Find team with most territories and highest score
-    let maxTerritories = 0;
-    let maxScore = 0;
-    let winningTeam = -1;
-    
-    for (let i = 0; i < territoryCounts.length; i++) {
-      // 優先順位は領地数、同じなら合計点
-      if (territoryCounts[i] > maxTerritories || 
-          (territoryCounts[i] === maxTerritories && territoryScores[i] > maxScore)) {
-        maxTerritories = territoryCounts[i];
-        maxScore = territoryScores[i];
-        winningTeam = i;
+      // Check if all territories are occupied
+      if (totalOwned === totalTiles) {
+        // Find team with most territories
+        let maxTerritories = 0;
+        let winningTeam = -1;
+        
+        for (let i = 0; i < territoryCounts.length; i++) {
+          if (territoryCounts[i] > maxTerritories) {
+            maxTerritories = territoryCounts[i];
+            winningTeam = i;
+          }
+        }
+        
+        // Show game end modal
+        setTimeout(() => {
+          alert(`ゲーム終了！${gameState.teamNames[winningTeam]}の勝利です！ (${maxTerritories}領地 / ${gameState.teamScores[winningTeam]}ポイント)`);
+          
+          // リセットして新しいゲームを開始するか確認
+          if (confirm("新しいゲームを開始しますか？")) {
+            location.reload();
+          }
+        }, 500);
+        
+        return true;
       }
+      
+      return false;
     }
     
-    // Show game end modal
-    setTimeout(() => {
-      alert(`ゲーム終了！${gameState.teamNames[winningTeam]}の勝利です！ (${maxTerritories}領地 / ${gameState.teamScores[winningTeam]}ポイント)`);
-      
-      // リセットして新しいゲームを開始するか確認
-      if (confirm("新しいゲームを開始しますか？")) {
-        location.reload();
-      }
-    }, 500);
-    
-    return true;
-  }
-  
-  return false;
-}
-
-// Add event listener for DOMContentLoaded
-document.addEventListener("DOMContentLoaded", function() {
-  setupEventListeners();
-  updateTeamInputs();
-  // initGame is called after form submission
-});
-          </script>
+    // Add event listener for DOMContentLoaded
+    document.addEventListener("DOMContentLoaded", function() {
+      setupEventListeners();
+      updateTeamInputs();
+      // initGame is called after form submission
+    });
+  </script>
 </body>
 </html>
-        
-        
