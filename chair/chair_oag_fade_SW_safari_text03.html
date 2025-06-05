@@ -594,11 +594,12 @@ function updateEffectButtons(activeEffect) {
         // Image paths
         // 画像パスの修正 - よりシンプルに
 const imagePaths = [
-    'IMG_8538.png', 'IMG_7378.png', 'IMG_8609.png', 
-    'IMG_7456.png', 'IMG_7464.png', 
-    'IMG_7793.png', 'IMG_8505.png', 'IMG_8506.png', 'IMG_8507.png',
-    'IMG_8539.png', 'IMG_8540.png', 'IMG_8541.png', 'IMG_8542.png',
-    'IMG_8543.png', 'IMG_8544.png', 'IMG_8545.png', 'IMG_8546.png'
+    'IMG_8506.png', 'IMG_7378.png', 'IMG_7464.png', 'IMG_7793.png',
+    'IMG_8505.png', 'IMG_8507.png', 'IMG_8538.png', 'IMG_8539.png',
+    'IMG_8540.png', 'IMG_8541.png', 'IMG_8542.png', 'IMG_8543.png',
+    'IMG_8544.png', 'IMG_8545.png', 'IMG_8546.png', 'IMG_8608.png',
+    'IMG_8609.png', 'IMG_8624.png', 'IMG_8634.png', 'IMG_8635.png',
+    'IMG_8636.png', 'IMG_8637.png'
 ];
 
 // 試行パスを環境に合わせて調整
@@ -665,244 +666,36 @@ function tryLoadImage(pathIndex) {
         let loadedImages = 0;
         const totalImages = imagePaths.length;
         
- // ドイツ語の引用文リストと日本語訳（文章と作家の形式）
-const quotes = [
-    // 詩・文学
-    {
-        german: "Wenn ich sitze, will ich nicht sitzen, wie mein Sitz-Fleisch möchte, sondern wie mein Sitz-Geist sich, säße er, den Stuhl sich flöchte.",
-        japanese: "座るとき、私は肉体が望むように座りたくはない、むしろ精神が座るならば編むであろう椅子のように座りたい。",
-        author: "Christian Morgenstern"
-    },
-    {
-        german: "In einem hochgewölbten, engen, gothischen Zimmer Faust unruhig auf seinem Sessel am Pulte.",
-        japanese: "高く天井の湾曲した狭いゴシック様式の部屋で、ファウストは机に向かった椅子の上で落ち着かない様子だった。",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Er wirft sich auf den ledernen Sessel am Bett.",
-        japanese: "彼はベッドのそばの革張りの椅子に身を投げ出した。",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Mephistopheles, sich in dem Sessel dehnend und mit dem Wedel spielend, fährt fort zu sprechen. Hier sitz' ich wie der König auf dem Throne.",
-        japanese: "メフィストフェレスは椅子に体を伸ばし、羽根ではたきながら話し続ける。「私はここに王が玉座に座るように座っている」",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Ich schlich mich hart am Stuhl herbei.",
-        japanese: "私はこっそりと椅子に近づいた。",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Also, man kann sich in einen Sessel setzen - ich sitze furchtbar gern im Sessel und döse - und davonschweben.",
-        japanese: "つまり、肘掛け椅子に座ることができる - 私は肘掛け椅子に座って微睡むのが大好きなのだが - そしてそこから漂い出る。",
-        author: "David Lynch"
-    },
-    {
-        german: "Den Wedel nimm hier, Und setz' dich in Sessel!",
-        japanese: "このはたきを取って、椅子に座りなさい！",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Sie sitzen schon, mit hohen Augenbraunen, Gelassen da und möchten gern erstaunen.",
-        japanese: "彼らはすでに眉を高くして、冷静に座っており、驚かせてほしそうにしている。",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Sitzt ihr nur immer! leimt zusammen, Braut ein Ragout von andrer Schmaus.",
-        japanese: "ただ座っていなさい！継ぎ合わせて、他人のごちそうからの寄せ集め料理を作りなさい。",
-        author: "Johann Wolfgang von Goethe"
-    },
-    {
-        german: "Dem Bedürfnis nach Einsamkeit genügt es nicht, dass man an einem Tisch allein sitzt. Es müssen auch leere Sessel herumstehen.",
-        japanese: "孤独への欲求は、ただテーブルに一人で座っているだけでは満たされない。空の椅子も周りにあるべきなのだ。",
-        author: "Alfred Polgar"
-    },
-    
-    // リルケの作品
-    {
-        german: "Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht.",
-        japanese: "私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。",
-        author: "Rainer Maria Rilke"
-    },
-    {
-        german: "Bibliothèque Nationale. Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht. Sie sind in den Büchern.",
-        japanese: "国立図書館。私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。彼らは本の中にいるのだ。",
-        author: "Rainer Maria Rilke"
-    },
-    {
-        german: "Ich war der einzige, der am Tische sitzen geblieben war; ich hatte mich so schwer gemacht in meinem Sessel, mir schien, ich könnte allein nie wieder auf.",
-        japanese: "私だけがテーブルに座ったままだった。私は自分の椅子にどっしりと身を沈め、一人では二度と立ち上がれないような気がした。",
-        author: "Rainer Maria Rilke"
-    },
-    
-    // 哲学と思想
-    {
-        german: "Bekanntlich braucht man zum Denken einen Stuhl, auf dem man sitzt.",
-        japanese: "周知のように、思考するためには座るための椅子が必要だ。",
-        author: "Ödön von Horváth"
-    },
-    {
-        german: "Es ist schwerer, einen guten Stuhl zu bauen als einen Wolkenkratzer.",
-        japanese: "良い椅子を作ることは、高層ビルを建てるよりも難しい。",
-        author: "Ludwig Mies van der Rohe"
-    },
-    {
-        german: "Der unzufriedene Mensch findet keinen bequemen Stuhl.",
-        japanese: "不満を持つ人は、快適な椅子を見つけることができない。",
-        author: "Benjamin Franklin"
-    },
-    {
-        german: "Auf dem höchsten Thron der Welt sitzen wir nur auf unserem Arsch.",
-        japanese: "世界の最も高い玉座の上にあっても、我々は自分の尻の上に座っているだけだ。",
-        author: "Michel de Montaigne"
-    },
-    {
-        german: "Alles Unheil kommt von einer einzigen Ursache, dass die Menschen nicht in Ruhe in ihrer Kammer sitzen können.",
-        japanese: "すべての不幸は唯一の原因から来る、人々が静かに自分の部屋に座っていられないことだ。",
-        author: "Blaise Pascal"
-    },
-    {
-        german: "Das Gehirn ist kein Wohnort, Sitz, Erzeuger, kein Instrument oder Organ, kein Träger oder Substrat usw. des Denkens.",
-        japanese: "脳は思考の住居でも、座でも、生産者でも、道具でも、臓器でも、担い手でも、基盤でもない。",
-        author: "Richard Avenarius"
-    },
-    {
-        german: "Nur ergangene Gedanken haben Wert.",
-        japanese: "歩きながら得られた思考だけが価値を持つ。",
-        author: "Friedrich Nietzsche"
-    },
-    
-    // フレドリク・ファーレの詩
-    {
-        german: "Buddha hat sich zur Erleuchtung gesessen, hat sitzend und sitzend sein Ego vergessen.",
-        japanese: "ブッダは座って悟りを開き、座り続けて自我を忘れた。",
-        author: "Fredrik Vahle"
-    },
-    {
-        german: "Gott sitzt hoch auf dem Himmelsthron beim heiligen Geist und dem eigenen Sohn.",
-        japanese: "神は天の玉座に高く座し、聖霊と自らの息子のそばにいる。",
-        author: "Fredrik Vahle"
-    },
-    {
-        german: "Sitzen, sitzen, sitzen, nichts ist häufiger als sitzen. Ob beim Trinken oder Essen, es wird immerzu gesessen.",
-        japanese: "座る、座る、座る、座ること以上に頻繁なことはない。飲む時も食べる時も、常に座っている。",
-        author: "Fredrik Vahle"
-    },
-    {
-        german: "Stuhl kommt von Stehen, hat Rücken und Beine, Armlehnen manchmal, und er steht von alleine.",
-        japanese: "「椅子」は「立つ」から来ており、背もたれと脚があり、時には肘掛けもあり、それは自立している。",
-        author: "Fredrik Vahle"
-    },
-    
-    // カフカの作品
-    {
-        german: "Freilich waren es nicht mehr die lebhaften Unterhaltungen der früheren Zeiten, an die Gregor in den kleinen Hotelzimmern stets mit einigem Verlangen gedacht hatte, wenn er sich müde in das feuchte Bettzeug hatte werfen müssen. Es ging jetzt meist nur sehr still zu. Der Vater schlief bald nach dem Nachtessen in seinem Sessel ein.",
-        japanese: "もちろん、それはもはや昔のような活気に満ちた会話ではなく、グレゴールが小さなホテルの部屋で疲れて湿った寝具に身を投げなければならなかったとき、いつも憧れていたようなものではなかった。今や家は静かなものとなっていた。父は夕食後すぐに肘掛け椅子で眠りに落ちた。",
-        author: "Franz Kafka"
-    },
-    {
-        german: "Gregor schob sich langsam mit dem Sessel zur Tür hin, ließ ihn dort los, warf sich gegen die Tür, hielt sich an ihr aufrecht — die Ballen seiner Beinchen hatten ein wenig Klebstoff — und ruhte sich dort einen Augenblick lang von der Anstrengung aus.",
-        japanese: "グレゴールは椅子でゆっくりとドアの方へ移動し、そこで椅子を離し、ドアに体を投げつけた。ドアに体を支え立ち上がる—小さな足の裏には少し粘着性があった—そして一瞬そこで労力から休んだ。",
-        author: "Franz Kafka"
-    },
-    {
-        german: "Unter vier Augen ist das Schweigen unerträglich laut.",
-        japanese: "二人きりでいると、沈黙は耐えがたいほど大きい。",
-        author: "Franz Kafka"
-    },
-    
-    // ヘッセの作品
-    {
-        german: "Wenn wir einen Menschen hassen, so hassen wir in seinem Bild etwas, was in uns selber sitzt. Was nicht in uns selber ist, das regt uns nicht auf.",
-        japanese: "人を憎むとき、私たちはその人の姿の中に、自分自身の中に座っているものを憎んでいる。自分自身の中にないものは、私たちを動揺させない。",
-        author: "Hermann Hesse"
-    },
-    {
-        german: "Wie ein schüchternes Mädchen blieb er sitzen und wartet, ob einer käme ihn zu holen, ein Stärkerer und Mutigerer als er, der ihn mitrisse und zum Glücklichsein zwänge.",
-        japanese: "彼は内気な少女のように座り続け、自分より強く勇敢な誰かが来て、彼を連れ出し、幸せを強いてくれるのを待っていた。",
-        author: "Hermann Hesse"
-    },
-    {
-        german: "Die Verzweiflung schickt Gott nicht, um uns zu töten, er schickt sie, um neues Leben in uns zu erwecken.",
-        japanese: "神は私たちを殺すために絶望を送るのではなく、私たちの中に新しい命を呼び覚ますために送るのだ。",
-        author: "Hermann Hesse"
-    },
-    {
-        german: "Man muss das Unmögliche versuchen, um das Mögliche zu erreichen.",
-        japanese: "可能なことを達成するためには、不可能なことを試みなければならない。",
-        author: "Hermann Hesse"
-    },
-    
-    // ワーグナー、音楽関連
-    {
-        german: "O du, mein holder Abendstern, Wohl grüßt ich immer dich so gern!",
-        japanese: "おお、私の愛しい宵の明星よ、いつもどれほど喜んでお前に挨拶したことか！",
-        author: "Richard Wagner"
-    },
-    {
-        german: "Hier sitz ich am Webstuhl und webe.",
-        japanese: "ここで私は機織り機に座って織っている。",
-        author: "Richard Wagner"
-    },
-    {
-        german: "So sitze ich einsam in meiner Kammer.",
-        japanese: "こうして私は一人、自分の部屋に座っている。",
-        author: "Richard Wagner"
-    },
-    
-    // ショーペンハウアーの格言
-    {
-        german: "Alles im Leben gibt kund, dass das irdische Glück bestimmt ist, vereitelt oder als eine Illusion erkannt zu werden.",
-        japanese: "人生のすべてが示しているのは、地上の幸福は挫折するか、幻想として認識されるように運命づけられているということだ。",
-        author: "Arthur Schopenhauer"
-    },
-    {
-        german: "Jeder hält die Grenzen des eigenen Gesichtsfelds für die Grenzen der Welt.",
-        japanese: "誰もが自分の視野の限界を世界の限界だと思っている。",
-        author: "Arthur Schopenhauer"
-    },
-    {
-        german: "Der Wechsel allein ist das Beständige.",
-        japanese: "変化だけが永続的なものである。",
-        author: "Arthur Schopenhauer"
-    },
-    {
-        german: "Die Wahrheit hat Zeit, denn sie hat ein langes Leben.",
-        japanese: "真理には時間がある、なぜなら真理は長い人生を持っているからだ。",
-        author: "Arthur Schopenhauer"
-    },
-    
-    // ニーチェの言葉
-    {
-        german: "Der letzte deutsche Philosoph — Friedrich Nietzsche — der die Kunst verstand, gesetzt dass die Wahrheit ein Weib ist...",
-        japanese: "最後のドイツの哲学者—フリードリヒ・ニーチェ—真理が女性だとすれば、芸術を理解した者...",
-        author: "Friedrich Nietzsche"
-    },
-    {
-        german: "Der Mensch, welcher nicht zur Masse gehören will, braucht nur aufzuhören, gegen sich bequem zu sein; er folge seinem Gewissen, welches ihm zuruft: 'sei du selbst!'",
-        japanese: "大衆に属したくない人間は、自分に対して快適であることをやめさえすればよい。彼は自分の良心に従うべきだ、それは彼に「あなた自身であれ！」と呼びかける。",
-        author: "Friedrich Nietzsche"
-    },
-    {
-        german: "Und wer macht die schöne Musik zum Sitzen im Stuhl? Wenn du einen Bruder hast, so achte ihn; hat er aber keinen Stuhl, so gib ihm deinen.",
-        japanese: "そして椅子に座るための美しい音楽を作るのは誰だ？もし兄弟がいるなら、彼を尊重せよ。しかし彼に椅子がないなら、あなたの椅子を彼に与えよ。",
-        author: "Friedrich Nietzsche"
-    },
-    {
-        german: "Ich denke immer noch, irgendwann einmal sitzen wir alle in Bayreuth zusammen und begreifen gar nicht mehr, wie man es anderswo aushalten konnte.",
-        japanese: "私はまだ思う、いつか私たちは皆バイロイトで一緒に座り、どうして他の場所で耐えられたのか全く理解できなくなるだろう。",
-        author: "Friedrich Nietzsche"
-    }
+            // ドイツ語の引用文リスト（文章と作家の形式）
+const germanQuotes = [
+    { text: "Der Stuhl, der zurückbleibt, wenn alle gegangen sind, trägt die Last der Stille.", author: "Franz Kafka" },
+    { text: "Der alte Holzstuhl erzählt die Geschichte derer, die auf ihm gesessen haben.", author: "Hermann Hesse" },
+    { text: "Ein Stuhl, vom Regen gezeichnet, spricht die Sprache der Vergänglichkeit.", author: "Paul Celan" },
+    { text: "Die Sprache ist das Haus des Seins.", author: "Martin Heidegger" },
+    { text: "Ein König, der auf dem Stuhl sitzt, zu richten, zerstreuet alles Arge mit seinen Augen.", author: "Franz Kafka" },
+    { text: "Alles Vergängliche ist nur ein Gleichnis.", author: "Johann Wolfgang von Goethe" },
+    { text: "Und so im Wandlen eigentlichst belehrt: Unschätzbar ist, was niemals wiederkehrt.", author: "Johann Wolfgang von Goethe" },
+    { text: "Was vergangen ist, kehrt nicht wieder. Aber ging es leuchtend nieder, leuchtet's lange noch zurück.", author: "Johann Wolfgang von Goethe" },
+    { text: "Herbst: Die Blätter fallen, fallen wie von weit.", author: "Rainer Maria Rilke" },
+    { text: "Die Natur ist eine versteinerte Zauberstadt.", author: "Novalis" },
+    { text: "Die Zeit, die ist ein sonderbar Ding.", author: "Richard Strauss" },
+    { text: "Verwandlung ist das Leben der Natur.", author: "Wolfgang Amadeus Mozart" },
+    { text: "Der Mensch muß nicht zu viel an Vergangenes denken; wer sich oben erhalten will, hat mit der Gegenwart genug zu tun.", author: "Richard Wagner" },
+    { text: "Wandel und Wechsel liebt, wer lebt.", author: "Richard Wagner" },
+    { text: "In den Tiefen des Winters erfuhr ich schließlich, dass in mir ein unbesiegbarer Sommer liegt.", author: "Albert Camus" },
+    { text: "Die Natur zeigt uns die Vergänglichkeit und den Neubeginn.", author: "Unbekannt" },
+    { text: "Der Herbst ist ein zweiter Frühling, wo jedes Blatt zur Blüte wird.", author: "Albert Camus" },
+    { text: "Wir begreifen die Ruinen nicht eher, als bis wir selbst Ruinen sind.", author: "Unbekannt" },
+    { text: "Sei allem Abschied voran, als wäre er hinter dir.", author: "Rainer Maria Rilke" },
+    { text: "Auch das Schöne muss sterben.", author: "Hermann Hesse" }
 ];
-
 
 // テーマ別の引用文インデックス
 const themeQuotes = {
     bright: [5, 7, 14, 15, 16], // 希望的・明るいテーマの引用
     dark: [0, 1, 8, 17, 19],    // 終わりや変化についての引用
     nature: [9, 10, 11, 15, 16], // 自然に関する引用
-    chair: [0, 1, 2, 4]         // 椅子に関する引用
+    chair: [0, 1, 2, 4, 20, 21, 22]         // 椅子に関する引用
 };
 
             // activeQuotes配列の管理を改善
@@ -944,18 +737,17 @@ function manageQuoteCollection() {
 }
             
             // ランダムな位置にテキストを追加する関数
-// ランダムな位置にテキストを追加する関数を修正
 function addRandomQuote(type = 'normal') {
     // ランダムなテキストを選択
     let quoteIndex;
     do {
-        quoteIndex = Math.floor(Math.random() * quotes.length);
+        quoteIndex = Math.floor(Math.random() * germanQuotes.length);
     } while (quoteIndex === lastQuoteIndex);
     
     lastQuoteIndex = quoteIndex;
-    const quote = quotes[quoteIndex];
+    const quote = germanQuotes[quoteIndex];
     
-    // 表示位置の多様化
+    // 表示位置の多様化（グリッドに合わせる場合もある）
     let x, y;
     
     if (type === 'grid' && currentGridData) {
@@ -983,18 +775,15 @@ function addRandomQuote(type = 'normal') {
     // サイズの多様化
     const size = 16 + Math.floor(Math.random() * 16);
     
-    // 生存時間も多様化
+                // 生存時間も多様化 100->500 change
     const life = 500 + Math.floor(Math.random() * 200); 
     
     // 透明度も多様化
     const targetOpacity = 0.3 + Math.random() * 0.5;
     
-    // テキストを追加（言語はdrawQuotes内でランダムに決定される）
+    // テキストを追加
     activeQuotes.push({
-        text: {
-            german: quote.german,
-            japanese: quote.japanese
-        },
+        text: quote.text,
         author: quote.author,
         x: x,
         y: y,
@@ -1175,8 +964,8 @@ function showQuoteInGridCell(gridX, gridY, cellWidth, cellHeight, brightness) {
 }
 
 // 引用文の描画
-// 引用文描画関数の修正部分 - drawQuotes関数内の修正
- // 定期的にテキスト管理を実行
+function drawQuotes() {
+    // 定期的にテキスト管理を実行
     if (Math.random() < 0.05) {
         manageQuoteCollection();
     }
@@ -1214,88 +1003,48 @@ function showQuoteInGridCell(gridX, gridY, cellWidth, cellHeight, brightness) {
             }
         }
         
-        // テキストを描画する前の状態を保存
+        // テキストを描画
         ctx.save();
+        ctx.globalAlpha = quote.opacity;
+        ctx.font = `${quote.size}px Georgia`;
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
         
-        try {
-            ctx.globalAlpha = quote.opacity;
-            ctx.font = `${quote.size}px Georgia`;
-            ctx.fillStyle = 'white';
-            ctx.textAlign = 'center';
-            
-            // テキストタイプに応じた描画
-            if (quote.type === 'intense') {
-                // 強調表示（影を付ける）
-                ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-                ctx.shadowBlur = 10;
-            }
-            
-            // 言語が未定義の場合、ランダムに決定
-            if (quote.language === undefined) {
-                quote.language = Math.random() < 0.5 ? 'german' : 'japanese';
-            }
-            
-            // 言語に基づいてテキストを選択
-            const displayText = quote.text[quote.language];
-            const maxWidth = Math.min(canvas.width * 0.6, 500);
-            let y = quote.y;
-            
-            if (quote.language === 'german') {
-                // ドイツ語は空白で単語分割
-                const words = displayText.split(' ');
-                let line = '';
-                
-                for (let n = 0; n < words.length; n++) {
-                    const testLine = line + words[n] + ' ';
-                    const metrics = ctx.measureText(testLine);
-                    const testWidth = metrics.width;
-                    
-                    if (testWidth > maxWidth && n > 0) {
-                        ctx.fillText(line, quote.x, y);
-                        line = words[n] + ' ';
-                        y += quote.size * 1.2;
-                    } else {
-                        line = testLine;
-                    }
-                }
-                ctx.fillText(line, quote.x, y);
-            } else {
-                // 日本語は文字ごとに処理し、適切な長さで改行
-                const charLen = displayText.length;
-                let line = '';
-                let charIndex = 0;
-                
-                while (charIndex < charLen) {
-                    // 次の文字を追加
-                    line += displayText[charIndex];
-                    charIndex++;
-                    
-                    // 行の幅を測定
-                    const metrics = ctx.measureText(line);
-                    if (metrics.width > maxWidth) {
-                        // 最大幅を超えたら描画して次の行へ
-                        ctx.fillText(line, quote.x, y);
-                        line = '';
-                        y += quote.size * 1.2;
-                    }
-                }
-                
-                // 残りの文字を描画
-                if (line.length > 0) {
-                    ctx.fillText(line, quote.x, y);
-                }
-            }
-            
-            // 作者名を小さく表示
-            if (quote.author && quote.type !== 'burst') {
-                y += quote.size * 1.5;
-                ctx.font = `italic ${quote.size * 0.7}px Georgia`;
-                ctx.fillText("- " + quote.author, quote.x, y);
-            }
-        } finally {
-            // 必ず描画状態を復元
-            ctx.restore();
+        // テキストタイプに応じた描画
+        if (quote.type === 'intense') {
+            // 強調表示（影を付ける）
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+            ctx.shadowBlur = 10;
         }
+        
+        // 引用文テキストを描画（必要に応じて折り返し）
+        const maxWidth = Math.min(canvas.width * 0.6, 500);
+        const words = quote.text.split(' ');
+        let line = '';
+        let y = quote.y;
+        
+        for (let n = 0; n < words.length; n++) {
+            const testLine = line + words[n] + ' ';
+            const metrics = ctx.measureText(testLine);
+            const testWidth = metrics.width;
+            
+            if (testWidth > maxWidth && n > 0) {
+                ctx.fillText(line, quote.x, y);
+                line = words[n] + ' ';
+                y += quote.size * 1.2;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, quote.x, y);
+        
+        // 作者名を小さく表示
+        if (quote.author && quote.type !== 'burst') {
+            ctx.font = `italic ${quote.size * 0.7}px Georgia`;
+            ctx.fillText("- " + quote.author, quote.x, y + quote.size * 1.5);
+        }
+        
+        ctx.restore();
     }
 }
 
@@ -2264,100 +2013,52 @@ function initCamera(facingMode = 'user') {
 }
 
 // Force camera initialization on page load
-//document.addEventListener('DOMContentLoaded', function() {
-//    console.log("DOM loaded, attempting early camera initialization");
-    // すぐにカメラを初期化してみる (Safariでは早期初期化が必要な場合がある)
-//    initCamera().catch(e => console.error("Early camera init failed:", e));
-//});
-        // 代わりに、以下のようなユーザー操作に応じた初期化に変更
 document.addEventListener('DOMContentLoaded', function() {
-    // 最初のユーザー操作を待つ
-    function initOnFirstInteraction() {
-        console.log("User interaction detected, initializing camera");
-        initCamera().catch(e => console.error("Camera init failed:", e));
-        
-        // イベントリスナーを削除（一度だけ実行）
-        document.removeEventListener('click', initOnFirstInteraction);
-        document.removeEventListener('touchstart', initOnFirstInteraction);
-        document.removeEventListener('keydown', initOnFirstInteraction);
-    }
-    
-    // ユーザー操作を検出するイベントリスナーを追加
-    document.addEventListener('click', initOnFirstInteraction, { once: true });
-    document.addEventListener('touchstart', initOnFirstInteraction, { once: true });
-    document.addEventListener('keydown', initOnFirstInteraction, { once: true });
+    console.log("DOM loaded, attempting early camera initialization");
+    // すぐにカメラを初期化してみる (Safariでは早期初期化が必要な場合がある)
+    initCamera().catch(e => console.error("Early camera init failed:", e));
 });
             
         // Initialize 
-       function init() {
-    // Set up canvas dimensions
+        function init() {
+    // 画面サイズの設定
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
-    // Log initialization info
+    // 初期化情報をログに出力
     console.log(`Canvas size: ${canvas.width}x${canvas.height}`);
     console.log(`Total images loaded: ${images.length}`);
     
-    // Add first image
-    if (images.length > 0) {
-        addNewImage(0, config.defaultOpacity);
-    }
-    
-    // Start effect auto-change
-    startEffectAutoChange();
-    
-    // Initialize time tracking
-    lastMotionTime = Date.now();
-    nextActionTime = lastMotionTime + 2000;
-    
-    // Start animation loop
-    animate();
-    
-    // Set up user interaction button for camera/audio init
-    setupUserInteractionHandlers();
-}
-        
-       function setupUserInteractionHandlers() {
-    // Create a "Start Full Experience" button for first interaction
-    const startButton = document.createElement('button');
-    startButton.textContent = 'Start Full Experience';
-    startButton.style.position = 'absolute';
-    startButton.style.top = '50%';
-    startButton.style.left = '50%';
-    startButton.style.transform = 'translate(-50%, -50%)';
-    startButton.style.padding = '12px 24px';
-    startButton.style.fontSize = '18px';
-    startButton.style.backgroundColor = 'rgba(0,0,0,0.7)';
-    startButton.style.color = 'white';
-    startButton.style.border = '1px solid rgba(255,255,255,0.3)';
-    startButton.style.borderRadius = '4px';
-    startButton.style.cursor = 'pointer';
-    startButton.style.zIndex = '1000';
-    
-    startButton.addEventListener('click', function() {
-        // This is an explicit user interaction - perfect time to initialize
+    // 音声の初期化
+    document.addEventListener('click', function initOnFirstClick() {
         if (!audioInitialized && config.audioEnabled) {
             initAudio();
         }
-        
-        // Initialize camera now that we have user interaction
-        initCamera().then(cameraSuccess => {
-            console.log("Camera initialization:", cameraSuccess ? "success" : "using fallback");
-        });
-        
-        // Remove the start button
-        document.body.removeChild(startButton);
+        document.removeEventListener('click', initOnFirstClick);
+    }, { once: true });
+    
+    // 最初の画像を追加
+    if (images.length > 0) {
+        console.log('Adding first image with opacity:', config.defaultOpacity);
+        const added = addNewImage(0, config.defaultOpacity);
+        console.log('First image added:', added);
+    } else {
+        console.error('No images available to display!');
+    }
+    
+    // カメラ初期化
+initCamera()
+    .then((success) => {
+        console.log('Camera initialization:', success ? 'success' : 'failed');
+        // エフェクト自動変更を開始
+        startEffectAutoChange();
+        // アニメーション開始
+        animate();
     });
     
-    document.body.appendChild(startButton);
-    
-    // Also initialize on specific control clicks as a backup
-    document.getElementById('toggleCamera').addEventListener('click', function(e) {
-        // Only initialize if not already initialized
-        if (!videoStream && !this.disabled) {
-            initCamera();
-        }
-    }, { once: true });
+    // 時間を記録
+    lastMotionTime = Date.now();
+    nextActionTime = lastMotionTime + 2000;
 }
         
         function resizeCanvas() {
@@ -2447,33 +2148,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // Analyze camera input for motion - Safari対応版
 // Analyze camera input for motion - Safari対応版
 function analyzeVideoFrame() {
-    // If no camera or analysis disabled, use gentle random motion
-    if (!videoStream || !config.analyzeCamera) {
-        // Generate some artificial motion data
-        const gridData = Array(config.gridSize * config.gridSize).fill(0);
-        for (let i = 0; i < gridData.length; i++) {
-            // Base value with slight random variation
-            gridData[i] = 0.3 + Math.random() * 0.2;
-            
-            // Occasionally add "motion" spikes
-            if (Math.random() < 0.01) {
-                gridData[i] = 0.7 + Math.random() * 0.3;
-            }
-        }
-        return gridData;
+    if (!videoStream || !config.analyzeCamera) return Array(config.gridSize * config.gridSize).fill(0.5);
+    
+    // Safariでビデオが再生中か確認
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        return Array(config.gridSize * config.gridSize).fill(0.5);
     }
     
     try {
-        // Only proceed if video is ready
-        if (video.readyState !== video.HAVE_ENOUGH_DATA) {
-            return Array(config.gridSize * config.gridSize).fill(0.5);
-        }
+        // Safari用のサイズ調整
+        const videoWidth = video.videoWidth || video.width || 320;
+        const videoHeight = video.videoHeight || video.height || 240;
         
-        // Get video dimensions
-        const videoWidth = video.videoWidth || 320;
-        const videoHeight = video.videoHeight || 240;
-        
-        // Ensure analysis canvas has correct size
+        // 描画前にキャンバスサイズを確認/調整
         if (analysisCanvas.width !== videoWidth || analysisCanvas.height !== videoHeight) {
             analysisCanvas.width = videoWidth;
             analysisCanvas.height = videoHeight;
@@ -2554,14 +2241,15 @@ function analyzeVideoFrame() {
             // Calculate average difference (motion amount)
             motionLevel = totalDifference / gridData.length;
             
+            // Check for motion threshold
             // Check for motion threshold - now more sensitive
-            const now = Date.now();
-            const adjustedThreshold = config.motionThreshold / config.motionSensitivity;
+const now = Date.now();
+const adjustedThreshold = config.motionThreshold / config.motionSensitivity;
 
-            if (motionLevel > adjustedThreshold && now > nextActionTime) {
-                handleMotionDetected();
-                nextActionTime = now + 500; // Reduced cooldown time
-            } else if (now - lastMotionTime > config.inactivityTimeout && now > nextActionTime) {
+if (motionLevel > adjustedThreshold && now > nextActionTime) {
+    handleMotionDetected();
+    nextActionTime = now + 500; // Reduced cooldown time (was 1000)
+} else if (now - lastMotionTime > config.inactivityTimeout && now > nextActionTime) {
                 // Handle inactivity
                 handleInactivity();
                 lastMotionTime = now; // Reset timer
@@ -2583,39 +2271,34 @@ function analyzeVideoFrame() {
         
         // Main animation loop
         function animate() {
-    animationId = requestAnimationFrame(animate);
-    
-    // キャンバスのクリア（1回だけ行う）
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Analyze camera frame
-    const gridData = analyzeVideoFrame();
-    
-    // エフェクト変更のチェック
-    checkEffectChange();
-    
-    // Apply motion sensitivity multiplier
-    if (motionLevel > 0) {
-        motionLevel *= config.motionSensitivity;
-    }
-    
-    // Update status display
-    document.getElementById('motionValue').textContent = motionLevel.toFixed(3);
-    document.getElementById('activeImageInfo').textContent = activeImages.length;
-    document.getElementById('audioInfo').textContent = 
-        config.audioEnabled ? 
-            (config.audioMode === 'sequencer' ? 'Sequencer' : 'Drone Tones') : 
-            'OFF';
-    
-    // Process image transitions
-    updateImageTransitions();
-    
-    // Draw images
-    drawMultipleImagesWithEffects(gridData);
-    
-    // 引用文を描画（最後に描画して他の要素の上に表示されるようにする）
-    updateAndDrawQuotes();
+            animationId = requestAnimationFrame(animate);
+            
+            // Analyze camera frame
+            const gridData = analyzeVideoFrame();
+                
+                // エフェクト変更のチェック
+checkEffectChange();
+                
+                // Apply motion sensitivity multiplier
+if (motionLevel > 0) {
+    motionLevel *= config.motionSensitivity;
 }
+            
+            // Update status display
+            document.getElementById('motionValue').textContent = motionLevel.toFixed(3);
+            document.getElementById('activeImageInfo').textContent = activeImages.length;
+            document.getElementById('audioInfo').textContent = 
+                config.audioEnabled ? 
+                    (config.audioMode === 'sequencer' ? 'Sequencer' : 'Drone Tones') : 
+                    'OFF';
+            
+            // Process image transitions
+            updateImageTransitions();
+            
+            // Draw images
+            drawMultipleImagesWithEffects(gridData);
+                updateAndDrawQuotes();
+        }
         
         // Update image transitions (fade in/out)
         function updateImageTransitions() {
@@ -2898,50 +2581,66 @@ document.getElementById('toggleControlsBtn').addEventListener('click', function(
 
 
             
-           // 1. Single unified initCamera function
-function initCamera() {
-    console.log("Preparing camera initialization...");
+            function initCamera() {
+    console.log("Initializing camera...");
     
-    // Don't initialize if camera already running or browser doesn't support it
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.error("Camera API not supported in this browser");
-        markCameraUnavailable();
-        return Promise.resolve(false);
-    }
-    
-    // Reset any existing video stream
-    if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-    }
-    
-    // Ensure video element has proper attributes for all browsers
+    // Safari互換性のためのビデオ要素の属性設定
     video.setAttribute('playsinline', '');
     video.setAttribute('muted', '');
-    video.setAttribute('autoplay', '');
+    video.setAttribute('webkit-playsinline', ''); // Safari用
     
-    // Set constraints optimized for motion detection
+    // Safari用のプレイバック設定
+    video.autoplay = true;
+    video.playsInline = true;
+    
+    // カメラへのアクセスリクエスト - Safariに最適化
     const constraints = { 
         video: { 
             width: { ideal: 320 }, 
             height: { ideal: 240 },
-            facingMode: 'user'
+            facingMode: 'user' // 常にフロントカメラを使用
         },
         audio: false
     };
     
-    console.log("Requesting camera access...");
+    console.log("Requesting camera with constraints:", constraints);
+    
+    // 既存のストリームがあれば停止
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+    }
     
     return navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
-            console.log("Camera access granted");
+            console.log("Camera access granted:", stream);
             videoStream = stream;
             video.srcObject = stream;
             
-            // Setup analysis canvas with proper dimensions
+            // Safari用の再生確認
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log("Video playing successfully");
+                }).catch(error => {
+                    console.error("Error playing video:", error);
+                    // Safari用のフォールバック
+                    setTimeout(() => {
+                        video.play();
+                    }, 100);
+                });
+            }
+            
+            // 確実にビデオが読み込まれたことを確認
+            video.onloadedmetadata = () => {
+                console.log("Video metadata loaded, video size:", video.videoWidth, "x", video.videoHeight);
+                video.play().catch(e => console.error("Error playing video:", e));
+            };
+            
             analysisCanvas.width = 320;
             analysisCanvas.height = 240;
             
-            // Update UI
+            // カメラ認識成功メッセージ
+            console.log("Camera successfully initialized");
             document.getElementById('toggleCamera').textContent = config.showCamera ? 'Hide Camera' : 'Show Camera';
             document.getElementById('toggleCamera').disabled = false;
             document.getElementById('toggleAnalysis').disabled = false;
@@ -2949,40 +2648,31 @@ function initCamera() {
             return true;
         })
         .catch(err => {
-            console.error("Camera access denied or error:", err);
-            markCameraUnavailable();
+            console.error("Camera access denied or not available:", err);
+            
+            // カメラエラーメッセージをUIに表示
+            const errorMsg = document.createElement('div');
+            errorMsg.style.position = 'absolute';
+            errorMsg.style.top = '10px';
+            errorMsg.style.left = '10px';
+            errorMsg.style.padding = '10px';
+            errorMsg.style.backgroundColor = 'rgba(255,0,0,0.7)';
+            errorMsg.style.color = 'white';
+            errorMsg.style.borderRadius = '5px';
+            errorMsg.innerHTML = 'Access to the camera is not available.<br>Check your browser settings.';
+            document.body.appendChild(errorMsg);
+            
+            // カメラが使用不可に設定
+            document.getElementById('toggleCamera').textContent = 'Camera unavailable';
+            document.getElementById('toggleCamera').disabled = true;
+            document.getElementById('toggleAnalysis').disabled = true;
+            
+            // カメラなしで続行
+            config.analyzeCamera = false;
             return false;
         });
 }
     
-       function markCameraUnavailable() {
-    // Update UI to show camera is unavailable
-    config.analyzeCamera = false;
-    document.getElementById('toggleCamera').textContent = 'Camera unavailable';
-    document.getElementById('toggleCamera').disabled = true;
-    document.getElementById('toggleAnalysis').disabled = true;
-    
-    // Show error message
-    const errorMsg = document.createElement('div');
-    errorMsg.style.position = 'absolute';
-    errorMsg.style.top = '10px';
-    errorMsg.style.left = '10px';
-    errorMsg.style.padding = '10px';
-    errorMsg.style.backgroundColor = 'rgba(255,0,0,0.7)';
-    errorMsg.style.color = 'white';
-    errorMsg.style.borderRadius = '5px';
-    errorMsg.style.fontSize = '14px';
-    errorMsg.innerHTML = 'Camera access not available. Motion detection will use random values.';
-    
-    // Auto-remove message after 5 seconds
-    setTimeout(() => {
-        if (document.body.contains(errorMsg)) {
-            document.body.removeChild(errorMsg);
-        }
-    }, 5000);
-    
-    document.body.appendChild(errorMsg);
-}
             
     </script>
 </body>
