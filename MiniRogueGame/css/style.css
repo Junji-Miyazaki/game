@@ -1,0 +1,58 @@
+/* MICRO ARCADE — 1画面・スクロールなし・CRT風 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;                /* スクロール禁止 */
+  overscroll-behavior: none;
+  touch-action: none;              /* タッチでのスクロール/ズーム抑制 */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 画面全体に筐体を中央寄せ */
+#cabinet {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at center, #0a0a0a 0%, #000 100%);
+}
+
+#screen {
+  display: block;
+  image-rendering: pixelated;      /* ドットをクッキリ */
+  image-rendering: crisp-edges;
+  /* ブラウン管の発光感 */
+  box-shadow:
+    0 0 8px rgba(57, 255, 20, 0.15),
+    0 0 40px rgba(0, 0, 0, 0.8) inset;
+}
+
+/* 走査線＋ビネット（雰囲気付け。タップは透過させる） */
+#crt {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0px,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.18) 3px,
+      rgba(0, 0, 0, 0.18) 4px
+    );
+  mix-blend-mode: multiply;
+}
+/* 画面端の暗がり（ビネット） */
+#crt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%);
+}
