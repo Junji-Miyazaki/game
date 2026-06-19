@@ -31,32 +31,33 @@ const BIG_CHARGES_MAX = 3;         // 最大残弾数
 const BIG_RECHARGE_SEC = 12;       // 1発補充に必要な秒数
 
 // 隕石スポーン間隔の初期値と最小値（連続スポーン・徐々に短縮）
-const SPAWN_DELAY_START = 3.2;     // ゲーム開始時のスポーン間隔（秒）
-const SPAWN_DELAY_MIN   = 0.55;    // 最も速くなった時のスポーン間隔（秒）
-const SPAWN_RAMP_TIME   = 180;     // この秒数かけてSPAWN_DELAY_MINまで短縮
+// 落下が遅い分、数を増やして「空を埋め尽くす」密度を出す
+const SPAWN_DELAY_START = 2.6;     // ゲーム開始時のスポーン間隔（秒）
+const SPAWN_DELAY_MIN   = 0.45;    // 最も速くなった時のスポーン間隔（秒）
+const SPAWN_RAMP_TIME   = 150;     // この秒数かけてSPAWN_DELAY_MINまで短縮
 
-// ---- 隕石速度（もっともっと遅く：通常はゆったりとした落下感） ----
-const METEOR_SPD_MIN    = 12;      // 通常の最低速度 px/s（非常に遅い）
-const METEOR_SPD_MAX    = 22;      // 通常の最大速度 px/s（序盤〜終盤の通常隕石）
+// ---- 隕石速度（今の半分以下：ひたひたと迫る絶望感の落下） ----
+const METEOR_SPD_MIN    = 5;       // 通常の最低速度 px/s（ごくゆっくり）
+const METEOR_SPD_MAX    = 10;      // 通常の最大速度 px/s
 // 時間経過で少し速くなる上限（最終的な通常最大速度）
-const METEOR_SPD_MAX_LATE = 32;    // ゲーム後半の通常上限 px/s
+const METEOR_SPD_MAX_LATE = 14;    // ゲーム後半の通常上限 px/s
 
-// ---- 高速隕石（レアな緊張感要素） ----
+// ---- 高速隕石（レアな緊張感要素・これも従来の半分程度） ----
 // スポーン時に FAST_CHANCE の確率で高速隕石を出す
-const FAST_CHANCE       = 0.15;    // 高速隕石のスポーン確率（約15%）
-const FAST_SPD_MIN      = 65;      // 高速隕石の最低速度 px/s
-const FAST_SPD_MAX      = 100;     // 高速隕石の最大速度 px/s
+const FAST_CHANCE       = 0.12;    // 高速隕石のスポーン確率（約12%）
+const FAST_SPD_MIN      = 26;      // 高速隕石の最低速度 px/s
+const FAST_SPD_MAX      = 44;      // 高速隕石の最大速度 px/s
 
-// 隕石サイズレンジ
+// 隕石サイズレンジ（どでかい隕石が迫る絶望感）
 const METEOR_R_MIN      = 5;       // 最小半径
-const METEOR_R_MAX      = 18;      // 最大半径
+const METEOR_R_MAX      = 28;      // 最大半径（巨大隕石）
+const GIANT_CHANCE      = 0.14;    // 巨大隕石のスポーン確率（大きめサイズを強制）
 
 // ---- HPの閾値（半径に基づく）----
-// r < SMALL_R_THRESH  → 小 (HP=1)
-// r < LARGE_R_THRESH  → 中 (HP=2)
-// r >= LARGE_R_THRESH → 大 (HP=3)
+// 大きいほど多くの迎撃が必要（最大4発）
 const SMALL_R_THRESH  = 9;   // これ未満は小隕石（HP=1）
 const LARGE_R_THRESH  = 14;  // これ以上は大隕石（HP=3）
+const GIANT_R_THRESH  = 21;  // これ以上は巨大隕石（HP=4）
 
 // ビッグブラストのダメージ量（通常=1, ビッグ=2）
 const BLAST_DAMAGE_NORMAL = 1;
@@ -75,7 +76,8 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 function calcMeteorHP(r) {
   if (r < SMALL_R_THRESH) return 1;   // 小：1発で破壊
   if (r < LARGE_R_THRESH) return 2;   // 中：2発で破壊
-  return 3;                            // 大：3発で破壊
+  if (r < GIANT_R_THRESH) return 3;   // 大：3発で破壊
+  return 4;                            // 巨大：4発で破壊
 }
 
 // ---- ユニークID（ブラストに付与して重複ダメージを防ぐ） ----
@@ -340,10 +342,16 @@ export class Game extends Scene {
     }
     const ty = GROUND_Y;
 
-    // サイズをランダムに（小さめが多め）
-    const r = Math.max(METEOR_R_MIN,
-      METEOR_R_MIN + Math.random() * Math.random() * (METEOR_R_MAX - METEOR_R_MIN)
-    );
+    // サイズをランダムに（小さめが多めだが、たまに巨大隕石が迫る）
+    let r;
+    if (Math.random() < GIANT_CHANCE) {
+      // 巨大隕石：大きめサイズを強制（ゆっくり迫る絶望感）
+      r = GIANT_R_THRESH + Math.random() * (METEOR_R_MAX - GIANT_R_THRESH);
+    } else {
+      r = Math.max(METEOR_R_MIN,
+        METEOR_R_MIN + Math.random() * Math.random() * (GIANT_R_THRESH - METEOR_R_MIN)
+      );
+    }
 
     // ---- 高速隕石判定（FAST_CHANCE の確率） ----
     const isFast = Math.random() < FAST_CHANCE;

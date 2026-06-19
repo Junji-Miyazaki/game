@@ -16,16 +16,17 @@ export const meta = {
 
 // ---- 物理チューニング定数（超スローモーション＆Newtonian RCS）----
 // ステージ1の基準値。ステージ毎に難度係数を掛ける。
-const GRAVITY_BASE      = 2.5;   // 重力加速度（px/s²）ごく微弱
-const THRUST_ACCEL      = 8.0;   // メインエンジン推力加速度（px/s²）
-const ANG_ACCEL         = 18.0;  // 姿勢ジェット角加速度（度/s²）※非常に小さい
+// ※前回からさらに約1/5へ減速。ごくゆっくり、少しずつの姿勢微調整で操作する。
+const GRAVITY_BASE      = 0.5;   // 重力加速度（px/s²）極微弱
+const THRUST_ACCEL      = 1.6;   // メインエンジン推力加速度（px/s²）
+const ANG_ACCEL         = 4.0;   // 姿勢ジェット角加速度（度/s²）左右どちらも噴射可
 const FUEL_MAX          = 100;   // 燃料最大値
-const FUEL_RATE_MAIN    = 10;    // メインエンジン燃料消費（/s）
-const FUEL_RATE_RCS     = 3;     // RCSジェット燃料消費（/s）
-const SAFE_VY           = 20;    // 着陸許容縦速度（px/s）
-const SAFE_VX           = 12;    // 着陸許容横速度（px/s）
+const FUEL_RATE_MAIN    = 7;     // メインエンジン燃料消費（/s）
+const FUEL_RATE_RCS     = 2;     // RCSジェット燃料消費（/s）
+const SAFE_VY           = 14;    // 着陸許容縦速度（px/s）
+const SAFE_VX           = 8;     // 着陸許容横速度（px/s）
 const SAFE_ANGLE        = 18;    // 着陸許容傾き（度）
-const SAFE_OMEGA        = 15;    // 着陸許容角速度（度/s）
+const SAFE_OMEGA        = 12;    // 着陸許容角速度（度/s）
 const PAD_W_BASE        = 54;    // ステージ1の着陸パッド幅（px）
 const TERRAIN_SEGS      = 18;    // 地形セグメント数
 const LANDER_START_Y    = 90;    // 初期Y座標
@@ -127,7 +128,7 @@ export class Game extends Scene {
     this.x        = W / 2 + (Math.random() - 0.5) * 50;
     this.y        = LANDER_START_Y;
     this.vx       = (Math.random() - 0.5) * 6;   // ほぼ静止した初期横速度
-    this.vy       = 1.5;                          // ごくゆっくりな初期下降速度
+    this.vy       = 5;                            // ゆっくりとした初期下降速度
 
     // 今フレームの制御状態
     this._thrustMain = false;
@@ -225,10 +226,11 @@ export class Game extends Scene {
     this._thrustRcsL = false;
     this._thrustRcsR = false;
 
-    if (ptr.down) {
-      if (ptr.x < 120)       this._thrustRcsL = true;
-      else if (ptr.x > 240)  this._thrustRcsR = true;
-      else                   this._thrustMain  = true;
+    // ptr.y>52：上部のBACKボタン/HUD帯では操作を拾わない（左ジェットがBACKと干渉しないように）
+    if (ptr.down && ptr.y > 52) {
+      if (ptr.x < 120)       this._thrustRcsL = true; // 画面左：反時計回りジェット
+      else if (ptr.x > 240)  this._thrustRcsR = true; // 画面右：時計回りジェット
+      else                   this._thrustMain  = true; // 中央：メイン噴射
     }
     // キーボード（追加。ワンショットパルス扱い）
     if (this._keys) {
@@ -698,23 +700,25 @@ export class Game extends Scene {
     this.engine.text('ω ' + Math.round(om), W - 8, 66, 11, omclr, 'right');
   }
 
-  // ---- 操作ヒント（画面下部3ゾーン）----
+  // ---- 操作ヒント（画面下部3ゾーン：左回転／噴射／右回転）----
   _drawHints(ctx) {
     const p  = P();
-    const hy = H - 18;
+    const bandY = H - 30, bandH = 30, hy = H - 22;
 
-    // 左RCSゾーンラベル
-    this.engine.text('◄RCS', 60, hy, 10, p.dim, 'center');
-    // 中央スラストゾーンラベル
-    this.engine.text('THRUST', W / 2, hy, 10, p.dim, 'center');
-    // 右RCSゾーンラベル
-    this.engine.text('RCS►', W - 60, hy, 10, p.dim, 'center');
+    // 各ゾーン：押下中はバンドを明るく塗り、ラベルを強調
+    const zone = (x, w, active, label) => {
+      this.engine.rect(x, bandY, w, bandH, active ? p.dim : p.dark);
+      this.engine.text(label, x + w / 2, hy, 11, active ? p.hi : p.fg, 'center');
+    };
+    zone(0,   120, this._thrustRcsL, '◄ 左回転');     // 反時計回りジェット
+    zone(120, 120, this._thrustMain, '▲ 噴射');       // メインエンジン
+    zone(240, 120, this._thrustRcsR, '右回転 ►');     // 時計回りジェット
 
-    // ゾーン区切り線（薄い縦線）
+    // ゾーン区切り線
     ctx.strokeStyle = p.dark;
     ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(120, H - 28); ctx.lineTo(120, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(240, H - 28); ctx.lineTo(240, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(120, bandY); ctx.lineTo(120, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(240, bandY); ctx.lineTo(240, H); ctx.stroke();
   }
 
   // ---- ステージクリア画面 ----
