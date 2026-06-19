@@ -1,102 +1,108 @@
-// LANDER : 姿勢制御で月面に軟着陸するゲーム。
-// サイドビュー物理シミュレーション。重力・推力・燃料を管理しながら着陸パッドに降りる。
-// 左1/3タップ：反時計回り回転 / 中央1/3タップ：メインエンジン点火 / 右1/3タップ：時計回り回転
+// LANDER : RCSスラスタで角運動量を制御しながら月面に軟着陸するゲーム。
+// 姿勢ジェットは角加速度（トルク）を与えるだけで、離すと角速度ωが持続する（ダンピングなし）。
+// 左1/3押しっぱなし：左RCSジェット（反時計方向トルク）
+// 右1/3押しっぱなし：右RCSジェット（時計方向トルク）
+// 中央1/3押しっぱなし：メインエンジン点火（機体上方向に推力）
+// 成功着陸でステージクリア → 累計スコア加算 → 次ステージへ。クラッシュでゲームオーバー。
 import { Scene, W, H } from '../core/engine.js';
 import { P } from '../core/palette.js';
 
 export const meta = {
   id: 'lander',
   title: 'LANDER',
-  desc: '姿勢制御で月面に軟着陸',
+  desc: 'RCS姿勢制御で月面に軟着陸',
   glyph: '^',
 };
 
-// ---- 物理チューニング定数（スロー＆フロート感重視）----
-const GRAVITY       = 4;     // 重力加速度（px/s²）ごく微弱、ふわふわ感
-const THRUST        = 14;    // 主エンジン推力（px/s²）繊細な操作が必要
-const ROT_SPEED     = 28;    // 回転速度（度/s）ゆっくり精密に
-const ROT_NUDGE     = 4;     // キーボード1回転ステップ（度）
-const FUEL_MAX      = 100;   // 燃料最大値
-const FUEL_RATE     = 14;    // 燃料消費率（/s）
-const SAFE_VY       = 18;    // 着陸時安全な縦速度（px/s）
-const SAFE_VX       = 10;    // 着陸時安全な横速度（px/s）
-const SAFE_ANGLE    = 15;    // 着陸時安全な傾き（度）
-const PAD_W         = 50;    // 着陸パッド幅（px）
-const TERRAIN_SEGS  = 18;    // 地形セグメント数
-const LANDER_START_Y = 90;   // 初期Y座標（画面上部付近）
+// ---- 物理チューニング定数（超スローモーション＆Newtonian RCS）----
+// ステージ1の基準値。ステージ毎に難度係数を掛ける。
+const GRAVITY_BASE      = 2.5;   // 重力加速度（px/s²）ごく微弱
+const THRUST_ACCEL      = 8.0;   // メインエンジン推力加速度（px/s²）
+const ANG_ACCEL         = 18.0;  // 姿勢ジェット角加速度（度/s²）※非常に小さい
+const FUEL_MAX          = 100;   // 燃料最大値
+const FUEL_RATE_MAIN    = 10;    // メインエンジン燃料消費（/s）
+const FUEL_RATE_RCS     = 3;     // RCSジェット燃料消費（/s）
+const SAFE_VY           = 20;    // 着陸許容縦速度（px/s）
+const SAFE_VX           = 12;    // 着陸許容横速度（px/s）
+const SAFE_ANGLE        = 18;    // 着陸許容傾き（度）
+const SAFE_OMEGA        = 15;    // 着陸許容角速度（度/s）
+const PAD_W_BASE        = 54;    // ステージ1の着陸パッド幅（px）
+const TERRAIN_SEGS      = 18;    // 地形セグメント数
+const LANDER_START_Y    = 90;    // 初期Y座標
+const GUIDE_THRESHOLD   = 30;    // ON COURSE判定距離（px）
+const GUIDE_PTS         = 32;    // 軌道ガイドの点数
+
+// ---- ステージ難度パラメータ ----
+// stage: 1始まり。重力・パッド幅を段階的に調整。
+function stageParams(stage) {
+  const s = Math.min(stage, 8); // 8ステージ以上は固定
+  return {
+    gravity:   GRAVITY_BASE * (1 + (s - 1) * 0.08),  // 重力は毎ステージ8%増
+    padW:      Math.max(24, PAD_W_BASE - (s - 1) * 4), // パッド幅は毎ステージ4px減
+    stageBonus: s * 50,  // ステージ乗算ボーナス
+  };
+}
 
 // ---- 地形生成 ----
-function buildTerrain(padCount) {
-  // セグメント点をランダムに生成し、パッドを埋め込む
+function buildTerrain(padW) {
   const segW = W / TERRAIN_SEGS;
   const pts = [];
+  const FLOOR_Y   = 608;
+  const FLOOR_MIN = 525;
 
-  // パッドを置くセグメントをランダム選定（1〜2個）
-  const padSegs = [];
+  // パッドを置くセグメントを1つランダム選定
   const available = [];
   for (let i = 2; i < TERRAIN_SEGS - 3; i++) available.push(i);
-  for (let p = 0; p < padCount; p++) {
-    if (available.length === 0) break;
-    const idx = Math.floor(Math.random() * available.length);
-    padSegs.push(available[idx]);
-    // 隣接セグメントも除外（パッド同士を離す）
-    available.splice(Math.max(0, idx - 2), 5);
-  }
+  const padSeg = available[Math.floor(Math.random() * available.length)];
 
-  // 地形Y座標を生成（580〜620 付近、地面に近い高さ）
-  const FLOOR_Y   = 610;
-  const FLOOR_MIN = 530;
   for (let i = 0; i <= TERRAIN_SEGS; i++) {
     const x = i * segW;
     let y;
     if (i === 0 || i === TERRAIN_SEGS) {
-      y = FLOOR_Y; // 端は固定
+      y = FLOOR_Y;
     } else {
       y = FLOOR_MIN + Math.random() * (FLOOR_Y - FLOOR_MIN);
     }
     pts.push({ x, y });
   }
 
-  // パッド部分を平坦にする
-  const pads = [];
-  for (const seg of padSegs) {
-    const midX = (seg + 0.5) * segW;
-    const flatY = FLOOR_MIN + 20 + Math.random() * 50;
-    const lx = midX - PAD_W / 2;
-    // 該当セグメントの両端点を平坦なYに設定
-    pts[seg].y     = flatY;
-    pts[seg + 1].y = flatY;
-    // 隣接をなだらかにブレンド
-    if (seg > 0)                 pts[seg - 1].y = (pts[seg - 1].y + flatY) / 2;
-    if (seg + 2 <= TERRAIN_SEGS) pts[seg + 2].y = (pts[seg + 2].y + flatY) / 2;
-    pads.push({ x: lx, y: flatY, w: PAD_W, bonus: padCount > 1 });
-  }
+  // パッド部分を平坦に
+  const midX  = (padSeg + 0.5) * segW;
+  const flatY = FLOOR_MIN + 20 + Math.random() * 50;
+  const lx    = midX - padW / 2;
+  pts[padSeg].y     = flatY;
+  pts[padSeg + 1].y = flatY;
+  if (padSeg > 0)                  pts[padSeg - 1].y = (pts[padSeg - 1].y + flatY) / 2;
+  if (padSeg + 2 <= TERRAIN_SEGS)  pts[padSeg + 2].y = (pts[padSeg + 2].y + flatY) / 2;
 
-  return { pts, pads };
+  const pad = { x: lx, y: flatY, w: padW };
+  return { pts, pad };
 }
 
 // ---- 星（背景）----
 function buildStars(count) {
   const stars = [];
   for (let i = 0; i < count; i++) {
-    stars.push({ x: Math.random() * W, y: 20 + Math.random() * 460, r: Math.random() < 0.2 ? 2 : 1 });
+    stars.push({
+      x: Math.random() * W,
+      y: 20 + Math.random() * 460,
+      r: Math.random() < 0.2 ? 2 : 1,
+    });
   }
   return stars;
 }
 
-// ---- 降下軌道ガイドを生成（始点から着陸パッドへの理想曲線）----
-// 放物線状の点列として返す（スコアリング＆描画用）
+// ---- 降下軌道ガイド（始点→パッド中央への放物線点列）----
 function buildGuide(startX, startY, pad, numPts) {
-  // パッド中央が目標
   const targetX = pad.x + pad.w / 2;
   const targetY = pad.y;
   const pts = [];
   for (let i = 0; i <= numPts; i++) {
     const t = i / numPts;
-    // 水平：線形補間。垂直：放物線で緩やかに落下
-    const x = startX + (targetX - startX) * t;
-    const y = startY + (targetY - startY) * (t * t); // t^2: 緩やかな加速感
-    pts.push({ x, y });
+    pts.push({
+      x: startX + (targetX - startX) * t,
+      y: startY + (targetY - startY) * (t * t),
+    });
   }
   return pts;
 }
@@ -104,49 +110,64 @@ function buildGuide(startX, startY, pad, numPts) {
 export class Game extends Scene {
 
   enter() {
-    this.high  = this.engine.storage.getHigh(meta.id);
-    this.state = 'play'; // 'play' | 'landed' | 'crashed'
-    this.score = 0;
-    this._init();
+    // ゲーム全体の初期化（リトライ時もここから）
+    this.high       = this.engine.storage.getHigh(meta.id) || 0;
+    this.totalScore = 0;   // 累計スコア（ランの合計）
+    this.stage      = 1;   // 現在ステージ
+    this.state      = 'play'; // 'play' | 'cleared' | 'gameover'
+    this._initStage();
   }
 
-  // 1ラウンド初期化（リトライ時もここから）
-  _init() {
-    this.state  = 'play';
-    this.fuel   = FUEL_MAX;
-    this.angle  = (Math.random() - 0.5) * 10; // ごく小さな初期傾き（度）
-    this.x      = W / 2 + (Math.random() - 0.5) * 60;
-    this.y      = LANDER_START_Y;
-    this.vx     = (Math.random() - 0.5) * 8;  // ほぼ静止した初期横速度
-    this.vy     = 2;                            // ごくゆっくりな初期下降速度
-    this.thrust = false;
-    this.score  = 0;
+  // ---- 1ステージ初期化 ----
+  _initStage() {
+    this.state    = 'play';
+    this.fuel     = FUEL_MAX;
+    this.angle    = (Math.random() - 0.5) * 8;   // ごく小さな初期傾き（度）
+    this.omega    = 0;                            // 角速度（度/s）- 初期ゼロ
+    this.x        = W / 2 + (Math.random() - 0.5) * 50;
+    this.y        = LANDER_START_Y;
+    this.vx       = (Math.random() - 0.5) * 6;   // ほぼ静止した初期横速度
+    this.vy       = 1.5;                          // ごくゆっくりな初期下降速度
 
-    // 地形（パッドを 1〜2 個配置）
-    const padCount = Math.random() < 0.5 ? 2 : 1;
-    const terrain  = buildTerrain(padCount);
+    // 今フレームの制御状態
+    this._thrustMain = false;
+    this._thrustRcsL = false;
+    this._thrustRcsR = false;
+
+    // ステージ難度
+    const sp = stageParams(this.stage);
+    this._gravity  = sp.gravity;
+    this._padW     = sp.padW;
+
+    // 地形・パッド
+    const terrain  = buildTerrain(this._padW);
     this.terrainPts = terrain.pts;
-    this.pads       = terrain.pads;
-    this.stars      = buildStars(40);
+    this.pad        = terrain.pad;
+    this.stars      = this.stars || buildStars(40); // 星は全ステージ共有
 
-    // 降下軌道ガイド（最初のパッドへの理想パス）
-    const guidePad = this.pads[0];
-    this.guidePts  = buildGuide(this.x, this.y, guidePad, 30);
+    // 降下軌道ガイド
+    this.guidePts = buildGuide(this.x, this.y, this.pad, GUIDE_PTS);
 
-    // 軌道追従スコア用：各フレームでのガイドへの近さを累積
-    // _guideDevTotal: 距離の累積, _guideDevCount: サンプル数
+    // 軌道追従スコア用累積
     this._guideDevTotal = 0;
     this._guideDevCount = 0;
 
-    // 爆発エフェクト用
-    this.particles  = [];
-    this.resultTimer = 0;
+    // ステージクリア結果
+    this._stageScore = 0;
+    this._guideBonus = 0;
+
+    // 爆発エフェクト
+    this.particles   = [];
+
+    // キーボード押しっぱなし状態（onInputが離散なのでupdate内で独自管理）
+    this._keys = this._keys || { left: false, right: false, up: false };
   }
 
-  // ---- ガイド上の最近傍点との距離を返す ----
+  // ---- ガイド上最近傍点との距離 ----
   _distToGuide(x, y) {
     let minDist = Infinity;
     const pts = this.guidePts;
+    if (!pts) return Infinity;
     for (let i = 0; i < pts.length; i++) {
       const dx = x - pts[i].x;
       const dy = y - pts[i].y;
@@ -156,147 +177,199 @@ export class Game extends Scene {
     return minDist;
   }
 
-  // ---- キーボード離散入力（デスクトップ確認用）----
+  // ---- キーボード離散入力 ----
   onInput(action, data) {
-    if (this.state !== 'play') {
-      // 結果画面：tap/confirm でリトライ
-      if (action === 'tap' || action === 'confirm') { this._init(); return; }
-      if (action === 'back') { this.engine.toMenu(); return; }
+    if (this.state === 'cleared') {
+      // ステージクリア画面：タップで次ステージ
+      if (action === 'tap' || action === 'confirm') {
+        this.stage += 1;
+        this._initStage();
+      }
+      if (action === 'back') { this.engine.toMenu(); }
+      return;
+    }
+    if (this.state === 'gameover') {
+      // ゲームオーバー画面：タップでステージ1からリスタート
+      if (action === 'tap' || action === 'confirm') {
+        this.totalScore = 0;
+        this.stage      = 1;
+        this._initStage();
+      }
+      if (action === 'back') { this.engine.toMenu(); }
       return;
     }
     if (action === 'back') { this.engine.toMenu(); return; }
-    // キーボードの離散ステップ操作（小さなナッジ）
-    if (action === 'left')  this.angle -= ROT_NUDGE;
-    if (action === 'right') this.angle += ROT_NUDGE;
-    if (action === 'up' && this.fuel > 0) {
-      // 小さな推力パルス（キーボード用）
-      const rad = (this.angle - 90) * Math.PI / 180;
-      this.vx += Math.cos(rad) * THRUST * 0.12;
-      this.vy += Math.sin(rad) * THRUST * 0.12;
-      this.fuel = Math.max(0, this.fuel - FUEL_RATE * 0.12);
-    }
+
+    // キーボード押しっぱなし追跡（keydown/keyupが離散なのでフラグ管理）
+    // ここでは 'up/left/right/confirm' をワンショットパルスとして処理
+    if (action === 'left')    this._keys.left  = true;
+    if (action === 'right')   this._keys.right = true;
+    if (action === 'up')      this._keys.up    = true;
+    if (action === 'confirm') this._keys.up    = true;
   }
 
   // ---- 毎フレームのロジック ----
   update(dt) {
     if (this.state !== 'play') {
-      // 爆発パーティクルだけ更新する
       this._updateParticles(dt);
+      // キーフラグをリセット（結果画面中は使わない）
+      if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
       return;
     }
 
     const ptr = this.engine.pointer;
 
-    // ポインタ押しっぱなしで連続操作（ゾーン判定）
-    this.thrust = false;
+    // ---- 制御入力の判定 ----
+    // ポインタ（タッチ/マウス押しっぱなし）＋キーボードフラグ
+    this._thrustMain = false;
+    this._thrustRcsL = false;
+    this._thrustRcsR = false;
+
     if (ptr.down) {
-      if (ptr.x < 120) {
-        // 左ゾーン：反時計回り（ゆっくり）
-        this.angle -= ROT_SPEED * dt;
-      } else if (ptr.x > 240) {
-        // 右ゾーン：時計回り（ゆっくり）
-        this.angle += ROT_SPEED * dt;
-      } else {
-        // 中央ゾーン：メインエンジン点火
-        if (this.fuel > 0) {
-          this.thrust = true;
-          const rad = (this.angle - 90) * Math.PI / 180;
-          this.vx += Math.cos(rad) * THRUST * dt;
-          this.vy += Math.sin(rad) * THRUST * dt;
-          this.fuel = Math.max(0, this.fuel - FUEL_RATE * dt);
-        }
-      }
+      if (ptr.x < 120)       this._thrustRcsL = true;
+      else if (ptr.x > 240)  this._thrustRcsR = true;
+      else                   this._thrustMain  = true;
+    }
+    // キーボード（追加。ワンショットパルス扱い）
+    if (this._keys) {
+      if (this._keys.left)  { this._thrustRcsL = true; }
+      if (this._keys.right) { this._thrustRcsR = true; }
+      if (this._keys.up)    { this._thrustMain  = true; }
+      // ワンショット：次フレームにはリセット
+      this._keys.left  = false;
+      this._keys.right = false;
+      this._keys.up    = false;
     }
 
-    // 角度を -180〜180 に正規化
-    this.angle = ((this.angle + 180) % 360 + 360) % 360 - 180;
+    // ---- 姿勢RCSジェット（角加速度→ω積分。ダンピングなし）----
+    if (this._thrustRcsL && this.fuel > 0) {
+      // 左ジェット：反時計方向にトルク（ω減少）
+      this.omega -= ANG_ACCEL * dt;
+      this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
+    }
+    if (this._thrustRcsR && this.fuel > 0) {
+      // 右ジェット：時計方向にトルク（ω増加）
+      this.omega += ANG_ACCEL * dt;
+      this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
+    }
 
-    // 重力のみ（人工的な減衰なし＝純粋なニュートン積分）
-    this.vy += GRAVITY * dt;
+    // ---- メインエンジン（機体のangleに沿った推力）----
+    if (this._thrustMain && this.fuel > 0) {
+      // angle=0が上向き。機体上方向 = angle方向に加速
+      const rad = (this.angle - 90) * Math.PI / 180;
+      this.vx  += Math.cos(rad) * THRUST_ACCEL * dt;
+      this.vy  += Math.sin(rad) * THRUST_ACCEL * dt;
+      this.fuel = Math.max(0, this.fuel - FUEL_RATE_MAIN * dt);
+    }
 
-    // 位置更新（dt スケール）
+    // ---- 角速度を角度に積分（ダンピングなし＝純粋な角運動量保存）----
+    this.angle += this.omega * dt;
+    // angle を -180〜180 に正規化
+    this.angle  = ((this.angle + 180) % 360 + 360) % 360 - 180;
+
+    // ---- 重力（真下方向）----
+    this.vy += this._gravity * dt;
+
+    // ---- 位置更新 ----
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    // 水平クランプ（画面内に保持、壁で弱く跳ね返る）
+    // ---- 水平クランプ（画面端で弱く跳ね返る）----
     const PAD = 14;
     if (this.x < PAD)     { this.x = PAD;     this.vx =  Math.abs(this.vx) * 0.3; }
     if (this.x > W - PAD) { this.x = W - PAD; this.vx = -Math.abs(this.vx) * 0.3; }
-
     // 上端クランプ
-    if (this.y < 60) { this.y = 60; this.vy = Math.abs(this.vy) * 0.2; }
+    if (this.y < 60) { this.y = 60; this.vy = Math.max(0, this.vy); }
 
-    // 軌道追従スコア用サンプリング（約6フレームに1回、画面上半分のみ）
-    // yが降下中だけ計測（y < 400 くらいまで）
-    if (this.y < 400) {
+    // ---- 軌道追従サンプリング（上半分のみ）----
+    if (this.y < 420) {
       this._guideDevTotal += this._distToGuide(this.x, this.y);
       this._guideDevCount += 1;
     }
 
-    // 地形との衝突判定
+    // ---- 地形衝突判定 ----
     this._checkCollision();
   }
 
   // ---- 地形衝突・着陸判定 ----
   _checkCollision() {
-    // 着地点のY座標を地形から補間して求める
     const terrainY = this._terrainYAt(this.x);
-    // ランダーの底（足先）はY+16 付近
-    const footY = this.y + 16;
+    const footY    = this.y + 16; // 機体底
 
-    if (footY < terrainY) return; // まだ着地していない
+    if (footY < terrainY) return;
 
-    // パッドに着地しているか確認
-    const onPad = this.pads.find(pd => this.x >= pd.x && this.x <= pd.x + pd.w);
+    // パッドに着地しているか
+    const onPad = (this.x >= this.pad.x && this.x <= this.pad.x + this.pad.w);
 
+    // 角度の絶対値（-180〜180正規化後）
     const absAngle = Math.abs(((this.angle + 180) % 360 + 360) % 360 - 180);
-    const safeLand = Math.abs(this.vy) <= SAFE_VY &&
-                     Math.abs(this.vx) <= SAFE_VX &&
-                     absAngle <= SAFE_ANGLE;
+    const absOmega = Math.abs(this.omega);
 
-    if (onPad && safeLand) {
-      // ---- 着陸成功 ----
+    const safeLand = onPad &&
+                     Math.abs(this.vy) <= SAFE_VY &&
+                     Math.abs(this.vx) <= SAFE_VX &&
+                     absAngle          <= SAFE_ANGLE &&
+                     absOmega          <= SAFE_OMEGA;
+
+    if (safeLand) {
+      // ---- ステージクリア ----
       this.y  = terrainY - 16;
-      this.vx = 0; this.vy = 0;
-      const fuelBonus  = Math.round(this.fuel * 8);
-      const softBonus  = Math.round(Math.max(0, SAFE_VY - Math.abs(this.vy)) * 5);
-      const padBonus   = onPad.bonus ? 200 : 100;
-      // 軌道追従ボーナス：平均偏差が小さいほど高得点（最大150点）
+      this.vx = 0; this.vy = 0; this.omega = 0;
+
+      const sp        = stageParams(this.stage);
+      const fuelBonus = Math.round(this.fuel * 10);
+      const softBonus = Math.round(Math.max(0, SAFE_VY - Math.abs(this.vy)) * 6);
+      const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - absAngle) * 4);
+      // 軌道追従ボーナス（偏差0→200、偏差80以上→0）
       let guideBonus = 0;
       if (this._guideDevCount > 0) {
         const avgDev = this._guideDevTotal / this._guideDevCount;
-        // 偏差0→150点、偏差60以上→0点
-        guideBonus = Math.round(Math.max(0, 150 - avgDev * 2.5));
+        guideBonus   = Math.round(Math.max(0, 200 - avgDev * 2.5));
       }
-      this.score = fuelBonus + softBonus + padBonus + guideBonus;
-      this._guideBonus = guideBonus; // 表示用
-      if (this.engine.storage.setHigh(meta.id, this.score)) this.high = this.score;
+      this._guideBonus  = guideBonus;
+      this._stageScore  = fuelBonus + softBonus + uprBonus + guideBonus + sp.stageBonus;
+      this.totalScore  += this._stageScore;
+
+      // ハイスコア更新
+      if (this.totalScore > this.high) {
+        this.high = this.totalScore;
+        this.engine.storage.setHigh(meta.id, this.high);
+      }
+
       this.engine.audio.good();
-      this.state = 'landed';
+      this.state = 'cleared';
+
     } else {
-      // ---- 衝突クラッシュ ----
+      // ---- クラッシュ：ゲームオーバー ----
       this._explode();
       this.engine.audio.bad();
-      this.state   = 'crashed';
-      this._guideBonus = 0;
-      this.score   = Math.round(this.fuel * 2);
-      if (this.engine.storage.setHigh(meta.id, this.score)) this.high = this.score;
+
+      // 累計スコアにわずかに加算（燃料残量のみ）
+      this.totalScore += Math.round((this.fuel || 0) * 2);
+
+      // ハイスコア更新
+      if (this.totalScore > this.high) {
+        this.high = this.totalScore;
+        this.engine.storage.setHigh(meta.id, this.high);
+      }
+
+      this.state = 'gameover';
     }
   }
 
-  // ---- 爆発パーティクル生成 ----
+  // ---- 爆発パーティクル ----
   _explode() {
     this.particles = [];
-    for (let i = 0; i < 24; i++) {
-      const spd = 20 + Math.random() * 50;
+    for (let i = 0; i < 28; i++) {
+      const spd = 20 + Math.random() * 60;
       const dir = Math.random() * Math.PI * 2;
       this.particles.push({
         x:    this.x,
         y:    this.y,
         vx:   Math.cos(dir) * spd,
-        vy:   Math.sin(dir) * spd - 20,
-        life: 0.8 + Math.random() * 0.8,
-        max:  1.6,
+        vy:   Math.sin(dir) * spd - 25,
+        life: 0.7 + Math.random() * 1.0,
+        max:  1.7,
       });
     }
   }
@@ -305,22 +378,23 @@ export class Game extends Scene {
     for (const pt of this.particles) {
       pt.x    += pt.vx * dt;
       pt.y    += pt.vy * dt;
-      pt.vy   += GRAVITY * dt;
+      pt.vy   += this._gravity * dt;
       pt.life -= dt;
     }
     this.particles = this.particles.filter(pt => pt.life > 0);
   }
 
-  // ---- 地形の x での Y を線形補間で取得 ----
+  // ---- 地形のxでのYを線形補間 ----
   _terrainYAt(x) {
     const pts = this.terrainPts;
+    if (!pts || pts.length < 2) return H;
     for (let i = 0; i < pts.length - 1; i++) {
       if (x >= pts[i].x && x <= pts[i + 1].x) {
         const t = (x - pts[i].x) / (pts[i + 1].x - pts[i].x);
         return pts[i].y + t * (pts[i + 1].y - pts[i].y);
       }
     }
-    return H; // 範囲外は画面底
+    return H;
   }
 
   // ---- 毎フレームの描画 ----
@@ -328,232 +402,384 @@ export class Game extends Scene {
     const p = P();
 
     // ---- 背景：星 ----
-    for (const s of this.stars) {
-      ctx.fillStyle = s.r > 1 ? p.dim : p.dark;
-      ctx.fillRect(s.x, s.y, s.r, s.r);
+    if (this.stars) {
+      for (const s of this.stars) {
+        ctx.fillStyle = s.r > 1 ? p.dim : p.dark;
+        ctx.fillRect(s.x, s.y, s.r, s.r);
+      }
     }
 
-    // ---- 降下軌道ガイド（点線で理想パスを示す）----
+    // ---- 降下軌道ガイド ----
     this._drawGuide(ctx);
 
-    // ---- 地形描画 ----
-    ctx.fillStyle = p.dark;
-    ctx.beginPath();
-    ctx.moveTo(0, H);
-    for (const pt of this.terrainPts) ctx.lineTo(pt.x, pt.y);
-    ctx.lineTo(W, H);
-    ctx.closePath();
-    ctx.fill();
+    // ---- 地形 ----
+    if (this.terrainPts && this.terrainPts.length > 0) {
+      ctx.fillStyle = p.dark;
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (const pt of this.terrainPts) ctx.lineTo(pt.x, pt.y);
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      ctx.fill();
 
-    // 地形アウトライン
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 2;
-    ctx.beginPath();
-    for (let i = 0; i < this.terrainPts.length; i++) {
-      const pt = this.terrainPts[i];
-      if (i === 0) ctx.moveTo(pt.x, pt.y);
-      else         ctx.lineTo(pt.x, pt.y);
+      ctx.strokeStyle = p.dim;
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      for (let i = 0; i < this.terrainPts.length; i++) {
+        const pt = this.terrainPts[i];
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else         ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
-    // ---- 着陸パッド描画 ----
-    for (const pad of this.pads) {
+    // ---- 着陸パッド ----
+    if (this.pad) {
+      const pd = this.pad;
       ctx.fillStyle = p.fg;
-      ctx.fillRect(pad.x, pad.y, pad.w, 4);
+      ctx.fillRect(pd.x, pd.y, pd.w, 4);
       ctx.fillStyle = p.mid;
-      ctx.fillRect(pad.x,             pad.y, 4, 10);
-      ctx.fillRect(pad.x + pad.w - 4, pad.y, 4, 10);
+      ctx.fillRect(pd.x,           pd.y, 4, 10);
+      ctx.fillRect(pd.x + pd.w - 4, pd.y, 4, 10);
       // フラグ
-      ctx.fillStyle = pad.bonus ? p.warn : p.fg;
-      ctx.fillRect(pad.x + pad.w / 2 - 1, pad.y - 22, 2, 22);
-      ctx.fillRect(pad.x + pad.w / 2 + 1, pad.y - 20, 14, 10);
-      this.engine.text(
-        pad.bonus ? 'x2' : 'PAD',
-        pad.x + pad.w / 2, pad.y - 38, 11,
-        pad.bonus ? p.warn : p.mid, 'center'
-      );
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(pd.x + pd.w / 2 - 1, pd.y - 22, 2, 22);
+      ctx.fillStyle = p.warn;
+      ctx.fillRect(pd.x + pd.w / 2 + 1, pd.y - 20, 12, 9);
+      this.engine.text('PAD', pd.x + pd.w / 2, pd.y - 38, 10, p.mid, 'center');
     }
 
     // ---- 爆発パーティクル ----
-    for (const pt of this.particles) {
-      const t = pt.life / pt.max;
-      ctx.fillStyle = t > 0.5 ? p.warn : p.bad;
-      const r = Math.max(1, Math.round(t * 4));
-      ctx.fillRect(pt.x - r / 2, pt.y - r / 2, r, r);
+    if (this.particles) {
+      for (const pt of this.particles) {
+        const t = Math.max(0, Math.min(1, pt.life / pt.max));
+        ctx.fillStyle = t > 0.5 ? p.warn : p.bad;
+        const r = Math.max(1, Math.round(t * 4));
+        ctx.fillRect(pt.x - r / 2, pt.y - r / 2, r, r);
+      }
     }
 
-    // ---- ランダー描画（回転あり）----
-    if (this.state !== 'crashed') {
-      this._drawLander(ctx, this.x, this.y, this.angle);
+    // ---- ランダー本体 ----
+    if (this.state !== 'gameover' || (this.particles && this.particles.length > 0)) {
+      if (this.state === 'play' || this.state === 'cleared') {
+        this._drawLander(ctx, this.x, this.y, this.angle);
+      }
     }
 
     // ---- HUD ----
     this._drawHUD(ctx);
 
-    // ---- コントロールヒント（画面下部）----
+    // ---- コントロールヒント ----
     this._drawHints(ctx);
 
     // ---- 結果オーバーレイ ----
-    if (this.state === 'landed') {
-      this._drawResult(ctx, true);
-    } else if (this.state === 'crashed') {
-      this._drawResult(ctx, false);
+    if (this.state === 'cleared') {
+      this._drawClearScreen(ctx);
+    } else if (this.state === 'gameover') {
+      this._drawGameOver(ctx);
     }
   }
 
   // ---- 降下軌道ガイドを点線で描画 ----
+  // ON COURSE時はガイドを明るく表示し、OFF COURSEは薄暗く表示
   _drawGuide(ctx) {
-    const p    = P();
-    const pts  = this.guidePts;
-    // ガイドが存在しない・0点の場合は描かない
+    const p   = P();
+    const pts = this.guidePts;
     if (!pts || pts.length < 2) return;
+
+    // 現在の位置とガイドの距離
+    const dist     = this.state === 'play' ? this._distToGuide(this.x, this.y) : Infinity;
+    const onCourse = (dist <= GUIDE_THRESHOLD);
+
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = p.warn;
-    ctx.lineWidth   = 1;
-    ctx.setLineDash([4, 7]); // 点線パターン
+    if (onCourse) {
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = p.hi;
+      ctx.lineWidth   = 2;
+      ctx.setLineDash([5, 5]);
+    } else {
+      ctx.globalAlpha = 0.28;
+      ctx.strokeStyle = p.warn;
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 8]);
+    }
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
-    }
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
     ctx.setLineDash([]);
-    // 目標パッドに小さなダイヤマークを描く
+
+    // 目標パッドのダイヤマーク
     const last = pts[pts.length - 1];
-    ctx.fillStyle = p.warn;
-    ctx.globalAlpha = 0.5;
+    ctx.fillStyle   = onCourse ? p.hi : p.warn;
+    ctx.globalAlpha = onCourse ? 0.9 : 0.45;
     ctx.beginPath();
-    ctx.moveTo(last.x,     last.y - 6);
-    ctx.lineTo(last.x + 5, last.y);
-    ctx.lineTo(last.x,     last.y + 6);
-    ctx.lineTo(last.x - 5, last.y);
+    ctx.moveTo(last.x,     last.y - 7);
+    ctx.lineTo(last.x + 6, last.y);
+    ctx.lineTo(last.x,     last.y + 7);
+    ctx.lineTo(last.x - 6, last.y);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+
+    // ON COURSE インジケーター（プレイ中かつコース上のみ）
+    if (onCourse && this.state === 'play') {
+      this._drawOnCourseIndicator(ctx);
+    }
   }
 
-  // ---- ランダー本体を回転描画 ----
+  // ---- ON COURSE インジケーター ----
+  _drawOnCourseIndicator(ctx) {
+    const p = P();
+    ctx.save();
+    // 機体の周囲にグローリング
+    ctx.globalAlpha  = 0.45;
+    ctx.strokeStyle  = p.hi;
+    ctx.lineWidth    = 3;
+    ctx.shadowColor  = p.hi;
+    ctx.shadowBlur   = 8;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // テキスト表示（機体上部に）
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    this.engine.text('ON COURSE', W / 2, 72, 12, p.hi, 'center');
+    ctx.restore();
+  }
+
+  // ---- ランダー本体（4つのRCSノズル付き）----
   _drawLander(ctx, x, y, angleDeg) {
     const p   = P();
-    const rad = angleDeg * Math.PI / 180;
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    const rad = (angleDeg || 0) * Math.PI / 180;
 
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rad);
 
-    // エンジン炎（推力中のみ）
-    if (this.thrust && this.fuel > 0) {
-      const flameLen = 10 + Math.random() * 8;
+    // ---- メインエンジン炎（底ノズル）----
+    if (this._thrustMain && this.fuel > 0) {
+      const fl = 10 + Math.random() * 10;
       ctx.fillStyle = p.warn;
       ctx.beginPath();
-      ctx.moveTo(-6, 8);
-      ctx.lineTo(0,  8 + flameLen);
-      ctx.lineTo(6,  8);
+      ctx.moveTo(-6, 9);
+      ctx.lineTo(0,  9 + fl);
+      ctx.lineTo(6,  9);
       ctx.closePath();
       ctx.fill();
       ctx.fillStyle = p.hi;
       ctx.beginPath();
-      ctx.moveTo(-3, 8);
-      ctx.lineTo(0,  8 + flameLen * 0.5);
-      ctx.lineTo(3,  8);
+      ctx.moveTo(-3, 9);
+      ctx.lineTo(0,  9 + fl * 0.5);
+      ctx.lineTo(3,  9);
       ctx.closePath();
       ctx.fill();
     }
 
-    // 胴体
+    // ---- 胴体 ----
     ctx.fillStyle   = p.mid;
     ctx.fillRect(-8, -10, 16, 18);
     ctx.strokeStyle = p.fg;
     ctx.lineWidth   = 1.5;
     ctx.strokeRect(-8, -10, 16, 18);
 
-    // キャビン窓
+    // ---- キャビン窓 ----
     ctx.fillStyle = p.hi;
     ctx.fillRect(-4, -8, 8, 7);
 
-    // 左脚
+    // ---- 左脚 ----
     ctx.strokeStyle = p.mid;
     ctx.lineWidth   = 2;
-    ctx.beginPath(); ctx.moveTo(-7, 8);  ctx.lineTo(-14, 16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-7, 8);   ctx.lineTo(-14, 16); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(-14, 16); ctx.lineTo(-18, 16); ctx.stroke();
 
-    // 右脚
-    ctx.beginPath(); ctx.moveTo(7, 8);   ctx.lineTo(14, 16);  ctx.stroke();
+    // ---- 右脚 ----
+    ctx.beginPath(); ctx.moveTo(7, 8);    ctx.lineTo(14, 16);  ctx.stroke();
     ctx.beginPath(); ctx.moveTo(14, 16);  ctx.lineTo(18, 16);  ctx.stroke();
 
-    // エンジンノズル
+    // ---- メインエンジンノズル（底中央）----
     ctx.fillStyle = p.dark;
-    ctx.fillRect(-5, 8, 10, 6);
+    ctx.fillRect(-5, 9, 10, 5);
+    // ノズル枠：アクティブ時ハイライト
+    ctx.strokeStyle = this._thrustMain && this.fuel > 0 ? p.warn : p.dim;
+    ctx.lineWidth   = 1;
+    ctx.strokeRect(-5, 9, 10, 5);
+
+    // ---- 左RCSノズル（胴体左側、上寄り）----
+    // 左RCSジェットはノズル左側から炎→機体が反時計方向に回転
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(-12, -6, 4, 4);
+    if (this._thrustRcsL && this.fuel > 0) {
+      // 左ノズル炎（左方向に噴射）
+      ctx.fillStyle = p.warn;
+      ctx.beginPath();
+      ctx.moveTo(-12, -4);
+      ctx.lineTo(-12 - (5 + Math.random() * 5), -2);
+      ctx.lineTo(-12, -6 + 1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = this._thrustRcsL && this.fuel > 0 ? p.warn : p.dim;
+    ctx.lineWidth   = 0.8;
+    ctx.strokeRect(-12, -6, 4, 4);
+
+    // ---- 右RCSノズル（胴体右側、上寄り）----
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(8, -6, 4, 4);
+    if (this._thrustRcsR && this.fuel > 0) {
+      // 右ノズル炎（右方向に噴射）
+      ctx.fillStyle = p.warn;
+      ctx.beginPath();
+      ctx.moveTo(12, -4);
+      ctx.lineTo(12 + (5 + Math.random() * 5), -2);
+      ctx.lineTo(12, -6 + 1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = this._thrustRcsR && this.fuel > 0 ? p.warn : p.dim;
+    ctx.lineWidth   = 0.8;
+    ctx.strokeRect(8, -6, 4, 4);
+
+    // ---- 姿勢補助RCSノズル（天頂、小さなトップノズル）----
+    ctx.fillStyle   = p.dark;
+    ctx.fillRect(-3, -14, 6, 4);
+    ctx.strokeStyle = p.dim;
+    ctx.lineWidth   = 0.8;
+    ctx.strokeRect(-3, -14, 6, 4);
 
     ctx.restore();
   }
 
-  // ---- HUD表示（左上はBACKボタン占有のため x>=52 から）----
+  // ---- HUD（左上x>=52、カラーコード付き）----
   _drawHUD(ctx) {
     const p = P();
 
-    // タイトル
-    this.engine.text('LANDER', 52, 14, 18, p.fg, 'left');
-    this.engine.text('HI ' + this.high, W - 12, 14, 14, p.dim, 'right');
+    // タイトル + ステージ
+    this.engine.text('LANDER', 52, 8, 16, p.fg, 'left');
+    this.engine.text('ST.' + this.stage, 52, 26, 12, p.mid, 'left');
+    // ハイスコア
+    this.engine.text('HI ' + (this.high || 0), W - 8, 8, 12, p.dim, 'right');
+    // 累計スコア
+    this.engine.text('TOT ' + this.totalScore, W - 8, 22, 12, p.mid, 'right');
 
     // 燃料バー
-    const barX = 52, barY = 44, barW = 120, barH = 12;
-    this.engine.rect(barX, barY, barW, barH, p.dark);
-    const fuelRatio = this.fuel / FUEL_MAX;
-    const fuelColor = fuelRatio > 0.4 ? p.mid : fuelRatio > 0.15 ? p.warn : p.bad;
-    if (fuelRatio > 0) this.engine.rect(barX, barY, Math.round(barW * fuelRatio), barH, fuelColor);
-    this.engine.stroke(barX, barY, barW, barH, p.dim, 1);
-    this.engine.text('FUEL', barX + barW + 5, barY, 11, p.dim, 'left');
+    const bx = 52, by = 44, bw = 110, bh = 10;
+    this.engine.rect(bx, by, bw, bh, p.dark);
+    const fr    = Math.max(0, Math.min(1, (this.fuel || 0) / FUEL_MAX));
+    const fclr  = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
+    if (fr > 0) this.engine.rect(bx, by, Math.round(bw * fr), bh, fclr);
+    this.engine.stroke(bx, by, bw, bh, p.dim, 1);
+    this.engine.text('FUEL', bx + bw + 4, by, 10, p.dim, 'left');
 
-    // 縦速度（色分け）
-    const vyAbs   = Math.abs(this.vy);
-    const vyColor = vyAbs <= SAFE_VY ? p.mid : vyAbs <= SAFE_VY * 1.5 ? p.warn : p.bad;
-    this.engine.text('V:' + Math.round(this.vy), W - 12, 44, 14, vyColor, 'right');
+    if (this.state !== 'play') return;
+
+    // 縦速度
+    const vy    = this.vy || 0;
+    const vyclr = Math.abs(vy) <= SAFE_VY ? p.mid : Math.abs(vy) <= SAFE_VY * 1.6 ? p.warn : p.bad;
+    this.engine.text('VY ' + Math.round(vy), W - 8, 38, 11, vyclr, 'right');
 
     // 横速度
-    const vxAbs   = Math.abs(this.vx);
-    const vxColor = vxAbs <= SAFE_VX ? p.dim : vxAbs <= SAFE_VX * 1.8 ? p.warn : p.bad;
-    this.engine.text('H:' + Math.round(this.vx), W - 12, 62, 14, vxColor, 'right');
+    const vx    = this.vx || 0;
+    const vxclr = Math.abs(vx) <= SAFE_VX ? p.mid : Math.abs(vx) <= SAFE_VX * 2 ? p.warn : p.bad;
+    this.engine.text('VX ' + Math.round(vx), W - 8, 52, 11, vxclr, 'right');
 
     // 角度
-    const absAngle = Math.abs(((this.angle + 180) % 360 + 360) % 360 - 180);
-    const aColor   = absAngle <= SAFE_ANGLE ? p.dim : absAngle <= SAFE_ANGLE * 2 ? p.warn : p.bad;
-    this.engine.text('A:' + Math.round(this.angle) + '°', 52, 62, 14, aColor, 'left');
+    const ang    = this.angle || 0;
+    const absAng = Math.abs(((ang + 180) % 360 + 360) % 360 - 180);
+    const aclr   = absAng <= SAFE_ANGLE ? p.mid : absAng <= SAFE_ANGLE * 2 ? p.warn : p.bad;
+    this.engine.text('A ' + Math.round(ang) + '°', 52, 58, 11, aclr, 'left');
+
+    // 角速度ω
+    const om    = this.omega || 0;
+    const omclr = Math.abs(om) <= SAFE_OMEGA ? p.mid : Math.abs(om) <= SAFE_OMEGA * 2 ? p.warn : p.bad;
+    this.engine.text('ω ' + Math.round(om), W - 8, 66, 11, omclr, 'right');
   }
 
-  // ---- 操作ヒント（画面下部の3ゾーン区切り）----
+  // ---- 操作ヒント（画面下部3ゾーン）----
   _drawHints(ctx) {
     const p  = P();
-    const hy = H - 22;
-    this.engine.text('◄ ROT',  60,     hy, 11, p.dim, 'center');
-    this.engine.text('THRUST', W / 2, hy, 11, p.dim, 'center');
-    this.engine.text('ROT ►', W - 60,  hy, 11, p.dim, 'center');
-    // ゾーン区切り線（薄く）
+    const hy = H - 18;
+
+    // 左RCSゾーンラベル
+    this.engine.text('◄RCS', 60, hy, 10, p.dim, 'center');
+    // 中央スラストゾーンラベル
+    this.engine.text('THRUST', W / 2, hy, 10, p.dim, 'center');
+    // 右RCSゾーンラベル
+    this.engine.text('RCS►', W - 60, hy, 10, p.dim, 'center');
+
+    // ゾーン区切り線（薄い縦線）
     ctx.strokeStyle = p.dark;
     ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(120, H - 32); ctx.lineTo(120, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(240, H - 32); ctx.lineTo(240, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(120, H - 28); ctx.lineTo(120, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(240, H - 28); ctx.lineTo(240, H); ctx.stroke();
   }
 
-  // ---- 結果オーバーレイ ----
-  _drawResult(ctx, success) {
+  // ---- ステージクリア画面 ----
+  _drawClearScreen(ctx) {
     const p = P();
-    this.engine.rect(0, H / 2 - 90, W, 190, p.dark);
-    this.engine.stroke(0, H / 2 - 90, W, 190, p.dim, 2);
+    const cx = W / 2;
+    const cy = H / 2;
 
-    if (success) {
-      this.engine.text('LANDED!',           W / 2, H / 2 - 74, 32, p.hi,  'center');
-      this.engine.text('SCORE ' + this.score, W / 2, H / 2 - 32, 20, p.fg, 'center');
-      // 軌道ボーナス内訳
-      const gb = this._guideBonus != null ? this._guideBonus : 0;
-      this.engine.text('GUIDE +' + gb,      W / 2, H / 2 - 6,  14, p.warn,'center');
-      this.engine.text('HI ' + this.high,   W / 2, H / 2 + 18, 16, p.mid, 'center');
-    } else {
-      this.engine.text('CRASHED!',          W / 2, H / 2 - 74, 32, p.bad, 'center');
-      this.engine.text('SCORE ' + this.score, W / 2, H / 2 - 32, 20, p.fg, 'center');
-      this.engine.text('HI ' + this.high,   W / 2, H / 2 - 6,  16, p.mid, 'center');
-    }
-    this.engine.text('TAP TO RETRY', W / 2, H / 2 + 52, 14, p.dim, 'center');
+    // 半透明パネル
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    this.engine.rect(20, cy - 130, W - 40, 270, p.dark);
+    this.engine.stroke(20, cy - 130, W - 40, 270, p.mid, 2);
+    ctx.restore();
+
+    this.engine.text('STAGE CLEAR!',    cx, cy - 116, 24, p.hi,   'center');
+    this.engine.text('ST.' + this.stage + ' COMPLETE', cx, cy - 86, 13, p.mid, 'center');
+
+    // スコア内訳（stageScoreからguide bonusを含む）
+    this.engine.text('STAGE SCORE',     cx, cy - 62, 12, p.dim,  'center');
+    this.engine.text('+' + (this._stageScore || 0), cx, cy - 46, 20, p.fg, 'center');
+    this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, cy - 22, 11, p.warn, 'center');
+
+    // 区切り
+    ctx.strokeStyle = p.dim;
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.moveTo(40, cy + 4); ctx.lineTo(W - 40, cy + 4); ctx.stroke();
+
+    this.engine.text('TOTAL SCORE',     cx, cy + 14, 12, p.dim,  'center');
+    this.engine.text('' + this.totalScore, cx, cy + 30, 24, p.hi, 'center');
+    this.engine.text('BEST ' + (this.high || 0), cx, cy + 60, 14, p.mid, 'center');
+
+    // 次ステージ案内
+    this.engine.text('TAP → STAGE ' + (this.stage + 1), cx, cy + 90, 14, p.fg, 'center');
+    this.engine.text('BACK → MENU', cx, cy + 110, 11, p.dim, 'center');
+  }
+
+  // ---- ゲームオーバー画面 ----
+  _drawGameOver(ctx) {
+    const p = P();
+    const cx = W / 2;
+    const cy = H / 2;
+
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    this.engine.rect(20, cy - 120, W - 40, 250, p.dark);
+    this.engine.stroke(20, cy - 120, W - 40, 250, p.bad, 2);
+    ctx.restore();
+
+    this.engine.text('GAME OVER',         cx, cy - 106, 28, p.bad,  'center');
+    this.engine.text('CRASHED! ST.' + this.stage, cx, cy - 74, 13, p.warn, 'center');
+
+    ctx.strokeStyle = p.dim;
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.moveTo(40, cy - 54); ctx.lineTo(W - 40, cy - 54); ctx.stroke();
+
+    this.engine.text('FINAL SCORE',       cx, cy - 40, 12, p.dim,  'center');
+    this.engine.text('' + this.totalScore, cx, cy - 24, 26, p.fg,  'center');
+
+    ctx.beginPath(); ctx.moveTo(40, cy + 8); ctx.lineTo(W - 40, cy + 8); ctx.stroke();
+
+    this.engine.text('BEST',              cx, cy + 18, 11, p.dim,  'center');
+    this.engine.text('' + (this.high || 0), cx, cy + 34, 22, p.hi, 'center');
+
+    this.engine.text('TAP TO RETRY',      cx, cy + 68, 14, p.fg,   'center');
+    this.engine.text('BACK → MENU',  cx, cy + 88, 11, p.dim,  'center');
   }
 }
