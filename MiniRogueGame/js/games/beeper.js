@@ -182,7 +182,7 @@ export class Game extends Scene {
 
     // ---- HUD ----
     e.text('BEEPER', W / 2, 14, 20, p.fg, 'center');
-    e.text('ROUND ' + this.round, 14, 14, 15, p.mid, 'left');
+    e.text('ROUND ' + this.round, 54, 14, 15, p.mid, 'left'); // 左上BACKボタンを避ける
     e.text('HI ' + this.high, W - 14, 14, 15, p.dim, 'right');
 
     // ---- ステータスライン（HUD直下）----

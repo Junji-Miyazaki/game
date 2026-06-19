@@ -131,13 +131,32 @@ export class Game extends Scene {
         this._build(); return;
       } else { this.msg = 'NEED KEY!'; }
     }
-    // 敵移動（プレイヤーへ近づく）
+    // 敵移動：検知範囲内ならプレイヤーを追跡、範囲外はランダム徘徊
+    const detectRange = 4 + Math.floor(this.level / 3); // レベルが上がるほど検知範囲が広がる
     for (const e of this.enemies) {
-      const ex = e.x + Math.sign(this.player.x - e.x);
-      const ey = e.y + Math.sign(this.player.y - e.y);
-      // X優先で1マス、塞がってたらYで1マス
-      if (!this.walls[e.y][ex] && ex !== e.x) e.x = ex;
-      else if (!this.walls[ey][e.x] && ey !== e.y) e.y = ey;
+      const dist = Math.abs(this.player.x - e.x) + Math.abs(this.player.y - e.y);
+      if (dist <= detectRange) {
+        // 追跡モード：X優先で1マス近づく
+        const ex = e.x + Math.sign(this.player.x - e.x);
+        const ey = e.y + Math.sign(this.player.y - e.y);
+        if (!this.walls[e.y][ex] && ex !== e.x) e.x = ex;
+        else if (!this.walls[ey][e.x] && ey !== e.y) e.y = ey;
+      } else {
+        // 徘徊モード：ランダムな直交方向に1マス移動（25%で停止）
+        if (Math.random() < 0.25) continue; // 止まる
+        const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+        // シャッフル
+        for (let i = dirs.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+        }
+        for (const [ddx, ddy] of dirs) {
+          const nx = e.x + ddx, ny = e.y + ddy;
+          if (nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS && !this.walls[ny][nx]) {
+            e.x = nx; e.y = ny; break;
+          }
+        }
+      }
     }
     this._checkDeath();
   }
@@ -156,10 +175,10 @@ export class Game extends Scene {
 
   render(ctx) {
     const p = P();
-    // HUD
-    this.engine.text('1-BIT HERO', 12, 14, 18, p.fg, 'left');
+    // HUD（左上はBACKボタンが x:6..48 を占有するため x>=52 から描く）
+    this.engine.text('1-BIT HERO', 52, 14, 18, p.fg, 'left');
     this.engine.text('LV ' + this.level, W - 12, 14, 16, p.fg, 'right');
-    this.engine.text('SCORE ' + this.score, 12, 44, 14, p.mid, 'left');
+    this.engine.text('SCORE ' + this.score, 52, 44, 14, p.mid, 'left');
     this.engine.text('HI ' + this.high, W - 12, 44, 14, p.dim, 'right');
 
     // グリッド

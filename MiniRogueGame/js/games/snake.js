@@ -20,9 +20,9 @@ const GRID_X = 0;
 const GRID_Y = 96;
 
 // ---- ゲームパラメータ ----
-const STEP_INIT = 0.14;    // 初期ステップ間隔（秒）
-const STEP_FLOOR = 0.07;   // 最高速度（秒）
-const SPEED_UP = 0.003;    // 食べるたびに間隔を縮める量
+const STEP_INIT = 0.22;    // 初期ステップ間隔（秒）：ゆっくりスタート
+const STEP_FLOOR = 0.10;   // 最高速度（秒）：速くなりすぎない上限
+const SPEED_UP = 0.004;    // 食べるたびに間隔を縮める量（緩やかに加速）
 
 export class Game extends Scene {
   enter() {
@@ -41,12 +41,13 @@ export class Game extends Scene {
     ];
     this.dir = { x: 1, y: 0 };  // 右向きで開始
 
-    // 入力バッファ（最大1手先まで）
+    // 入力バッファ（最大2手先まで）：素早いスワイプを取りこぼさない
     this.dirBuffer = [];
 
-    // ステップタイマー
+    // ステップタイマー（最初の入力があるまで動かない猶予）
     this.stepInterval = STEP_INIT;
     this.stepTimer = 0;
+    this.waitingForFirst = true; // 最初の入力待ち猶予フラグ
 
     // 食べ物を配置
     this.food = this._spawnFood();
@@ -76,21 +77,32 @@ export class Game extends Scene {
     }
     if (action === 'back') return this.engine.toMenu();
 
-    // 方向入力をバッファに積む（バッファは最大1個まで）
+    // 方向入力をバッファに積む（バッファは最大2個まで：素早い連続スワイプに対応）
     let nd = null;
     if (action === 'up')    nd = { x: 0,  y: -1 };
     else if (action === 'down')  nd = { x: 0,  y: 1  };
     else if (action === 'left')  nd = { x: -1, y: 0  };
     else if (action === 'right') nd = { x: 1,  y: 0  };
 
-    if (nd && this.dirBuffer.length < 1) {
-      this.dirBuffer.push(nd);
+    if (nd && this.dirBuffer.length < 2) {
+      // バッファの末尾（次に適用される方向）に対して直逆でないか事前チェック
+      const prev = this.dirBuffer.length > 0
+        ? this.dirBuffer[this.dirBuffer.length - 1]
+        : this.dir;
+      const isReverse = (nd.x !== 0 && nd.x === -prev.x) ||
+                        (nd.y !== 0 && nd.y === -prev.y);
+      if (!isReverse) {
+        this.dirBuffer.push(nd);
+        if (this.waitingForFirst) this.waitingForFirst = false; // 猶予終了
+      }
     }
   }
 
   // ---- 毎フレーム更新 ----
   update(dt) {
     if (this.dead) return;
+    // 最初の入力待ち中はタイマーを進めない（プレイヤーが準備できるまで待機）
+    if (this.waitingForFirst) return;
 
     this.stepTimer += dt;
     if (this.stepTimer >= this.stepInterval) {
@@ -101,15 +113,9 @@ export class Game extends Scene {
 
   // ---- 1ステップ進める ----
   _step() {
-    // バッファから次の方向を適用（直逆は無視）
+    // バッファから次の方向を適用（直逆はバッファ投入時に除外済み）
     if (this.dirBuffer.length > 0) {
-      const nd = this.dirBuffer.shift();
-      // 直逆チェック：頭が3マス以上ある場合のみ（初期状態でも安全）
-      const isReverse = (nd.x !== 0 && nd.x === -this.dir.x) ||
-                        (nd.y !== 0 && nd.y === -this.dir.y);
-      if (!isReverse) {
-        this.dir = nd;
-      }
+      this.dir = this.dirBuffer.shift();
     }
 
     // 新しい頭の位置を計算
@@ -169,11 +175,11 @@ export class Game extends Scene {
   render(ctx) {
     const p = P();
 
-    // ---- HUD ----
-    this.engine.text('SNAKE', 12, 12, 20, p.fg, 'left');
+    // ---- HUD（左上はBACKボタンが x:6..48 を占有するため x>=52 から描く）----
+    this.engine.text('SNAKE', 52, 12, 20, p.fg, 'left');
     this.engine.text('HI ' + this.high, W - 12, 12, 14, p.dim, 'right');
-    this.engine.text('SCORE', 12, 44, 13, p.dim, 'left');
-    this.engine.text(String(this.score), 12, 62, 22, p.mid, 'left');
+    this.engine.text('SCORE', 52, 44, 13, p.dim, 'left');
+    this.engine.text(String(this.score), 52, 62, 22, p.mid, 'left');
 
     // ---- プレイフィールドの背景 ----
     this.engine.rect(GRID_X, GRID_Y, COLS * CELL, ROWS * CELL, p.dark);

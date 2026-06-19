@@ -15,9 +15,9 @@ export const meta = {
 const BITS       = 6;                    // ビット数（最大63）
 const PLACE_VAL  = [32, 16, 8, 4, 2, 1]; // 左から右へ
 
-const INIT_TIME  = 10;                   // 初期タイマー（秒）
-const ADD_TIME   = 3;                    // 正解時に追加する秒数
-const TIME_CAP   = 20;                   // タイマー上限（秒）
+const INIT_TIME  = 16;                   // 初期タイマー（秒）— より余裕を持たせる
+const ADD_TIME   = 5;                    // 正解時に追加する秒数（増量）
+const TIME_CAP   = 30;                   // タイマー上限（秒）— 連続正解でも30秒まで
 
 // HUDとレイアウト
 const HUD_H      = 90;                   // HUD高さ
@@ -157,9 +157,9 @@ export class Game extends Scene {
     const p = P();
 
     // ---------- HUD ----------
-    this.engine.text('BINARY', 12, 12, 20, p.fg, 'left');
+    this.engine.text('BINARY', 52, 12, 20, p.fg, 'left');  // BACKボタン(~x48)の右から開始
     this.engine.text('LV ' + this.level, W - 12, 12, 16, p.fg, 'right');
-    this.engine.text('SCORE ' + this.score, 12, 42, 14, p.mid, 'left');
+    this.engine.text('SCORE ' + this.score, 52, 42, 14, p.mid, 'left');
     this.engine.text('HI ' + this.high, W - 12, 42, 14, p.dim, 'right');
 
     // HUD区切り線

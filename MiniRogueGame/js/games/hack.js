@@ -1,13 +1,14 @@
-// HACK : コードブレーカー × カウントダウン
-// グリッドに並んだ 2文字16進コードの中から「DECRYPT」ターゲットを時間内にタップせよ。
-// 正解 → スコア加算＋時間追加。不正解 → 時間ペナルティ。タイムアウトでゲームオーバー。
+// HACK : コードブレーカー × リアクションスピード
+// グリッドから「DECRYPT」ターゲットを見つけてタップせよ。
+// 全10ラウンド固定。タイムアウトなし。反応速度でスコアを競う。
+// 速くタップするほど高得点。誤タップは減点なし（時間ロスで自然にスコアが下がる）。
 import { Scene, W, H } from '../core/engine.js';
 import { P } from '../core/palette.js';
 
 export const meta = {
   id: 'hack',
   title: 'HACK',
-  desc: '一致コードを時間内にタップ',
+  desc: '一致コードを素早くタップ',
   glyph: '#',
 };
 
@@ -22,11 +23,14 @@ const CELL_GAP_X  = 6;           // 横間隔
 const CELL_GAP_Y  = 6;           // 縦間隔
 
 // ---- ゲームパラメータ ----
-const TIME_INIT   = 12;          // 初期カウントダウン秒
-const TIME_BONUS  = 3.5;         // 正解時追加秒
-const TIME_PENALTY= 1.5;         // 不正解時ペナルティ秒
-const FLASH_DUR   = 0.22;        // フラッシュ持続秒
-const SCORE_BASE  = 10;          // 1問あたりの基本スコア
+const TOTAL_ROUNDS  = 10;        // 全ラウンド数（固定）
+const FLASH_DUR     = 0.22;      // フラッシュ持続秒
+const SCORE_MAX     = 1000;      // 1ラウンドの最高得点
+const SCORE_MIN     = 50;        // 1ラウンドの最低得点（どんなに遅くても）
+// 反応時間スコア計算: score = max(SCORE_MIN, SCORE_MAX - elapsed * SCORE_DECAY)
+// 例) 0秒→1000点、5秒→500点、10秒以上→50点
+const SCORE_DECAY   = 95;        // 1秒あたりの減点量
+const FLASH_GAIN_DUR = 0.7;      // "+NNN" 表示の持続秒
 
 // 16進コード生成に使う文字
 const HEX_CHARS = '0123456789ABCDEF';
@@ -43,19 +47,22 @@ function randCode() {
 
 export class Game extends Scene {
   enter() {
-    this.score  = 0;
-    this.level  = 1;
-    this.high   = this.engine.storage.getHigh(meta.id);
-    this.over   = false;
-    this.timer  = TIME_INIT;
+    this.score      = 0;           // 累計スコア
+    this.round      = 0;           // 現在ラウンド（0始まり、TOTAL_ROUNDSで終了）
+    this.high       = this.engine.storage.getHigh(meta.id);
+    this.over       = false;       // リザルト画面フラグ
+    this.elapsed    = 0;           // 現在ラウンドの経過時間（秒）
 
     // フラッシュ状態 { idx, t, good }
-    this.flash  = null;
+    this.flash      = null;
+
+    // "+NNN" 得点フラッシュ { text, t }
+    this.gainFlash  = null;
 
     // ノイズ粒子
     this._initNoise();
 
-    // グリッド＋ターゲット生成
+    // 最初のラウンド開始
     this._newRound();
   }
 
@@ -106,8 +113,11 @@ export class Game extends Scene {
       }
     }
 
+    // 経過タイマーをリセット
+    this.elapsed = 0;
+
     // タイピング演出: ターゲット表示を1文字ずつ
-    this._typeLen  = 0;             // 現在表示中の文字数
+    this._typeLen   = 0;
     this._typeTimer = 0;
     this._typeDone  = false;
   }
@@ -116,13 +126,8 @@ export class Game extends Scene {
   update(dt) {
     if (this.over) return;
 
-    // カウントダウン
-    this.timer -= dt;
-    if (this.timer <= 0) {
-      this.timer = 0;
-      this._gameOver();
-      return;
-    }
+    // 現在ラウンドの経過時間（タイムアウトなし、スコア計算用）
+    this.elapsed += dt;
 
     // フラッシュ
     if (this.flash) {
@@ -130,26 +135,31 @@ export class Game extends Scene {
       if (this.flash.t <= 0) this.flash = null;
     }
 
+    // 得点フラッシュ
+    if (this.gainFlash) {
+      this.gainFlash.t -= dt;
+      if (this.gainFlash.t <= 0) this.gainFlash = null;
+    }
+
     // ノイズアニメーション（下方向スクロール）
-    for (const p of this.noise) {
-      p.y += p.speed * dt;
-      p.age += dt;
-      if (p.y > H + 20) {
-        p.y = -20;
-        p.x = Math.random() * W;
-        p.ch = NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
+    for (const part of this.noise) {
+      part.y += part.speed * dt;
+      part.age += dt;
+      if (part.y > H + 20) {
+        part.y = -20;
+        part.x = Math.random() * W;
+        part.ch = NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
       }
       // 約5秒ごとに文字を変える
-      if (p.age > 5) {
-        p.age = 0;
-        p.ch = NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
+      if (part.age > 5) {
+        part.age = 0;
+        part.ch = NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
       }
     }
 
-    // タイピング演出
+    // タイピング演出（1文字 0.06s）
     if (!this._typeDone) {
       this._typeTimer += dt;
-      // 1文字あたり 0.06s
       const targetLen = ('DECRYPT > ' + this.target).length;
       this._typeLen = Math.min(Math.floor(this._typeTimer / 0.06), targetLen);
       if (this._typeLen >= targetLen) this._typeDone = true;
@@ -179,29 +189,36 @@ export class Game extends Scene {
 
     const cell = this.cells[idx];
     if (cell.code === this.target) {
-      // 正解
-      const gain = SCORE_BASE * this.level;
+      // 正解 — 反応時間でスコア計算
+      const gain = Math.max(SCORE_MIN, Math.round(SCORE_MAX - this.elapsed * SCORE_DECAY));
       this.score += gain;
-      // タイムボーナスはレベルが上がると少なめ
-      const bonus = Math.max(1.2, TIME_BONUS - this.level * 0.3);
-      this.timer = Math.min(this.timer + bonus, TIME_INIT);
       this.flash = { idx, t: FLASH_DUR, good: true };
+      this.gainFlash = { text: '+' + gain, t: FLASH_GAIN_DUR };
       this.engine.audio.good();
-      this.level++;
-      // 次ラウンドへ
-      this._newRound();
+
+      // ハイスコア更新
+      if (this.engine.storage.setHigh(meta.id, this.score)) {
+        this.high = this.score;
+      }
+
+      this.round++;
+      if (this.round >= TOTAL_ROUNDS) {
+        // 全ラウンド終了 → リザルト
+        this._showResults();
+      } else {
+        // 次ラウンドへ
+        this._newRound();
+      }
     } else {
-      // 不正解
-      this.timer = Math.max(0, this.timer - TIME_PENALTY);
+      // 不正解 — ゲーム終了なし。赤フラッシュのみ（経過時間は止まらない）
       this.flash = { idx, t: FLASH_DUR, good: false };
       this.engine.audio.bad();
-      if (this.timer <= 0) { this.timer = 0; this._gameOver(); }
     }
   }
 
-  _gameOver() {
+  _showResults() {
     this.over = true;
-    this.engine.audio.bad();
+    // 最終スコアでハイスコア更新（正解時にも更新しているが念のため）
     if (this.engine.storage.setHigh(meta.id, this.score)) {
       this.high = this.score;
     }
@@ -213,7 +230,6 @@ export class Game extends Scene {
 
     // ---- ノイズ背景（dimカラー、グリッドの下に描画）----
     for (const n of this.noise) {
-      // グリッド領域は薄く、それ以外は少し濃く
       const inGrid = n.x >= GRID_X && n.x < GRID_X + COLS * (CELL_W + CELL_GAP_X) &&
                      n.y >= GRID_Y && n.y < GRID_Y + ROWS * (CELL_H + CELL_GAP_Y);
       ctx.globalAlpha = inGrid ? 0.07 : 0.18;
@@ -222,27 +238,22 @@ export class Game extends Scene {
     }
 
     // ---- HUD ----
-    // タイトルバー
+    // タイトルバー（BACKボタンは x:6..48 なので HACK タイトルは x>=52 から）
     this.engine.rect(0, 0, W, 44, p.dark);
-    this.engine.text('HACK', 14, 10, 22, p.fg, 'left');
+    this.engine.text('HACK', 52, 10, 22, p.fg, 'left');   // BACKボタン右側から開始
     this.engine.text('HI ' + this.high, W - 14, 10, 16, p.dim, 'right');
 
     // スコア行
-    this.engine.text('SCORE', 14, 52, 13, p.dim, 'left');
-    this.engine.text(String(this.score), 14, 68, 26, p.mid, 'left');
-    this.engine.text('LV ' + this.level, W - 14, 52, 13, p.dim, 'right');
+    this.engine.text('SCORE', 52, 52, 13, p.dim, 'left');
+    this.engine.text(String(this.score), 52, 68, 26, p.mid, 'left');
 
-    // タイマーバー
-    const BAR_X = 14, BAR_Y = 104, BAR_W = W - 28, BAR_H = 14;
-    this.engine.rect(BAR_X, BAR_Y, BAR_W, BAR_H, p.dark);
-    const ratio = Math.max(0, this.timer / TIME_INIT);
-    const barColor = ratio > 0.4 ? p.mid : (ratio > 0.2 ? p.warn : p.bad);
-    this.engine.rect(BAR_X, BAR_Y, Math.floor(BAR_W * ratio), BAR_H, barColor);
-    this.engine.stroke(BAR_X, BAR_Y, BAR_W, BAR_H, p.dim, 1);
+    // ラウンド進捗（右側）
+    const roundDisp = Math.min(this.round + 1, TOTAL_ROUNDS);
+    this.engine.text('ROUND ' + roundDisp + ' / ' + TOTAL_ROUNDS, W - 14, 52, 13, p.dim, 'right');
 
-    // タイマー数字
-    const timerSec = Math.ceil(this.timer);
-    this.engine.text(timerSec + 's', W - 14, 122, 14, barColor, 'right');
+    // 経過時間（右側。反応速度の参考表示）
+    const elapsedLabel = this.elapsed.toFixed(1) + 's';
+    this.engine.text(elapsedLabel, W - 14, 68, 20, p.fg, 'right');
 
     // ---- DECRYPT ターゲット ----
     this.engine.rect(0, 145, W, 56, p.dark);
@@ -258,7 +269,6 @@ export class Game extends Scene {
       const c = this.cells[i];
       const isFlash = this.flash && this.flash.idx === i;
 
-      // 背景
       let bgColor = p.dark;
       let textColor = p.fg;
       let borderColor = p.dim;
@@ -275,31 +285,47 @@ export class Game extends Scene {
         }
       }
 
-      // セル塗り
       this.engine.rect(c.x, c.y, c.w, c.h, bgColor);
-      // 枠
       this.engine.stroke(c.x, c.y, c.w, c.h, borderColor, 1);
-      // コード文字
       this.engine.text(c.code, c.x + c.w / 2, c.y + c.h / 2 - 12, 22, textColor, 'center');
     }
 
-    // ---- ゲームオーバーオーバーレイ ----
+    // ---- "+NNN" 得点フラッシュ（グリッド上部に表示）----
+    if (this.gainFlash) {
+      const alpha = Math.min(1, this.gainFlash.t / FLASH_GAIN_DUR * 2);
+      ctx.globalAlpha = alpha;
+      this.engine.text(this.gainFlash.text, W / 2, GRID_Y - 30, 28, p.warn, 'center');
+      ctx.globalAlpha = 1.0;
+    }
+
+    // ---- リザルトオーバーレイ ----
     if (this.over) {
       // 半透明の暗幕
-      ctx.globalAlpha = 0.82;
+      ctx.globalAlpha = 0.88;
       this.engine.rect(0, 0, W, H, p.bg);
       ctx.globalAlpha = 1.0;
 
       // ボックス
-      const bx = 24, by = H / 2 - 110, bw = W - 48, bh = 220;
+      const bx = 24, by = H / 2 - 140, bw = W - 48, bh = 280;
       this.engine.rect(bx, by, bw, bh, p.dark);
-      this.engine.stroke(bx, by, bw, bh, p.bad, 2);
+      this.engine.stroke(bx, by, bw, bh, p.mid, 2);
 
-      this.engine.text('TIME OUT', W / 2, by + 18, 30, p.bad, 'center');
-      this.engine.text('SCORE', W / 2, by + 64, 14, p.dim, 'center');
-      this.engine.text(String(this.score), W / 2, by + 82, 36, p.fg, 'center');
-      this.engine.text('HI ' + this.high, W / 2, by + 128, 16, p.mid, 'center');
-      this.engine.text('TAP TO RETRY', W / 2, by + 164, 15, p.mid, 'center');
+      this.engine.text('MISSION COMPLETE', W / 2, by + 18, 20, p.mid, 'center');
+      this.engine.text('TOTAL SCORE', W / 2, by + 60, 14, p.dim, 'center');
+      this.engine.text(String(this.score), W / 2, by + 78, 48, p.hi, 'center');
+
+      // ハイスコア表示
+      if (this.score >= this.high && this.score > 0) {
+        this.engine.text('NEW RECORD!', W / 2, by + 140, 18, p.warn, 'center');
+      } else {
+        this.engine.text('HI  ' + this.high, W / 2, by + 140, 16, p.dim, 'center');
+      }
+
+      // スコア解説（最高・達成ラウンド）
+      this.engine.text(TOTAL_ROUNDS + ' ROUNDS CLEARED', W / 2, by + 170, 14, p.fg, 'center');
+      this.engine.text('MAX ' + (SCORE_MAX * TOTAL_ROUNDS) + ' PTS POSSIBLE', W / 2, by + 192, 12, p.dim, 'center');
+
+      this.engine.text('TAP TO RETRY', W / 2, by + 236, 15, p.mid, 'center');
     }
   }
 }

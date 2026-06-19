@@ -33,6 +33,10 @@ export class Engine {
     this.scale = 1;
     this.offsetX = 0;
     this.offsetY = 0;
+    // 全ゲーム共通の「メニューへ戻る」ボタン（左上）。各ゲームは左上HUDを x>=52 から描く。
+    this.backBtn = { x: 6, y: 8, w: 42, h: 36 };
+    // 押しっぱなし状態（LANDER等の連続操作用）。論理座標。update内で毎フレーム参照できる。
+    this.pointer = { down: false, x: 0, y: 0 };
     this._resize = this._resize.bind(this);
     this._loop = this._loop.bind(this);
     this._setupInput();
@@ -81,6 +85,7 @@ export class Engine {
     if (this.scene) {
       this.scene.update(dt);
       this.scene.render(ctx);
+      if (!this.scene.isRoot) this._drawBack(); // メニュー以外はBACKボタンを上に重ねる
     }
     requestAnimationFrame(this._loop);
   }
@@ -89,6 +94,12 @@ export class Engine {
   _setupInput() {
     const dispatch = (action, data) => {
       this.audio.unlock();
+      // BACKボタンのタップはゲームに渡さず、メニューへ戻す（メニュー画面では無効）
+      if (action === 'tap' && data && this.scene && !this.scene.isRoot && this._inBack(data)) {
+        this.audio.select();
+        if (this.toMenu) this.toMenu();
+        return;
+      }
       if (this.scene && this.scene.onInput) this.scene.onInput(action, data);
     };
 
@@ -113,8 +124,15 @@ export class Engine {
         y: (clientY - r.top) / this.scale,
       };
     };
-    const onStart = (x, y) => { sx = x; sy = y; st = performance.now(); moved = false; };
+    const setPointer = (clientX, clientY, isDown) => {
+      const lp = toLogical(clientX, clientY);
+      this.pointer.x = lp.x; this.pointer.y = lp.y;
+      if (isDown != null) this.pointer.down = isDown;
+    };
+    const onStart = (x, y) => { sx = x; sy = y; st = performance.now(); moved = false; setPointer(x, y, true); };
+    const onMove = (x, y) => { setPointer(x, y, null); };
     const onEnd = (x, y) => {
+      setPointer(x, y, false);
       const dx = x - sx, dy = y - sy;
       const adx = Math.abs(dx), ady = Math.abs(dy);
       if (adx < SWIPE && ady < SWIPE) {
@@ -131,6 +149,10 @@ export class Engine {
       const t = e.changedTouches[0]; onStart(t.clientX, t.clientY);
       e.preventDefault();
     }, { passive: false });
+    c.addEventListener('touchmove', (e) => {
+      const t = e.changedTouches[0]; onMove(t.clientX, t.clientY);
+      e.preventDefault();
+    }, { passive: false });
     c.addEventListener('touchend', (e) => {
       const t = e.changedTouches[0]; onEnd(t.clientX, t.clientY);
       e.preventDefault();
@@ -139,7 +161,23 @@ export class Engine {
     // マウス（PC確認用）
     let down = false;
     c.addEventListener('mousedown', (e) => { down = true; onStart(e.clientX, e.clientY); });
+    c.addEventListener('mousemove', (e) => { if (down) onMove(e.clientX, e.clientY); });
     c.addEventListener('mouseup', (e) => { if (down) onEnd(e.clientX, e.clientY); down = false; });
+  }
+
+  // タップ座標がBACKボタン内か
+  _inBack(data) {
+    const b = this.backBtn;
+    return data.x >= b.x && data.x <= b.x + b.w && data.y >= b.y && data.y <= b.y + b.h;
+  }
+
+  // BACKボタン描画（左上・全ゲーム共通）
+  _drawBack() {
+    const p = P();
+    const b = this.backBtn;
+    this.rect(b.x, b.y, b.w, b.h, p.dark);
+    this.stroke(b.x, b.y, b.w, b.h, p.dim, 2);
+    this.text('‹', b.x + b.w / 2, b.y + 4, 26, p.fg, 'center');
   }
 
   // ---- 描画ヘルパー（各ゲームから利用）----
