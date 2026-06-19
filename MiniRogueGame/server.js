@@ -21,7 +21,10 @@ http.createServer((req, res) => {
   if (!filePath.startsWith(ROOT)) { res.writeHead(403); return res.end('forbidden'); }
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); return res.end('not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream',
+      'Cache-Control': 'no-store, no-cache, must-revalidate', // 開発中はキャッシュさせない（モジュール更新を確実に反映）
+    });
     res.end(data);
   });
 }).listen(PORT, () => console.log('MICRO ARCADE serving on http://localhost:' + PORT));

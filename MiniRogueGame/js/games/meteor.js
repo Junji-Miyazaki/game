@@ -1,6 +1,6 @@
 // METEOR : ミサイルコマンド風迎撃ゲーム
 // 隕石をタップで迎撃ミサイルを発射し、爆風で破壊して街を守れ。
-// 全都市が破壊されたらゲームオーバー。波が進むほど隕石が増える。
+// 全都市が破壊されたらゲームオーバー。時間が経つほど隕石が増え続ける。
 import { Scene, W, H } from '../core/engine.js';
 import { P } from '../core/palette.js';
 
@@ -12,18 +12,34 @@ export const meta = {
 };
 
 // ---- 定数 ----
-const CITY_COUNT   = 5;           // 街の数
-const CITY_W       = 28;          // 街ブロック幅
-const CITY_H       = 18;          // 街ブロック高さ
-const GROUND_Y     = H - 40;      // 地面ライン Y座標
-const BATTERY_X    = W / 2;       // 発射台 X
-const BATTERY_Y    = GROUND_Y - 4;// 発射台 Y（地面直上）
-const MISSILE_SPD  = 340;         // ミサイル速度 px/s
-const BLAST_GROW   = 80;          // 爆発最大半径
-const BLAST_RATE   = 110;         // 爆発拡大速度 px/s
-const BLAST_SHRINK = 60;          // 爆発縮小速度 px/s
-const MAX_MISSILES = 4;           // 同時発射可能数
-const METEOR_SCORE = 10;          // 隕石1機撃墜スコア
+const CITY_COUNT    = 5;           // 街の数
+const CITY_W        = 28;          // 街ブロック幅
+const CITY_H        = 18;          // 街ブロック高さ
+const GROUND_Y      = H - 40;      // 地面ライン Y座標
+const BATTERY_X     = W / 2;       // 発射台 X
+const BATTERY_Y     = GROUND_Y - 4;// 発射台 Y（地面直上）
+const MISSILE_SPD   = 160;         // ミサイル速度 px/s（ゆっくり）
+const BLAST_GROW    = 40;          // 通常爆発最大半径（小さめ）
+const BLAST_GROW_BIG= 110;         // ビッグ爆発最大半径
+const BLAST_RATE    = 70;          // 爆発拡大速度 px/s
+const BLAST_SHRINK  = 45;          // 爆発縮小速度 px/s
+const MAX_MISSILES  = 5;           // 同時発射可能数
+const METEOR_SCORE  = 10;          // 隕石1機撃墜スコア
+
+// ビッグブラスト（特殊爆発）の初期残弾数と補充間隔
+const BIG_CHARGES_MAX = 3;         // 最大残弾数
+const BIG_RECHARGE_SEC = 12;       // 1発補充に必要な秒数
+
+// 隕石スポーン間隔の初期値と最小値（連続スポーン・徐々に短縮）
+const SPAWN_DELAY_START = 3.2;     // ゲーム開始時のスポーン間隔（秒）
+const SPAWN_DELAY_MIN   = 0.55;    // 最も速くなった時のスポーン間隔（秒）
+const SPAWN_RAMP_TIME   = 180;     // この秒数かけてSPAWN_DELAY_MINまで短縮
+// 隕石の速度レンジ（ゆっくり〜やや速い）
+const METEOR_SPD_MIN    = 28;      // px/s
+const METEOR_SPD_MAX    = 70;      // px/s（時間とともに少し上昇）
+// 隕石サイズレンジ
+const METEOR_R_MIN      = 5;       // 最小半径
+const METEOR_R_MAX      = 18;      // 最大半径
 
 // ---- 都市X座標を均等に配置 ----
 const CITY_SPACING = (W - CITY_W * CITY_COUNT) / (CITY_COUNT + 1);
@@ -31,50 +47,51 @@ const CITY_XS = Array.from({ length: CITY_COUNT }, (_, i) =>
   Math.floor(CITY_SPACING + i * (CITY_W + CITY_SPACING))
 );
 
+// ---- ヘルパー：数値クランプ ----
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
 export class Game extends Scene {
   enter() {
-    this.score    = 0;
-    this.high     = this.engine.storage.getHigh(meta.id);
-    this.wave     = 1;
-    this.dead     = false;
+    this.score      = 0;
+    this.high       = this.engine.storage.getHigh(meta.id);
+    this.dead       = false;
+
+    // 経過時間（スポーンレート・速度計算に使う）
+    this._elapsed   = 0;
 
     // 都市の生存状態 [true=生存, false=破壊]
-    this.cities   = Array(CITY_COUNT).fill(true);
+    this.cities     = Array(CITY_COUNT).fill(true);
 
-    // 隕石リスト { x, y, tx, ty, spd, trail: [{x,y},...] }
-    this.meteors  = [];
-    // 発射済みミサイル { x, y, tx, ty, vx, vy, done }
-    this.missiles = [];
-    // 爆発リスト { x, y, r, growing }
-    this.blasts   = [];
+    // 隕石リスト { x, y, tx, ty, spd, r, trail: [{x,y},...] }
+    this.meteors    = [];
+    // 発射済みミサイル { x, y, tx, ty, vx, vy, done, big }
+    this.missiles   = [];
+    // 爆発リスト { x, y, r, maxR, growing }
+    this.blasts     = [];
     // 爆発エフェクト（被弾都市） { x, y, r, t }
     this.cityBlasts = [];
 
-    // 波ごとの隕石スポーンタイマ
-    this._spawnTimer  = 0;
-    this._spawnDelay  = this._calcSpawnDelay();
-    this._meteorCount = 0; // 今の波で出した隕石数
-    this._waveQuota   = this._calcWaveQuota(); // 今の波の合計隕石数
+    // スポーンタイマ
+    this._spawnTimer = 0;
 
-    // 波クリア後の休憩タイマ
-    this._waveBreak   = 0;
-    this._waveActive  = true;
+    // ビッグブラスト残弾 & 補充タイマ
+    this._bigCharges  = BIG_CHARGES_MAX;
+    this._bigRecharge = 0; // 0〜BIG_RECHARGE_SEC で1発補充
   }
 
-  // 波が進むほどスポーン間隔が短くなる
-  _calcSpawnDelay() {
-    return Math.max(0.5, 2.2 - (this.wave - 1) * 0.18);
+  // 現在の経過時間からスポーン間隔を計算
+  _spawnDelay() {
+    const t = clamp(this._elapsed, 0, SPAWN_RAMP_TIME);
+    const frac = t / SPAWN_RAMP_TIME;
+    return SPAWN_DELAY_START - (SPAWN_DELAY_START - SPAWN_DELAY_MIN) * frac;
   }
 
-  // 波ごとの隕石総数
-  _calcWaveQuota() {
-    return 4 + (this.wave - 1) * 2;
-  }
-
-  // 隕石の落下速度
+  // 隕石速度（時間とともに少し速くなる）
   _calcMeteorSpd() {
-    const base = 50 + (this.wave - 1) * 12;
-    return base + Math.random() * 30;
+    const t = clamp(this._elapsed, 0, SPAWN_RAMP_TIME);
+    const frac = t / SPAWN_RAMP_TIME;
+    const spdMax = METEOR_SPD_MAX * (0.5 + 0.5 * frac); // 徐々に上限まで上昇
+    return METEOR_SPD_MIN + Math.random() * (spdMax - METEOR_SPD_MIN);
   }
 
   // ---- onInput ----
@@ -87,15 +104,31 @@ export class Game extends Scene {
     if (action === 'back') { this.engine.toMenu(); return; }
 
     if (action === 'tap' && data) {
-      this._fireMissile(data.x, data.y);
+      // 長押しではなくタップ1回につき通常ミサイル1発
+      this._fireMissile(data.x, data.y, false);
+    }
+    if (action === 'confirm') {
+      // ENTERキー/ゲームパッドconfirm = ビッグブラスト（中心狙い）
+      // タッチ環境ではHUD上のビッグブラストボタン相当は実装せず、
+      // キーボードconfirmのみとする（モバイルはダブルタップでは区別不可のため）
+      this._fireMissile(W / 2, H / 2, true);
     }
   }
 
-  // ミサイル発射（発射台から指定座標へ）
-  _fireMissile(tx, ty) {
-    // 地面より下へは撃てない。BACKボタン領域も除外。
+  // ミサイル発射
+  // big=true のときビッグブラスト（残弾消費）、false のとき通常
+  _fireMissile(tx, ty, big) {
+    // 地面より下へは撃てない
     if (ty >= GROUND_Y) return;
     if (this.missiles.filter(m => !m.done).length >= MAX_MISSILES) return;
+
+    if (big) {
+      if (this._bigCharges <= 0) {
+        // 残弾なし：効果音なし（何もしない）
+        return;
+      }
+      this._bigCharges--;
+    }
 
     const dx = tx - BATTERY_X;
     const dy = ty - BATTERY_Y;
@@ -108,6 +141,7 @@ export class Game extends Scene {
       vx: (dx / dist) * MISSILE_SPD,
       vy: (dy / dist) * MISSILE_SPD,
       done: false,
+      big: !!big,
     });
     this.engine.audio.move();
   }
@@ -116,39 +150,40 @@ export class Game extends Scene {
   update(dt) {
     if (this.dead) return;
 
-    // 波休憩中
-    if (this._waveBreak > 0) {
-      this._waveBreak -= dt;
-      if (this._waveBreak <= 0) {
-        this._waveBreak = 0;
-        this.wave++;
-        this._spawnTimer  = 0;
-        this._spawnDelay  = this._calcSpawnDelay();
-        this._meteorCount = 0;
-        this._waveQuota   = this._calcWaveQuota();
-        this._waveActive  = true;
+    // 経過時間更新
+    this._elapsed += dt;
+
+    // ビッグブラスト補充（満タン未満のとき）
+    if (this._bigCharges < BIG_CHARGES_MAX) {
+      this._bigRecharge += dt;
+      if (this._bigRecharge >= BIG_RECHARGE_SEC) {
+        this._bigRecharge -= BIG_RECHARGE_SEC;
+        this._bigCharges++;
       }
-      // 残存中の隕石・ミサイル・爆発は動かし続ける
+    } else {
+      // 満タンのときはタイマをリセットしておく
+      this._bigRecharge = 0;
     }
 
-    // 隕石スポーン
-    if (this._waveActive && this._meteorCount < this._waveQuota) {
-      this._spawnTimer += dt;
-      if (this._spawnTimer >= this._spawnDelay) {
-        this._spawnTimer = 0;
-        this._spawnMeteor();
-        this._meteorCount++;
-      }
+    // 隕石スポーン（連続・徐々に増加）
+    this._spawnTimer += dt;
+    const delay = this._spawnDelay();
+    if (this._spawnTimer >= delay) {
+      this._spawnTimer -= delay;
+      // マイナスにはならないようにクランプ
+      if (this._spawnTimer < 0) this._spawnTimer = 0;
+      this._spawnMeteor();
     }
 
     // 隕石移動 + 地面到達判定
     for (let i = this.meteors.length - 1; i >= 0; i--) {
       const m = this.meteors[i];
+      if (!m || m.x == null) { this.meteors.splice(i, 1); continue; } // 防御
       const dx = m.tx - m.x;
       const dy = m.ty - m.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < m.spd * dt) {
+      if (dist < m.spd * dt + 1) {
         // 地面到達 → 最寄り都市を破壊
         this._impactCity(m.tx, m.ty);
         this.meteors.splice(i, 1);
@@ -158,9 +193,9 @@ export class Game extends Scene {
       const nx = m.x + dx * ratio * dt;
       const ny = m.y + dy * ratio * dt;
 
-      // 軌跡を更新（最大6点）
+      // 軌跡を更新（最大5点）
       m.trail.push({ x: m.x, y: m.y });
-      if (m.trail.length > 6) m.trail.shift();
+      if (m.trail.length > 5) m.trail.shift();
       m.x = nx;
       m.y = ny;
     }
@@ -168,6 +203,7 @@ export class Game extends Scene {
     // ミサイル移動
     for (let i = this.missiles.length - 1; i >= 0; i--) {
       const ms = this.missiles[i];
+      if (!ms) { this.missiles.splice(i, 1); continue; } // 防御
       if (ms.done) { this.missiles.splice(i, 1); continue; }
 
       ms.x += ms.vx * dt;
@@ -176,8 +212,8 @@ export class Game extends Scene {
       // 目標に到達したら爆発
       const dx = ms.tx - ms.x;
       const dy = ms.ty - ms.y;
-      if (Math.hypot(dx, dy) < MISSILE_SPD * dt * 1.5) {
-        this._spawnBlast(ms.tx, ms.ty);
+      if (Math.hypot(dx, dy) < MISSILE_SPD * dt * 1.5 + 4) {
+        this._spawnBlast(ms.tx, ms.ty, ms.big);
         ms.done = true;
       }
     }
@@ -185,9 +221,10 @@ export class Game extends Scene {
     // 爆発更新
     for (let i = this.blasts.length - 1; i >= 0; i--) {
       const b = this.blasts[i];
+      if (!b) { this.blasts.splice(i, 1); continue; } // 防御
       if (b.growing) {
         b.r += BLAST_RATE * dt;
-        if (b.r >= BLAST_GROW) { b.r = BLAST_GROW; b.growing = false; }
+        if (b.r >= b.maxR) { b.r = b.maxR; b.growing = false; }
       } else {
         b.r -= BLAST_SHRINK * dt;
         if (b.r <= 0) { this.blasts.splice(i, 1); continue; }
@@ -195,7 +232,8 @@ export class Game extends Scene {
       // 爆発半径内の隕石を撃墜
       for (let j = this.meteors.length - 1; j >= 0; j--) {
         const m = this.meteors[j];
-        if (Math.hypot(m.x - b.x, m.y - b.y) <= b.r) {
+        if (!m) continue; // 防御
+        if (Math.hypot(m.x - b.x, m.y - b.y) <= b.r + m.r) {
           this.meteors.splice(j, 1);
           this.score += METEOR_SCORE;
           this.engine.audio.good();
@@ -206,19 +244,10 @@ export class Game extends Scene {
     // 都市爆発エフェクト更新
     for (let i = this.cityBlasts.length - 1; i >= 0; i--) {
       const cb = this.cityBlasts[i];
+      if (!cb) { this.cityBlasts.splice(i, 1); continue; } // 防御
       cb.t -= dt;
       cb.r += 60 * dt;
       if (cb.t <= 0) this.cityBlasts.splice(i, 1);
-    }
-
-    // 波クリア判定
-    if (this._waveActive &&
-        this._meteorCount >= this._waveQuota &&
-        this.meteors.length === 0 &&
-        this.blasts.length === 0) {
-      this._waveActive = false;
-      this._waveBreak  = 1.8; // 次の波まで休憩
-      this.engine.audio.sequence();
     }
 
     // ゲームオーバー判定（全都市破壊）
@@ -229,33 +258,45 @@ export class Game extends Scene {
     }
   }
 
-  // 隕石をランダムにスポーン（上端から画面内の都市/地面を狙う）
+  // 隕石をランダムにスポーン（上端から都市/地面を狙う）
   _spawnMeteor() {
-    const x = 20 + Math.random() * (W - 40);
+    const x = 18 + Math.random() * (W - 36);
 
-    // 生き残っている都市をターゲットにする（70%の確率）、残り30%はランダム
+    // 生き残っている都市をターゲットにする（70%の確率）、残り30%はランダム地点
     const alive = this.cities.map((c, i) => c ? i : -1).filter(i => i >= 0);
     let tx;
     if (alive.length > 0 && Math.random() < 0.7) {
       const idx = alive[Math.floor(Math.random() * alive.length)];
-      tx = CITY_XS[idx] + CITY_W / 2 + (Math.random() * 20 - 10);
+      tx = CITY_XS[idx] + CITY_W / 2 + (Math.random() * 24 - 12);
     } else {
-      tx = 20 + Math.random() * (W - 40);
+      tx = 18 + Math.random() * (W - 36);
     }
     const ty = GROUND_Y;
 
+    // サイズをランダムに（小さめが多め）
+    const r = METEOR_R_MIN + Math.random() * Math.random() * (METEOR_R_MAX - METEOR_R_MIN);
+
     this.meteors.push({
-      x, y: -8,
+      x, y: -METEOR_R_MAX - 4,
       tx, ty,
       spd: this._calcMeteorSpd(),
+      r: Math.max(METEOR_R_MIN, r),
       trail: [],
     });
   }
 
-  // 爆発スポーン
-  _spawnBlast(x, y) {
-    this.blasts.push({ x, y, r: 4, growing: true });
+  // 爆発スポーン（big=trueでビッグ爆発）
+  _spawnBlast(x, y, big) {
+    const maxR = big ? BLAST_GROW_BIG : BLAST_GROW;
+    this.blasts.push({ x, y, r: 4, maxR, growing: true, big: !!big });
     this.engine.audio.pick();
+    if (big) {
+      // ビッグブラストは派手な音
+      this.engine.audio.sequence([
+        { freq: 330, dur: 0.06, type: 'square', vol: 0.18 },
+        { freq: 220, dur: 0.12, type: 'sawtooth', vol: 0.16 },
+      ]);
+    }
   }
 
   // 地面到達した隕石が最寄りの生存都市を破壊
@@ -267,7 +308,7 @@ export class Game extends Scene {
       const d = Math.abs(cx - ix);
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
-    if (bestIdx >= 0 && bestDist < CITY_W * 2) {
+    if (bestIdx >= 0 && bestDist < CITY_W * 2.5) {
       this.cities[bestIdx] = false;
       this.engine.audio.bad();
       this.cityBlasts.push({
@@ -283,14 +324,19 @@ export class Game extends Scene {
     const p = P();
 
     // ---- HUD（左上はBACKボタンがx:6..48を占有するためx>=52から描く） ----
-    this.engine.text('METEOR', 52, 10, 18, p.fg, 'left');
-    this.engine.text('WAVE ' + this.wave, W / 2, 10, 16, p.mid, 'center');
-    this.engine.text('SCORE ' + this.score, W - 12, 10, 16, p.fg, 'right');
-    this.engine.text('HI ' + this.high, W - 12, 32, 13, p.dim, 'right');
+    // 経過時間からレベル番号を表示（参考値）
+    const lvl = Math.floor(this._elapsed / 30) + 1;
+    this.engine.text('LV ' + lvl, 52, 8, 15, p.mid, 'left');
+    this.engine.text('SCORE ' + this.score, W - 12, 8, 15, p.fg, 'right');
+    this.engine.text('BEST  ' + this.high, W - 12, 28, 12, p.dim, 'right');
 
-    // 都市数インジケータ（生き残り都市数を数値で表示）
+    // 都市数インジケータ
     const aliveCount = this.cities.filter(Boolean).length;
-    this.engine.text('CITIES ' + aliveCount, 52, 32, 13, p.warn, 'left');
+    this.engine.text('CITY ' + aliveCount, 52, 28, 12, p.warn, 'left');
+
+    // ビッグブラスト残弾 HUD（左上BACKボタンより下、中央寄り）
+    // ラベル + 残弾アイコン + 補充ゲージ
+    this._drawBigChargeHUD(ctx, p);
 
     // ---- 星空（固定の装飾） ----
     this._drawStarfield(ctx, p);
@@ -309,10 +355,11 @@ export class Game extends Scene {
 
     // ---- 都市爆発エフェクト ----
     for (const cb of this.cityBlasts) {
+      if (!cb) continue;
       ctx.save();
-      ctx.globalAlpha = Math.max(0, cb.t / 0.7) * 0.9;
+      ctx.globalAlpha = clamp(cb.t / 0.7, 0, 1) * 0.9;
       ctx.beginPath();
-      ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI * 2);
+      ctx.arc(cb.x, cb.y, Math.max(1, cb.r), 0, Math.PI * 2);
       ctx.fillStyle = p.bad;
       ctx.fill();
       ctx.restore();
@@ -320,75 +367,85 @@ export class Game extends Scene {
 
     // ---- ミサイル ----
     for (const ms of this.missiles) {
-      if (ms.done) continue;
+      if (!ms || ms.done) continue;
       ctx.save();
-      ctx.strokeStyle = p.warn;
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = ms.big ? p.warn : p.fg;
+      ctx.lineWidth = ms.big ? 2.5 : 1.5;
+      ctx.setLineDash(ms.big ? [6, 3] : []);
       ctx.beginPath();
       ctx.moveTo(BATTERY_X, BATTERY_Y);
       ctx.lineTo(ms.x, ms.y);
       ctx.stroke();
+      ctx.setLineDash([]);
       // 先端の輝点
       ctx.beginPath();
-      ctx.arc(ms.x, ms.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = p.hi;
+      ctx.arc(ms.x, ms.y, ms.big ? 4 : 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = ms.big ? p.warn : p.hi;
       ctx.fill();
       ctx.restore();
     }
 
-    // ---- 隕石 ----
+    // ---- 隕石（ワイヤーフレーム＋軌跡） ----
     for (const m of this.meteors) {
-      // 軌跡
+      if (!m) continue;
+      // 軌跡（フェードアウト）
       for (let t = 0; t < m.trail.length; t++) {
-        const alpha = (t + 1) / (m.trail.length + 1) * 0.6;
+        const pt = m.trail[t];
+        if (!pt) continue;
+        const alpha = ((t + 1) / (m.trail.length + 1)) * 0.45;
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.beginPath();
-        ctx.arc(m.trail[t].x, m.trail[t].y, 2, 0, Math.PI * 2);
-        ctx.fillStyle = p.bad;
-        ctx.fill();
+        ctx.arc(pt.x, pt.y, Math.max(1, m.r * 0.5), 0, Math.PI * 2);
+        ctx.strokeStyle = p.bad;
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.restore();
       }
-      // 本体
+      // 本体：ワイヤーフレーム円（アウトラインのみ）
       ctx.save();
       ctx.beginPath();
-      ctx.arc(m.x, m.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = p.bad;
-      ctx.fill();
+      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+      ctx.strokeStyle = p.bad;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // 内側に小さいハイライト点
       ctx.beginPath();
-      ctx.arc(m.x, m.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = p.hi;
+      ctx.arc(m.x - m.r * 0.25, m.y - m.r * 0.25, Math.max(1, m.r * 0.22), 0, Math.PI * 2);
+      ctx.fillStyle = p.warn;
+      ctx.globalAlpha = 0.7;
       ctx.fill();
       ctx.restore();
-      // グリフ
-      this.engine.text('*', m.x, m.y - 10, 12, p.warn, 'center');
     }
 
     // ---- 爆発 ----
     for (const b of this.blasts) {
-      const alpha = b.growing ? 0.85 : (b.r / BLAST_GROW) * 0.7;
+      if (!b) continue;
+      const alpha = b.growing ? 0.85 : clamp(b.r / b.maxR, 0, 1) * 0.7;
       ctx.save();
-      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.globalAlpha = clamp(alpha, 0, 1);
       // 外リング
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-      ctx.strokeStyle = p.warn;
-      ctx.lineWidth = b.growing ? 3 : 2;
+      ctx.arc(b.x, b.y, Math.max(1, b.r), 0, Math.PI * 2);
+      ctx.strokeStyle = b.big ? p.warn : p.mid;
+      ctx.lineWidth = b.growing ? (b.big ? 3.5 : 2.5) : (b.big ? 2.5 : 1.5);
       ctx.stroke();
+      // ビッグブラストは二重リング
+      if (b.big && b.r > 10) {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, Math.max(1, b.r * 0.65), 0, Math.PI * 2);
+        ctx.strokeStyle = p.hi;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = clamp(alpha * 0.5, 0, 1);
+        ctx.stroke();
+      }
       // 内側の淡い塗り
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * 0.7, 0, Math.PI * 2);
-      ctx.fillStyle = p.mid;
-      ctx.globalAlpha = Math.max(0, alpha * 0.25);
+      ctx.arc(b.x, b.y, Math.max(1, b.r * 0.55), 0, Math.PI * 2);
+      ctx.fillStyle = b.big ? p.warn : p.mid;
+      ctx.globalAlpha = clamp(alpha * 0.18, 0, 1);
       ctx.fill();
       ctx.restore();
-    }
-
-    // ---- 波クリア中の表示 ----
-    if (!this._waveActive && !this.dead && this._waveBreak > 0) {
-      this.engine.rect(0, H / 2 - 40, W, 80, p.dark);
-      this.engine.text('WAVE ' + (this.wave) + ' CLEAR!', W / 2, H / 2 - 28, 24, p.hi, 'center');
-      this.engine.text('NEXT WAVE IN...', W / 2, H / 2 + 4, 16, p.mid, 'center');
     }
 
     // ---- ゲームオーバーオーバーレイ ----
@@ -402,11 +459,45 @@ export class Game extends Scene {
     }
   }
 
-  // 星空（シードなし、固定の擬似乱数）
+  // ビッグブラスト残弾 HUD
+  _drawBigChargeHUD(ctx, p) {
+    // 配置：画面中央下寄り（地面の上、HUDエリア）
+    // x=52〜W-12 のうち中央付近に収める
+    const baseX = W / 2 - 40;
+    const baseY = 52;
+    this.engine.text('BIG:', baseX, baseY, 13, p.dim, 'left');
+    // 残弾アイコン（●=あり、○=なし）
+    for (let i = 0; i < BIG_CHARGES_MAX; i++) {
+      const cx = baseX + 44 + i * 18;
+      const cy = baseY + 6;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      if (i < this._bigCharges) {
+        ctx.fillStyle = p.warn;
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = p.dim;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // 補充ゲージ（満タン未満のときのみ表示）
+    if (this._bigCharges < BIG_CHARGES_MAX) {
+      const gaugeX = baseX;
+      const gaugeY = baseY + 18;
+      const gaugeW = 96;
+      const frac = clamp(this._bigRecharge / BIG_RECHARGE_SEC, 0, 1);
+      this.engine.rect(gaugeX, gaugeY, gaugeW, 4, p.dark);
+      this.engine.rect(gaugeX, gaugeY, Math.floor(gaugeW * frac), 4, p.warn);
+    }
+  }
+
+  // 星空（シードなし、固定の擬似乱数的配置）
   _drawStarfield(ctx, p) {
     ctx.save();
     ctx.fillStyle = p.dim;
-    // 再現可能な星座（固定シード的な配置）
     const stars = [
       [30,80],[90,55],[150,100],[220,60],[280,90],[340,70],
       [60,140],[130,170],[200,130],[260,155],[320,120],

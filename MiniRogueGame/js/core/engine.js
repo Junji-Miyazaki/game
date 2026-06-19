@@ -83,11 +83,16 @@ export class Engine {
     ctx.fillStyle = P().bg;
     ctx.fillRect(0, 0, W, H);
     if (this.scene) {
-      this.scene.update(dt);
-      this.scene.render(ctx);
-      if (!this.scene.isRoot) this._drawBack(); // メニュー以外はBACKボタンを上に重ねる
+      // 1ゲームの例外でループ全体（＝アプリ）が停止しないよう保護する
+      try {
+        this.scene.update(dt);
+        this.scene.render(ctx);
+        if (!this.scene.isRoot) this._drawBack(); // メニュー以外はBACKボタンを上に重ねる
+      } catch (e) {
+        console.error('[scene error]', e);
+      }
     }
-    requestAnimationFrame(this._loop);
+    requestAnimationFrame(this._loop); // 例外があっても次フレームは必ず予約する
   }
 
   // ---- 入力 ----
