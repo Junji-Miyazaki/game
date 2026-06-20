@@ -1,6 +1,7 @@
 // game.js — engine, combat, leveling, godspeed, input, HUD, save.
 import { MONSTERS, AREAS, rollDrop, spawnTableFor } from './content.js';
 import { drawShadow, drawFighter, drawMonster, drawLoot } from './sprites.js';
+import { SFX } from './sfx.js';
 
 const TW = 64, TH = 32;                 // iso tile width/height
 const SAVE_KEY = 'shinsoku_save_v1';
@@ -47,6 +48,7 @@ export class Game {
     this.areaId = 'dungeon'; this.area = AREAS.dungeon; this.R = this.area.radius;
     this.maxMon = 8; this.exit = null; this.boss = null;
     this.pview = 'front';  // current player view (front/back/side)
+    this.ambient = [];     // ambient environment motes (screen-space)
     this.initPlayer();
     this.bindUI();
     this.resize();
@@ -98,6 +100,8 @@ export class Game {
 
   // ---------------- lifecycle ----------------
   start() {
+    SFX.init();   // unlock audio on the start-button gesture
+    const mb = document.getElementById('btnMute'); if (mb) mb.textContent = SFX.isMuted() ? '🔇' : '🔊';
     this.load();
     this.enterArea(this.p.areaId || 'dungeon');
     this.running = true;
@@ -120,8 +124,49 @@ export class Game {
     this.exit = { wx: -er / Math.SQRT2, wy: -er / Math.SQRT2, next: area.next };
     this.refillSpawns(true);
     if (area.boss) this.spawnBoss(area.boss);
+    this.initAmbient(area.theme);
+    SFX.enterArea(area.theme); SFX.ambient(area.theme);
     this.float(this.W / 2, this.H / 2 - 50, area.name, '#e8c870', 26);
     this.updateHUD(); this.save();
+  }
+
+  // ---------------- ambient environment motes ----------------
+  initAmbient(theme) {
+    const n = theme === 'dungeon' ? 34 : theme === 'forest' ? 42 : 46;
+    this.ambient = [];
+    for (let i = 0; i < n; i++) this.ambient.push(this.makeMote(theme, true));
+  }
+  makeMote(theme, anywhere) {
+    const W = this.W, H = this.H, R = Math.random;
+    const p = { x: R() * W, phase: R() * 6.28, theme };
+    if (theme === 'dungeon') {
+      p.y = anywhere ? R() * H : H + 10; p.vx = (R() - .5) * 6; p.vy = -8 - R() * 12;
+      p.r = .8 + R() * 1.4; p.col = R() < .3 ? '255,150,60' : '150,140,120'; p.blink = .4 + R() * .4;
+    } else if (theme === 'grassland') {
+      p.y = anywhere ? R() * H : R() * H; p.vx = (R() - .5) * 16; p.vy = -4 - R() * 8;
+      p.r = 1 + R() * 1.6; p.col = R() < .5 ? '200,255,120' : '255,240,150'; p.blink = .6 + R() * .4;
+    } else {
+      p.y = anywhere ? R() * H : -10; p.vx = (R() - .5) * 10; p.vy = 8 + R() * 16;
+      p.r = 1 + R() * 2; p.col = R() < .5 ? '120,170,90' : '150,120,70'; p.blink = .55;
+    }
+    return p;
+  }
+  updateAmbient(dt) {
+    const W = this.W, H = this.H;
+    for (const p of this.ambient) {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.phase += dt * 2;
+      if (p.x < -12) p.x = W + 12; else if (p.x > W + 12) p.x = -12;
+      if (p.y < -12) p.y = H + 12; else if (p.y > H + 12) p.y = -12;
+    }
+  }
+  drawAmbient() {
+    const ctx = this.ctx; ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const p of this.ambient) {
+      const a = (0.28 + 0.5 * Math.abs(Math.sin(p.phase))) * p.blink;
+      ctx.fillStyle = `rgba(${p.col},${a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill();
+    }
+    ctx.restore();
   }
 
   spawnBoss(b) {
@@ -229,6 +274,7 @@ export class Game {
     this.parts = this.parts.filter(pt => pt.t < pt.life);
     for (const b of this.blood) b.t += dt;
     this.blood = this.blood.filter(b => b.t < b.life);
+    this.updateAmbient(dt);
 
     // determine sprite view (front/back/side) + facing
     {
@@ -285,6 +331,7 @@ export class Game {
     const dmg = Math.max(1, Math.round(this.atkEff() * variance - m.defense));
     m.hp -= dmg; m.hurt = 1; m.aggro = true;   // retaliate
     const crit = variance > 1.08;
+    if (crit) SFX.crit(); else SFX.hit();
     // at 神速 the hit rate is huge — throttle floats/particles for readability + perf
     const god = this.isGod();
     const showFx = !god || rng() < 0.16;
@@ -305,7 +352,7 @@ export class Game {
 
   killMonster(m) {
     const p = this.p;
-    m.hp = 0; m.deathT = 0;
+    m.hp = 0; m.deathT = 0; SFX.kill();
     const xp = Math.round(m.xpReward);
     p.xp += xp;
     const sp = this.toScreen(m.wx, m.wy);
@@ -338,6 +385,7 @@ export class Game {
     p.xpToNext = Math.round(24 * Math.pow(p.level, 1.45));
     p.hpMax += 12; p.atk += 3; p.defense += 1; p.atkSpeed += 0.05;
     p.skillPoints += 1; p.hp = p.hpMax;
+    SFX.levelUp();
     const sp = this.toScreen(p.wx, p.wy);
     this.float(sp.x, sp.y - 70, 'LEVEL UP!', '#ffd24a', 20);
     for (let i = 0; i < 18; i++) this.spark(sp.x, sp.y - 30, '#ffd24a', 2);
@@ -398,6 +446,7 @@ export class Game {
     p.hp = Math.max(0, p.hp - dmg);
     this.float(ps.x + (rng() * 12 - 6), ps.y - 60, '-' + dmg, '#ff6b6b', 15);
     this.spark(ps.x, ps.y - 40, '#b01818', 5);
+    SFX.playerHurt();
     this.hitFlash = 0.32;
     if (rng() < 0.4) this.addBlood(p.wx, p.wy, 0.6 + rng() * 0.4);
     this.updateHUD();
@@ -465,6 +514,7 @@ export class Game {
     } else {                            // single permanent option item (affix)
       this.applyOption({ stat: it.stat, value: it.value });
     }
+    SFX.pickup(it.rarity);
     const sp = this.toScreen(p.wx, p.wy);
     this.float(sp.x, sp.y - 70, it.text, it.color, 15);
     this.toast(it.text, it.color);
@@ -514,6 +564,7 @@ export class Game {
     const names = { speed: '神速', power: '剛力', hp: '活力' };
     const cols = { speed: '#ff7adf', power: '#ff8a3a', hp: '#5be07b' };
     if (key === 'hp') { b.bonus = lv * VIG_PER_LV; this.p.hpMax += b.bonus; this.p.hp += b.bonus; }
+    SFX.skill(key);
     const sp = this.toScreen(this.p.wx, this.p.wy);
     this.float(sp.x, sp.y - 80, names[key] + '！', cols[key], 22);
     for (let i = 0; i < 14; i++) this.spark(sp.x, sp.y - 30, cols[key], 2);
@@ -559,6 +610,7 @@ export class Game {
     this.drawPlayer();
 
     this.drawParticles();
+    this.drawAmbient();
     this.drawFloats();
 
     // red flash when the player takes a hit
@@ -999,6 +1051,7 @@ export class Game {
     // buttons
     document.getElementById('btnStatus').onclick = () => document.getElementById('status').classList.toggle('open');
     document.getElementById('closeStatus').onclick = () => document.getElementById('status').classList.remove('open');
+    document.getElementById('btnMute').onclick = (e) => { const m = SFX.toggle(); e.currentTarget.textContent = m ? '🔇' : '🔊'; };
     document.querySelectorAll('.actbtn').forEach(b => b.onclick = () => this.activateSkill(b.dataset.sk));
     document.querySelectorAll('.plus').forEach(b => b.onclick = () => this.spendSkill(b.dataset.sk));
   }

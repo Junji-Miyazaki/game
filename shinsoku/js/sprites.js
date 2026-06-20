@@ -99,24 +99,46 @@ function fighterFront(ctx, D) {
   tg.addColorStop(0, '#eef2f8'); tg.addColorStop(.5, P.ARM); tg.addColorStop(1, P.ARM_D);
   ctx.fillStyle = tg; ctx.fill();
   ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
-  segL(ctx, 0, -48 * s, 0, -32 * s, 1.2 * s, P.GOLD);
-  ctx.fillStyle = P.GOLD; ctx.fillRect(-4.5 * s, -33.5 * s, 9 * s, 1.8 * s);
-  // pauldrons
+  segL(ctx, -5.5 * s, -46 * s, -3.5 * s, -33 * s, 1 * s, '#f4f8ff');   // left edge highlight
+  segL(ctx, 0, -48 * s, 0, -34 * s, 1.2 * s, P.GOLD);                  // center trim
+  ctx.fillStyle = '#7d889d';                                           // rivets
+  ctx.beginPath(); ctx.arc(-3.4 * s, -44 * s, 0.7 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(3.4 * s, -44 * s, 0.7 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = P.LEATHER; ctx.fillRect(-7 * s, -33.5 * s, 14 * s, 2.6 * s);   // leather belt
+  ctx.fillStyle = P.GOLD; ctx.fillRect(-1.6 * s, -34 * s, 3.2 * s, 3 * s);       // buckle
+  // pauldrons (with rim highlight)
   ctx.fillStyle = P.ARM_D;
-  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
-  // neck + head
+  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46 * s, 3.4 * s, 2.5 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6.5 * s, -46 * s, 3.4 * s, 2.5 * s, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#cdd6e3'; ctx.lineWidth = 0.8 * s;
+  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46.6 * s, 3.4 * s, 2.5 * s, 0, Math.PI, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(6.5 * s, -46.6 * s, 3.4 * s, 2.5 * s, 0, Math.PI, Math.PI * 2); ctx.stroke();
+  // neck gorget (gold)
   ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.8 * s, -51 * s, 3.6 * s, 3.5 * s);
+  ctx.fillStyle = P.GOLD; ctx.beginPath();
+  ctx.moveTo(-3 * s, -48 * s); ctx.lineTo(3 * s, -48 * s); ctx.lineTo(2 * s, -50.5 * s); ctx.lineTo(-2 * s, -50.5 * s);
+  ctx.closePath(); ctx.fill();
+  // head
   ctx.fillStyle = P.SKIN; ctx.beginPath(); ctx.arc(face * 0.5 * s, -56 * s, 5.5 * s, 0, 7); ctx.fill();
+  // hair fringe + highlight strands
   ctx.fillStyle = P.HAIR;
   ctx.beginPath();
   ctx.arc(0, -57.5 * s, 6.1 * s, Math.PI * 0.92, Math.PI * 2.08);
   ctx.quadraticCurveTo(face * 6 * s, -55 * s, face * 4 * s, -53.5 * s);
   ctx.quadraticCurveTo(0, -56 * s, -face * 4 * s, -54 * s);
   ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = P.HAIR_HL; ctx.lineWidth = 0.8 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-2 * s, -62 * s); ctx.quadraticCurveTo(face * 2 * s, -59 * s, face * 3.5 * s, -55 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(1 * s, -62.5 * s); ctx.quadraticCurveTo(face * 4 * s, -60 * s, face * 5 * s, -56 * s); ctx.stroke();
+  // brows + eyes + mouth
+  ctx.strokeStyle = '#4a3326'; ctx.lineWidth = 0.9 * s;
+  ctx.beginPath(); ctx.moveTo(face * 1 * s, -57.6 * s); ctx.lineTo(face * 2.6 * s, -57.8 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(face * 3.3 * s, -57.8 * s); ctx.lineTo(face * 4.8 * s, -57.4 * s); ctx.stroke();
   ctx.fillStyle = '#3a2a22';
-  ctx.beginPath(); ctx.arc(face * 1.8 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(face * 1.9 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(face * 4 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#a85a4a'; ctx.lineWidth = 0.8 * s;
+  ctx.beginPath(); ctx.moveTo(face * 2.4 * s, -52.8 * s); ctx.lineTo(face * 3.8 * s, -52.8 * s); ctx.stroke();
   // shield (LEFT hand, front, +x)
   ctx.save(); ctx.translate(12 * s, -30 * s + shB);
   const sg = ctx.createRadialGradient(-2 * s, -2 * s, 1, 0, 0, 11 * s);
@@ -156,8 +178,12 @@ function fighterBack(ctx, D) {
   ctx.beginPath(); ctx.moveTo(-5 * s, -46 * s); ctx.lineTo(5 * s, -34 * s);
   ctx.moveTo(5 * s, -46 * s); ctx.lineTo(-5 * s, -34 * s); ctx.stroke();
   ctx.fillStyle = P.ARM_D;
-  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46 * s, 3.4 * s, 2.5 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6.5 * s, -46 * s, 3.4 * s, 2.5 * s, 0, 0, 7); ctx.fill();
+  // belt + lower plate seam
+  ctx.fillStyle = P.LEATHER; ctx.fillRect(-7 * s, -33.5 * s, 14 * s, 2.6 * s);
+  ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 0.8 * s;
+  ctx.beginPath(); ctx.moveTo(-5.5 * s, -40 * s); ctx.lineTo(5.5 * s, -40 * s); ctx.stroke();
   // head from behind (hair only) + band
   ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.8 * s, -51 * s, 3.6 * s, 3.5 * s);
   ctx.fillStyle = P.HAIR; ctx.beginPath(); ctx.arc(0, -56 * s, 6 * s, 0, 7); ctx.fill();
@@ -171,6 +197,8 @@ function fighterBack(ctx, D) {
   ctx.quadraticCurveTo(0 + psw, -21 * s, 2.5 * s + psw, -25 * s);
   ctx.quadraticCurveTo(4 * s + psw * 0.3, -40 * s, 3.5 * s, -54 * s);
   ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = P.HAIR_HL; ctx.lineWidth = 0.9 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-0.5 * s, -52 * s); ctx.quadraticCurveTo(0.5 * s + psw, -38 * s, 0 + psw, -26 * s); ctx.stroke();
   // shield back (-x)
   ctx.save(); ctx.translate(-12 * s, -30 * s + shB);
   ctx.fillStyle = '#6f7a8c'; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
@@ -208,6 +236,7 @@ function fighterSide(ctx, D) {
   const tg = ctx.createLinearGradient(-4 * s, -47 * s, 5 * s, -32 * s);
   tg.addColorStop(0, P.ARM); tg.addColorStop(1, P.ARM_D);
   ctx.fillStyle = tg; ctx.fill(); ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
+  ctx.fillStyle = P.LEATHER; ctx.fillRect(-3.5 * s, -33.5 * s, 8 * s, 2.4 * s);   // belt
   ctx.fillStyle = P.ARM_D; ctx.beginPath(); ctx.ellipse(-1 * s, -46 * s, 3.4 * s, 2.6 * s, 0, 0, 7); ctx.fill();
   // head profile
   ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.5 * s, -51 * s, 3 * s, 3.5 * s);
@@ -235,7 +264,11 @@ function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
   ctx.strokeStyle = col; ctx.lineCap = 'round';
   ctx.lineWidth = 5.5 * s; ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kx, ky); ctx.stroke();
   ctx.lineWidth = 4.5 * s; ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+  // knee guard (small steel plate)
+  ctx.fillStyle = '#9aa6ba'; ctx.beginPath(); ctx.ellipse(kx, ky, 2.7 * s, 2.2 * s, 0, 0, 7); ctx.fill();
   ctx.fillStyle = boot; ctx.beginPath(); ctx.ellipse(fx + face * 2 * s, fy + 1 * s, 5 * s, 2.8 * s, 0, 0, 7); ctx.fill();
+  // leather boot cuff
+  ctx.fillStyle = '#3a2f1f'; ctx.beginPath(); ctx.ellipse(fx, fy - 3.5 * s, 3.3 * s, 2 * s, 0, 0, 7); ctx.fill();
 }
 
 // Sword arm with raise→strike→recover. Joints given as forehand keyframes (dx,dy
@@ -278,6 +311,9 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god) {
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
   ctx.strokeStyle = skin; ctx.lineWidth = 4 * s;
   ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke();
+  // steel bracer (mid-forearm) + leather glove (hand)
+  ctx.fillStyle = '#8b97aa'; ctx.beginPath(); ctx.arc((ex + hx) / 2, (ey + hy) / 2, 2.5 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3a2f1f'; ctx.beginPath(); ctx.arc(hx, hy, 2.6 * s, 0, 7); ctx.fill();
 
   // sword: guard, then blade hand→tip
   const bx = tx - hx, by = ty - hy, bl = Math.hypot(bx, by) || 1, nx = -by / bl, ny = bx / bl;
