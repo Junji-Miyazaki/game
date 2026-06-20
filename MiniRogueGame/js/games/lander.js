@@ -342,14 +342,16 @@ export class Game extends Scene {
     // Normalize to -180..180
     this.angle  = ((this.angle + 180) % 360 + 360) % 360 - 180;
 
-    // ---- Main engine: thrust along craft's up-axis ----
-    // angle=0 => pointing straight up. craft up vector in screen coords:
-    //   when angle=0, "up" is -Y (screen). ctx.rotate(+rad) rotates CW.
-    //   craft up unit vector: (-sin(angle_rad), -cos(angle_rad)) in canvas (x,y).
-    // 穏やかなTHRUST_ACCELで小刻みな補正を実現。大きく吹かすと燃料を浪費。
+    // ---- Main engine: thrust along craft's NOSE (up-axis), i.e. opposite the exhaust ----
+    // 描画は ctx.translate(x,y); ctx.rotate(rad) で機体ローカルの上(0,-1)を回す。
+    // 回転後のワールド上方向(機首) = (sin(rad), -cos(rad))。推進はこの機首方向に働く。
+    //   angle=0   -> (0,-1)  : まっすぐ上昇
+    //   angle=+90 -> (1, 0)  : 機首が3時 -> 3時方向へ移動（排気は9時）
+    //   angle=-90 -> (-1,0)  : 機首が9時 -> 9時方向へ移動
+    // ※以前は vx の符号が逆で、傾くと排気側（逆方向）へ押していた不具合を修正。
     if (this._thrustMain && this.fuel > 0) {
       const rad = this.angle * Math.PI / 180;
-      this.vx  += (-Math.sin(rad)) * THRUST_ACCEL * dt;
+      this.vx  += ( Math.sin(rad)) * THRUST_ACCEL * dt;
       this.vy  += (-Math.cos(rad)) * THRUST_ACCEL * dt;
       this.fuel = Math.max(0, this.fuel - FUEL_RATE_MAIN * dt);
     }
