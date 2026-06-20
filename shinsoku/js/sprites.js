@@ -543,58 +543,93 @@ function skeleton(ctx, o) {
   ctx.beginPath(); ctx.arc(2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
 }
 
-// ---------- DRAGON (apex boss) ----------
-function dragonWing(ctx, ox, oy, s, t, flap, scl, far) {
-  ctx.save(); ctx.translate(ox, oy); ctx.rotate(-0.6 - flap);
-  ctx.fillStyle = far ? `rgba(${hexrgb(darken(t, 35))},0.5)` : `rgba(${hexrgb(t)},0.82)`;
+// ---------- DRAGON (apex boss) — sinister 古龍 ----------
+const DR = { BASE: '#6e1c1c', DK: '#360c0c', BLK: '#190606', HL: '#a83232', SPIKE: '#140505', BONE: '#d8c0a0', GLOW: '#ff5a1e' };
+function dragonWing(ctx, ox, oy, s, flap, scl, far) {
+  ctx.save(); ctx.translate(ox, oy); ctx.rotate(-0.78 - flap);
+  // bat-membrane with finger struts and a clawed top
+  ctx.fillStyle = far ? 'rgba(30,8,8,0.55)' : 'rgba(58,16,16,0.94)';
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  ctx.quadraticCurveTo(-30 * s * scl, -20 * s * scl, -46 * s * scl, -2 * s * scl);
-  ctx.quadraticCurveTo(-32 * s * scl, 2 * s * scl, -24 * s * scl, 9 * s * scl);
-  ctx.quadraticCurveTo(-28 * s * scl, 1 * s * scl, -13 * s * scl, 7 * s * scl);
-  ctx.quadraticCurveTo(-17 * s * scl, 0, 0, 4 * s * scl);
+  ctx.lineTo(-54 * s * scl, -30 * s * scl);
+  ctx.lineTo(-44 * s * scl, -14 * s * scl);
+  ctx.lineTo(-38 * s * scl, -1 * s * scl);
+  ctx.lineTo(-28 * s * scl, 5 * s * scl);
+  ctx.lineTo(-17 * s * scl, 9 * s * scl);
+  ctx.lineTo(-6 * s * scl, 7 * s * scl);
   ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = `rgba(${hexrgb(darken(t, 55))},0.7)`; ctx.lineWidth = 1.5 * s;
-  for (const e of [[-46, -2], [-24, 9], [-13, 7]]) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(e[0] * s * scl, e[1] * s * scl); ctx.stroke(); }
+  const tips = [[-54, -30], [-44, -14], [-38, -1], [-28, 5], [-17, 9]];
+  ctx.strokeStyle = far ? '#1a0606' : '#5a1c1c'; ctx.lineWidth = 2.2 * s; ctx.lineCap = 'round';
+  for (const tp of tips) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(tp[0] * s * scl, tp[1] * s * scl); ctx.stroke(); }
+  if (!far) { ctx.fillStyle = DR.BONE; tri(ctx, -54 * s * scl, -30 * s * scl, -59 * s * scl, -34 * s * scl, -50 * s * scl, -31 * s * scl); }
   ctx.restore();
 }
 function dragon(ctx, o) {
-  const s = o.scale, t = o.tint, flap = Math.sin(o.t * 3) * 0.35;
-  const D = darken(t, 40), L = lighten(t, 30), BELLY = lighten(t, 55);
-  // tail
-  ctx.strokeStyle = D; ctx.lineCap = 'round'; ctx.lineWidth = 6 * s;
-  ctx.beginPath(); ctx.moveTo(-12 * s, -20 * s);
-  ctx.quadraticCurveTo(-30 * s, -16 * s, -36 * s, -2 * s); ctx.stroke();
-  ctx.fillStyle = D; tri(ctx, -36 * s, -2 * s, -43 * s, -3 * s, -35 * s, -8 * s);
+  const s = o.scale, flap = Math.sin(o.t * 2.2) * 0.3, hsw = Math.sin(o.t * 1.4) * 2 * s;
+  // dark blood-red aura
+  const ag = ctx.createRadialGradient(0, -30 * s, 0, 0, -30 * s, 60 * s);
+  ag.addColorStop(0, 'rgba(130,12,12,0.30)'); ag.addColorStop(.6, 'rgba(50,0,0,0.12)'); ag.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -30 * s, 60 * s, 0, 7); ctx.fill();
+  // tail → bladed, spiked
+  ctx.strokeStyle = DR.DK; ctx.lineCap = 'round'; ctx.lineWidth = 8 * s;
+  ctx.beginPath(); ctx.moveTo(-10 * s, -20 * s); ctx.quadraticCurveTo(-30 * s, -18 * s, -42 * s, -3 * s); ctx.stroke();
+  ctx.fillStyle = DR.BLK;
+  ctx.beginPath(); ctx.moveTo(-42 * s, -3 * s); ctx.lineTo(-54 * s, -6 * s); ctx.lineTo(-47 * s, 1 * s); ctx.lineTo(-52 * s, 5 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = DR.SPIKE; for (const tx of [-16, -24, -32]) tri(ctx, tx * s, -19 * s, (tx - 2) * s, -27 * s, (tx + 3) * s, -17 * s);
   // far wing
-  dragonWing(ctx, 0, -34 * s, s, t, flap * 0.8, 0.55, true);
-  // body
-  ctx.beginPath(); ctx.ellipse(-2 * s, -22 * s, 16 * s, 12 * s, 0, 0, 7);
-  const bg = ctx.createLinearGradient(-18 * s, -34 * s, 14 * s, -10 * s);
-  bg.addColorStop(0, L); bg.addColorStop(.6, t); bg.addColorStop(1, D);
-  ctx.fillStyle = bg; ctx.fill();
-  ctx.strokeStyle = darken(t, 70); ctx.lineWidth = 1.4 * s; ctx.stroke();
-  ctx.fillStyle = BELLY; ctx.beginPath(); ctx.ellipse(0, -15 * s, 9 * s, 6 * s, 0, 0, 7); ctx.fill();
-  // hind legs
-  ctx.fillStyle = D;
-  ctx.beginPath(); ctx.ellipse(-8 * s, -6 * s, 5 * s, 7 * s, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(6 * s, -5 * s, 5 * s, 7 * s, 0, 0, 7); ctx.fill();
-  // back spikes
-  ctx.fillStyle = D;
-  for (const p of [[12, -34], [4, -33], [-4, -32], [-12, -28]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 2) * s, (p[1] - 6) * s, (p[0] + 2) * s, (p[1] - 2) * s);
-  // near wing (big, in front)
-  dragonWing(ctx, 0, -34 * s, s, t, flap, 1, false);
-  // neck + head
-  ctx.strokeStyle = t; ctx.lineWidth = 9 * s; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(8 * s, -28 * s); ctx.quadraticCurveTo(18 * s, -40 * s, 21 * s, -48 * s); ctx.stroke();
-  ctx.fillStyle = L; ctx.beginPath(); ctx.ellipse(23 * s, -49 * s, 7 * s, 5 * s, -0.3, 0, 7); ctx.fill();
-  ctx.fillStyle = t; tri(ctx, 27 * s, -51 * s, 34 * s, -48 * s, 27 * s, -45 * s);  // snout
-  ctx.strokeStyle = BELLY; ctx.lineWidth = 2 * s;                                   // horns
-  ctx.beginPath(); ctx.moveTo(20 * s, -53 * s); ctx.lineTo(16 * s, -61 * s); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(23 * s, -53 * s); ctx.lineTo(22 * s, -62 * s); ctx.stroke();
-  ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 9 * s;                               // glowing eye
-  ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(24 * s, -50 * s, 1.7 * s, 0, 7); ctx.fill();
+  dragonWing(ctx, 2 * s, -36 * s, s, flap * 0.7, 0.62, true);
+  // hind legs (clawed)
+  for (const lx of [-9, 7]) {
+    ctx.fillStyle = DR.DK; ctx.beginPath(); ctx.ellipse(lx * s, -7 * s, 6 * s, 9 * s, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = DR.BLK; ctx.beginPath(); ctx.ellipse(lx * s, 0, 6 * s, 3 * s, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = DR.BONE; ctx.lineWidth = 1.4 * s;
+    for (const dx of [-3, 0, 3]) { ctx.beginPath(); ctx.moveTo((lx + dx) * s, 1 * s); ctx.lineTo((lx + dx) * s, -2.5 * s); ctx.stroke(); }
+  }
+  // body (angular, hunched)
+  ctx.beginPath();
+  ctx.moveTo(-16 * s, -22 * s);
+  ctx.quadraticCurveTo(-14 * s, -36 * s, 0, -38 * s);
+  ctx.quadraticCurveTo(14 * s, -38 * s, 14 * s, -24 * s);
+  ctx.quadraticCurveTo(12 * s, -12 * s, -2 * s, -12 * s);
+  ctx.quadraticCurveTo(-14 * s, -12 * s, -16 * s, -22 * s);
+  ctx.closePath();
+  const bg = ctx.createLinearGradient(-16 * s, -38 * s, 14 * s, -12 * s);
+  bg.addColorStop(0, DR.HL); bg.addColorStop(.5, DR.BASE); bg.addColorStop(1, DR.BLK);
+  ctx.fillStyle = bg; ctx.fill(); ctx.strokeStyle = DR.BLK; ctx.lineWidth = 1.5 * s; ctx.stroke();
+  // glowing chest cracks
+  ctx.strokeStyle = DR.GLOW; ctx.lineWidth = 1.5 * s; ctx.shadowColor = DR.GLOW; ctx.shadowBlur = 7 * s;
+  ctx.beginPath(); ctx.moveTo(-6 * s, -16 * s); ctx.lineTo(-2 * s, -23 * s); ctx.lineTo(2 * s, -15 * s); ctx.lineTo(6 * s, -22 * s); ctx.stroke();
   ctx.shadowBlur = 0;
+  // jagged back ridge
+  ctx.fillStyle = DR.SPIKE;
+  for (const p of [[12, -30], [6, -36], [-2, -38], [-10, -34], [-16, -26]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 3) * s, (p[1] - 10) * s, (p[0] + 3) * s, (p[1] - 2) * s);
+  // near wing (big)
+  dragonWing(ctx, 2 * s, -36 * s, s, flap, 1, false);
+  // neck (spiked) + head
+  ctx.strokeStyle = DR.BASE; ctx.lineWidth = 8 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(10 * s, -30 * s); ctx.quadraticCurveTo(20 * s, -42 * s, 22 * s + hsw, -50 * s); ctx.stroke();
+  ctx.fillStyle = DR.SPIKE; for (const p of [[13, -34], [18, -42]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 2) * s, (p[1] - 7) * s, (p[0] + 2) * s, (p[1] - 1) * s);
+  // head — elongated reptilian skull with fanged maw
+  ctx.save(); ctx.translate(22 * s + hsw, -50 * s);
+  ctx.fillStyle = DR.BASE;
+  ctx.beginPath(); ctx.moveTo(-4 * s, -4 * s); ctx.quadraticCurveTo(7 * s, -6 * s, 15 * s, -1.5 * s);
+  ctx.quadraticCurveTo(9 * s, 0.5 * s, 5 * s, 1.5 * s); ctx.quadraticCurveTo(-2 * s, 2.5 * s, -4 * s, -1 * s);
+  ctx.closePath(); ctx.fill(); ctx.strokeStyle = DR.BLK; ctx.lineWidth = 1 * s; ctx.stroke();
+  // lower jaw + ember throat
+  ctx.fillStyle = DR.DK; ctx.beginPath(); ctx.moveTo(4 * s, 2 * s); ctx.lineTo(14 * s, 1.5 * s); ctx.lineTo(5 * s, 6 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = `rgba(255,90,30,${0.55 + 0.3 * Math.sin(o.t * 8)})`;
+  ctx.shadowColor = DR.GLOW; ctx.shadowBlur = 6 * s;
+  ctx.beginPath(); ctx.ellipse(8 * s, 2.6 * s, 3 * s, 1.3 * s, 0, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#efe6cf'; for (const tx of [6, 9, 12]) tri(ctx, tx * s, 0, (tx + 1) * s, 3 * s, (tx + 2) * s, 0);   // teeth
+  // swept horns
+  ctx.strokeStyle = DR.BONE; ctx.lineWidth = 2.4 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-2 * s, -3 * s); ctx.quadraticCurveTo(-11 * s, -6 * s, -13 * s, -1 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -4.5 * s); ctx.quadraticCurveTo(-8 * s, -11 * s, -9 * s, -6 * s); ctx.stroke();
+  // burning slit eye
+  ctx.shadowColor = DR.GLOW; ctx.shadowBlur = 9 * s; ctx.fillStyle = '#ffca3a';
+  ctx.save(); ctx.translate(2.5 * s, -1.5 * s); ctx.rotate(-0.35); ctx.beginPath(); ctx.ellipse(0, 0, 2.4 * s, 1 * s, 0, 0, 7); ctx.fill(); ctx.restore();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#1a0000'; ctx.save(); ctx.translate(2.5 * s, -1.5 * s); ctx.rotate(-0.35); ctx.fillRect(-0.5 * s, -1.3 * s, 1 * s, 2.6 * s); ctx.restore();
+  ctx.restore();
 }
 
 // ---------- LOOT ----------

@@ -399,6 +399,11 @@ export class Game {
     if (m.hp <= 0) { m.deathT += dt; return; }
     m.hurt = Math.max(0, m.hurt - dt * 4);
     m.t += dt; m.walk = 0;
+    // bosses smoulder — drifting embers
+    if (m.isBoss && rng() < dt * 6) {
+      const bs = this.toScreen(m.wx, m.wy), sc = m.scale * 1.15;
+      this.parts.push({ x: bs.x + (rng() - .5) * 24 * sc, y: bs.y - rng() * 30 * sc, vx: (rng() - .5) * 10, vy: -18 - rng() * 22, color: rng() < .5 ? '#ff6a1e' : '#ffb24a', t: 0, life: 0.9 + rng() * 0.7, r: 1 + rng() * 1.6 });
+    }
     const p = this.p;
     const dx = p.wx - m.wx, dy = p.wy - m.wy, d = hyp(dx, dy);
     m.atkTimer -= dt;
