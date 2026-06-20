@@ -6,6 +6,8 @@ const TW = 64, TH = 32;                 // iso tile width/height
 const SAVE_KEY = 'shinsoku_save_v1';
 const ATTACK_RANGE = 1.7;               // tiles (bigger monsters need a touch more)
 const MAX_MONSTERS = 7;
+const ARENA_R = 11;                     // dungeon arena radius (tiles)
+const ISO_U = (64 / 2) * Math.SQRT2;    // world-circle radius (tiles) -> screen px (x)
 const GOD_THRESHOLD = 8;                // effective atk/s to enter 神速
 
 const rng = Math.random;
@@ -162,10 +164,18 @@ export class Game {
     for (const pt of this.parts) { pt.t += dt; pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 120 * dt; }
     this.parts = this.parts.filter(pt => pt.t < pt.life);
 
+    // keep the fighter inside the dungeon arena
+    this.clampArena(p);
+
     // camera
     const sc = this.toScreenRaw(p.wx, p.wy);
     this.cam.x = this.W / 2 - sc.x;
     this.cam.y = this.H / 2 - sc.y;
+  }
+
+  clampArena(o) {
+    const d = hyp(o.wx, o.wy);
+    if (d > ARENA_R - 0.6) { const k = (ARENA_R - 0.6) / d; o.wx *= k; o.wy *= k; }
   }
 
   stepToward(p, tx, ty, speed, dt, isDir) {
@@ -252,6 +262,7 @@ export class Game {
     if (d > ATTACK_RANGE - 0.3) {
       const step = Math.min(m.speed * dt, d);
       m.wx += dx / d * step; m.wy += dy / d * step; m.walk = 1;
+      this.clampArena(m);
       m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
     } else {
       m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
@@ -273,6 +284,7 @@ export class Game {
     if (d > 0.15) {
       const step = Math.min(m.speed * 0.35 * dt, d);
       m.wx += dx / d * step; m.wy += dy / d * step; m.walk = 1;
+      this.clampArena(m);
       m.face = this.toScreen(m.wtx, m.wty).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
     }
   }
@@ -318,15 +330,18 @@ export class Game {
   spawnMonster(key) {
     const def = MONSTERS[key];
     if (!def) return;
-    const ang = rng() * Math.PI * 2, dist = 8 + rng() * 6;
+    // place somewhere inside the arena, at least ~5 tiles from the player
+    let ax = 0, ay = 0;
+    for (let tries = 0; tries < 14; tries++) {
+      const a = rng() * Math.PI * 2, r = 2 + rng() * (ARENA_R - 2.5);
+      ax = Math.cos(a) * r; ay = Math.sin(a) * r;
+      if (hyp(ax - this.p.wx, ay - this.p.wy) >= 5) break;
+    }
     // level scaling so the grind keeps biting
     const lvScale = 1 + (this.p.level - 1) * 0.11;
     this.monsters.push({
       ...def,
-      wx: this.p.wx + Math.cos(ang) * dist,
-      wy: this.p.wy + Math.sin(ang) * dist,
-      homeX: this.p.wx + Math.cos(ang) * dist,
-      homeY: this.p.wy + Math.sin(ang) * dist,
+      wx: ax, wy: ay, homeX: ax, homeY: ay,
       hpMax: Math.round(def.hpMax * lvScale),
       hp: Math.round(def.hpMax * lvScale),
       atk: Math.round(def.atk * (1 + (this.p.level - 1) * 0.06)),
@@ -405,36 +420,151 @@ export class Game {
 
   drawGround() {
     const ctx = this.ctx;
-    // backdrop gradient (sky/ambient)
-    const bg = ctx.createLinearGradient(0, 0, 0, this.H);
-    bg.addColorStop(0, '#1a2417'); bg.addColorStop(1, '#0a0f08');
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, this.W, this.H);
+    ctx.fillStyle = '#070605'; ctx.fillRect(0, 0, this.W, this.H);   // dungeon dark
 
+    // ---- stone floor (diamond tiles within the arena) ----
     const c = this.toWorld(this.W / 2, this.H / 2);
-    const R = 16;
+    const R = 17;
     for (let i = -R; i <= R; i++) {
       for (let j = -R; j <= R; j++) {
         const wx = Math.round(c.wx) + i, wy = Math.round(c.wy) + j;
+        const dist = hyp(wx, wy);
+        if (dist > ARENA_R + 0.6) continue;          // void beyond the arena
         const s = this.toScreen(wx, wy);
         if (s.x < -TW || s.x > this.W + TW || s.y < -TH || s.y > this.H + TH) continue;
         const h = ((wx * 73856093) ^ (wy * 19349663)) >>> 0;
-        const grass = (h % 5);
-        const base = grass === 0 ? '#3a4d2a' : grass === 1 ? '#33442459' : '#35492759';
-        ctx.fillStyle = grass === 0 ? '#3c4f2c' : (h % 7 === 0 ? '#4a3d28' : '#36492a');
+        const v = h % 6;
+        let col = v === 0 ? '#39332b' : v === 1 ? '#2c2720' : v === 2 ? '#332d26' : v === 3 ? '#2a251f' : '#302a23';
+        if (h % 23 === 0) col = '#3d342b';
+        if (dist > ARENA_R - 0.6) col = '#1d1a15';   // darker rim
+        ctx.fillStyle = col;
         ctx.beginPath();
         ctx.moveTo(s.x, s.y - TH / 2);
         ctx.lineTo(s.x + TW / 2, s.y);
         ctx.lineTo(s.x, s.y + TH / 2);
         ctx.lineTo(s.x - TW / 2, s.y);
         ctx.closePath(); ctx.fill();
-        // subtle grid line
-        ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = 1; ctx.stroke();
       }
     }
-    // vignette
-    const vg = ctx.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.3, this.W / 2, this.H / 2, this.H * 0.8);
-    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)');
+
+    this.drawSeal();
+    this.drawArenaRing();
+
+    // vignette (heavier, gothic)
+    const vg = ctx.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.22, this.W / 2, this.H / 2, this.H * 0.78);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.72)');
     ctx.fillStyle = vg; ctx.fillRect(0, 0, this.W, this.H);
+  }
+
+  // Glowing magic seal engraved on the floor (anchored at world origin).
+  drawSeal() {
+    const ctx = this.ctx, c = this.toScreen(0, 0), U = ISO_U;
+    const pulse = 0.78 + Math.sin(this._t * 1.6) * 0.22;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(1, 0.5);                               // project circles onto the iso floor
+    // soft ambient glow
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 9 * U);
+    g.addColorStop(0, `rgba(120,200,255,${0.12 * pulse})`);
+    g.addColorStop(0.6, `rgba(110,150,255,${0.05 * pulse})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 9 * U, 0, 7); ctx.fill();
+
+    const ARC = (r, w, col) => { ctx.lineWidth = w; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(0, 0, r * U, 0, 7); ctx.stroke(); };
+    const blue = a => `rgba(150,210,255,${a})`;
+    ARC(8.2, 2.5, blue(0.55 * pulse));
+    ARC(7.5, 1.4, blue(0.4));
+    ARC(4.4, 1.8, blue(0.5 * pulse));
+    ARC(3.7, 1.2, blue(0.35));
+    ARC(1.7, 1.4, blue(0.45));
+
+    // rotating outer rune band (ticks)
+    ctx.save(); ctx.rotate(this._t * 0.06);
+    ctx.strokeStyle = blue(0.55); ctx.lineWidth = 1.4;
+    for (let k = 0; k < 60; k++) {
+      const a = k / 60 * 6.283, ca = Math.cos(a), sa = Math.sin(a);
+      ctx.beginPath(); ctx.moveTo(ca * 7.5 * U, sa * 7.5 * U); ctx.lineTo(ca * 8.2 * U, sa * 8.2 * U); ctx.stroke();
+    }
+    ctx.restore();
+
+    // rune glyphs around the mid ring (counter-rotating)
+    ctx.save(); ctx.rotate(-this._t * 0.09);
+    ctx.fillStyle = blue(0.5 * pulse);
+    for (let k = 0; k < 12; k++) {
+      const a = k / 12 * 6.283, rr = 6 * U;
+      ctx.save(); ctx.translate(Math.cos(a) * rr, Math.sin(a) * rr); ctx.rotate(a);
+      ctx.fillRect(-1.2, -5, 2.4, 10); ctx.fillRect(-4, -1.2, 8, 2.4);
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // radial spokes between inner rings
+    ctx.strokeStyle = blue(0.3); ctx.lineWidth = 1;
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * 6.283, ca = Math.cos(a), sa = Math.sin(a);
+      ctx.beginPath(); ctx.moveTo(ca * 1.7 * U, sa * 1.7 * U); ctx.lineTo(ca * 3.7 * U, sa * 3.7 * U); ctx.stroke();
+    }
+
+    // central glyph — radiating star with a warm 神速-pink core
+    ctx.save(); ctx.rotate(this._t * 0.04);
+    ctx.strokeStyle = blue(0.6 * pulse); ctx.lineWidth = 1.6;
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * 6.283 + (k % 2 ? 0.39 : 0), r = k % 2 ? 1.6 : 2.6;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * U, Math.sin(a) * r * U); ctx.stroke();
+    }
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.3 * U);
+    core.addColorStop(0, `rgba(255,140,225,${0.5 * pulse})`); core.addColorStop(1, 'rgba(255,140,225,0)');
+    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0, 0, 1.3 * U, 0, 7); ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Stone wall ring + pillars + flickering torches around the arena edge.
+  drawArenaRing() {
+    const ctx = this.ctx, c = this.toScreen(0, 0), U = ISO_U;
+    // wall band (squished onto floor plane)
+    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
+    ctx.lineWidth = 22; ctx.strokeStyle = '#100d0a';
+    ctx.beginPath(); ctx.arc(0, 0, (ARENA_R + 0.9) * U, 0, 7); ctx.stroke();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#2b251d';
+    ctx.beginPath(); ctx.arc(0, 0, (ARENA_R + 0.25) * U, 0, 7); ctx.stroke();
+    ctx.restore();
+
+    // torch glows on the floor (additive)
+    const N = 10, posts = [];
+    for (let k = 0; k < N; k++) {
+      const a = k / N * 6.283;
+      const s = this.toScreen(Math.cos(a) * (ARENA_R + 0.6), Math.sin(a) * (ARENA_R + 0.6));
+      const flick = 0.72 + Math.sin(this._t * 9 + k * 1.7) * 0.12 + Math.sin(this._t * 23 + k) * 0.06;
+      posts.push({ s, flick });
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const gg = ctx.createRadialGradient(s.x, s.y - 4, 0, s.x, s.y - 4, 110);
+      gg.addColorStop(0, `rgba(255,150,60,${0.16 * flick})`); gg.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(s.x, s.y - 4, 110, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+    // pillars + flames (far posts first)
+    posts.sort((a, b) => a.s.y - b.s.y);
+    for (const p of posts) this.drawPillar(p.s.x, p.s.y, p.flick);
+  }
+
+  drawPillar(sx, sy, flick) {
+    const ctx = this.ctx, H = 58, W = 13;
+    const g = ctx.createLinearGradient(sx - W / 2, 0, sx + W / 2, 0);
+    g.addColorStop(0, '#171410'); g.addColorStop(0.5, '#3a342b'); g.addColorStop(1, '#1d1a14');
+    ctx.fillStyle = g; ctx.fillRect(sx - W / 2, sy - H, W, H);
+    ctx.fillStyle = '#26211a'; ctx.fillRect(sx - W / 2 - 2, sy - 5, W + 4, 7);
+    ctx.fillStyle = '#312a21'; ctx.fillRect(sx - W / 2 - 2, sy - H - 4, W + 4, 6);
+    ctx.fillStyle = '#1a160f'; ctx.beginPath(); ctx.ellipse(sx, sy - H - 6, 5, 2.5, 0, 0, 7); ctx.fill();
+    const fh = 14 * flick;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const fg = ctx.createRadialGradient(sx, sy - H - 8 - fh * 0.4, 1, sx, sy - H - 8 - fh * 0.4, fh);
+    fg.addColorStop(0, 'rgba(255,235,170,0.95)'); fg.addColorStop(0.5, `rgba(255,150,50,${0.8 * flick})`); fg.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.ellipse(sx, sy - H - 8 - fh * 0.4, fh * 0.5, fh, 0, 0, 7); ctx.fill();
+    ctx.restore();
   }
 
   drawMonster(m) {
