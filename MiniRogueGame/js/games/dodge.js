@@ -41,7 +41,7 @@ const CAP_VOLLEY     = 4;     // max missiles per volley
 const MIN_INTERVAL   = 0.9;   // s minimum spawn interval
 
 // ---- Lull system ----
-const LULL_EVERY     = 13.5;  // s between lulls (within active spawning)
+const LULL_EVERY     = 8.0;   // s between lulls (within active spawning) — more frequent breathers
 const LULL_DUR       = 2.5;   // s duration of lull
 const LULL_MSG_DUR   = 1.8;   // s to show "WAVE CLEAR" text
 
@@ -51,17 +51,20 @@ const FLARE_REGEN_T  = 25;    // s between chaff regeneration
 const FLARE_MAX      = 5;     // max storable chaff
 
 // Chaff decoy behavior
-const CHAFF_LIFETIME     = 3.0;   // s chaff stays active redirecting all missiles
-const CHAFF_EXPLODE_R    = 110;   // px — blast radius at end-of-life (generous)
+const CHAFF_LIFETIME     = 4.0;   // s chaff stays active redirecting all missiles (was 3s)
+const CHAFF_EXPLODE_R    = 170;   // px — blast radius at end-of-life (larger, was 110)
 const CHAFF_DEPLOY_DIST  = 130;   // px ahead/right of ship (toward missile origin)
 const CHAFF_FLY_DIST     = 80;    // px the chaff visually flies out before settling
+const CHAFF_TURN_BOOST   = 6.0;   // multiplier on missile turn rate while homing to chaff
 
 // ---- Valkyrie constants ----
-const VALKYRIE_CHARGE_TIME = 20;   // s to fill energy gauge from 0
-const VALKYRIE_DURATION    = 9.5;  // s of Valkyrie mode (increased from 5.5s)
-const VALKYRIE_AUTO_LIMIT  = 22;   // max missiles auto-destroyed per activation
-const VALKYRIE_BEAM_SPD    = 600;  // px/s beam travel
-const VALKYRIE_SHOOT_CD    = 0.18; // s between auto-shots
+const VALKYRIE_CHARGE_TIME  = 20;    // s to fill energy gauge from 0
+const VALKYRIE_DURATION     = 14.0;  // s of Valkyrie mode (was 9.5s)
+const VALKYRIE_AUTO_LIMIT   = 50;    // max missiles auto-destroyed per activation (was 22)
+const VALKYRIE_BEAM_SPD     = 600;   // px/s beam travel
+const VALKYRIE_SHOOT_CD     = 0.06;  // s between auto-shots (was 0.18 — much faster)
+const VALKYRIE_SPRAY_COUNT  = 3;     // beams per volley (spray multiple targets)
+const VALKYRIE_SPRAY_SPREAD = 0.18;  // rad — angular spread added to extra spray beams
 
 // ---- On-screen button rects (logical coords) ----
 const BTN_FLARE = { x: 8, y: H - 70, w: 58, h: 52 };
@@ -74,6 +77,11 @@ const STAR_LAYERS = [
   { count: 30, speed:  90, size: 1.5, alpha: 0.60 },
   { count: 15, speed: 160, size: 2.2, alpha: 0.85 },
 ];
+
+// ---- Chaff pickup item config ----
+const PICKUP_SPAWN_INTERVAL = 18;  // s between pickup spawns
+const PICKUP_SPEED          = 55;  // px/s drift leftward
+const PICKUP_HIT_R          = 12;  // px pickup collection radius
 
 // ---- Utility ----
 function clamp(v, lo, hi) {
@@ -230,6 +238,30 @@ class Spark {
   }
 }
 
+// ---- Chaff resupply pickup item ----
+class ChaffPickup {
+  constructor() {
+    // Spawn from the right edge at a random y within the play area
+    this.x    = W + 14;
+    this.y    = PLAY_TOP + 30 + Math.random() * (PLAY_BOTTOM - PLAY_TOP - 60);
+    this.age  = 0;
+    this.dead = false;
+    // Slight vertical drift for variety
+    this.vy   = (Math.random() - 0.5) * 20;
+  }
+  update(dt) {
+    if (this.dead) return;
+    this.age += dt;
+    this.x   -= PICKUP_SPEED * dt;
+    this.y   += this.vy * dt;
+    // Bounce off play area top/bottom
+    if (this.y < PLAY_TOP + 16)        this.vy =  Math.abs(this.vy);
+    if (this.y > PLAY_BOTTOM - 16)     this.vy = -Math.abs(this.vy);
+    // Remove if drifted fully off-screen to the left
+    if (this.x < -20) this.dead = true;
+  }
+}
+
 // ---- Main Game Class ----
 export class Game extends Scene {
   enter() {
@@ -297,6 +329,10 @@ export class Game extends Scene {
     this.valkyrieShootTimer = 0;  // cooldown between auto-shots
     this.beams  = [];             // active Beam instances
     this.sparks = [];             // hit spark VFX
+
+    // ---- Chaff pickup items ----
+    this.pickups        = [];
+    this.pickupTimer    = PICKUP_SPAWN_INTERVAL * 0.5; // first one comes a bit sooner
   }
 
   onInput(action, data) {
@@ -448,11 +484,18 @@ export class Game extends Scene {
       if (this.chaffExplode.t >= this.chaffExplode.dur) this.chaffExplode = null;
     }
 
-    // ---- Missile update — home toward chaff if active, else toward player ----
-    const missileTargetX = this.chaff ? this.chaff.x : this.fx;
-    const missileTargetY = this.chaff ? this.chaff.y : this.fy;
+    // ---- Missile update — home toward chaff if active (with turn boost), else toward player ----
+    const missileTargetX  = this.chaff ? this.chaff.x : this.fx;
+    const missileTargetY  = this.chaff ? this.chaff.y : this.fy;
+    const chaffActive     = !!this.chaff;
     for (const m of this.missiles) {
+      // Temporarily boost turn rate while chaff is pulling them in
+      const savedTurnRate = m.turnRate;
+      if (chaffActive && m.homing) {
+        m.turnRate = Math.min(m.turnRate * CHAFF_TURN_BOOST, Math.PI * 3);
+      }
       m.update(dt, missileTargetX, missileTargetY);
+      m.turnRate = savedTurnRate;  // restore original (only boosted during chaff)
     }
     this.missiles = this.missiles.filter(m => !m.dead);
 
@@ -485,14 +528,46 @@ export class Game extends Scene {
         // Start recharging fresh
       }
 
-      // Auto-fire: find nearest live missile and shoot it
+      // Auto-fire: spray VALKYRIE_SPRAY_COUNT beams per volley at different targets
       if (this.valkyrieMode && this.valkyrieKills < VALKYRIE_AUTO_LIMIT) {
         this.valkyrieShootTimer -= dt;
         if (this.valkyrieShootTimer <= 0) {
           this.valkyrieShootTimer = VALKYRIE_SHOOT_CD;
-          const target = this._nearestMissile();
-          if (target) {
-            this.beams.push(new Beam(this.fx, this.fy, target.x, target.y));
+          // Collect live missiles sorted by distance
+          const liveMissiles = this.missiles.filter(m => !m.dead && !m.exploding);
+          liveMissiles.sort((a, b) => {
+            const dxa = a.x - this.fx, dya = a.y - this.fy;
+            const dxb = b.x - this.fx, dyb = b.y - this.fy;
+            return (dxa * dxa + dya * dya) - (dxb * dxb + dyb * dyb);
+          });
+          // Fire up to VALKYRIE_SPRAY_COUNT beams — primary target + others with slight spread
+          const targets = liveMissiles.slice(0, VALKYRIE_SPRAY_COUNT);
+          for (let si = 0; si < targets.length; si++) {
+            const tgt = targets[si];
+            // For extra beams (si > 0) add random angular spread so they fan out
+            if (si === 0) {
+              this.beams.push(new Beam(this.fx, this.fy, tgt.x, tgt.y));
+            } else {
+              const spread = (Math.random() - 0.5) * VALKYRIE_SPRAY_SPREAD * 2;
+              const baseAngle = Math.atan2(tgt.y - this.fy, tgt.x - this.fx) + spread;
+              const dist = 200;
+              this.beams.push(new Beam(
+                this.fx, this.fy,
+                this.fx + Math.cos(baseAngle) * dist,
+                this.fy + Math.sin(baseAngle) * dist,
+              ));
+            }
+          }
+          // If no targets but mode is still active, fire a forward spray burst
+          if (targets.length === 0) {
+            for (let si = 0; si < VALKYRIE_SPRAY_COUNT; si++) {
+              const ang = (Math.random() - 0.5) * Math.PI * 0.5;
+              this.beams.push(new Beam(
+                this.fx, this.fy,
+                this.fx + Math.cos(ang) * 300,
+                this.fy + Math.sin(ang) * 300,
+              ));
+            }
           }
         }
       }
@@ -518,6 +593,29 @@ export class Game extends Scene {
     this.beams  = this.beams.filter(b => !b.dead);
     this.sparks.forEach(s => s.update(dt));
     this.sparks = this.sparks.filter(s => !s.dead);
+
+    // ---- Chaff pickup spawn + update ----
+    this.pickupTimer -= dt;
+    if (this.pickupTimer <= 0) {
+      this.pickupTimer = PICKUP_SPAWN_INTERVAL;
+      this.pickups.push(new ChaffPickup());
+    }
+    for (const pk of this.pickups) pk.update(dt);
+    // Collision: fighter touches pickup -> +1 chaff
+    for (const pk of this.pickups) {
+      if (pk.dead) continue;
+      const pdx = pk.x - this.fx;
+      const pdy = pk.y - this.fy;
+      if (Math.sqrt(pdx * pdx + pdy * pdy) < HIT_R + PICKUP_HIT_R) {
+        pk.dead = true;
+        this.flares = Math.min(FLARE_MAX, this.flares + 1);
+        // Small positive feedback sound
+        try { this.engine.audio.select ? this.engine.audio.select() : this.engine.audio.bad(); } catch (_) {}
+        // Spawn a spark at pickup location as visual feedback
+        this.sparks.push(new Spark(pk.x, pk.y));
+      }
+    }
+    this.pickups = this.pickups.filter(pk => !pk.dead);
 
     // ---- Invuln countdown ----
     if (this._invuln > 0) this._invuln = Math.max(0, this._invuln - dt);
@@ -671,6 +769,11 @@ export class Game extends Scene {
     }
     if (this.chaffExplode) {
       this._drawChaffExplosion(ctx, this.chaffExplode, p);
+    }
+
+    // ---- Chaff pickup items ----
+    for (const pk of this.pickups) {
+      this._drawChaffPickup(ctx, pk, p);
     }
 
     // ---- Fighter ----
@@ -1411,6 +1514,62 @@ export class Game extends Scene {
     } finally {
       ctx.restore();
       ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+    }
+  }
+
+  // ---- Chaff resupply pickup — glowing capsule with "C" label ----
+  _drawChaffPickup(ctx, pk, p) {
+    if (!pk || pk.dead) return;
+    const savedA = ctx.globalAlpha;
+    try {
+      // Pulsing outer glow
+      const pulse = 0.5 + 0.5 * Math.sin(pk.age * 6);
+      ctx.globalAlpha = clamp(0.25 + pulse * 0.25, 0, 1);
+      ctx.fillStyle   = p.warn;
+      ctx.beginPath();
+      ctx.arc(pk.x, pk.y, 18, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Capsule body (rounded rect via arc)
+      ctx.globalAlpha = clamp(0.92, 0, 1);
+      ctx.fillStyle   = p.dark;
+      ctx.strokeStyle = p.warn;
+      ctx.lineWidth   = 1.5;
+      const hw = 10, hh = 7;
+      ctx.beginPath();
+      ctx.moveTo(pk.x - hw + hh, pk.y - hh);
+      ctx.lineTo(pk.x + hw - hh, pk.y - hh);
+      ctx.arcTo(pk.x + hw, pk.y - hh, pk.x + hw, pk.y, hh);
+      ctx.arcTo(pk.x + hw, pk.y + hh, pk.x + hw - hh, pk.y + hh, hh);
+      ctx.lineTo(pk.x - hw + hh, pk.y + hh);
+      ctx.arcTo(pk.x - hw, pk.y + hh, pk.x - hw, pk.y, hh);
+      ctx.arcTo(pk.x - hw, pk.y - hh, pk.x - hw + hh, pk.y - hh, hh);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Dividing line in center
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = p.warn;
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(pk.x, pk.y - hh);
+      ctx.lineTo(pk.x, pk.y + hh);
+      ctx.stroke();
+
+      // "C" label — bright center
+      ctx.globalAlpha = clamp(0.9 + pulse * 0.1, 0, 1);
+      ctx.fillStyle   = p.warn;
+      ctx.font        = 'bold 10px "DotGothic16", monospace';
+      ctx.textAlign   = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('C', pk.x, pk.y);
+
+    } finally {
+      ctx.globalAlpha = clamp(savedA, 0, 1);
+      ctx.lineWidth   = 1;
+      ctx.textAlign   = 'left';
+      ctx.textBaseline = 'top';
     }
   }
 
