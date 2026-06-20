@@ -8,11 +8,11 @@ import * as binary from './games/binary.js';
 import * as hack from './games/hack.js';
 import * as snake from './games/snake.js';
 import * as beeper from './games/beeper.js';
-import * as fire from './games/fire.js';
+import * as dodge from './games/dodge.js';
 import * as meteor from './games/meteor.js';
 import * as lander from './games/lander.js';
 
-const GAMES = [rogue, binary, hack, snake, beeper, fire, meteor, lander]
+const GAMES = [rogue, binary, hack, snake, beeper, dodge, meteor, lander]
   .map(m => ({ meta: m.meta, Game: m.Game }));
 
 window.addEventListener('load', () => {

@@ -270,72 +270,112 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
-// ---- アニメ風赤プラズマ爆発（マクロス風丸い火球）----
-// XOR ポリゴン雲を廃止。加算合成('lighter')の放射グラデーション円で
-// 白熱コア→オレンジ→赤の柔らかい火球を描く。
-// 重なる爆発は加算で明るくなり自然なプラズマ感を演出する。
+// ---- ソリッド塗り爆発雲（レトロフラットスタイル）----
+// グラデーション/グローなし。赤系ソリッドカラーの粗い手描き風円形ポリゴンで描く。
+// 重なる爆発は XOR合成でブラックアウトし、日食/クレセント効果を演出する。
+// オフスクリーンキャンバスに全爆発をXORで描いてから mainCtx に合成する。
 
-// 爆発1個をメインCtxに直接描画（加算合成ブロック内で呼ぶ）
-// alpha: フェードアウト係数 [0,1]
-// shimmer: コアの輝き変動 [0,1]（わずかに脈動）
-function _drawAnimeBlast(ctx, b, alpha, shimmer) {
-  const r = Math.max(1, b.r);
+// オフスクリーンキャンバス（遅延初期化、W×Hサイズ）
+let _blastOffscreen = null;
+let _blastOffCtx    = null;
 
-  // ビッグブラストは外側の柔らかいグロー層を追加
-  if (b.big && r > 8) {
-    const glowR = r * 1.35;
-    try {
-      const grd = ctx.createRadialGradient(b.x, b.y, Math.max(0.5, r * 0.4), b.x, b.y, Math.max(1, glowR));
-      grd.addColorStop(0, 'rgba(255,120,0,0)');
-      grd.addColorStop(0.5, 'rgba(220,30,0,0.18)');
-      grd.addColorStop(1, 'rgba(180,0,0,0)');
-      ctx.globalAlpha = clamp(alpha * 0.7, 0, 1);
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, Math.max(1, glowR), 0, Math.PI * 2);
-      ctx.fill();
-    } catch (_) {}
-  }
-
-  // メイン火球：白熱コア(0)→明橙(0.18)→赤(0.55)→暗赤(0.85)→透明(1.0)
-  const coreShine = 0.85 + shimmer * 0.15; // コア輝度脈動
+function _getBlastOffscreen() {
+  if (_blastOffscreen && _blastOffCtx) return _blastOffCtx;
   try {
-    const grd = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, Math.max(1, r));
-    grd.addColorStop(0,    `rgba(255,255,${Math.floor(200 * coreShine)},1)`);  // 白熱
-    grd.addColorStop(0.18, `rgba(255,${Math.floor(160 * coreShine)},0,1)`);   // 明橙
-    grd.addColorStop(0.45, 'rgba(255,40,0,0.95)');                             // 赤橙
-    grd.addColorStop(0.70, 'rgba(200,0,0,0.7)');                               // 赤
-    grd.addColorStop(0.88, 'rgba(140,0,0,0.35)');                              // 暗赤（柔らかいエッジ）
-    grd.addColorStop(1,    'rgba(80,0,0,0)');                                   // 透明
-    ctx.globalAlpha = clamp(alpha, 0, 1);
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, Math.max(1, r), 0, Math.PI * 2);
-    ctx.fill();
-  } catch (_) {}
+    _blastOffscreen = document.createElement('canvas');
+    _blastOffscreen.width  = W;
+    _blastOffscreen.height = H;
+    _blastOffCtx = _blastOffscreen.getContext('2d');
+    if (!_blastOffCtx) { _blastOffscreen = null; _blastOffCtx = null; }
+  } catch (_) {
+    _blastOffscreen = null; _blastOffCtx = null;
+  }
+  return _blastOffCtx;
 }
 
-// 全爆発を加算合成('lighter')で描画
-// 重なる爆発は色が加算されて明るい白熱プラズマになる
-function drawAllBlastsAdditive(mainCtx, blasts, frameCount) {
-  // 加算合成モードに切替
-  mainCtx.globalCompositeOperation = 'lighter';
+// 赤系フリッカーカラー（3色を frameCount でサイクル）
+const _BLAST_COLORS = ['#ff2200', '#ff5500', '#cc0000'];
+
+// 爆発雲の粗い手描き風円ポリゴン頂点列を生成する
+// r: 半径, seed: 爆発ID（形状安定のため）, shimmerPhase: 0..2π（per-frame微変化）
+function _makeBlastPoly(r, seed, shimmerPhase) {
+  const VCOUNT = 30; // 頂点数（多めで丸く見える）
+  const verts = [];
+  for (let i = 0; i < VCOUNT; i++) {
+    const angle = (i / VCOUNT) * Math.PI * 2;
+    // 小さなジッター（0.85〜1.00r）で粒状・手描き感を出す
+    // shimmerPhase でわずかに毎フレーム揺れる（エッジのちらつき）
+    const s1 = Math.sin(seed * 13.7 + i * 9.1);
+    const s2 = Math.sin(seed * 7.3  + i * 4.3 + shimmerPhase);
+    const jitter = 0.875 + 0.075 * s1 + 0.05 * s2; // 0.85〜1.00
+    const pr = Math.max(1, r * clamp(jitter, 0.85, 1.0));
+    verts.push({ x: Math.cos(angle) * pr, y: Math.sin(angle) * pr });
+  }
+  return verts;
+}
+
+// 全爆発をオフスクリーンに XOR で描いてから mainCtx に source-over で合成
+// 重なり部分はXORで透明（黒抜き）になり日食のような効果が出る
+function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
+  const offCtx = _getBlastOffscreen();
+  if (!offCtx || !_blastOffscreen) {
+    // フォールバック：オフスクリーンが使えない場合は source-over で塗る
+    mainCtx.globalCompositeOperation = 'source-over';
+    for (const b of blasts) {
+      if (!b) continue;
+      const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+      const r = Math.max(1, b.r);
+      mainCtx.save();
+      mainCtx.globalAlpha = clamp(alpha, 0, 1);
+      mainCtx.fillStyle = _BLAST_COLORS[frameCount % _BLAST_COLORS.length];
+      mainCtx.beginPath();
+      mainCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
+      mainCtx.fill();
+      mainCtx.restore();
+    }
+    mainCtx.globalCompositeOperation = 'source-over';
+    return;
+  }
+
+  // オフスクリーンをクリア（透明）
+  offCtx.clearRect(0, 0, W, H);
+
+  // XOR合成で全爆発を描く（重なり部分が透明になる）
+  offCtx.globalCompositeOperation = 'xor';
 
   for (const b of blasts) {
     if (!b) continue;
+    const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+    if (alpha <= 0) continue;
 
-    // フェード係数
-    const alpha = b.growing
-      ? 1.0
-      : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+    const r = Math.max(1, b.r);
+    // フレームとIDで色をフリッカー
+    const colorIdx = (frameCount + b.id) % _BLAST_COLORS.length;
+    const shimmerPhase = (frameCount * 0.22) + b.id * 1.3;
 
-    // コアの輝き：低周波でわずかに脈動（フレーム依存）
-    const shimmer = 0.5 + 0.5 * Math.sin(frameCount * 0.18 + b.id * 1.7);
+    const verts = _makeBlastPoly(r, b.id, shimmerPhase);
+    if (!verts || verts.length < 3) continue;
 
-    _drawAnimeBlast(mainCtx, b, alpha, shimmer);
+    offCtx.save();
+    offCtx.globalAlpha = clamp(alpha, 0, 1);
+    offCtx.fillStyle   = _BLAST_COLORS[colorIdx];
+    offCtx.translate(b.x, b.y);
+    offCtx.beginPath();
+    offCtx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) {
+      offCtx.lineTo(verts[i].x, verts[i].y);
+    }
+    offCtx.closePath();
+    offCtx.fill();
+    offCtx.restore();
   }
 
-  // 合成モードを必ず source-over に戻す
+  // オフスクリーンを mainCtx に source-over で合成
+  mainCtx.globalCompositeOperation = 'source-over';
+  try {
+    mainCtx.drawImage(_blastOffscreen, 0, 0);
+  } catch (_) {}
+  // 必ず source-over に戻す
   mainCtx.globalCompositeOperation = 'source-over';
 }
 
@@ -1218,7 +1258,7 @@ export class Game extends Scene {
       ctx.restore();
     }
 
-    // ---- 爆発（アニメ風赤プラズマ火球：加算合成）----
+    // ---- 爆発（ソリッド赤雲：XOR重なり黒抜き）----
     // フレームカウンタをインクリメント（render は毎フレーム呼ばれる）
     this._frameCount = (this._frameCount + 1) | 0;
 
@@ -1228,7 +1268,7 @@ export class Game extends Scene {
 
       if (activeBlasts.length > 0) {
         ctx.save();
-        drawAllBlastsAdditive(ctx, activeBlasts, this._frameCount);
+        drawAllBlastsSolidXOR(ctx, activeBlasts, this._frameCount);
         ctx.restore();
       }
     }
@@ -1424,12 +1464,12 @@ export class Game extends Scene {
     // ---- SCATTERの残弾 ----
     if (this._scatterAmmo > 0) {
       ctx.save();
-      // ラベル
-      this.engine.text('SC', labelX, rowY, 9, p.hi, 'left');
+      // ラベル（短い全単語）
+      this.engine.text('SCAT', labelX, rowY, 8, p.hi, 'left');
       // ドット状の残弾表示
       for (let i = 0; i < Math.min(this._scatterAmmo, 9); i++) {
         ctx.beginPath();
-        ctx.arc(panelX + 16 + i * 5, rowY + 5, 2, 0, Math.PI * 2);
+        ctx.arc(panelX + 28 + i * 5, rowY + 4, 2, 0, Math.PI * 2);
         ctx.fillStyle = p.hi;
         ctx.fill();
       }
@@ -1440,10 +1480,10 @@ export class Game extends Scene {
     // ---- ランチャースロット数（MULTIで増加） ----
     if (this._launcherSlots > 2) {
       ctx.save();
-      this.engine.text('SL', labelX, rowY, 9, p.mid, 'left');
+      this.engine.text('SLOTS', labelX, rowY, 8, p.mid, 'left');
       for (let i = 0; i < this._launcherSlots; i++) {
         ctx.beginPath();
-        ctx.arc(panelX + 16 + i * 5, rowY + 5, 2, 0, Math.PI * 2);
+        ctx.arc(panelX + 32 + i * 5, rowY + 4, 2, 0, Math.PI * 2);
         ctx.fillStyle = i < this._launcherSlots ? p.mid : p.dark;
         ctx.fill();
       }
@@ -1455,14 +1495,14 @@ export class Game extends Scene {
     if (this._rapidTimer > 0) {
       const frac = clamp(this._rapidTimer / RAPID_DURATION, 0, 1);
       ctx.save();
-      this.engine.text('RP', labelX, rowY, 9, p.warn, 'left');
+      this.engine.text('RAPID', labelX, rowY, 8, p.warn, 'left');
       // カウントダウンバー
       ctx.fillStyle = p.dark;
-      ctx.fillRect(barX + 14, rowY + 5, barW, barH);
+      ctx.fillRect(barX + 32, rowY + 4, barW, barH);
       ctx.fillStyle = p.warn;
-      ctx.fillRect(barX + 14, rowY + 5, Math.max(0, barW * frac), barH);
+      ctx.fillRect(barX + 32, rowY + 4, Math.max(0, barW * frac), barH);
       // 秒数
-      this.engine.text(Math.ceil(this._rapidTimer) + 's', barX + 14 + barW + 2, rowY, 9, p.warn, 'left');
+      this.engine.text(Math.ceil(this._rapidTimer) + 's', barX + 32 + barW + 2, rowY, 8, p.warn, 'left');
       ctx.restore();
       rowY += rowH;
     }
@@ -1475,11 +1515,11 @@ export class Game extends Scene {
       const maxT = Math.max(...city.buffs.power.map(b => b.timer));
       const frac = clamp(maxT / BUFF_DURATION, 0, 1);
       ctx.save();
-      this.engine.text('PW' + (ci + 1), labelX, rowY, 9, p.warn, 'left');
+      this.engine.text('PWR' + (ci + 1), labelX, rowY, 8, p.warn, 'left');
       ctx.fillStyle = p.dark;
-      ctx.fillRect(barX + 20, rowY + 5, barW - 4, barH);
+      ctx.fillRect(barX + 28, rowY + 4, barW - 4, barH);
       ctx.fillStyle = p.warn;
-      ctx.fillRect(barX + 20, rowY + 5, Math.max(0, (barW - 4) * frac), barH);
+      ctx.fillRect(barX + 28, rowY + 4, Math.max(0, (barW - 4) * frac), barH);
       ctx.restore();
       rowY += rowH;
       if (rowY > GROUND_Y - 30) break;
@@ -1492,11 +1532,11 @@ export class Game extends Scene {
       const maxT = Math.max(...city.buffs.wide.map(b => b.timer));
       const frac = clamp(maxT / BUFF_DURATION, 0, 1);
       ctx.save();
-      this.engine.text('WD' + (ci + 1), labelX, rowY, 9, p.hi, 'left');
+      this.engine.text('WIDE' + (ci + 1), labelX, rowY, 8, p.hi, 'left');
       ctx.fillStyle = p.dark;
-      ctx.fillRect(barX + 20, rowY + 5, barW - 4, barH);
+      ctx.fillRect(barX + 28, rowY + 4, barW - 4, barH);
       ctx.fillStyle = p.hi;
-      ctx.fillRect(barX + 20, rowY + 5, Math.max(0, (barW - 4) * frac), barH);
+      ctx.fillRect(barX + 28, rowY + 4, Math.max(0, (barW - 4) * frac), barH);
       ctx.restore();
       rowY += rowH;
       if (rowY > GROUND_Y - 30) break;

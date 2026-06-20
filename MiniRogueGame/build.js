@@ -32,7 +32,7 @@ const GAMES = [
   'js/games/hack.js',
   'js/games/snake.js',
   'js/games/beeper.js',
-  'js/games/fire.js',
+  'js/games/dodge.js',
   'js/games/meteor.js',
   'js/games/lander.js',
 ];

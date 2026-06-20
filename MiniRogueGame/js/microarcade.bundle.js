@@ -1758,516 +1758,472 @@ class Game extends Scene {
 ;__games.push({ meta: meta, Game: Game });
 })();
 
-// ---- js/games/fire.js ----
+// ---- js/games/dodge.js ----
 (function(){
-// FIRE : Game & Watch スタイルの救助ゲーム
-// 燃える建物から飛び降りる人を担架で受け止め、右の救急車まで送り届ける。
-// 担架の位置を左右に動かして飛び降り人を順番にバウンドさせるタイミングゲーム。
+// DODGE : 弾幕ミサイル回避ゲーム（板野サーカス風）
+// ヴァルキリー型ファイターを操作して、右から迫るホーミングミサイルをかわす。
+// ミサイルは最大旋回速度で制限されるため、慣性でオーバーシュートしてらせん軌跡（板野サーカス）を描く。
 
 const meta = {
-  id: 'fire',
-  title: 'FIRE',
-  desc: '落ちる人を担架で受け止め救助',
-  glyph: 'A',
+  id: 'dodge',
+  title: 'DODGE',
+  desc: '弾幕ミサイルを避けろ',
+  glyph: '>',
 };
 
-// --- レイアウト定数 ---
-// バウンスポジション（担架が止まれるX座標）
-// 救急車との重なりを避けるため間隔を広げた
-const BOUNCE_XS = [85, 180, 268];         // 位置0,1,2 の中心X
+// ---- 定数 ----
+const PLAY_LEFT   = 0;
+const PLAY_RIGHT  = W;
+const PLAY_TOP    = 72;         // HUDの下
+const PLAY_BOTTOM = H - 20;
 
-const TRAMPOLINE_Y = 500;                 // 担架の上端Y（少し上に移動して視野確保）
-const TRAMPOLINE_W = 72;                  // 担架の幅
-const TRAMPOLINE_H = 14;                  // 担架の高さ
-const GROUND_Y = 524;                     // 落下ミス判定ライン
+// 自機移動の追従速度（ドラッグ追従、ピクセル/秒）
+const FIGHTER_FOLLOW = 420;
+// キーボード操作速度（ピクセル/秒）
+const KEY_SPEED = 200;
+// 自機の最大移動可能X（左2/3エリアに制限）
+const FIGHTER_MAX_X = W * 0.62;
+// 当たり判定半径（自機）
+const HIT_R = 10;
+// ミサイル先端の当たり判定半径
+const MISSILE_R = 5;
 
-// 建物（左端）
-const BUILDING_X = 0;
-const BUILDING_Y = 80;
-const BUILDING_W = 62;
-const BUILDING_H = 430;
+// ミサイルトレイルの最大保存点数
+const TRAIL_MAX = 60;
 
-// 救急車（右端）— バウンスポジション2(268)と重ならないよう右寄りに
-const AMBULANCE_X = 300;
-const AMBULANCE_Y = 470;
-const AMBULANCE_W = 58;
-const AMBULANCE_H = 58;
+// スターフィールドの星数
+const STAR_COUNT = 50;
 
-// 救急車の入口X（ジャンパーがここに向かって飛び込む）
-const AMBULANCE_ENTRY_X = AMBULANCE_X + 4;
+// ---- ユーティリティ ----
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
 
-// ジャンパーが生成されるX（建物の右端付近）
-const SPAWN_X = 44;
-const SPAWN_Y = 210;   // 建物から飛び出す高さ
+// 角度差を -π～π に正規化
+function angleDiff(to, from) {
+  let d = to - from;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
 
-// ジャンパーサイズ
-const JUMPER_W = 18;
-const JUMPER_H = 22;
+// ---- スターフィールド ----
+class Star {
+  constructor() {
+    this.reset(Math.random() * W);
+  }
+  reset(x) {
+    this.x = x;
+    this.y = PLAY_TOP + Math.random() * (PLAY_BOTTOM - PLAY_TOP);
+    this.speed = 20 + Math.random() * 80;  // 速いほど前景感
+    this.r = this.speed > 70 ? 1.5 : 1;
+  }
+  update(dt) {
+    this.x -= this.speed * dt;
+    if (this.x < 0) this.reset(W);
+  }
+}
 
-// 物理 — 重力を下げてゆっくり落下させる
-const GRAVITY       = 480;    // px/s^2（元900→480に減速）
-const BOUNCE_VY     = -520;   // バウンス時の初速（上向き・大きく飛ばす）
-const BOUNCE_VX_BASE = 90;    // バウンス後の横速度（基本値）
-const BOUNCE_VX_STEP = 25;    // bounceIdxごとの追加横速度
-const SPAWN_VY_INIT  = -40;   // 建物から飛び出す初期縦速度（ほぼ水平気味に）
+// ---- ミサイル ----
+class Missile {
+  constructor(x, y, angle, speed, turnRate) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;       // 現在の進行角度（ラジアン）
+    this.speed = speed;
+    this.turnRate = turnRate; // 最大旋回速度（ラジアン/秒）
+    this.trail = [];          // [{x,y}] 最近の軌跡
+    this.age = 0;             // 経過時間（秒）
+    this.dead = false;
+    // 画面外判定用マージン
+    this._oob = 0;
+  }
 
-// 最終バウンス後（救急車へ）の速度
-const FINAL_VX = 160;
-const FINAL_VY = -380;
+  update(dt, targetX, targetY) {
+    if (this.dead) return;
+    this.age += dt;
 
-// 難易度スケーリング
-const BASE_SPAWN_INTERVAL = 4.0;   // 最初の生成間隔（秒）
-const MIN_SPAWN_INTERVAL  = 1.4;   // 最短生成間隔
+    // ターゲットへの方向角度を計算
+    const dx = targetX - this.x;
+    const dy = targetY - this.y;
+    const desired = Math.atan2(dy, dx);
 
-// HUD
-const HUD_Y = 10;
+    // 旋回速度でクランプしながら方向を更新（オーバーシュート→板野サーカス軌道）
+    const diff = angleDiff(desired, this.angle);
+    const maxTurn = this.turnRate * dt;
+    this.angle += clamp(diff, -maxTurn, maxTurn);
 
-// バウンス数（0,1,2 の3段階を踏んで救助）
-const BOUNCE_COUNT = 3;
+    // 位置更新
+    this.x += Math.cos(this.angle) * this.speed * dt;
+    this.y += Math.sin(this.angle) * this.speed * dt;
 
+    // トレイル記録（間引き：毎フレーム全保存→スムーズ）
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > TRAIL_MAX) this.trail.shift();
+
+    // 画面外に出たら削除フラグ
+    if (this.x < -40 || this.x > W + 40 || this.y < PLAY_TOP - 40 || this.y > PLAY_BOTTOM + 40) {
+      this._oob++;
+      if (this._oob > 5) this.dead = true;
+    } else {
+      this._oob = 0;
+    }
+  }
+}
+
+// ---- メインゲームクラス ----
 class Game extends Scene {
   enter() {
-    // --- 状態リセット ---
-    this.score       = 0;
-    this.lives       = 3;
-    this.high        = this.engine.storage.getHigh(meta.id);
-    this.dead        = false;
-    this.tram        = 1;          // 担架の現在ポジション index (0/1/2)
-    this.jumpers     = [];         // アクティブなジャンパー配列
-    this.spawnTimer  = 2.0;        // 最初の生成まで少し待つ
-    this.rescued     = 0;          // 今回救助した人数
-    this.elapsed     = 0;          // 経過時間（難易度計算用）
-    this.flameTick   = 0;          // 炎アニメ用タイマー
-    this.shakeTimer  = 0;          // ダメージ時の画面揺れ
-    this.flashTimer  = 0;          // 救助時のフラッシュ
-    this.rescueFlash = 0;          // 救助成功表示タイマー
-    this.lastRescueX = 0;          // 救助成功表示X座標
-    this.lastRescueY = 0;          // 救助成功表示Y座標
-  }
+    const p = P();
+    // 自機
+    this.fx = 80;
+    this.fy = (PLAY_TOP + PLAY_BOTTOM) / 2;
 
-  // 現在の難易度による生成間隔
-  _spawnInterval() {
-    return Math.max(MIN_SPAWN_INTERVAL, BASE_SPAWN_INTERVAL - this.elapsed * 0.05);
-  }
+    // ミサイル配列
+    this.missiles = [];
 
-  // 新しいジャンパーを建物から生成
-  _spawnJumper() {
-    this.jumpers.push({
-      x:          SPAWN_X,          // 現在のX
-      y:          SPAWN_Y,          // 現在のY
-      vx:         28,               // 右向きの初速（建物から飛び出す感じ）
-      vy:         SPAWN_VY_INIT,    // ほぼ水平に飛び出す
-      bounceIdx:  0,                // 次に向かうバウンスポジション index (0/1/2)
-      state:      'falling',        // 'falling' | 'rescued' | 'dead'
-      animTimer:  0,                // 救助/死亡アニメーション用タイマー
-    });
-  }
+    // スターフィールド
+    this.stars = Array.from({ length: STAR_COUNT }, () => new Star());
 
-  update(dt) {
-    // dead状態でもフレームを消費しないようにすぐリターン
-    if (this.dead) return;
+    // スコア・時間
+    this.elapsed = 0;    // 生存時間（秒）
+    this.score = 0;      // 表示スコア（ms単位で整数）
+    this.high = this.engine.storage.getHigh(meta.id) || 0;
 
-    this.elapsed    += dt;
-    this.flameTick  += dt;
-    if (this.shakeTimer  > 0) this.shakeTimer  -= dt;
-    if (this.flashTimer  > 0) this.flashTimer  -= dt;
-    if (this.rescueFlash > 0) this.rescueFlash -= dt;
+    // スポーン管理
+    this.spawnTimer = 0;
+    this.spawnInterval = 1.8; // 最初のスポーン間隔（秒）
+    this.volleyCount = 1;     // 1回のスポーンで出るミサイル数
 
-    // 生成タイマー
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      this._spawnJumper();
-      this.spawnTimer = this._spawnInterval();
-    }
+    // 爆発エフェクト
+    this.explosion = null;   // { x, y, t, dur }
 
-    // ジャンパー物理更新
-    const toRemove = [];
-    for (let i = 0; i < this.jumpers.length; i++) {
-      const j = this.jumpers[i];
+    // ゲームオーバーフラグ
+    this.dead = false;
 
-      // --- 終端状態のアニメーション消化 ---
-      if (j.state === 'rescued') {
-        j.animTimer += dt;
-        if (j.animTimer > 0.8) toRemove.push(i);
-        continue;
-      }
-      if (j.state === 'dead') {
-        j.animTimer += dt;
-        if (j.animTimer > 0.6) toRemove.push(i);
-        continue;
-      }
+    // キーボード入力状態（方向）
+    this.keyDir = { x: 0, y: 0 };
 
-      // --- 重力・移動（NaN防止：isFiniteチェック） ---
-      const dvx = isFinite(j.vx) ? j.vx : 0;
-      const dvy = isFinite(j.vy) ? j.vy : 0;
-      j.vy += GRAVITY * dt;
-      j.x  += dvx * dt;
-      j.y  += dvy * dt;
-
-      // NaNが混入した場合の安全ネット
-      if (!isFinite(j.x) || !isFinite(j.y)) {
-        j.state = 'dead';
-        j.animTimer = 0;
-        continue;
-      }
-
-      const jCenterX = j.x + JUMPER_W / 2;
-      const jBottom  = j.y + JUMPER_H;
-
-      // --- 担架バウンス判定 ---
-      // 下降中かつ担架の高さ帯に入ったとき判定
-      if (j.vy > 0 && jBottom >= TRAMPOLINE_Y - 4 && jBottom <= GROUND_Y) {
-
-        // bounceIdx が有効範囲内のときだけターゲットを参照
-        if (j.bounceIdx >= 0 && j.bounceIdx < BOUNCE_COUNT) {
-          const tramX    = BOUNCE_XS[this.tram];          // 担架の現在X
-          const tramHalf = TRAMPOLINE_W / 2 + 10;         // 余裕幅
-
-          // 担架にジャンパーが重なっているか？
-          if (Math.abs(jCenterX - tramX) < tramHalf) {
-            this._doBounce(j);
-          }
-        }
-      }
-
-      // --- 地面落下 = ミス ---
-      if (jBottom > GROUND_Y + 10) {
-        j.state = 'dead';
-        j.animTimer = 0;
-        this.lives--;
-        this.shakeTimer = 0.4;
-        this.engine.audio.bad();
-        if (this.lives <= 0) {
-          this._gameOver();
-          return;  // ループを即中断（toRemoveが壊れないよう）
-        }
-      }
-
-      // --- 画面外へ完全に消えた場合も削除 ---
-      if (j.x > W + 80 || j.y > H + 80) {
-        toRemove.push(i);
-      }
-    }
-
-    // 重複排除 → 逆順で削除（indexズレ防止）
-    const uniqueRemove = [...new Set(toRemove)].sort((a, b) => b - a);
-    for (const idx of uniqueRemove) {
-      this.jumpers.splice(idx, 1);
-    }
-  }
-
-  // バウンス処理を切り出し（update肥大化防止）
-  _doBounce(j) {
-    const jCenterX = j.x + JUMPER_W / 2;
-
-    if (j.bounceIdx < BOUNCE_COUNT - 1) {
-      // --- 通常バウンス（まだ途中のポジション）---
-      const vx = BOUNCE_VX_BASE + j.bounceIdx * BOUNCE_VX_STEP;
-      j.vy = BOUNCE_VY;
-      j.vx = vx;
-      j.bounceIdx++;
-      this.engine.audio.pick();
-      this.score += 1;
-
-    } else {
-      // --- 最終バウンス（位置2→救急車へ飛び込む）---
-      j.vy = FINAL_VY;
-      j.vx = FINAL_VX;
-      j.bounceIdx++;  // BOUNCE_COUNT(3) になる
-      j.state = 'rescued';
-      j.animTimer = 0;
-
-      this.rescued++;
-      this.score += 5;
-      this.flashTimer  = 0.4;
-      this.rescueFlash = 1.0;
-      this.lastRescueX = j.x;
-      this.lastRescueY = j.y;
-
-      // sequence()は必ず配列を渡す（引数なしはThrowするため）
-      this.engine.audio.sequence([
-        { freq: 660, dur: 0.08 },
-        { freq: 880, dur: 0.08 },
-        { freq: 1100, dur: 0.10 },
-      ]);
-    }
-  }
-
-  _gameOver() {
-    this.dead = true;
-    // sequence()には必ず配列を渡す（引数なし → throws）
-    this.engine.audio.sequence([
-      { freq: 440, dur: 0.12 },
-      { freq: 330, dur: 0.12 },
-      { freq: 220, dur: 0.20 },
-    ]);
-    if (this.engine.storage.setHigh(meta.id, this.score)) this.high = this.score;
+    // エンジン炎アニメーション用
+    this.flameTick = 0;
   }
 
   onInput(action, data) {
     if (this.dead) {
-      if (action === 'tap' || action === 'confirm') {
-        this.enter(); // リトライ
-      } else if (action === 'back') {
-        this.engine.toMenu();
+      if (action === 'back') { this.engine.toMenu(); return; }
+      if (action === 'tap' || action === 'confirm') { this.enter(); return; }
+      return;
+    }
+    if (action === 'back') { this.engine.toMenu(); return; }
+
+    // キーボード方向（update内で参照）
+    if (action === 'up')    { this.keyDir.y = -1; }
+    if (action === 'down')  { this.keyDir.y =  1; }
+    if (action === 'left')  { this.keyDir.x = -1; }
+    if (action === 'right') { this.keyDir.x =  1; }
+  }
+
+  update(dt) {
+    if (this.dead) {
+      // 爆発エフェクトのカウントダウン
+      if (this.explosion) {
+        this.explosion.t += dt;
+        if (this.explosion.t > this.explosion.dur) this.explosion = null;
       }
       return;
     }
 
-    if (action === 'back') {
-      this.engine.toMenu();
-      return;
+    this.elapsed += dt;
+    this.score = Math.floor(this.elapsed * 100);
+    this.flameTick += dt;
+
+    // ---- 自機移動 ----
+    const ptr = this.engine.pointer;
+
+    if (ptr.down) {
+      // ドラッグ追従：ポインタ座標へスムーズ移動
+      const tdx = ptr.x - this.fx;
+      const tdy = ptr.y - this.fy;
+      const dist = Math.sqrt(tdx * tdx + tdy * tdy);
+      if (dist > 1) {
+        const step = Math.min(FIGHTER_FOLLOW * dt, dist);
+        this.fx += (tdx / dist) * step;
+        this.fy += (tdy / dist) * step;
+      }
+    } else {
+      // キーボード操作（矢印キー）
+      if (this.keyDir.x !== 0 || this.keyDir.y !== 0) {
+        const klen = Math.sqrt(this.keyDir.x ** 2 + this.keyDir.y ** 2);
+        this.fx += (this.keyDir.x / klen) * KEY_SPEED * dt;
+        this.fy += (this.keyDir.y / klen) * KEY_SPEED * dt;
+      }
+    }
+    // キー方向はフレームごとにリセット（onInputで毎回セットされる）
+    this.keyDir.x = 0;
+    this.keyDir.y = 0;
+
+    // 自機を遊技エリア内にクランプ
+    this.fx = clamp(this.fx, PLAY_LEFT + 20, FIGHTER_MAX_X);
+    this.fy = clamp(this.fy, PLAY_TOP + 16, PLAY_BOTTOM - 16);
+
+    // ---- スターフィールド更新 ----
+    for (const s of this.stars) s.update(dt);
+
+    // ---- ミサイルスポーン ----
+    this.spawnTimer -= dt;
+    if (this.spawnTimer <= 0) {
+      this._spawnVolley();
+
+      // 難易度カーブ：時間経過でスポーン間隔を短く、ボレー数を増やす
+      const t = this.elapsed;
+      this.spawnInterval = Math.max(0.45, 1.8 - t * 0.028);
+      this.volleyCount   = 1 + Math.floor(t / 8);  // 8秒ごとに+1
+      this.spawnTimer    = this.spawnInterval;
     }
 
-    if (action === 'left') {
-      if (this.tram > 0) {
-        this.tram--;
-        this.engine.audio.move();
+    // ---- ミサイル更新 ----
+    for (const m of this.missiles) {
+      m.update(dt, this.fx, this.fy);
+    }
+    // 死亡ミサイルを除去
+    this.missiles = this.missiles.filter(m => !m.dead);
+
+    // ---- 当たり判定 ----
+    for (const m of this.missiles) {
+      if (m.dead) continue;
+      const dx = m.x - this.fx;
+      const dy = m.y - this.fy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < HIT_R + MISSILE_R) {
+        this._gameOver(m.x, m.y);
+        return;
       }
-    } else if (action === 'right') {
-      if (this.tram < BOUNCE_COUNT - 1) {
-        this.tram++;
-        this.engine.audio.move();
-      }
-    } else if (action === 'tap' && data) {
-      // 画面の左半分タップ → 担架を左へ、右半分 → 右へ
-      if (data.x < W / 2) {
-        if (this.tram > 0) { this.tram--; this.engine.audio.move(); }
-      } else {
-        if (this.tram < BOUNCE_COUNT - 1) { this.tram++; this.engine.audio.move(); }
-      }
+    }
+  }
+
+  _spawnVolley() {
+    const t = this.elapsed;
+    // 基本ミサイル速度（時間で加速）
+    const baseSpeed = 90 + t * 1.5;
+    // 旋回速度（最初は緩く、段々鋭く）
+    const baseTurnRate = 1.0 + t * 0.04;
+
+    const count = this.volleyCount;
+    for (let i = 0; i < count; i++) {
+      // スポーン位置：右端、垂直方向はランダム
+      const sy = PLAY_TOP + 30 + Math.random() * (PLAY_BOTTOM - PLAY_TOP - 60);
+      // 初期角度：左方向に±30度のブレ
+      const angleSpread = (Math.random() - 0.5) * (Math.PI / 3);
+      const initAngle = Math.PI + angleSpread;  // 基本は左向き（π）
+      // ボレー内の速度・旋回にランダムさを加えて軌道を散らす
+      const speed    = baseSpeed    * (0.8 + Math.random() * 0.5);
+      const turnRate = baseTurnRate * (0.6 + Math.random() * 0.8);
+
+      this.missiles.push(new Missile(W + 10, sy, initAngle, speed, turnRate));
+    }
+  }
+
+  _gameOver(ex, ey) {
+    this.dead = true;
+    this.engine.audio.bad();
+    this.explosion = { x: ex, y: ey, t: 0, dur: 1.2 };
+
+    // ハイスコア保存
+    if (this.engine.storage.setHigh(meta.id, this.score)) {
+      this.high = this.score;
+    } else {
+      this.high = this.engine.storage.getHigh(meta.id) || this.high;
     }
   }
 
   render(ctx) {
     const p = P();
 
-    // 画面揺れエフェクト
-    let shakeX = 0, shakeY = 0;
-    if (this.shakeTimer > 0) {
-      shakeX = (Math.random() - 0.5) * 8;
-      shakeY = (Math.random() - 0.5) * 6;
-    }
-    if (shakeX !== 0 || shakeY !== 0) {
-      ctx.save();
-      ctx.translate(shakeX, shakeY);
+    // ---- 遊技エリア背景 ----
+    this.engine.rect(0, PLAY_TOP, W, PLAY_BOTTOM - PLAY_TOP, p.dark);
+
+    // ---- スターフィールド ----
+    for (const s of this.stars) {
+      ctx.fillStyle = p.dim;
+      ctx.fillRect(s.x, s.y, s.r, s.r);
     }
 
-    // 救助フラッシュ（画面全体の淡い光）
-    if (this.flashTimer > 0) {
-      this.engine.rect(0, 0, W, H, p.hi + '18');
+    // ---- ミサイル描画（トレイル + 先端） ----
+    for (const m of this.missiles) {
+      this._drawMissile(ctx, m, p);
     }
 
-    // === HUD ===
-    // BACKボタン（x:6..48, y:8..44）を避けて x>=52 から描く
-    this.engine.text('FIRE', 52, HUD_Y + 4, 18, p.warn, 'left');
-    this.engine.text('SCORE ' + this.score, 52, HUD_Y + 26, 13, p.mid, 'left');
-    this.engine.text('HI ' + this.high, W - 10, HUD_Y + 4, 13, p.dim, 'right');
-
-    // ライフ表示（右上）— 'A'グリフで人を表現
-    for (let i = 0; i < 3; i++) {
-      const lx = W - 14 - i * 18;
-      const ly = HUD_Y + 22;
-      this.engine.text('A', lx, ly, 14, i < this.lives ? p.fg : p.dark, 'right');
+    // ---- 自機描画 ----
+    if (!this.dead || (this.explosion && this.explosion.t < 0.15)) {
+      this._drawFighter(ctx, this.fx, this.fy, p);
     }
 
-    // === 地面ライン ===
-    this.engine.rect(0, GROUND_Y + 12, W, 4, p.dim);
-
-    // === 建物（左） ===
-    this._drawBuilding(p);
-
-    // === 救急車（右） ===
-    this._drawAmbulance(p);
-
-    // === バウンスポジションマーカー（地面上の目印）===
-    for (let i = 0; i < BOUNCE_COUNT; i++) {
-      const bx = BOUNCE_XS[i];
-      const isActive = (i === this.tram);
-      // 担架が止まれる位置を示すマーカー（三角形風に矩形を重ねる）
-      const mc = isActive ? p.fg : p.dim;
-      this.engine.rect(bx - 6, GROUND_Y,     12, 4, mc);
-      this.engine.rect(bx - 4, GROUND_Y + 4,  8, 4, mc);
-      this.engine.rect(bx - 2, GROUND_Y + 8,  4, 4, mc);
-      // ポジション番号（小さく）
-      this.engine.text(String(i + 1), bx, GROUND_Y - 14, 11, mc, 'center');
+    // ---- 爆発エフェクト ----
+    if (this.explosion) {
+      this._drawExplosion(ctx, this.explosion, p);
     }
 
-    // === 担架 ===
-    this._drawTrampoline(p);
+    // ---- HUD ----
+    // タイトル（左、BACKボタン右）
+    this.engine.text('DODGE', 52, 10, 20, p.fg, 'left');
+    // スコア（TIME表示）
+    const secStr = (this.elapsed).toFixed(1) + 's';
+    this.engine.text('TIME ' + secStr, 52, 34, 14, p.mid, 'left');
+    // ハイスコア
+    const hiSec = (this.high / 100).toFixed(1) + 's';
+    this.engine.text('BEST ' + hiSec, W - 8, 10, 14, p.dim, 'right');
 
-    // === ジャンパー ===
-    for (const j of this.jumpers) {
-      this._drawJumper(ctx, j, p);
-    }
-
-    // === 救助成功フィードバック（+5 表示）===
-    if (this.rescueFlash > 0) {
-      const alpha = Math.min(1, this.rescueFlash);
-      const ry = AMBULANCE_Y - 10 - (1 - this.rescueFlash) * 30;
-      ctx.globalAlpha = alpha;
-      this.engine.text('+5 SAVED!', AMBULANCE_X + AMBULANCE_W / 2, ry, 16, p.hi, 'center');
-      ctx.globalAlpha = 1.0;
-    }
-
-    // === 操作ガイド（下部）===
-    if (!this.dead) {
-      this.engine.text('← →  で担架を移動', W / 2, H - 26, 12, p.dim, 'center');
-    }
-
-    if (shakeX !== 0 || shakeY !== 0) {
-      ctx.restore();
-    }
-
-    // === ゲームオーバーオーバーレイ ===
+    // ---- ゲームオーバーオーバーレイ ----
     if (this.dead) {
-      // 半透明の暗い背景
-      this.engine.rect(18, H / 2 - 110, W - 36, 220, p.dark);
-      this.engine.stroke(18, H / 2 - 110, W - 36, 220, p.bad, 2);
-      this.engine.text('GAME OVER', W / 2, H / 2 - 96, 28, p.bad,  'center');
-      this.engine.text('SCORE   ' + this.score,   W / 2, H / 2 - 54, 20, p.fg,   'center');
-      this.engine.text('RESCUED  ' + this.rescued, W / 2, H / 2 - 24, 16, p.mid,  'center');
-      this.engine.text('BEST    ' + this.high,    W / 2, H / 2 +  6, 16, p.dim,  'center');
-      // 区切り線
-      this.engine.rect(W / 2 - 70, H / 2 + 30, 140, 2, p.dim);
-      this.engine.text('TAP TO RETRY', W / 2, H / 2 + 42, 15, p.fg,   'center');
-      this.engine.text('‹ BACK',       W / 2, H / 2 + 66, 13, p.dim,  'center');
+      this._drawGameOver(ctx, p);
     }
   }
 
-  // 建物描画（炎アニメつき）
-  _drawBuilding(p) {
-    // 建物本体
-    this.engine.rect(BUILDING_X, BUILDING_Y, BUILDING_W, BUILDING_H, p.dark);
-    this.engine.stroke(BUILDING_X, BUILDING_Y, BUILDING_W, BUILDING_H, p.dim, 2);
+  _drawMissile(ctx, m, p) {
+    const trail = m.trail;
+    if (trail.length < 2) return;
 
-    // 窓グリッド（装飾）
-    for (let row = 0; row < 5; row++) {
-      for (let col = 0; col < 2; col++) {
-        const wx = BUILDING_X + 8 + col * 24;
-        const wy = BUILDING_Y + 20 + row * 60;
-        // 上の2階の窓は炎で赤くなっている
-        const wColor = (row <= 1) ? p.warn : p.mid;
-        this.engine.rect(wx, wy, 14, 14, p.bg);
-        this.engine.stroke(wx, wy, 14, 14, wColor, 1);
+    // トレイルを描画（古い点ほど透明）
+    // globalAlphaを操作するので描画後に必ずリセットする
+    const savedAlpha = ctx.globalAlpha;
+    try {
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // トレイルを短いセグメントに分けてグラデーション描画
+      const len = trail.length;
+      for (let i = 1; i < len; i++) {
+        const frac = i / len;               // 0(古い)→1(新しい)
+        const alpha = clamp(frac * frac * 0.85, 0, 1);
+        ctx.globalAlpha = alpha;
+
+        // 新しい側はwarn、古い側はdimに色変化
+        ctx.strokeStyle = frac > 0.6 ? p.warn : p.dim;
+        ctx.lineWidth = frac > 0.7 ? 2 : 1;
+
+        ctx.beginPath();
+        ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
       }
+    } finally {
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
     }
 
-    // 建物上部の炎（アニメ）— 2フレーム交互
-    const flameToggle = (Math.floor(this.flameTick * 4) % 2 === 0);
-    const fc1 = flameToggle ? p.warn : p.bad;
-    const fc2 = flameToggle ? p.bad  : p.warn;
+    // ミサイル先端（明るい四角形 + 光彩）
+    const head = trail[trail.length - 1];
+    ctx.globalAlpha = 1;
 
-    this.engine.rect(BUILDING_X + 2,  BUILDING_Y - 26, 12, 30, fc1);
-    this.engine.rect(BUILDING_X + 16, BUILDING_Y - 20, 10, 24, fc2);
-    this.engine.rect(BUILDING_X + 28, BUILDING_Y - 30, 14, 34, fc1);
-    this.engine.rect(BUILDING_X + 46, BUILDING_Y - 18, 10, 22, fc2);
+    // 明るいコア
+    ctx.fillStyle = p.hi;
+    ctx.fillRect(head.x - 3, head.y - 2, 6, 4);
+    // 外側光彩（warn色）
+    ctx.fillStyle = p.warn;
+    ctx.fillRect(head.x - 4, head.y - 3, 8, 6);
+    // コア再描画
+    ctx.fillStyle = p.hi;
+    ctx.fillRect(head.x - 2, head.y - 1, 4, 2);
 
-    // 建物の出口プラットフォーム（ジャンパーが飛び出す場所）
-    this.engine.rect(BUILDING_X + BUILDING_W - 4, SPAWN_Y - 8, 14, 6, p.fg);
-
-    // 「FIRE」ラベル（建物内）
-    this.engine.text('FIRE', BUILDING_X + BUILDING_W / 2, BUILDING_Y + BUILDING_H / 2, 12, p.bad, 'center');
+    ctx.lineCap = 'butt';
+    ctx.lineWidth = 1;
   }
 
-  // 救急車描画
-  _drawAmbulance(p) {
-    // 車体
-    this.engine.rect(AMBULANCE_X, AMBULANCE_Y, AMBULANCE_W, AMBULANCE_H, p.dark);
-    this.engine.stroke(AMBULANCE_X, AMBULANCE_Y, AMBULANCE_W, AMBULANCE_H, p.fg, 2);
+  _drawFighter(ctx, x, y, p) {
+    // ヴァルキリー風の小型ファイター（三角矢印型）
+    // 機体本体：横長の鋭い三角形（右向き）
+    ctx.fillStyle = p.fg;
+    ctx.beginPath();
+    ctx.moveTo(x + 18, y);           // 機首
+    ctx.lineTo(x - 10, y - 8);       // 上翼端
+    ctx.lineTo(x - 6, y);            // 中央くびれ
+    ctx.lineTo(x - 10, y + 8);       // 下翼端
+    ctx.closePath();
+    ctx.fill();
 
-    // 赤十字マーク
-    const cx = AMBULANCE_X + AMBULANCE_W / 2;
-    const cy = AMBULANCE_Y + AMBULANCE_H / 2 - 6;
-    this.engine.rect(cx - 9, cy - 3, 18, 6, p.bad);
-    this.engine.rect(cx - 3, cy - 9, 6, 18, p.bad);
+    // ハイライト（機体上部）
+    ctx.fillStyle = p.hi;
+    ctx.beginPath();
+    ctx.moveTo(x + 18, y);
+    ctx.lineTo(x - 4, y - 3);
+    ctx.lineTo(x - 6, y);
+    ctx.closePath();
+    ctx.fill();
 
-    // 「SAVE」ラベル
-    this.engine.text('SAVE', cx, AMBULANCE_Y + AMBULANCE_H - 16, 11, p.fg, 'center');
+    // コックピット
+    ctx.fillStyle = p.mid;
+    ctx.fillRect(x + 2, y - 2, 8, 4);
 
-    // タイヤ
-    this.engine.rect(AMBULANCE_X + 4,              AMBULANCE_Y + AMBULANCE_H - 2, 14, 8, p.mid);
-    this.engine.rect(AMBULANCE_X + AMBULANCE_W - 18, AMBULANCE_Y + AMBULANCE_H - 2, 14, 8, p.mid);
+    // エンジン炎（点滅アニメーション）
+    const flameLen = 6 + Math.sin(this.flameTick * 18) * 4;
+    const flameW   = 3 + Math.sin(this.flameTick * 22) * 1.5;
+    ctx.fillStyle = p.warn;
+    ctx.fillRect(x - 10 - flameLen, y - flameW / 2, flameLen, flameW);
+    ctx.fillStyle = p.hi;
+    ctx.fillRect(x - 10 - flameLen * 0.5, y - flameW * 0.3, flameLen * 0.5, flameW * 0.6);
 
-    // ライトアニメ（点滅）
-    const lightOn = (Math.floor(this.flameTick * 3) % 2 === 0);
-    if (lightOn) {
-      this.engine.rect(AMBULANCE_X + 3, AMBULANCE_Y + 3, 9, 7, p.warn);
-    }
-
-    // 入口（左側に開口部を示す線）
-    this.engine.rect(AMBULANCE_X, AMBULANCE_Y + 10, 4, AMBULANCE_H - 24, p.bg);
+    // 当たり判定可視化（デバッグ用・通常は非表示）
+    // ctx.strokeStyle = p.bad; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x,y,HIT_R,0,Math.PI*2); ctx.stroke();
   }
 
-  // 担架描画
-  _drawTrampoline(p) {
-    const tx = BOUNCE_XS[this.tram] - TRAMPOLINE_W / 2;
-    const ty = TRAMPOLINE_Y;
+  _drawExplosion(ctx, exp, p) {
+    const frac = exp.t / exp.dur;        // 0→1
+    const r    = 8 + frac * 60;
+    const savedAlpha = ctx.globalAlpha;
+    try {
+      // 外輪（広がる）
+      ctx.globalAlpha = clamp((1 - frac) * 0.8, 0, 1);
+      ctx.strokeStyle = p.bad;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, r, 0, Math.PI * 2);
+      ctx.stroke();
 
-    // 担架を運ぶ救助員（左右）
-    this._drawRescuer(tx - 10,              ty - 28, p);
-    this._drawRescuer(tx + TRAMPOLINE_W - 4, ty - 28, p);
+      // 内側フラッシュ
+      ctx.globalAlpha = clamp((1 - frac * 2) * 0.9, 0, 1);
+      ctx.fillStyle = p.warn;
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
 
-    // 担架本体（明るい色で目立たせる）
-    this.engine.rect(tx, ty, TRAMPOLINE_W, TRAMPOLINE_H, p.fg);
-    this.engine.stroke(tx, ty, TRAMPOLINE_W, TRAMPOLINE_H, p.hi, 2);
-
-    // 担架中央のクロス模様
-    this.engine.rect(tx + TRAMPOLINE_W / 2 - 1, ty + 2, 2, TRAMPOLINE_H - 4, p.bg);
-    this.engine.rect(tx + 2, ty + TRAMPOLINE_H / 2 - 1, TRAMPOLINE_W - 4, 2, p.bg);
+      // 中心白フラッシュ
+      ctx.globalAlpha = clamp((1 - frac * 3) * 1.0, 0, 1);
+      ctx.fillStyle = p.hi;
+      ctx.beginPath();
+      ctx.arc(exp.x, exp.y, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    } finally {
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+      ctx.lineWidth = 1;
+    }
   }
 
-  // 救助員の簡易人型
-  _drawRescuer(x, y, p) {
-    this.engine.rect(x + 2, y,      8, 8,  p.fg);   // 頭
-    this.engine.rect(x + 3, y + 8,  6, 12, p.mid);  // 胴体
-    this.engine.rect(x + 2, y + 20, 4, 8,  p.fg);   // 左脚
-    this.engine.rect(x + 6, y + 20, 4, 8,  p.fg);   // 右脚
-  }
+  _drawGameOver(ctx, p) {
+    // 半透明パネル
+    const savedAlpha = ctx.globalAlpha;
+    try {
+      ctx.globalAlpha = 0.82;
+      ctx.fillStyle = p.dark;
+      ctx.fillRect(30, H / 2 - 90, W - 60, 200);
+    } finally {
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+    }
+    this.engine.stroke(30, H / 2 - 90, W - 60, 200, p.bad, 2);
 
-  // ジャンパー（飛び降り人）描画
-  _drawJumper(ctx, j, p) {
-    // 座標を整数に丸める（NaN対策を兼ねる）
-    const x = isFinite(j.x) ? Math.round(j.x) : -100;
-    const y = isFinite(j.y) ? Math.round(j.y) : -100;
+    this.engine.text('GAME OVER', W / 2, H / 2 - 72, 30, p.bad, 'center');
 
-    if (j.state === 'rescued') {
-      // 救助済み：右へ飛び込みながらフェードアウト
-      const alpha = Math.max(0, 1 - j.animTimer / 0.8);
-      ctx.globalAlpha = alpha;
-      this.engine.rect(x, y, JUMPER_W, JUMPER_H, p.hi);
-      this.engine.text('★', x + JUMPER_W / 2, y - 6, 14, p.warn, 'center');
-      ctx.globalAlpha = 1.0;
-      return;
+    const secStr = (this.elapsed).toFixed(1) + 's';
+    this.engine.text('TIME  ' + secStr, W / 2, H / 2 - 28, 20, p.fg, 'center');
+
+    const hiSec = (this.high / 100).toFixed(1) + 's';
+    this.engine.text('BEST  ' + hiSec, W / 2, H / 2 + 4, 16, p.dim, 'center');
+
+    // 点滅テキスト（elapsed使って点滅）
+    const blink = Math.floor(this.elapsed * 3) % 2 === 0;
+    if (blink) {
+      this.engine.text('TAP TO RETRY', W / 2, H / 2 + 50, 16, p.mid, 'center');
     }
 
-    if (j.state === 'dead') {
-      // 落下ミス：X印でフェードアウト
-      const alpha = Math.max(0, 1 - j.animTimer / 0.6);
-      ctx.globalAlpha = alpha;
-      this.engine.text('X', x + JUMPER_W / 2, y, 22, p.bad, 'center');
-      ctx.globalAlpha = 1.0;
-      return;
-    }
-
-    // 通常（落下/バウンス中）：人型
-    this.engine.rect(x + 4, y,      10, 9,  p.fg);   // 頭
-    this.engine.rect(x + 5, y + 9,   8, 9,  p.mid);  // 胴体
-    this.engine.rect(x,     y + 6,   5, 4,  p.fg);   // 左腕
-    this.engine.rect(x + 13, y + 6,  5, 4,  p.fg);   // 右腕
-    this.engine.rect(x + 4, y + 18,  4, 4,  p.fg);   // 左脚
-    this.engine.rect(x + 10, y + 18, 4, 4,  p.fg);   // 右脚
-
-    // 次のターゲットポジションへの目印（担架が止まるべき場所を細線で示す）
-    if (j.bounceIdx >= 0 && j.bounceIdx < BOUNCE_COUNT) {
-      const targetX = BOUNCE_XS[j.bounceIdx];
-      // ターゲットとジャンパーが横に近いほど明るく表示
-      const dist = Math.abs((j.x + JUMPER_W / 2) - targetX);
-      const showGuide = dist < 80;
-      if (showGuide) {
-        this.engine.rect(targetX - 1, TRAMPOLINE_Y - 18, 2, 16, p.dim);
-      }
-    }
+    this.engine.text('‹ BACK to menu', W / 2, H / 2 + 78, 12, p.dim, 'center');
   }
 }
 
@@ -2546,72 +2502,112 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
-// ---- アニメ風赤プラズマ爆発（マクロス風丸い火球）----
-// XOR ポリゴン雲を廃止。加算合成('lighter')の放射グラデーション円で
-// 白熱コア→オレンジ→赤の柔らかい火球を描く。
-// 重なる爆発は加算で明るくなり自然なプラズマ感を演出する。
+// ---- ソリッド塗り爆発雲（レトロフラットスタイル）----
+// グラデーション/グローなし。赤系ソリッドカラーの粗い手描き風円形ポリゴンで描く。
+// 重なる爆発は XOR合成でブラックアウトし、日食/クレセント効果を演出する。
+// オフスクリーンキャンバスに全爆発をXORで描いてから mainCtx に合成する。
 
-// 爆発1個をメインCtxに直接描画（加算合成ブロック内で呼ぶ）
-// alpha: フェードアウト係数 [0,1]
-// shimmer: コアの輝き変動 [0,1]（わずかに脈動）
-function _drawAnimeBlast(ctx, b, alpha, shimmer) {
-  const r = Math.max(1, b.r);
+// オフスクリーンキャンバス（遅延初期化、W×Hサイズ）
+let _blastOffscreen = null;
+let _blastOffCtx    = null;
 
-  // ビッグブラストは外側の柔らかいグロー層を追加
-  if (b.big && r > 8) {
-    const glowR = r * 1.35;
-    try {
-      const grd = ctx.createRadialGradient(b.x, b.y, Math.max(0.5, r * 0.4), b.x, b.y, Math.max(1, glowR));
-      grd.addColorStop(0, 'rgba(255,120,0,0)');
-      grd.addColorStop(0.5, 'rgba(220,30,0,0.18)');
-      grd.addColorStop(1, 'rgba(180,0,0,0)');
-      ctx.globalAlpha = clamp(alpha * 0.7, 0, 1);
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, Math.max(1, glowR), 0, Math.PI * 2);
-      ctx.fill();
-    } catch (_) {}
-  }
-
-  // メイン火球：白熱コア(0)→明橙(0.18)→赤(0.55)→暗赤(0.85)→透明(1.0)
-  const coreShine = 0.85 + shimmer * 0.15; // コア輝度脈動
+function _getBlastOffscreen() {
+  if (_blastOffscreen && _blastOffCtx) return _blastOffCtx;
   try {
-    const grd = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, Math.max(1, r));
-    grd.addColorStop(0,    `rgba(255,255,${Math.floor(200 * coreShine)},1)`);  // 白熱
-    grd.addColorStop(0.18, `rgba(255,${Math.floor(160 * coreShine)},0,1)`);   // 明橙
-    grd.addColorStop(0.45, 'rgba(255,40,0,0.95)');                             // 赤橙
-    grd.addColorStop(0.70, 'rgba(200,0,0,0.7)');                               // 赤
-    grd.addColorStop(0.88, 'rgba(140,0,0,0.35)');                              // 暗赤（柔らかいエッジ）
-    grd.addColorStop(1,    'rgba(80,0,0,0)');                                   // 透明
-    ctx.globalAlpha = clamp(alpha, 0, 1);
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, Math.max(1, r), 0, Math.PI * 2);
-    ctx.fill();
-  } catch (_) {}
+    _blastOffscreen = document.createElement('canvas');
+    _blastOffscreen.width  = W;
+    _blastOffscreen.height = H;
+    _blastOffCtx = _blastOffscreen.getContext('2d');
+    if (!_blastOffCtx) { _blastOffscreen = null; _blastOffCtx = null; }
+  } catch (_) {
+    _blastOffscreen = null; _blastOffCtx = null;
+  }
+  return _blastOffCtx;
 }
 
-// 全爆発を加算合成('lighter')で描画
-// 重なる爆発は色が加算されて明るい白熱プラズマになる
-function drawAllBlastsAdditive(mainCtx, blasts, frameCount) {
-  // 加算合成モードに切替
-  mainCtx.globalCompositeOperation = 'lighter';
+// 赤系フリッカーカラー（3色を frameCount でサイクル）
+const _BLAST_COLORS = ['#ff2200', '#ff5500', '#cc0000'];
+
+// 爆発雲の粗い手描き風円ポリゴン頂点列を生成する
+// r: 半径, seed: 爆発ID（形状安定のため）, shimmerPhase: 0..2π（per-frame微変化）
+function _makeBlastPoly(r, seed, shimmerPhase) {
+  const VCOUNT = 30; // 頂点数（多めで丸く見える）
+  const verts = [];
+  for (let i = 0; i < VCOUNT; i++) {
+    const angle = (i / VCOUNT) * Math.PI * 2;
+    // 小さなジッター（0.85〜1.00r）で粒状・手描き感を出す
+    // shimmerPhase でわずかに毎フレーム揺れる（エッジのちらつき）
+    const s1 = Math.sin(seed * 13.7 + i * 9.1);
+    const s2 = Math.sin(seed * 7.3  + i * 4.3 + shimmerPhase);
+    const jitter = 0.875 + 0.075 * s1 + 0.05 * s2; // 0.85〜1.00
+    const pr = Math.max(1, r * clamp(jitter, 0.85, 1.0));
+    verts.push({ x: Math.cos(angle) * pr, y: Math.sin(angle) * pr });
+  }
+  return verts;
+}
+
+// 全爆発をオフスクリーンに XOR で描いてから mainCtx に source-over で合成
+// 重なり部分はXORで透明（黒抜き）になり日食のような効果が出る
+function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
+  const offCtx = _getBlastOffscreen();
+  if (!offCtx || !_blastOffscreen) {
+    // フォールバック：オフスクリーンが使えない場合は source-over で塗る
+    mainCtx.globalCompositeOperation = 'source-over';
+    for (const b of blasts) {
+      if (!b) continue;
+      const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+      const r = Math.max(1, b.r);
+      mainCtx.save();
+      mainCtx.globalAlpha = clamp(alpha, 0, 1);
+      mainCtx.fillStyle = _BLAST_COLORS[frameCount % _BLAST_COLORS.length];
+      mainCtx.beginPath();
+      mainCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
+      mainCtx.fill();
+      mainCtx.restore();
+    }
+    mainCtx.globalCompositeOperation = 'source-over';
+    return;
+  }
+
+  // オフスクリーンをクリア（透明）
+  offCtx.clearRect(0, 0, W, H);
+
+  // XOR合成で全爆発を描く（重なり部分が透明になる）
+  offCtx.globalCompositeOperation = 'xor';
 
   for (const b of blasts) {
     if (!b) continue;
+    const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+    if (alpha <= 0) continue;
 
-    // フェード係数
-    const alpha = b.growing
-      ? 1.0
-      : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+    const r = Math.max(1, b.r);
+    // フレームとIDで色をフリッカー
+    const colorIdx = (frameCount + b.id) % _BLAST_COLORS.length;
+    const shimmerPhase = (frameCount * 0.22) + b.id * 1.3;
 
-    // コアの輝き：低周波でわずかに脈動（フレーム依存）
-    const shimmer = 0.5 + 0.5 * Math.sin(frameCount * 0.18 + b.id * 1.7);
+    const verts = _makeBlastPoly(r, b.id, shimmerPhase);
+    if (!verts || verts.length < 3) continue;
 
-    _drawAnimeBlast(mainCtx, b, alpha, shimmer);
+    offCtx.save();
+    offCtx.globalAlpha = clamp(alpha, 0, 1);
+    offCtx.fillStyle   = _BLAST_COLORS[colorIdx];
+    offCtx.translate(b.x, b.y);
+    offCtx.beginPath();
+    offCtx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) {
+      offCtx.lineTo(verts[i].x, verts[i].y);
+    }
+    offCtx.closePath();
+    offCtx.fill();
+    offCtx.restore();
   }
 
-  // 合成モードを必ず source-over に戻す
+  // オフスクリーンを mainCtx に source-over で合成
+  mainCtx.globalCompositeOperation = 'source-over';
+  try {
+    mainCtx.drawImage(_blastOffscreen, 0, 0);
+  } catch (_) {}
+  // 必ず source-over に戻す
   mainCtx.globalCompositeOperation = 'source-over';
 }
 
@@ -3494,7 +3490,7 @@ class Game extends Scene {
       ctx.restore();
     }
 
-    // ---- 爆発（アニメ風赤プラズマ火球：加算合成）----
+    // ---- 爆発（ソリッド赤雲：XOR重なり黒抜き）----
     // フレームカウンタをインクリメント（render は毎フレーム呼ばれる）
     this._frameCount = (this._frameCount + 1) | 0;
 
@@ -3504,7 +3500,7 @@ class Game extends Scene {
 
       if (activeBlasts.length > 0) {
         ctx.save();
-        drawAllBlastsAdditive(ctx, activeBlasts, this._frameCount);
+        drawAllBlastsSolidXOR(ctx, activeBlasts, this._frameCount);
         ctx.restore();
       }
     }
@@ -3700,12 +3696,12 @@ class Game extends Scene {
     // ---- SCATTERの残弾 ----
     if (this._scatterAmmo > 0) {
       ctx.save();
-      // ラベル
-      this.engine.text('SC', labelX, rowY, 9, p.hi, 'left');
+      // ラベル（短い全単語）
+      this.engine.text('SCAT', labelX, rowY, 8, p.hi, 'left');
       // ドット状の残弾表示
       for (let i = 0; i < Math.min(this._scatterAmmo, 9); i++) {
         ctx.beginPath();
-        ctx.arc(panelX + 16 + i * 5, rowY + 5, 2, 0, Math.PI * 2);
+        ctx.arc(panelX + 28 + i * 5, rowY + 4, 2, 0, Math.PI * 2);
         ctx.fillStyle = p.hi;
         ctx.fill();
       }
@@ -3716,10 +3712,10 @@ class Game extends Scene {
     // ---- ランチャースロット数（MULTIで増加） ----
     if (this._launcherSlots > 2) {
       ctx.save();
-      this.engine.text('SL', labelX, rowY, 9, p.mid, 'left');
+      this.engine.text('SLOTS', labelX, rowY, 8, p.mid, 'left');
       for (let i = 0; i < this._launcherSlots; i++) {
         ctx.beginPath();
-        ctx.arc(panelX + 16 + i * 5, rowY + 5, 2, 0, Math.PI * 2);
+        ctx.arc(panelX + 32 + i * 5, rowY + 4, 2, 0, Math.PI * 2);
         ctx.fillStyle = i < this._launcherSlots ? p.mid : p.dark;
         ctx.fill();
       }
@@ -3731,14 +3727,14 @@ class Game extends Scene {
     if (this._rapidTimer > 0) {
       const frac = clamp(this._rapidTimer / RAPID_DURATION, 0, 1);
       ctx.save();
-      this.engine.text('RP', labelX, rowY, 9, p.warn, 'left');
+      this.engine.text('RAPID', labelX, rowY, 8, p.warn, 'left');
       // カウントダウンバー
       ctx.fillStyle = p.dark;
-      ctx.fillRect(barX + 14, rowY + 5, barW, barH);
+      ctx.fillRect(barX + 32, rowY + 4, barW, barH);
       ctx.fillStyle = p.warn;
-      ctx.fillRect(barX + 14, rowY + 5, Math.max(0, barW * frac), barH);
+      ctx.fillRect(barX + 32, rowY + 4, Math.max(0, barW * frac), barH);
       // 秒数
-      this.engine.text(Math.ceil(this._rapidTimer) + 's', barX + 14 + barW + 2, rowY, 9, p.warn, 'left');
+      this.engine.text(Math.ceil(this._rapidTimer) + 's', barX + 32 + barW + 2, rowY, 8, p.warn, 'left');
       ctx.restore();
       rowY += rowH;
     }
@@ -3751,11 +3747,11 @@ class Game extends Scene {
       const maxT = Math.max(...city.buffs.power.map(b => b.timer));
       const frac = clamp(maxT / BUFF_DURATION, 0, 1);
       ctx.save();
-      this.engine.text('PW' + (ci + 1), labelX, rowY, 9, p.warn, 'left');
+      this.engine.text('PWR' + (ci + 1), labelX, rowY, 8, p.warn, 'left');
       ctx.fillStyle = p.dark;
-      ctx.fillRect(barX + 20, rowY + 5, barW - 4, barH);
+      ctx.fillRect(barX + 28, rowY + 4, barW - 4, barH);
       ctx.fillStyle = p.warn;
-      ctx.fillRect(barX + 20, rowY + 5, Math.max(0, (barW - 4) * frac), barH);
+      ctx.fillRect(barX + 28, rowY + 4, Math.max(0, (barW - 4) * frac), barH);
       ctx.restore();
       rowY += rowH;
       if (rowY > GROUND_Y - 30) break;
@@ -3768,11 +3764,11 @@ class Game extends Scene {
       const maxT = Math.max(...city.buffs.wide.map(b => b.timer));
       const frac = clamp(maxT / BUFF_DURATION, 0, 1);
       ctx.save();
-      this.engine.text('WD' + (ci + 1), labelX, rowY, 9, p.hi, 'left');
+      this.engine.text('WIDE' + (ci + 1), labelX, rowY, 8, p.hi, 'left');
       ctx.fillStyle = p.dark;
-      ctx.fillRect(barX + 20, rowY + 5, barW - 4, barH);
+      ctx.fillRect(barX + 28, rowY + 4, barW - 4, barH);
       ctx.fillStyle = p.hi;
-      ctx.fillRect(barX + 20, rowY + 5, Math.max(0, (barW - 4) * frac), barH);
+      ctx.fillRect(barX + 28, rowY + 4, Math.max(0, (barW - 4) * frac), barH);
       ctx.restore();
       rowY += rowH;
       if (rowY > GROUND_Y - 30) break;
