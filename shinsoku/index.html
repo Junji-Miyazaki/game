@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>神速 SHINSOKU</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="view"></canvas>
+
+  <!-- Top-left player vitals -->
+  <div id="vitals" class="panel">
+    <div class="row">
+      <span class="cls" id="v-class">WARRIOR</span>
+      <span class="lvl">Lv <b id="v-level">1</b></span>
+    </div>
+    <div class="bar hp"><div class="fill" id="v-hpfill"></div><span class="bartxt" id="v-hptxt">100/100</span></div>
+    <div class="bar xp"><div class="fill" id="v-xpfill"></div><span class="bartxt" id="v-xptxt">XP</span></div>
+    <div class="aps" id="v-aps"><span id="v-apsnum">1.0</span> <small>atk/s</small> <em id="v-godspeed">神速</em></div>
+  </div>
+
+  <!-- Right status / equipment / skills panel -->
+  <div id="status" class="panel">
+    <div class="phead">STATUS <button id="closeStatus">×</button></div>
+    <div class="stats">
+      <div><label>攻撃力 ATK</label><b id="s-atk">0</b></div>
+      <div><label>攻撃速度 SPD</label><b id="s-spd">0</b></div>
+      <div><label>防御力 DEF</label><b id="s-def">0</b></div>
+      <div><label>回避 EVA</label><b id="s-eva">0%</b></div>
+      <div><label>HP吸収 LEECH</label><b id="s-leech">0%</b></div>
+      <div><label>移動 MOVE</label><b id="s-move">0</b></div>
+    </div>
+    <div class="equip">
+      <div class="slot"><i>剣</i><span id="e-sword">なし</span></div>
+      <div class="slot"><i>盾</i><span id="e-shield">なし</span></div>
+      <div class="slot"><i>鎧</i><span id="e-armor">なし</span></div>
+    </div>
+    <div class="skills">
+      <div class="sp">SKILL POINTS: <b id="s-sp">0</b></div>
+      <button class="skbtn" data-sk="atk"><b>攻撃力 +</b><span id="sk-atk">Lv0</span></button>
+      <button class="skbtn" data-sk="hp"><b>最大HP +</b><span id="sk-hp">Lv0</span></button>
+      <button class="skbtn" data-sk="move"><b>移動速度 +</b><span id="sk-move">Lv0</span></button>
+    </div>
+  </div>
+
+  <!-- Bottom-right control buttons -->
+  <div id="controls">
+    <button id="btnStatus" class="cbtn">▦</button>
+    <button id="btnSpecial" class="cbtn special" title="ウェーブ"><b>神</b></button>
+  </div>
+
+  <!-- Virtual joystick (mobile) -->
+  <div id="stick"><div id="stickKnob"></div></div>
+
+  <!-- Loot toasts -->
+  <div id="toasts"></div>
+
+  <!-- Title / start -->
+  <div id="title" class="overlay">
+    <div class="tcard">
+      <h1>神速<span>SHINSOKU</span></h1>
+      <p class="tag">攻撃速度を極めよ。神速の刃で群れを薙ぎ払え。</p>
+      <button id="startBtn">ENTER THE FIELD</button>
+      <button id="resetBtn" class="ghost">セーブを消去</button>
+      <ul class="howto">
+        <li>移動：WASD / 矢印 / 左下スティック</li>
+        <li>攻撃：敵をタップ／クリックで自動追撃</li>
+        <li>拾う：ドロップの上を歩く</li>
+        <li>育成：▦ でステータス・スキル割り振り</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
