@@ -28,108 +28,201 @@ function darken(hex, amt) {
   return `rgb(${r},${g},${b})`;
 }
 
-// ---------- FIGHTER (female swordsman, articulated vector) ----------
-// opts: {x,y,scale,face(-1|1),t,walk(0..1),attackP(-1 idle, else 0..1),god,hpRatio}
-// Facing flips the BODY/legs/head, but the SWORD is always anchored on screen-right
-// (right hand) and the SHIELD always on screen-left (left hand) — they never swap.
+// ---------- FIGHTER (female swordsman, articulated vector, directional) ----------
+// opts: {x,y,scale,face(-1|1),t,walk(0..1),attackP(-1 idle else 0..1),god,view}
+// view ∈ 'front' | 'back' | 'side'. Sword = right hand, shield = left hand.
+const PAL = {
+  SKIN: '#f1c9a5', SKIN_D: '#cf9f78', HAIR: '#5a3620', HAIR_HL: '#8a5630',
+  ARM: '#cdd6e3', ARM_D: '#8b97aa', GOLD: '#e8c870',
+  SKIRT: '#6a2f73', SKIRT_D: '#431d4a', LEG: '#3c3548', LEG2: '#463f54',
+  BOOT: '#5a4a36', LEATHER: '#6b4a2e',
+};
+function segL(ctx, x1, y1, x2, y2, w, c) {
+  ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
 export function drawFighter(ctx, o) {
   const s = o.scale, face = o.face >= 0 ? 1 : -1, t = o.t || 0;
-  const walk = o.walk || 0, atk = (o.attackP == null ? -1 : o.attackP), god = o.god;
+  const walk = o.walk || 0, atk = (o.attackP == null ? -1 : o.attackP), god = !!o.god;
+  const view = o.view || 'front';
   const moving = walk > 0.05;
   const bob = (moving ? Math.abs(Math.sin(t * 9)) * 2.4 : Math.sin(t * 2.2) * 1.0) * s;
 
   ctx.save();
   ctx.translate(o.x, o.y - bob);
-
-  // godspeed aura
   if (god) {
-    const ag = ctx.createRadialGradient(0, -36 * s, 0, 0, -36 * s, 50 * s);
+    const ag = ctx.createRadialGradient(0, -38 * s, 0, 0, -38 * s, 52 * s);
     ag.addColorStop(0, 'rgba(255,122,223,.30)'); ag.addColorStop(1, 'rgba(255,122,223,0)');
-    ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -36 * s, 50 * s, 0, 7); ctx.fill();
+    ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -38 * s, 52 * s, 0, 7); ctx.fill();
   }
+  const D = { s, face, t, walk, atk, god, moving };
+  if (view === 'back') fighterBack(ctx, D);
+  else if (view === 'side') fighterSide(ctx, D);
+  else fighterFront(ctx, D);
+  ctx.restore();
+}
 
-  // palette
-  const SKIN = '#f1c9a5', SKIN_D = '#cf9f78';
-  const HAIR = '#5e3a24', HAIR_HL = '#8a5630';
-  const ARM = '#dbe2ec', ARM_D = '#97a3b8', GOLD = '#e8c870';
-  const SKIRT = '#6a2f73', SKIRT_D = '#431d4a', LEG = '#3c3548', BOOT = '#5a4a36';
-  const seg = (x1, y1, x2, y2, w, c) => {
-    ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  };
-
-  // ---- HAIR (ponytail behind, flows opposite to facing) ----
+function fighterFront(ctx, D) {
+  const { s, face, t, walk, atk, god, moving } = D, P = PAL;
   const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
-  ctx.fillStyle = HAIR;
+  // ponytail behind (long, flows opposite facing)
+  ctx.fillStyle = P.HAIR;
   ctx.beginPath();
   ctx.moveTo(-face * 3 * s, -57 * s);
-  ctx.quadraticCurveTo(-face * 15 * s, -52 * s + sway, -face * 12 * s, -34 * s + sway);
-  ctx.quadraticCurveTo(-face * 8 * s, -42 * s, -face * 3 * s, -50 * s);
+  ctx.quadraticCurveTo(-face * 17 * s, -50 * s + sway, -face * 13 * s, -27 * s + sway);
+  ctx.quadraticCurveTo(-face * 11 * s, -40 * s, -face * 3 * s, -50 * s);
   ctx.closePath(); ctx.fill();
-
-  // ---- LEGS (articulated stride, lead toward facing) ----
+  // legs
   const stride = moving ? Math.sin(t * 9) : Math.sin(t * 2.2) * 0.06;
-  drawLeg(ctx, -2.5 * s, -25 * s, -stride, s, LEG, BOOT, face);  // back leg
-  drawLeg(ctx, 2.5 * s, -25 * s, stride, s, '#463f54', BOOT, face); // front leg (lighter)
-
-  // ---- SKIRT / TASSET ----
-  ctx.fillStyle = SKIRT;
+  drawLeg(ctx, -2.5 * s, -26 * s, -stride, s, P.LEG, P.BOOT, face);
+  drawLeg(ctx, 2.5 * s, -26 * s, stride, s, P.LEG2, P.BOOT, face);
+  // skirt
+  ctx.fillStyle = P.SKIRT;
   ctx.beginPath();
-  ctx.moveTo(-7.5 * s, -31 * s); ctx.lineTo(7.5 * s, -31 * s);
-  ctx.lineTo(10.5 * s, -18 * s); ctx.lineTo(face * 2 * s, -16 * s); ctx.lineTo(-10.5 * s, -18 * s);
-  ctx.closePath(); ctx.fill();
-  ctx.fillStyle = SKIRT_D; ctx.fillRect(-10.5 * s, -19.5 * s, 21 * s, 2.4 * s);
-
-  // ---- SHIELD ARM (LEFT hand = screen +x, FIXED) — drawn behind torso ----
-  // (character faces the camera, so the left hand is on the viewer's right)
+  ctx.moveTo(-7 * s, -32 * s); ctx.lineTo(7 * s, -32 * s); ctx.lineTo(10 * s, -19 * s);
+  ctx.lineTo(face * 2 * s, -17 * s); ctx.lineTo(-10 * s, -19 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-10 * s, -20.5 * s, 20 * s, 2.4 * s);
+  // shield arm (LEFT hand = +x) behind torso
   const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
-  seg(5.5 * s, -45 * s, 11 * s, -33 * s + shB, 4.5 * s, SKIN); // arm
-
-  // ---- TORSO (slim hourglass breastplate) ----
+  segL(ctx, 5.5 * s, -46 * s, 11 * s, -33 * s + shB, 4.5 * s, P.SKIN);
+  // torso (slim hourglass)
   ctx.beginPath();
-  ctx.moveTo(-7 * s, -46 * s);
-  ctx.quadraticCurveTo(-8 * s, -38 * s, -4.5 * s, -31 * s);
-  ctx.lineTo(4.5 * s, -31 * s);
-  ctx.quadraticCurveTo(8 * s, -38 * s, 7 * s, -46 * s);
-  ctx.quadraticCurveTo(3.4 * s, -49.5 * s, 0, -47.6 * s);
-  ctx.quadraticCurveTo(-3.4 * s, -49.5 * s, -7 * s, -46 * s);
+  ctx.moveTo(-6.5 * s, -47 * s);
+  ctx.quadraticCurveTo(-7.5 * s, -39 * s, -4 * s, -32 * s);
+  ctx.lineTo(4 * s, -32 * s);
+  ctx.quadraticCurveTo(7.5 * s, -39 * s, 6.5 * s, -47 * s);
+  ctx.quadraticCurveTo(3.2 * s, -50.5 * s, 0, -48.6 * s);
+  ctx.quadraticCurveTo(-3.2 * s, -50.5 * s, -6.5 * s, -47 * s);
   ctx.closePath();
-  const tg = ctx.createLinearGradient(-7 * s, -49 * s, 7 * s, -31 * s);
-  tg.addColorStop(0, '#eef2f8'); tg.addColorStop(.5, ARM); tg.addColorStop(1, ARM_D);
+  const tg = ctx.createLinearGradient(-7 * s, -50 * s, 7 * s, -32 * s);
+  tg.addColorStop(0, '#eef2f8'); tg.addColorStop(.5, P.ARM); tg.addColorStop(1, P.ARM_D);
   ctx.fillStyle = tg; ctx.fill();
   ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
-  seg(0, -47 * s, 0, -31 * s, 1.3 * s, GOLD);            // center trim
-  ctx.fillStyle = GOLD; ctx.fillRect(-5 * s, -32.5 * s, 10 * s, 2 * s); // waist trim
-
-  // ---- NECK + HEAD ----
-  ctx.fillStyle = SKIN_D; ctx.fillRect(-2 * s, -50 * s, 4 * s, 3.5 * s);
-  ctx.fillStyle = SKIN;
-  ctx.beginPath(); ctx.arc(face * 0.5 * s, -55 * s, 5.8 * s, 0, 7); ctx.fill();
-  // hair fringe / top
-  ctx.fillStyle = HAIR;
+  segL(ctx, 0, -48 * s, 0, -32 * s, 1.2 * s, P.GOLD);
+  ctx.fillStyle = P.GOLD; ctx.fillRect(-4.5 * s, -33.5 * s, 9 * s, 1.8 * s);
+  // pauldrons
+  ctx.fillStyle = P.ARM_D;
+  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
+  // neck + head
+  ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.8 * s, -51 * s, 3.6 * s, 3.5 * s);
+  ctx.fillStyle = P.SKIN; ctx.beginPath(); ctx.arc(face * 0.5 * s, -56 * s, 5.5 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = P.HAIR;
   ctx.beginPath();
-  ctx.arc(0, -56.5 * s, 6.4 * s, Math.PI * 0.92, Math.PI * 2.08);
-  ctx.quadraticCurveTo(face * 6 * s, -54 * s, face * 4 * s, -52.5 * s);
-  ctx.quadraticCurveTo(0, -55 * s, -face * 4 * s, -53 * s);
+  ctx.arc(0, -57.5 * s, 6.1 * s, Math.PI * 0.92, Math.PI * 2.08);
+  ctx.quadraticCurveTo(face * 6 * s, -55 * s, face * 4 * s, -53.5 * s);
+  ctx.quadraticCurveTo(0, -56 * s, -face * 4 * s, -54 * s);
   ctx.closePath(); ctx.fill();
-  ctx.fillStyle = HAIR_HL; ctx.fillRect(-face * 1 * s, -62 * s, face * 3 * s, 2 * s);
-  // eyes (toward facing)
   ctx.fillStyle = '#3a2a22';
-  ctx.beginPath(); ctx.arc(face * 1.8 * s, -55 * s, 1 * s, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(face * 4.2 * s, -55 * s, 1 * s, 0, 7); ctx.fill();
-
-  // ---- SHIELD (LEFT hand, in front, FIXED screen +x) ----
+  ctx.beginPath(); ctx.arc(face * 1.8 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(face * 4 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
+  // shield (LEFT hand, front, +x)
   ctx.save(); ctx.translate(12 * s, -30 * s + shB);
   const sg = ctx.createRadialGradient(-2 * s, -2 * s, 1, 0, 0, 11 * s);
   sg.addColorStop(0, '#cfd7e3'); sg.addColorStop(1, '#7d889d');
-  ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, 9.5 * s, 0, 7); ctx.fill();
-  ctx.strokeStyle = GOLD; ctx.lineWidth = 2 * s; ctx.stroke();
-  ctx.fillStyle = GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.8 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
+  ctx.strokeStyle = P.GOLD; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.6 * s, 0, 7); ctx.fill();
   ctx.restore();
+  // sword arm (RIGHT hand = -x)
+  drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god);
+}
 
-  // ---- SWORD ARM (RIGHT hand = screen -x anchor; blade leads facing) ----
-  drawSwordArm(ctx, -5 * s, -45 * s, atk, t, face, s, SKIN, GOLD, god);
+function fighterBack(ctx, D) {
+  const { s, t, walk, atk, god, moving } = D, P = PAL;
+  const stride = moving ? Math.sin(t * 9) : 0;
+  drawLeg(ctx, -2.5 * s, -26 * s, -stride, s, P.LEG, P.BOOT, 1);
+  drawLeg(ctx, 2.5 * s, -26 * s, stride, s, P.LEG2, P.BOOT, 1);
+  ctx.fillStyle = P.SKIRT;
+  ctx.beginPath(); ctx.moveTo(-7 * s, -32 * s); ctx.lineTo(7 * s, -32 * s);
+  ctx.lineTo(10 * s, -19 * s); ctx.lineTo(-10 * s, -19 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-10 * s, -20.5 * s, 20 * s, 2.4 * s);
+  // shield arm LEFT (-x from behind), sword arm RIGHT (+x)
+  const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
+  segL(ctx, -5.5 * s, -46 * s, -11 * s, -33 * s + shB, 4.5 * s, P.SKIN);
+  // torso back
+  ctx.beginPath();
+  ctx.moveTo(-6.5 * s, -47 * s);
+  ctx.quadraticCurveTo(-7.5 * s, -39 * s, -4 * s, -32 * s);
+  ctx.lineTo(4 * s, -32 * s);
+  ctx.quadraticCurveTo(7.5 * s, -39 * s, 6.5 * s, -47 * s);
+  ctx.closePath();
+  const tg = ctx.createLinearGradient(-7 * s, -47 * s, 7 * s, -32 * s);
+  tg.addColorStop(0, '#dfe6f0'); tg.addColorStop(.5, P.ARM); tg.addColorStop(1, P.ARM_D);
+  ctx.fillStyle = tg; ctx.fill(); ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
+  // back straps (X)
+  ctx.strokeStyle = P.LEATHER; ctx.lineWidth = 2 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-5 * s, -46 * s); ctx.lineTo(5 * s, -34 * s);
+  ctx.moveTo(5 * s, -46 * s); ctx.lineTo(-5 * s, -34 * s); ctx.stroke();
+  ctx.fillStyle = P.ARM_D;
+  ctx.beginPath(); ctx.ellipse(-6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6.5 * s, -46 * s, 3.2 * s, 2.4 * s, 0, 0, 7); ctx.fill();
+  // head from behind (hair only) + band
+  ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.8 * s, -51 * s, 3.6 * s, 3.5 * s);
+  ctx.fillStyle = P.HAIR; ctx.beginPath(); ctx.arc(0, -56 * s, 6 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = P.GOLD; ctx.fillRect(-5 * s, -58.5 * s, 10 * s, 1.6 * s);
+  // long ponytail down the back
+  const psw = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
+  ctx.fillStyle = P.HAIR;
+  ctx.beginPath();
+  ctx.moveTo(-3.5 * s, -54 * s);
+  ctx.quadraticCurveTo(-4 * s + psw * 0.3, -40 * s, -2.5 * s + psw, -25 * s);
+  ctx.quadraticCurveTo(0 + psw, -21 * s, 2.5 * s + psw, -25 * s);
+  ctx.quadraticCurveTo(4 * s + psw * 0.3, -40 * s, 3.5 * s, -54 * s);
+  ctx.closePath(); ctx.fill();
+  // shield back (-x)
+  ctx.save(); ctx.translate(-12 * s, -30 * s + shB);
+  ctx.fillStyle = '#6f7a8c'; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
+  ctx.strokeStyle = P.ARM_D; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.restore();
+  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god);
+}
 
+function fighterSide(ctx, D) {
+  const { s, face, t, walk, atk, god, moving } = D, P = PAL;
+  ctx.save(); ctx.scale(face, 1);                 // draw facing right; mirror for left
+  const stride = moving ? Math.sin(t * 9) : Math.sin(t * 2.2) * 0.05;
+  drawLeg(ctx, -1 * s, -26 * s, -stride * 1.3, s, darken(P.LEG, 18), P.BOOT, 1);  // far leg
+  ctx.fillStyle = P.SKIRT;
+  ctx.beginPath(); ctx.moveTo(-5 * s, -32 * s); ctx.lineTo(6 * s, -32 * s);
+  ctx.lineTo(7 * s, -19 * s); ctx.lineTo(-6 * s, -19 * s); ctx.closePath(); ctx.fill();
+  drawLeg(ctx, 1.5 * s, -26 * s, stride * 1.3, s, P.LEG2, P.BOOT, 1);            // near leg
+  // ponytail trailing behind (-x)
+  const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
+  ctx.fillStyle = P.HAIR;
+  ctx.beginPath();
+  ctx.moveTo(-2 * s, -57 * s);
+  ctx.quadraticCurveTo(-17 * s, -51 * s + sway, -15 * s, -32 * s + sway);
+  ctx.quadraticCurveTo(-9 * s, -44 * s, -2 * s, -52 * s);
+  ctx.closePath(); ctx.fill();
+  const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
+  // torso profile (chest forward +x)
+  ctx.beginPath();
+  ctx.moveTo(-4 * s, -47 * s);
+  ctx.quadraticCurveTo(5 * s, -45 * s, 4.5 * s, -38 * s);
+  ctx.quadraticCurveTo(5 * s, -34 * s, 2 * s, -32 * s);
+  ctx.lineTo(-3 * s, -32 * s);
+  ctx.quadraticCurveTo(-5 * s, -40 * s, -4 * s, -47 * s);
+  ctx.closePath();
+  const tg = ctx.createLinearGradient(-4 * s, -47 * s, 5 * s, -32 * s);
+  tg.addColorStop(0, P.ARM); tg.addColorStop(1, P.ARM_D);
+  ctx.fillStyle = tg; ctx.fill(); ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
+  ctx.fillStyle = P.ARM_D; ctx.beginPath(); ctx.ellipse(-1 * s, -46 * s, 3.4 * s, 2.6 * s, 0, 0, 7); ctx.fill();
+  // head profile
+  ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.5 * s, -51 * s, 3 * s, 3.5 * s);
+  ctx.fillStyle = P.SKIN; ctx.beginPath(); ctx.arc(0.5 * s, -56 * s, 5.3 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(5 * s, -56.5 * s); ctx.lineTo(6.6 * s, -54.8 * s); ctx.lineTo(5 * s, -53.4 * s); ctx.closePath(); ctx.fill(); // nose
+  ctx.fillStyle = P.HAIR;
+  ctx.beginPath(); ctx.arc(0, -57.5 * s, 5.9 * s, Math.PI * 0.72, Math.PI * 2.12); ctx.lineTo(-1.5 * s, -53 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3a2a22'; ctx.beginPath(); ctx.arc(3 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
+  // shield on near arm (in front of torso)
+  ctx.save(); ctx.translate(2 * s, -30 * s + shB);
+  ctx.fillStyle = '#9aa6ba'; ctx.beginPath(); ctx.ellipse(0, 0, 4.5 * s, 9 * s, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.6 * s; ctx.stroke();
+  ctx.restore();
+  // sword arm forward (face=1 inside the mirrored space)
+  drawSwordArm(ctx, 3 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god);
   ctx.restore();
 }
 
@@ -218,6 +311,7 @@ export function drawMonster(ctx, sprite, o) {
     case 'wraith': wraith(ctx, o); break;
     case 'ogre': ogre(ctx, o); break;
     case 'golem': golem(ctx, o); break;
+    case 'skeleton': skeleton(ctx, o); break;
     default: lizardman(ctx, o);
   }
   ctx.restore();
@@ -368,6 +462,39 @@ function blockGrad(ctx, x, y, w, h, tint, sh) {
   ctx.fillStyle = g; ctx.fill();
   ctx.strokeStyle = darken(tint, 70); ctx.lineWidth = 1.5; ctx.stroke();
   ctx.restore();
+}
+
+function skeleton(ctx, o) {
+  const s = o.scale, t = o.tint;
+  const stride = Math.sin(o.t * 8 + o.x) * 4 * o.walk;
+  const bone = t, boneD = darken(t, 45);
+  ctx.strokeStyle = boneD; ctx.lineCap = 'round';
+  // legs (bone)
+  ctx.lineWidth = 3 * s;
+  ctx.beginPath(); ctx.moveTo(-3 * s, -16 * s); ctx.lineTo(-4 * s + stride, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(3 * s, -16 * s); ctx.lineTo(4 * s - stride, 0); ctx.stroke();
+  // spine + ribcage
+  ctx.strokeStyle = bone; ctx.lineWidth = 3.5 * s;
+  ctx.beginPath(); ctx.moveTo(0, -40 * s); ctx.lineTo(0, -16 * s); ctx.stroke();
+  ctx.strokeStyle = boneD; ctx.lineWidth = 1.6 * s;
+  for (let i = 0; i < 4; i++) {
+    const y = (-36 + i * 5) * s, w = (6 - i * 0.6) * s;
+    ctx.beginPath(); ctx.moveTo(-w, y); ctx.quadraticCurveTo(0, y + 2 * s, w, y); ctx.stroke();
+  }
+  // arms — one holds a rusty sword
+  ctx.strokeStyle = bone; ctx.lineWidth = 2.6 * s;
+  ctx.beginPath(); ctx.moveTo(-5 * s, -38 * s); ctx.lineTo(-10 * s, -24 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(5 * s, -38 * s); ctx.lineTo(12 * s, -30 * s); ctx.stroke();
+  ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2.4 * s;
+  ctx.beginPath(); ctx.moveTo(12 * s, -30 * s); ctx.lineTo(20 * s, -46 * s); ctx.stroke();
+  // skull
+  ctx.fillStyle = bone;
+  ctx.beginPath(); ctx.arc(0, -46 * s, 5.4 * s, 0, 7); ctx.fill();
+  ctx.fillStyle = boneD; ctx.fillRect(-3.5 * s, -42 * s, 7 * s, 3 * s); // jaw
+  // eye sockets (glowing)
+  ctx.fillStyle = '#ff5a3a';
+  ctx.beginPath(); ctx.arc(-2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
 }
 
 // ---------- LOOT ----------

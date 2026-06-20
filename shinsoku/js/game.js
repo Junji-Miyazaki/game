@@ -1,12 +1,11 @@
 // game.js — engine, combat, leveling, godspeed, input, HUD, save.
-import { MONSTERS, rollDrop, spawnTableFor } from './content.js';
+import { MONSTERS, AREAS, rollDrop, spawnTableFor } from './content.js';
 import { drawShadow, drawFighter, drawMonster, drawLoot } from './sprites.js';
 
 const TW = 64, TH = 32;                 // iso tile width/height
 const SAVE_KEY = 'shinsoku_save_v1';
 const ATTACK_RANGE = 1.7;               // tiles (bigger monsters need a touch more)
 const MAX_MONSTERS = 7;
-const ARENA_R = 11;                     // dungeon arena radius (tiles)
 const ISO_U = (64 / 2) * Math.SQRT2;    // world-circle radius (tiles) -> screen px (x)
 // active skills (timed buffs); effect & duration scale with skill level
 const HASTE_PER_LV = 0.85;              // +85% attack speed per 神速 level while active
@@ -44,6 +43,10 @@ export class Game {
     this.hitFlash = 0;     // red screen flash when taking damage
     this.blood = [];       // lingering ground blood decals
     this.visualSwing = 0;
+    // area / world state
+    this.areaId = 'dungeon'; this.area = AREAS.dungeon; this.R = this.area.radius;
+    this.maxMon = 8; this.exit = null; this.boss = null;
+    this.pview = 'front';  // current player view (front/back/side)
     this.initPlayer();
     this.bindUI();
     this.resize();
@@ -61,7 +64,7 @@ export class Game {
       skillPoints: 0, skills: { speed: 0, power: 0, hp: 0 },
       opt: { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 },
       equip: { sword: 'なし', shield: 'なし', armor: 'なし' },
-      atkTimer: 0,
+      atkTimer: 0, areaId: 'dungeon',
     };
   }
   load() {
@@ -96,11 +99,44 @@ export class Game {
   // ---------------- lifecycle ----------------
   start() {
     this.load();
-    this.refillSpawns(true);
+    this.enterArea(this.p.areaId || 'dungeon');
     this.running = true;
     this.last = performance.now();
     this.updateHUD();
     requestAnimationFrame(t => this.loop(t));
+  }
+
+  // ---------------- areas / world ----------------
+  enterArea(id) {
+    const area = AREAS[id] || AREAS.dungeon;
+    this.areaId = id; this.area = area; this.p.areaId = id;
+    this.R = area.radius;
+    this.maxMon = Math.min(10, Math.max(6, Math.round(area.radius * 0.7)));
+    this.monsters = []; this.loot = []; this.blood = []; this.target = null; this.moveTarget = null;
+    this.boss = null;
+    this.p.wx = 0; this.p.wy = 0;
+    // exit portal toward screen-north (world -,-)
+    const er = area.radius - 1.2;
+    this.exit = { wx: -er / Math.SQRT2, wy: -er / Math.SQRT2, next: area.next };
+    this.refillSpawns(true);
+    if (area.boss) this.spawnBoss(area.boss);
+    this.float(this.W / 2, this.H / 2 - 50, area.name, '#e8c870', 26);
+    this.updateHUD(); this.save();
+  }
+
+  spawnBoss(b) {
+    const lvScale = 1 + (this.p.level - 1) * 0.05;
+    const br = this.R - 3, bx = br / Math.SQRT2, by = br / Math.SQRT2;   // south side
+    const m = {
+      id: 'boss', name: b.name, sprite: b.sprite, isBoss: true, tier: 6,
+      hpMax: Math.round(b.hpMax * lvScale), hp: Math.round(b.hpMax * lvScale),
+      atk: b.atk, defense: b.defense, evade: 0.03, xpReward: b.xpReward,
+      speed: 0.95, scale: b.scale, tint: b.tint,
+      aggressive: true, senseRange: 6,
+      wx: bx, wy: by, homeX: bx, homeY: by,
+      t: 0, face: 1, walk: 0, hurt: 0, atkTimer: 0.5, deathT: 0, aggro: false,
+    };
+    this.monsters.push(m); this.boss = m;
   }
 
   loop(t) {
@@ -115,6 +151,7 @@ export class Game {
   // ---------------- update ----------------
   update(dt) {
     const p = this.p;
+    const pwx0 = p.wx, pwy0 = p.wy;     // for view-direction detection
     this.updateBuffs(dt);
     this.updateSkillHUD();
     if (this.hitFlash > 0) this.hitFlash -= dt;
@@ -171,7 +208,7 @@ export class Game {
     // monsters
     for (const m of this.monsters) this.updateMonster(m, dt);
     this.monsters = this.monsters.filter(m => m.hp > 0 || m.deathT < 0.4);
-    if (this.monsters.filter(m => m.hp > 0).length < MAX_MONSTERS) this.refillSpawns();
+    if (this.monsters.filter(m => m.hp > 0 && !m.isBoss).length < this.maxMon) this.refillSpawns();
 
     // loot pickup
     for (const it of this.loot) {
@@ -180,6 +217,11 @@ export class Game {
     }
     this.loot = this.loot.filter(it => !it.dead);
 
+    // exit portal — step onto it to travel to the next area
+    if (this.exit && hyp(this.exit.wx - p.wx, this.exit.wy - p.wy) < 0.9) {
+      this.enterArea(this.exit.next); return;
+    }
+
     // fx / particles
     for (const f of this.fx) { f.t += dt; f.y += f.vy * dt; f.vy += 40 * dt; }
     this.fx = this.fx.filter(f => f.t < f.life);
@@ -187,6 +229,24 @@ export class Game {
     this.parts = this.parts.filter(pt => pt.t < pt.life);
     for (const b of this.blood) b.t += dt;
     this.blood = this.blood.filter(b => b.t < b.life);
+
+    // determine sprite view (front/back/side) + facing
+    {
+      let ddx, ddy;
+      if (this.attacking && this.target && this.target.hp > 0) {
+        const ts = this.toScreen(this.target.wx, this.target.wy), ps = this.toScreen(p.wx, p.wy);
+        ddx = ts.x - ps.x; ddy = ts.y - ps.y;
+      } else {
+        ddx = ((p.wx - pwx0) - (p.wy - pwy0)) * TW / 2;
+        ddy = ((p.wx - pwx0) + (p.wy - pwy0)) * TH / 2;
+      }
+      if (Math.abs(ddx) + Math.abs(ddy) > 0.4) {
+        if (ddy > 0.45 * Math.abs(ddx)) this.pview = 'front';
+        else if (ddy < -0.45 * Math.abs(ddx)) this.pview = 'back';
+        else this.pview = 'side';
+        if (Math.abs(ddx) > 0.1) p.face = ddx >= 0 ? 1 : -1;
+      }
+    }
 
     // keep the fighter inside the dungeon arena
     this.clampArena(p);
@@ -199,7 +259,7 @@ export class Game {
 
   clampArena(o) {
     const d = hyp(o.wx, o.wy);
-    if (d > ARENA_R - 0.6) { const k = (ARENA_R - 0.6) / d; o.wx *= k; o.wy *= k; }
+    if (d > this.R - 0.6) { const k = (this.R - 0.6) / d; o.wx *= k; o.wy *= k; }
   }
 
   stepToward(p, tx, ty, speed, dt, isDir) {
@@ -256,6 +316,15 @@ export class Game {
     // loot
     const drop = rollDrop(m.tier, rng);
     if (drop) this.loot.push({ wx: m.wx, wy: m.wy, t: 0, ...drop });
+    if (m.isBoss) {
+      this.boss = null;
+      this.float(sp.x, sp.y - 72, m.name + ' 撃破！', '#ffd24a', 26);
+      for (let i = 0; i < 24; i++) this.spark(sp.x, sp.y - 30, '#ffd24a', 2);
+      for (let i = 0; i < 2; i++) {                       // guaranteed bonus gear
+        const g = rollDrop(6, rng);
+        if (g) this.loot.push({ wx: m.wx + (rng() - .5) * 2, wy: m.wy + (rng() - .5) * 2, t: 0, ...g });
+      }
+    }
     // level up check
     while (p.xp >= p.xpToNext) this.levelUp();
     this.updateHUD();
@@ -336,22 +405,18 @@ export class Game {
   }
 
   onDeath() {
-    const p = this.p;
     this.float(this.W / 2, this.H / 2, '気絶...', '#ff6b6b', 26);
-    // respawn: heal, drop a few levels' edge but keep progress, scatter monsters
-    p.hp = p.hpMax; p.wx = 0; p.wy = 0;
-    this.monsters.length = 0; this.target = null; this.moveTarget = null;
-    this.refillSpawns(true);
-    this.updateHUD();
-    this.save();
+    this.p.hp = this.p.hpMax;
+    this.enterArea(this.areaId);   // respawn fresh in the same area
   }
 
   // ---------------- spawns ----------------
   refillSpawns(initial) {
-    const table = spawnTableFor(this.p.level);
+    const table = (this.area && this.area.spawn) || spawnTableFor(this.p.level);
     const total = table.reduce((s, e) => s + e.weight, 0);
-    const want = MAX_MONSTERS - this.monsters.filter(m => m.hp > 0).length;
-    const n = initial ? MAX_MONSTERS : Math.min(want, 2);
+    const alive = this.monsters.filter(m => m.hp > 0 && !m.isBoss).length;
+    const want = this.maxMon - alive;
+    const n = initial ? this.maxMon : Math.min(want, 2);
     for (let i = 0; i < n; i++) {
       let r = rng() * total, key = table[0].sprite;
       for (const e of table) { r -= e.weight; if (r <= 0) { key = e.sprite; break; } }
@@ -365,7 +430,7 @@ export class Game {
     // place somewhere inside the arena, at least ~5 tiles from the player
     let ax = 0, ay = 0;
     for (let tries = 0; tries < 14; tries++) {
-      const a = rng() * Math.PI * 2, r = 2 + rng() * (ARENA_R - 2.5);
+      const a = rng() * Math.PI * 2, r = 2 + rng() * (this.R - 2.5);
       ax = Math.cos(a) * r; ay = Math.sin(a) * r;
       if (hyp(ax - this.p.wx, ay - this.p.wy) >= 5) break;
     }
@@ -383,14 +448,22 @@ export class Game {
   }
 
   // ---------------- loot ----------------
+  applyOption(o) {                    // o = { stat, value }
+    const p = this.p;
+    if (o.stat === 'atkSpeedPct' || o.stat === 'hpAbsorbPct' || o.stat === 'evasionPct') {
+      p.opt[o.stat] = (p.opt[o.stat] || 0) + o.value;
+    } else {
+      p[o.stat] = (p[o.stat] || 0) + o.value;
+      if (o.stat === 'hpMax') p.hp = Math.min(p.hpMax, p.hp + o.value);
+    }
+  }
   pickup(it) {
     const p = this.p;
-    if (it.slot === 'stat') {
-      p[it.stat] = (p[it.stat] || 0) + it.value;
-      if (it.stat === 'hpMax') p.hp = Math.min(p.hpMax, p.hp + it.value);
-    } else {
-      p.opt[it.stat] = (p.opt[it.stat] || 0) + it.value;
-      p.equip[it.slot] = it.label + ' +' + Math.round(p.opt[it.stat]) + it.suffix;
+    if (it.kind === 'gear') {           // weapon/armor/shield with multiple options
+      for (const o of it.options) this.applyOption(o);
+      p.equip[it.slot] = it.name;
+    } else {                            // single permanent option item (affix)
+      this.applyOption({ stat: it.stat, value: it.value });
     }
     const sp = this.toScreen(p.wx, p.wy);
     this.float(sp.x, sp.y - 70, it.text, it.color, 15);
@@ -495,6 +568,57 @@ export class Game {
       g.addColorStop(0, 'rgba(170,0,0,0)'); g.addColorStop(1, `rgba(170,0,0,${a})`);
       ctx.fillStyle = g; ctx.fillRect(0, 0, this.W, this.H);
     }
+
+    this.drawBossBar();
+    this.drawMinimap();
+  }
+
+  // top-center boss HP bar (shown while the area boss lives)
+  drawBossBar() {
+    const b = this.boss; if (!b || b.hp <= 0) return;
+    const ctx = this.ctx, w = Math.min(360, this.W - 40), x = (this.W - w) / 2, y = 8, h = 16;
+    ctx.fillStyle = 'rgba(8,8,12,.82)'; ctx.fillRect(x - 4, y - 3, w + 8, h + 20);
+    ctx.strokeStyle = '#b8923a'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 4, y - 3, w + 8, h + 20);
+    ctx.fillStyle = '#1a0a0a'; ctx.fillRect(x, y, w, h);
+    const r = Math.max(0, b.hp / b.hpMax);
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, '#ff8a7a'); g.addColorStop(.5, '#d23a2a'); g.addColorStop(1, '#6a1410');
+    ctx.fillStyle = g; ctx.fillRect(x, y, w * r, h);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = '#ffe6c8'; ctx.font = 'bold 12px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(b.name + '  ' + Math.ceil(b.hp) + ' / ' + b.hpMax, this.W / 2, y + h + 9);
+    ctx.textAlign = 'left';
+  }
+
+  // top-right minimap of the current area
+  drawMinimap() {
+    const ctx = this.ctx, R = 46, cx = this.W - R - 14, cy = R + 14;
+    const sc = (R - 5) / this.R;   // tiles -> minimap px
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.closePath();
+    ctx.fillStyle = 'rgba(10,12,16,.78)'; ctx.fill();
+    ctx.strokeStyle = '#b8923a'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.clip();
+    // floor tint by theme
+    const tint = this.area.theme === 'grassland' ? 'rgba(70,110,50,.5)' : this.area.theme === 'forest' ? 'rgba(40,70,35,.55)' : 'rgba(60,55,45,.5)';
+    ctx.fillStyle = tint; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
+    const px = this.p.wx, py = this.p.wy;
+    const mp = (wx, wy) => ({ x: cx + (wx - px) * sc, y: cy + (wy - py) * sc }); // player-centered
+    // exit
+    if (this.exit) { const e = mp(this.exit.wx, this.exit.wy); ctx.fillStyle = '#7ce0ff'; ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, 7); ctx.fill(); }
+    // monsters
+    for (const m of this.monsters) {
+      if (m.hp <= 0) continue;
+      const q = mp(m.wx, m.wy);
+      ctx.fillStyle = m.isBoss ? '#ffd24a' : '#e0584a';
+      ctx.beginPath(); ctx.arc(q.x, q.y, m.isBoss ? 4 : 2, 0, 7); ctx.fill();
+    }
+    // player
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
+    ctx.restore();
+    // area name
+    ctx.fillStyle = '#e8c870'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(this.area.name, cx, cy + R + 12); ctx.textAlign = 'left';
   }
 
   // lingering crimson blood splats on the floor (projected onto the iso plane)
@@ -517,25 +641,38 @@ export class Game {
     ctx.globalAlpha = 1;
   }
 
-  drawGround() {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#070605'; ctx.fillRect(0, 0, this.W, this.H);   // dungeon dark
+  themePal(theme) {
+    if (theme === 'grassland') return {
+      bg: '#0e1408', tiles: ['#3c4f2c', '#36492a', '#41552f', '#324626', '#3a4d29'],
+      crack: '#4a3d28', rim: '#22301a', grout: 'rgba(0,0,0,.22)', vig: 0.5,
+    };
+    if (theme === 'forest') return {
+      bg: '#070b05', tiles: ['#2c3a20', '#26331c', '#314026', '#222e18', '#2a371e'],
+      crack: '#3a3320', rim: '#141d0e', grout: 'rgba(0,0,0,.3)', vig: 0.66,
+    };
+    return { // dungeon
+      bg: '#070605', tiles: ['#39332b', '#2c2720', '#332d26', '#2a251f', '#302a23'],
+      crack: '#3d342b', rim: '#1d1a15', grout: 'rgba(0,0,0,.42)', vig: 0.72,
+    };
+  }
 
-    // ---- stone floor (diamond tiles within the arena) ----
+  drawGround() {
+    const ctx = this.ctx, theme = this.area.theme, T = this.themePal(theme);
+    ctx.fillStyle = T.bg; ctx.fillRect(0, 0, this.W, this.H);
+
     const c = this.toWorld(this.W / 2, this.H / 2);
-    const R = 17;
+    const R = 18;
     for (let i = -R; i <= R; i++) {
       for (let j = -R; j <= R; j++) {
         const wx = Math.round(c.wx) + i, wy = Math.round(c.wy) + j;
         const dist = hyp(wx, wy);
-        if (dist > ARENA_R + 0.6) continue;          // void beyond the arena
+        if (dist > this.R + 0.6) continue;          // void beyond the arena
         const s = this.toScreen(wx, wy);
         if (s.x < -TW || s.x > this.W + TW || s.y < -TH || s.y > this.H + TH) continue;
         const h = ((wx * 73856093) ^ (wy * 19349663)) >>> 0;
-        const v = h % 6;
-        let col = v === 0 ? '#39332b' : v === 1 ? '#2c2720' : v === 2 ? '#332d26' : v === 3 ? '#2a251f' : '#302a23';
-        if (h % 23 === 0) col = '#3d342b';
-        if (dist > ARENA_R - 0.6) col = '#1d1a15';   // darker rim
+        let col = T.tiles[h % T.tiles.length];
+        if (h % 23 === 0) col = T.crack;
+        if (dist > this.R - 0.6) col = T.rim;
         ctx.fillStyle = col;
         ctx.beginPath();
         ctx.moveTo(s.x, s.y - TH / 2);
@@ -543,17 +680,38 @@ export class Game {
         ctx.lineTo(s.x, s.y + TH / 2);
         ctx.lineTo(s.x - TW / 2, s.y);
         ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.strokeStyle = T.grout; ctx.lineWidth = 1; ctx.stroke();
       }
     }
 
-    this.drawSeal();
-    this.drawArenaRing();
+    if (theme === 'dungeon') this.drawSeal();
+    this.drawArenaRing(theme);
+    this.drawExit();
 
-    // vignette (heavier, gothic)
-    const vg = ctx.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.22, this.W / 2, this.H / 2, this.H * 0.78);
-    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.72)');
+    const vg = ctx.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.22, this.W / 2, this.H / 2, this.H * 0.8);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, `rgba(0,0,0,${T.vig})`);
     ctx.fillStyle = vg; ctx.fillRect(0, 0, this.W, this.H);
+  }
+
+  // glowing gate to the next area
+  drawExit() {
+    if (!this.exit) return;
+    const ctx = this.ctx, s = this.toScreen(this.exit.wx, this.exit.wy);
+    const pulse = 0.6 + Math.sin(this._t * 3) * 0.4;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const gg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 42);
+    gg.addColorStop(0, `rgba(120,230,255,${0.28 * pulse})`); gg.addColorStop(1, 'rgba(120,230,255,0)');
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.ellipse(s.x, s.y, 28, 14, 0, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#2a2620';
+    ctx.fillRect(s.x - 16, s.y - 46, 6, 46); ctx.fillRect(s.x + 10, s.y - 46, 6, 46);
+    const pg = ctx.createLinearGradient(0, s.y - 44, 0, s.y);
+    pg.addColorStop(0, `rgba(150,235,255,${0.55 * pulse})`); pg.addColorStop(1, `rgba(80,180,230,${0.2 * pulse})`);
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.moveTo(s.x - 10, s.y); ctx.lineTo(s.x - 10, s.y - 40);
+    ctx.quadraticCurveTo(s.x, s.y - 54, s.x + 10, s.y - 40); ctx.lineTo(s.x + 10, s.y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#cdefff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('▲ ' + (AREAS[this.exit.next] ? AREAS[this.exit.next].name : '出口'), s.x, s.y - 56);
   }
 
   // Glowing magic seal engraved on the floor (anchored at world origin).
@@ -620,33 +778,57 @@ export class Game {
     ctx.restore();
   }
 
-  // Stone wall ring + pillars + flickering torches around the arena edge.
-  drawArenaRing() {
+  // Border decor around the arena edge — varies by theme.
+  drawArenaRing(theme) {
     const ctx = this.ctx, c = this.toScreen(0, 0), U = ISO_U;
-    // wall band (squished onto floor plane)
-    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
-    ctx.lineWidth = 22; ctx.strokeStyle = '#100d0a';
-    ctx.beginPath(); ctx.arc(0, 0, (ARENA_R + 0.9) * U, 0, 7); ctx.stroke();
-    ctx.lineWidth = 5; ctx.strokeStyle = '#2b251d';
-    ctx.beginPath(); ctx.arc(0, 0, (ARENA_R + 0.25) * U, 0, 7); ctx.stroke();
-    ctx.restore();
-
-    // torch glows on the floor (additive)
-    const N = 10, posts = [];
-    for (let k = 0; k < N; k++) {
-      const a = k / N * 6.283;
-      const s = this.toScreen(Math.cos(a) * (ARENA_R + 0.6), Math.sin(a) * (ARENA_R + 0.6));
-      const flick = 0.72 + Math.sin(this._t * 9 + k * 1.7) * 0.12 + Math.sin(this._t * 23 + k) * 0.06;
-      posts.push({ s, flick });
-      ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      const gg = ctx.createRadialGradient(s.x, s.y - 4, 0, s.x, s.y - 4, 110);
-      gg.addColorStop(0, `rgba(255,150,60,${0.16 * flick})`); gg.addColorStop(1, 'rgba(255,120,40,0)');
-      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(s.x, s.y - 4, 110, 0, 7); ctx.fill();
+    if (theme === 'dungeon') {
+      ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
+      ctx.lineWidth = 22; ctx.strokeStyle = '#100d0a';
+      ctx.beginPath(); ctx.arc(0, 0, (this.R + 0.9) * U, 0, 7); ctx.stroke();
+      ctx.lineWidth = 5; ctx.strokeStyle = '#2b251d';
+      ctx.beginPath(); ctx.arc(0, 0, (this.R + 0.25) * U, 0, 7); ctx.stroke();
       ctx.restore();
     }
-    // pillars + flames (far posts first)
-    posts.sort((a, b) => a.s.y - b.s.y);
-    for (const p of posts) this.drawPillar(p.s.x, p.s.y, p.flick);
+    const N = theme === 'forest' ? 14 : (theme === 'grassland' ? 12 : 10);
+    const posts = [];
+    for (let k = 0; k < N; k++) {
+      const a = k / N * 6.283;
+      posts.push({ s: this.toScreen(Math.cos(a) * (this.R + 0.7), Math.sin(a) * (this.R + 0.7)), k });
+    }
+    posts.sort((a, b) => a.s.y - b.s.y);   // far decor first
+    for (const pp of posts) {
+      if (theme === 'forest') this.drawTree(pp.s.x, pp.s.y, pp.k);
+      else if (theme === 'grassland') this.drawBush(pp.s.x, pp.s.y, pp.k);
+      else {
+        const flick = 0.72 + Math.sin(this._t * 9 + pp.k * 1.7) * 0.12 + Math.sin(this._t * 23 + pp.k) * 0.06;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const gg = ctx.createRadialGradient(pp.s.x, pp.s.y - 4, 0, pp.s.x, pp.s.y - 4, 110);
+        gg.addColorStop(0, `rgba(255,150,60,${0.16 * flick})`); gg.addColorStop(1, 'rgba(255,120,40,0)');
+        ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pp.s.x, pp.s.y - 4, 110, 0, 7); ctx.fill();
+        ctx.restore();
+        this.drawPillar(pp.s.x, pp.s.y, flick);
+      }
+    }
+  }
+
+  drawTree(sx, sy, k) {
+    const ctx = this.ctx, sway = Math.sin(this._t * 1.1 + k) * 3;
+    ctx.fillStyle = '#3a2a18'; ctx.fillRect(sx - 4, sy - 42, 8, 42);
+    for (const c of [[0, -60, 22, '#1e3416'], [-11, -52, 16, '#274320'], [11, -54, 15, '#22381a'], [0, -46, 18, '#2c4a22']]) {
+      ctx.fillStyle = c[3]; ctx.beginPath(); ctx.ellipse(sx + c[0] + sway, sy + c[1], c[2], c[2] * 0.85, 0, 0, 7); ctx.fill();
+    }
+  }
+  drawBush(sx, sy, k) {
+    const ctx = this.ctx;
+    if (k % 3 === 0) {                       // a mossy rock
+      ctx.fillStyle = '#56524a'; ctx.beginPath(); ctx.ellipse(sx, sy - 6, 13, 9, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#6a655b'; ctx.beginPath(); ctx.ellipse(sx - 3, sy - 10, 7, 5, 0, 0, 7); ctx.fill();
+      return;
+    }
+    for (const c of [[0, -9, 12], [-9, -5, 8], [9, -6, 9]]) {
+      ctx.fillStyle = '#2e4420'; ctx.beginPath(); ctx.ellipse(sx + c[0], sy + c[1], c[2], c[2] * 0.8, 0, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = '#3a5429'; ctx.beginPath(); ctx.ellipse(sx - 2, sy - 13, 7, 5, 0, 0, 7); ctx.fill();
   }
 
   drawPillar(sx, sy, flick) {
@@ -670,12 +852,12 @@ export class Game {
     const ctx = this.ctx;
     const s = this.toScreen(m.wx, m.wy);
     if (m.hp <= 0) { ctx.globalAlpha = Math.max(0, 1 - m.deathT / 0.4); }
-    const sc = (m.scale || 1) * 1.5;   // monsters ~char-size and up
+    const sc = (m.scale || 1) * (m.isBoss ? 1.15 : 1.5);   // monsters ~char-size and up
     drawShadow(ctx, s.x, s.y, 16 * sc, 7 * sc);
     drawMonster(ctx, m.sprite, { x: s.x, y: s.y, scale: sc, face: m.face, t: m.t, walk: m.walk, hurt: m.hurt, tint: m.tint });
     ctx.globalAlpha = 1;
-    // HP bar
-    if (m.hp > 0 && m.hp < m.hpMax) {
+    // HP bar (bosses use the top bar instead)
+    if (m.hp > 0 && m.hp < m.hpMax && !m.isBoss) {
       const w = 34 * sc, top = s.y - 56 * sc;
       ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(s.x - w / 2, top, w, 5);
       ctx.fillStyle = m.tier >= 4 ? '#ff5a4d' : '#7be07b';
@@ -695,18 +877,18 @@ export class Game {
     const s = this.toScreen(p.wx, p.wy);
     const god = this.isGod();
     drawShadow(ctx, s.x, s.y, 16, 7, 0.4);
+    const view = this.pview || 'front';
     // godspeed afterimages
     if (god && this.attacking) {
       ctx.globalAlpha = 0.25;
       for (let i = 1; i <= 2; i++) {
-        drawFighter(ctx, { x: s.x - p.face * i * 6, y: s.y, scale: 1, face: p.face, t: this._t - i * 0.04, walk: 0, attackP: (this.visualSwing - i * 0.3) % 1, god, hpRatio: p.hp / p.hpMax });
+        drawFighter(ctx, { x: s.x - p.face * i * 6, y: s.y, scale: 1, face: p.face, view, t: this._t - i * 0.04, walk: 0, attackP: (this.visualSwing - i * 0.3) % 1, god });
       }
       ctx.globalAlpha = 1;
     }
     drawFighter(ctx, {
-      x: s.x, y: s.y, scale: 1, face: p.face, t: this._t || 0,
-      walk: p.walk || 0, attackP: this.attacking ? (this.visualSwing % 1) : -1,
-      god, hpRatio: p.hp / p.hpMax,
+      x: s.x, y: s.y, scale: 1, face: p.face, view, t: this._t || 0,
+      walk: p.walk || 0, attackP: this.attacking ? (this.visualSwing % 1) : -1, god,
     });
     p.walk = 0;
   }
