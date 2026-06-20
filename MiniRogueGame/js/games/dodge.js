@@ -540,21 +540,25 @@ export class Game extends Scene {
             const dxb = b.x - this.fx, dyb = b.y - this.fy;
             return (dxa * dxa + dya * dya) - (dxb * dxb + dyb * dyb);
           });
+          // Gun-pod muzzle world position — matches _drawFighterValkyrie pixel muzzle
+          // SPRITE_OX=-21, CELL=3: muzzleOX = -21 + 18*3 = +33; muzzleOY = -33 + 9*3 + 1 = -5
+          const muzzleX = this.fx + (this._valkyrieMuzzleOX !== undefined ? this._valkyrieMuzzleOX : 33);
+          const muzzleY = this.fy + (this._valkyrieMuzzleOY !== undefined ? this._valkyrieMuzzleOY : -5);
           // Fire up to VALKYRIE_SPRAY_COUNT beams — primary target + others with slight spread
           const targets = liveMissiles.slice(0, VALKYRIE_SPRAY_COUNT);
           for (let si = 0; si < targets.length; si++) {
             const tgt = targets[si];
             // For extra beams (si > 0) add random angular spread so they fan out
             if (si === 0) {
-              this.beams.push(new Beam(this.fx, this.fy, tgt.x, tgt.y));
+              this.beams.push(new Beam(muzzleX, muzzleY, tgt.x, tgt.y));
             } else {
               const spread = (Math.random() - 0.5) * VALKYRIE_SPRAY_SPREAD * 2;
-              const baseAngle = Math.atan2(tgt.y - this.fy, tgt.x - this.fx) + spread;
+              const baseAngle = Math.atan2(tgt.y - muzzleY, tgt.x - muzzleX) + spread;
               const dist = 200;
               this.beams.push(new Beam(
-                this.fx, this.fy,
-                this.fx + Math.cos(baseAngle) * dist,
-                this.fy + Math.sin(baseAngle) * dist,
+                muzzleX, muzzleY,
+                muzzleX + Math.cos(baseAngle) * dist,
+                muzzleY + Math.sin(baseAngle) * dist,
               ));
             }
           }
@@ -563,9 +567,9 @@ export class Game extends Scene {
             for (let si = 0; si < VALKYRIE_SPRAY_COUNT; si++) {
               const ang = (Math.random() - 0.5) * Math.PI * 0.5;
               this.beams.push(new Beam(
-                this.fx, this.fy,
-                this.fx + Math.cos(ang) * 300,
-                this.fy + Math.sin(ang) * 300,
+                muzzleX, muzzleY,
+                muzzleX + Math.cos(ang) * 300,
+                muzzleY + Math.sin(ang) * 300,
               ));
             }
           }
@@ -1306,210 +1310,147 @@ export class Game extends Scene {
     }
   }
 
-  // ---- Valkyrie battroid (humanoid robot) — facing right, gun-arm extends right ----
-  // Coordinate system: x+ = right (forward), y+ = down. Robot is ~38px wide, ~44px tall.
-  //   HEAD  : small box centered around (6, -18)
-  //   TORSO : main rectangle from (-4,-13) to (10,2)
-  //   WAIST : narrow link at (0,-2) to (6,2)
-  //   HIPS  : box (-2,2) to (8,8)
-  //   LEGS  : two rects below hips, slightly angled
-  //   GUN ARM (right/forward): extends from shoulder at (10,-10) forward to (26,-10)
-  //   LEFT ARM : shorter, behind at (-4,-10) extending back
-  //   SHOULDER FINS: swept back decorative plates
+  // ---- Pixel-art VF-1 Valkyrie battroid (20 cols × 24 rows @ 3px/cell = 60×72 px) ----
+  // Sprite faces RIGHT. Gun-pod arm extends right. Backpack/thrusters on LEFT.
+  // Legend: '.'=transparent  'O'=outline(p.hi)  'B'=body(p.mid)  'D'=shadow(p.dim)
+  //         'A'=visor/accent(p.warn, pulsed)    'G'=gun-barrel(p.hi)
+  // Col 0 = leftmost (backpack side); col 19 = rightmost (gun muzzle side).
+  // Row 0 = top (antenna). Row 25 = bottom (feet).
+  // Gun-pod muzzle tip: rightmost G cell at row 9, col 19 →
+  //   muzzleOX = SPRITE_OX + 20*CELL = -30 + 60 = +30 px right of fighter centre
+  //   muzzleOY = SPRITE_OY + 9*CELL + CELL/2 = -39 + 27 + 1.5 = -10.5 ≈ -11 px up
+
   _drawFighterValkyrie(ctx, x, y, p) {
     const savedAlpha = ctx.globalAlpha;
-    ctx.save();
-    ctx.translate(x, y);
-    try {
-      const pulse = 0.28 + 0.22 * Math.sin(this.elapsed * 14);
 
-      // --- Aura glow ---
-      ctx.globalAlpha = clamp(pulse * 0.55, 0, 1);
+    // ---- Pixel-art sprite definition ----
+    // 20 cols × 26 rows  @  CELL=3 px  →  60×78 logical px
+    //               col: 0         1
+    //                    01234567890123456789
+    const ROWS = [
+      '......OO............',  //  0  antenna tip
+      '.....OO.............', //  1  antenna shaft
+      '....OAAO............',  //  2  head top
+      '...OAAABO...........',  //  3  head visor  ← A = visor glow
+      '...OBBBO............',  //  4  head lower
+      '...OBBO.OO..........',  //  5  neck + shoulder fin top
+      '..OOBB.OBB..........',  //  6  shoulder fins
+      'OOBBBBOBBBOOOOO.....',  //  7  chest+gun arm start (backpack O at col 0-1)
+      'DBBBBBBBBBOGGGGGO...',  //  8  chest body + gun barrel (D=backpack shadow)
+      'DBBBBBBBBB.GGGGGGO..',  //  9  gun mid ← rightmost G at col 17
+      'DBBBBBBBBB.OOOOO....',  // 10  gun lower / forearm
+      'OOBBBBBBBOO.........',  // 11  waist
+      '.OBBBBBBO...........',  // 12  hips
+      '.OBBBB.BO...........',  // 13  upper thigh split
+      '.ODBB.DBDO..........',  // 14  thigh
+      '..ODBBDO............',  // 15  knees
+      '..OBBOOB............',  // 16  shin upper
+      '..ODBOOB............',  // 17  shin mid
+      '..ODBOOB............',  // 18  shin lower
+      '..OBBOOB............',  // 19  ankle
+      '..OBBOBB............',  // 20  ankle lower
+      '.OOBBBBBOO..........',  // 21  feet spread
+      '.ODBBBBDO...........',  // 22  foot soles
+      '..OOOOOO............',  // 23  ground line
+    ];
+
+    const COLS   = 20;
+    const NROWS  = ROWS.length;
+    const CELL   = 3;            // px per bitmap cell
+
+    // Sprite origin (top-left of col 0, row 0) relative to fighter centre (x,y).
+    // Sprite is 60px wide, 72px tall.
+    // Centre horizontally at col 7.5 ≈ col 7 * 3 = 21 px → SPRITE_OX = -(7*3) = -21
+    // Vertically: place centre at row 11 (waist) → SPRITE_OY = -(11*3) = -33
+    const SPRITE_OX = -21;   // left edge of col 0
+    const SPRITE_OY = -33;   // top edge of row 0
+
+    // Muzzle: rightmost G in rows 8-9 is col 17 (0-indexed), right edge = col 18*CELL
+    //   muzzleOX = SPRITE_OX + 18 * CELL = -21 + 54 = +33
+    //   muzzleOY = SPRITE_OY + 9 * CELL + CELL/2 = -33 + 27 + 1.5 ≈ -4.5
+    this._valkyrieMuzzleOX = SPRITE_OX + 18 * CELL;  // +33 px right of fighter
+    this._valkyrieMuzzleOY = SPRITE_OY +  9 * CELL + Math.round(CELL / 2);  // -5 px up
+
+    const pulse      = 0.28 + 0.22 * Math.sin(this.elapsed * 14);
+    const visorPulse = 0.75 + 0.25 * Math.sin(this.elapsed * 18);
+    const flameLen   = 0.5  + 0.5  * Math.abs(Math.sin(this.flameTick * 22));
+    const shooting   = this.valkyrieShootTimer < 0.05;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+
+    try {
+      // ---- Aura glow ----
+      ctx.globalAlpha = clamp(pulse * 0.50, 0, 1);
       ctx.fillStyle   = p.warn;
       ctx.beginPath();
-      ctx.arc(2, -4, 28, 0, Math.PI * 2);
+      ctx.arc(x + 6, y - 5, 36, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = clamp(pulse * 0.35, 0, 1);
+      ctx.globalAlpha = clamp(pulse * 0.28, 0, 1);
       ctx.fillStyle   = p.hi;
       ctx.beginPath();
-      ctx.arc(2, -4, 16, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
-
-      // ---- LEGS (draw first so body overlaps) ----
-      // Right leg (lower, forward-right in robot space = down-right on screen)
-      ctx.fillStyle = p.mid;
-      // Thigh right
-      ctx.beginPath();
-      ctx.moveTo(2, 8); ctx.lineTo(6, 8); ctx.lineTo(8, 18); ctx.lineTo(2, 18);
-      ctx.closePath(); ctx.fill();
-      // Shin right (slightly wider, knee protrusion)
-      ctx.fillStyle = p.fg;
-      ctx.beginPath();
-      ctx.moveTo(1, 18); ctx.lineTo(8, 18); ctx.lineTo(9, 26); ctx.lineTo(0, 26);
-      ctx.closePath(); ctx.fill();
-      // Foot right
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(-2, 24, 13, 4);
-
-      // Left leg (slightly offset, mirrored vertically = up on canvas)
-      ctx.fillStyle = p.mid;
-      // Thigh left
-      ctx.beginPath();
-      ctx.moveTo(-4, 8); ctx.lineTo(0, 8); ctx.lineTo(-1, 18); ctx.lineTo(-6, 18);
-      ctx.closePath(); ctx.fill();
-      // Shin left
-      ctx.fillStyle = p.fg;
-      ctx.beginPath();
-      ctx.moveTo(-7, 18); ctx.lineTo(0, 18); ctx.lineTo(-1, 26); ctx.lineTo(-8, 26);
-      ctx.closePath(); ctx.fill();
-      // Foot left
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(-10, 24, 12, 4);
-
-      // ---- HIPS ----
-      ctx.fillStyle = p.warn;
-      ctx.fillRect(-3, 4, 12, 6);
-      // Hip highlight
-      ctx.fillStyle = p.hi;
-      ctx.fillRect(0, 5, 6, 2);
-
-      // ---- WAIST ----
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(-1, 1, 9, 5);
-
-      // ---- TORSO (chest) ----
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      // Slightly trapezoidal chest, wider at shoulders
-      ctx.moveTo(-3, 1);    // lower-left
-      ctx.lineTo(10, 1);    // lower-right
-      ctx.lineTo(13, -6);   // upper-right (shoulder)
-      ctx.lineTo(8, -14);   // upper-chest right
-      ctx.lineTo(-2, -14);  // upper-chest left
-      ctx.lineTo(-6, -6);   // upper-left (shoulder)
-      ctx.closePath();
-      ctx.fill();
-
-      // Chest V-fin / armor plate highlight
-      ctx.fillStyle = p.hi;
-      ctx.beginPath();
-      ctx.moveTo(4, -1); ctx.lineTo(9, -1); ctx.lineTo(11, -8); ctx.lineTo(6, -12); ctx.lineTo(2, -8);
-      ctx.closePath(); ctx.fill();
-
-      // Cockpit eye / chest gem — glowing
-      const eyePulse = 0.7 + 0.3 * Math.sin(this.elapsed * 18);
-      ctx.globalAlpha = clamp(eyePulse, 0, 1);
-      ctx.fillStyle   = p.warn;
-      ctx.beginPath();
-      ctx.ellipse(6, -6, 4, 2.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = p.hi;
-      ctx.beginPath();
-      ctx.ellipse(6, -6, 2.5, 1.2, 0, 0, Math.PI * 2);
+      ctx.arc(x + 6, y - 5, 22, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = clamp(savedAlpha, 0, 1);
 
-      // ---- SHOULDER FINS (swept-back decorative plates on each shoulder) ----
-      ctx.fillStyle = p.mid;
-      // Right shoulder fin (top shoulder = negative y)
-      ctx.beginPath();
-      ctx.moveTo(8, -14); ctx.lineTo(14, -20); ctx.lineTo(6, -20); ctx.lineTo(4, -14);
-      ctx.closePath(); ctx.fill();
-      // Left shoulder fin
-      ctx.beginPath();
-      ctx.moveTo(-2, -14); ctx.lineTo(-10, -20); ctx.lineTo(-6, -20); ctx.lineTo(-4, -14);
-      ctx.closePath(); ctx.fill();
-      // Fin highlights
-      ctx.fillStyle = p.fg;
-      ctx.beginPath();
-      ctx.moveTo(8, -14); ctx.lineTo(12, -18); ctx.lineTo(8, -18); ctx.lineTo(6, -14);
-      ctx.closePath(); ctx.fill();
+      // ---- Thruster flames (emit leftward from col 0 at backpack rows) ----
+      const flameBase = Math.round(x + SPRITE_OX);
+      for (const fr of [7, 9]) {
+        const fcy = Math.round(y + SPRITE_OY + fr * CELL + CELL / 2);
+        const fLen = Math.round(5 + flameLen * 14);
+        ctx.globalAlpha = clamp(0.9, 0, 1);
+        ctx.fillStyle   = p.warn;
+        ctx.fillRect(flameBase - fLen, fcy - 1, fLen, 3);
+        ctx.globalAlpha = clamp(0.7, 0, 1);
+        ctx.fillStyle   = p.hi;
+        ctx.fillRect(flameBase - Math.round(fLen * 0.5), fcy, Math.round(fLen * 0.5), 2);
+      }
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
 
-      // ---- LEFT ARM (rear, angled back) ----
-      ctx.fillStyle = p.mid;
-      ctx.beginPath();
-      ctx.moveTo(-3, -12); ctx.lineTo(-7, -12); ctx.lineTo(-14, -6); ctx.lineTo(-11, -4); ctx.lineTo(-5, -8);
-      ctx.closePath(); ctx.fill();
-      // Fist / hand
-      ctx.fillStyle = p.fg;
-      ctx.beginPath();
-      ctx.moveTo(-14, -6); ctx.lineTo(-18, -8); ctx.lineTo(-19, -4); ctx.lineTo(-14, -3);
-      ctx.closePath(); ctx.fill();
+      // ---- Render bitmap cells ----
+      for (let r = 0; r < NROWS; r++) {
+        const row = ROWS[r];
+        for (let c = 0; c < COLS; c++) {
+          const ch = c < row.length ? row[c] : '.';
+          if (ch === '.' || ch === ' ') continue;
 
-      // ---- GUN ARM (right, forward — extends toward missiles) ----
-      // Upper arm from shoulder
-      ctx.fillStyle = p.mid;
-      ctx.beginPath();
-      ctx.moveTo(11, -10); ctx.lineTo(11, -14); ctx.lineTo(20, -12); ctx.lineTo(20, -8);
-      ctx.closePath(); ctx.fill();
-      // Forearm / gun barrel housing
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(20, -13); ctx.lineTo(20, -7); ctx.lineTo(28, -8); ctx.lineTo(28, -12);
-      ctx.closePath(); ctx.fill();
-      // Gun barrel (twin)
-      ctx.fillStyle = p.hi;
-      ctx.fillRect(25, -13, 10, 2.5);   // upper barrel
-      ctx.fillRect(25, -9,  10, 2.5);   // lower barrel
-      // Muzzle flash/glow during auto-fire
-      const shooting = this.valkyrieShootTimer < 0.05;
+          let colour;
+          if      (ch === 'O') colour = p.hi;
+          else if (ch === 'B') colour = p.mid;
+          else if (ch === 'D') colour = p.dim;
+          else if (ch === 'G') colour = p.hi;
+          else if (ch === 'A') colour = p.warn;
+          else colour = p.mid;
+
+          let cellAlpha = savedAlpha;
+          if (ch === 'A') cellAlpha = clamp(savedAlpha * visorPulse, 0, 1);
+
+          ctx.globalAlpha = clamp(cellAlpha, 0, 1);
+          ctx.fillStyle   = colour;
+
+          // Integer-snap for crisp squares
+          const px = Math.round(x + SPRITE_OX) + c * CELL;
+          const py = Math.round(y + SPRITE_OY) + r * CELL;
+          ctx.fillRect(px, py, CELL, CELL);
+        }
+      }
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+
+      // ---- Muzzle flash during auto-fire ----
       if (shooting) {
-        const mPulse = 0.9;
-        ctx.globalAlpha = clamp(mPulse, 0, 1);
+        const mx = x + this._valkyrieMuzzleOX;
+        const my = y + this._valkyrieMuzzleOY;
+        ctx.globalAlpha = clamp(0.9, 0, 1);
         ctx.fillStyle   = p.warn;
         ctx.beginPath();
-        ctx.arc(36, -10, 5, 0, Math.PI * 2);
+        ctx.arc(mx, my, 6, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = p.hi;
+        ctx.fillStyle   = p.hi;
         ctx.beginPath();
-        ctx.arc(36, -10, 2.5, 0, Math.PI * 2);
+        ctx.arc(mx, my, 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = clamp(savedAlpha, 0, 1);
       }
-
-      // ---- HEAD ----
-      // Neck
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(2, -17, 5, 4);
-      // Head box
-      ctx.fillStyle = p.warn;
-      ctx.fillRect(-1, -26, 11, 10);
-      // Helmet highlight
-      ctx.fillStyle = p.hi;
-      ctx.fillRect(0, -25, 9, 3);
-      // Visor / sensor band (glowing)
-      const visorPulse = 0.8 + 0.2 * Math.sin(this.elapsed * 10);
-      ctx.globalAlpha = clamp(visorPulse, 0, 1);
-      ctx.fillStyle   = p.warn;
-      ctx.fillRect(1, -21, 8, 3);
-      ctx.fillStyle   = p.hi;
-      ctx.fillRect(3, -21, 4, 2);
-      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
-      // Side antenna
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(8, -29, 2, 5);
-      ctx.fillRect(-2, -27, 2, 4);
-
-      // ---- THRUSTER PACK / BACKPACK (left side of robot = down on canvas) ----
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(-8, -10, 6, 10);
-      // Thruster nozzles
-      const flameLen = 10 + Math.sin(this.flameTick * 22) * 5;
-      for (const ey of [-7, -1]) {
-        ctx.fillStyle   = p.warn;
-        ctx.globalAlpha = clamp(1.0, 0, 1);
-        ctx.beginPath();
-        ctx.moveTo(-8, ey - 2); ctx.lineTo(-8 - flameLen, ey + 1); ctx.lineTo(-8, ey + 2.5);
-        ctx.closePath(); ctx.fill();
-        ctx.fillStyle   = p.hi;
-        ctx.globalAlpha = clamp(0.85, 0, 1);
-        ctx.beginPath();
-        ctx.moveTo(-8, ey - 1); ctx.lineTo(-8 - flameLen * 0.55, ey + 0.5); ctx.lineTo(-8, ey + 1.5);
-        ctx.closePath(); ctx.fill();
-      }
-      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
 
     } finally {
       ctx.restore();
