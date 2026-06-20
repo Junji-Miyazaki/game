@@ -15,17 +15,20 @@ export const meta = {
 };
 
 // ---- Physics tuning constants ----
-// GRAVITY_BASE: Stage-1 gravity in px/s^2. Craft descends ~0.6 px/s^2 -> reaches floor in ~30s from y=90.
-// NO translational damping (VEL_DAMP removed). Motion is purely Newtonian.
-// ANG_DAMP: mild angular drag so the pilot can stabilize attitude. Translational velocity is undamped.
-const GRAVITY_BASE      = 0.6;   // px/s^2 — gentle but real; craft visibly falls in ~25-35 s
-const THRUST_ACCEL      = 8.0;   // main engine thrust (px/s^2)
-const ANG_ACCEL         = 40.0;  // RCS angular acceleration (deg/s^2)
-const ANG_DAMP          = 0.88;  // angular velocity damping per second (exponential decay)
-// NO VEL_DAMP — translational motion is undamped (purely Newtonian)
+// GRAVITY_BASE: Stage-1 gravity in px/s^2. ゆっくりとした降下で余裕のある操作感。
+// THRUST_ACCEL: メインエンジン加速度。小さな補正を重ねる穏やかな推力。
+// ANG_ACCEL: RCS回転加速度。慎重な姿勢制御のため抑え目。
+// ANG_DAMP: 角速度の減衰。パイロットが姿勢を安定させやすくする。
+// RCS_DRIFT: サイドジェットの横方向ドリフト量（px/s^2）。ジェット排気の反作用。
+const GRAVITY_BASE      = 0.35;  // px/s^2 — ステージ1は非常にゆっくりとした降下（旧値0.6）
+const THRUST_ACCEL      = 3.5;   // px/s^2 — 穏やかな主推力（旧値8.0）。小刻みな補正向き。
+const ANG_ACCEL         = 28.0;  // deg/s^2 — 慎重な姿勢変更（旧値40.0）
+const ANG_DAMP          = 0.82;  // 角速度減衰（旧値0.88、より強い減衰で安定しやすく）
+const RCS_DRIFT         = 2.5;   // px/s^2 — サイドジェット横ドリフト（排気反作用、新規）
+// NO VEL_DAMP — 並進運動はニュートン力学（減衰なし）
 const FUEL_MAX          = 100;
-const FUEL_RATE_MAIN    = 7;
-const FUEL_RATE_RCS     = 2;
+const FUEL_RATE_MAIN    = 5;     // 旧7、穏やか推力に合わせ消費も削減
+const FUEL_RATE_RCS     = 1.5;   // 旧2
 const SAFE_VY           = 14;
 const SAFE_VX           = 8;
 const SAFE_ANGLE        = 18;
@@ -33,7 +36,7 @@ const SAFE_OMEGA        = 12;
 const PAD_W_BASE        = 54;
 const TERRAIN_SEGS      = 18;
 const LANDER_START_Y    = 90;
-const GUIDE_THRESHOLD   = 30;
+const GUIDE_THRESHOLD   = 30;    // ON COURSEとみなす誘導線からの距離(px)
 const GUIDE_PTS         = 32;
 
 // Control zones (logical coordinates 0..360)
@@ -51,8 +54,8 @@ const BTN_H   = 80;       // height of button bar
 function stageParams(stage) {
   const s = Math.min(stage, 8);
   return {
-    // gravity increases ~12% per stage beyond stage 1
-    gravity:      GRAVITY_BASE * (1 + (s - 1) * 0.12),
+    // gravity increases ~15% per stage beyond stage 1
+    gravity:      GRAVITY_BASE * (1 + (s - 1) * 0.15),
     padW:         Math.max(24, PAD_W_BASE - (s - 1) * 4),
     stageBonus:   s * 50,
     // obstacles: 0 in stage 1, then 2 + (s-2) extras per stage
@@ -189,6 +192,10 @@ export class Game extends Scene {
     this._guideBonus    = 0;
     this.particles      = [];
 
+    // ON COURSEポップインジケーター用タイマー
+    this._onCourseTime = 0;   // ON COURSE状態の累積時間(秒)
+    this._onCoursePulse = 0;  // 点滅アニメーション用位相(秒)
+
     // Floating obstacles (stage 2+)
     this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed);
 
@@ -290,14 +297,20 @@ export class Game extends Scene {
     // RIGHT button -> right-side nozzle fires rightward -> nose pushed LEFT -> CCW rotation
     //   omega -= ANG_ACCEL * dt  (negative omega -> angle decreases -> ctx.rotate(-rad) -> CCW on screen)
     //
+    // サイドジェット横ドリフト（排気反作用）:
+    //   LEFT  button -> 左ノズルが左に排気 -> 機体が右にドリフト (vx += RCS_DRIFT * dt)
+    //   RIGHT button -> 右ノズルが右に排気 -> 機体が左にドリフト (vx -= RCS_DRIFT * dt)
+    //
     // Keyboard: ArrowLeft maps to _thrustRcsL (same CW convention).
     //           ArrowRight maps to _thrustRcsR (same CCW convention).
     if (this._thrustRcsL && this.fuel > 0) {
-      this.omega += ANG_ACCEL * dt;   // CW: nose tilts RIGHT
+      this.omega += ANG_ACCEL * dt;         // CW: nose tilts RIGHT
+      this.vx    += RCS_DRIFT * dt;         // 左ノズル排気反作用 -> 右ドリフト
       this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
     }
     if (this._thrustRcsR && this.fuel > 0) {
-      this.omega -= ANG_ACCEL * dt;   // CCW: nose tilts LEFT
+      this.omega -= ANG_ACCEL * dt;         // CCW: nose tilts LEFT
+      this.vx    -= RCS_DRIFT * dt;         // 右ノズル排気反作用 -> 左ドリフト
       this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
     }
 
@@ -313,6 +326,7 @@ export class Game extends Scene {
     // angle=0 => pointing straight up. craft up vector in screen coords:
     //   when angle=0, "up" is -Y (screen). ctx.rotate(+rad) rotates CW.
     //   craft up unit vector: (-sin(angle_rad), -cos(angle_rad)) in canvas (x,y).
+    // 穏やかなTHRUST_ACCELで小刻みな補正を実現。大きく吹かすと燃料を浪費。
     if (this._thrustMain && this.fuel > 0) {
       const rad = this.angle * Math.PI / 180;
       this.vx  += (-Math.sin(rad)) * THRUST_ACCEL * dt;
@@ -336,9 +350,21 @@ export class Game extends Scene {
     if (this.y < 60) { this.y = 60; this.vy = Math.max(0, this.vy); }
 
     // ---- Guide deviation tracking (upper half only) ----
+    // 誘導線からの偏差を累積。スコアリングに使用。
+    const guideDist = this._distToGuide(this.x, this.y);
     if (this.y < 420) {
-      this._guideDevTotal += this._distToGuide(this.x, this.y);
+      this._guideDevTotal += guideDist;
       this._guideDevCount += 1;
+    }
+
+    // ---- ON COURSE pulse timer update ----
+    if (guideDist <= GUIDE_THRESHOLD && this.state === 'play') {
+      this._onCourseTime  += dt;
+      this._onCoursePulse += dt;
+    } else {
+      // 誘導線を外れたらタイマーリセット（点滅は停止）
+      this._onCourseTime  = 0;
+      this._onCoursePulse = 0;
     }
 
     // ---- Update floating obstacles (stages 2+) ----
@@ -396,15 +422,23 @@ export class Game extends Scene {
 
       const sp        = stageParams(this.stage);
       const fuelBonus = Math.round(this.fuel * 10);
-      const softBonus = Math.round(Math.max(0, SAFE_VY - Math.abs(this.vy)) * 6);
-      const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - absAngle) * 4);
-      let guideBonus  = 0;
+
+      // 着地精度ボーナス: 速度・姿勢が安全値を下回るほど高得点
+      const softBonus = Math.round(Math.max(0, SAFE_VY - Math.abs(this.vy)) * 8);
+      const horzBonus = Math.round(Math.max(0, SAFE_VX - Math.abs(this.vx)) * 6);
+      const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - absAngle) * 5);
+      const omgBonus  = Math.round(Math.max(0, SAFE_OMEGA - absOmega) * 4);
+
+      // 軌道追従ボーナス: 誘導線を忠実にたどるほど高得点（最大400点）
+      // avgDev 0px -> 400点, avgDev GUIDE_THRESHOLD(30px) -> 100点, それ以上 -> 0点
+      let guideBonus = 0;
       if (this._guideDevCount > 0) {
         const avgDev = this._guideDevTotal / this._guideDevCount;
-        guideBonus   = Math.round(Math.max(0, 200 - avgDev * 2.5));
+        // avgDev=0 -> 400, avgDev=60 -> 0 (勾配: -400/60)
+        guideBonus = Math.round(Math.max(0, 400 - avgDev * (400 / 60)));
       }
       this._guideBonus  = guideBonus;
-      this._stageScore  = fuelBonus + softBonus + uprBonus + guideBonus + sp.stageBonus;
+      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
       this.totalScore  += this._stageScore;
 
       if (this.totalScore > this.high) {
@@ -483,7 +517,7 @@ export class Game extends Scene {
       }
     }
 
-    // Descent trajectory guide
+    // Descent trajectory guide (常に描画)
     this._drawGuide(ctx);
 
     // Floating obstacles (stages 2+)
@@ -585,26 +619,47 @@ export class Game extends Scene {
       // Small warning highlight
       ctx.fillStyle   = p.warn;
       ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
-      ctx.fillRect(ob.x - 2 - ob.x + ob.x, -2, 4, 4);
+      ctx.fillRect(-2, -2, 4, 4);
       ctx.globalAlpha = 1;
       ctx.restore();
     }
   }
 
-  // ---- Descent trajectory guide (dashed line) ----
+  // ---- Descent trajectory guide ----
+  // 常に描画: 誘導線は常にはっきり見えるようにする。
+  // ON COURSE時: 明るく太く、機体周辺に円形マーカー＋上部テキスト表示＋パルス点滅。
+  // OFF COURSE時: dim色で細いが消えない（0.55 alpha）。
   _drawGuide(ctx) {
     const p   = P();
     const pts = this.guidePts;
     if (!pts || pts.length < 2) return;
 
-    const dist     = this.state === 'play' ? this._distToGuide(this.x, this.y) : Infinity;
+    const dist     = (this.state === 'play')
+      ? this._distToGuide(this.x, this.y)
+      : Infinity;
     const onCourse = (dist <= GUIDE_THRESHOLD);
 
+    // ON COURSEパルス: sin波で輝度を変調（1Hzで点滅）
+    // _onCoursePulseはupdateで加算され、sin計算で[0..1]の輝度係数に変換
+    const pulse = onCourse
+      ? (0.7 + 0.3 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5))
+      : 1.0;
+
+    // ガイドライン描画（常に表示）
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, onCourse ? 0.85 : 0.28));
-    ctx.strokeStyle = onCourse ? p.hi : p.warn;
-    ctx.lineWidth   = onCourse ? 2 : 1;
-    ctx.setLineDash(onCourse ? [5, 5] : [4, 8]);
+    if (onCourse) {
+      // ON COURSE: 明るく太い実線
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.85 * pulse));
+      ctx.strokeStyle = p.hi;
+      ctx.lineWidth   = 2.5;
+      ctx.setLineDash([6, 4]);
+    } else {
+      // OFF COURSE: 常に見える薄い点線（消えない）
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
+      ctx.strokeStyle = p.warn;
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 8]);
+    }
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -614,38 +669,51 @@ export class Game extends Scene {
     // Diamond marker at target
     const last = pts[pts.length - 1];
     ctx.fillStyle   = onCourse ? p.hi : p.warn;
-    ctx.globalAlpha = Math.max(0, Math.min(1, onCourse ? 0.9 : 0.45));
+    ctx.globalAlpha = Math.max(0, Math.min(1, onCourse ? 0.9 * pulse : 0.5));
     ctx.beginPath();
-    ctx.moveTo(last.x,     last.y - 7);
-    ctx.lineTo(last.x + 6, last.y);
-    ctx.lineTo(last.x,     last.y + 7);
-    ctx.lineTo(last.x - 6, last.y);
+    ctx.moveTo(last.x,     last.y - 8);
+    ctx.lineTo(last.x + 7, last.y);
+    ctx.lineTo(last.x,     last.y + 8);
+    ctx.lineTo(last.x - 7, last.y);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
 
+    // ON COURSEポップインジケーター（機体周辺＋テキスト）
     if (onCourse && this.state === 'play') {
-      this._drawOnCourseIndicator(ctx);
+      this._drawOnCourseIndicator(ctx, pulse);
     }
   }
 
-  // ---- ON COURSE glow indicator ----
-  _drawOnCourseIndicator(ctx) {
+  // ---- ON COURSE pop indicator ----
+  // 機体周辺の明るいリング＋上部のテキストバナー。
+  // パルス点滅で「今乗っている」ことを明確に伝える。
+  _drawOnCourseIndicator(ctx, pulse) {
+    if (typeof pulse !== 'number') pulse = 1;
     const p = P();
+
+    // 機体周囲のハローリング（スケールパルス）
+    const ringR = 22 + 4 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5);
     ctx.save();
-    ctx.globalAlpha  = Math.max(0, Math.min(1, 0.45));
+    ctx.globalAlpha  = Math.max(0, Math.min(1, 0.6 * pulse));
     ctx.strokeStyle  = p.hi;
-    ctx.lineWidth    = 3;
-    ctx.shadowColor  = p.hi;
-    ctx.shadowBlur   = 8;
+    ctx.lineWidth    = 2.5;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, 20, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, ringR, 0, Math.PI * 2);
     ctx.stroke();
+
+    // 内側の小さなドット（中心確認マーカー）
+    ctx.globalAlpha = Math.max(0, Math.min(1, 0.8 * pulse));
+    ctx.fillStyle   = p.hi;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 
+    // 上部テキストバナー（HUDエリアの直下）
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.9));
-    this.engine.text('ON COURSE', W / 2, 72, 12, p.hi, 'center');
+    ctx.globalAlpha = Math.max(0, Math.min(1, pulse));
+    this.engine.text('ON COURSE', W / 2, 72, 13, p.hi, 'center');
     ctx.restore();
   }
 
