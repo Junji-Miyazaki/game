@@ -1,7 +1,8 @@
 // LANDER: Control attitude with RCS thrusters and soft-land on the lunar surface.
-// LEFT button  (x < 120): left RCS jet  -> omega DECREASES -> craft rotates CCW (nose tilts left)
-// RIGHT button (x > 240): right RCS jet -> omega INCREASES -> craft rotates CW  (nose tilts right)
-// THRUST button (center): main engine fires along craft's up-axis.
+// Reaction-thruster convention (physically correct):
+//   LEFT  button (x < 120): right-side thruster fires RIGHT -> reaction pushes nose LEFT  -> craft rotates CW  (omega +)
+//   RIGHT button (x > 240): left-side thruster fires LEFT  -> reaction pushes nose RIGHT -> craft rotates CCW (omega -)
+//   THRUST button (center): main engine fires along craft's up-axis.
 // Safe landing on the pad = STAGE CLEAR. Crash = GAME OVER.
 import { Scene, W, H } from '../core/engine.js';
 import { P } from '../core/palette.js';
@@ -14,13 +15,14 @@ export const meta = {
 };
 
 // ---- Physics tuning constants ----
-// Gravity is very weak (~1/5 of original) for a slow, contemplative descent.
-// ANG_ACCEL and THRUST_ACCEL are large enough that a short press is clearly visible.
-const GRAVITY_BASE      = 0.10;  // gravity (px/s^2) — very gentle, ~1/5 of old 0.5
-const THRUST_ACCEL      = 8.0;   // main engine thrust (px/s^2) — noticeably strong
-const ANG_ACCEL         = 40.0;  // RCS angular acceleration (deg/s^2) — clearly visible
+// GRAVITY_BASE: Stage-1 gravity in px/s^2. Craft descends ~0.6 px/s^2 -> reaches floor in ~30s from y=90.
+// NO translational damping (VEL_DAMP removed). Motion is purely Newtonian.
+// ANG_DAMP: mild angular drag so the pilot can stabilize attitude. Translational velocity is undamped.
+const GRAVITY_BASE      = 0.6;   // px/s^2 — gentle but real; craft visibly falls in ~25-35 s
+const THRUST_ACCEL      = 8.0;   // main engine thrust (px/s^2)
+const ANG_ACCEL         = 40.0;  // RCS angular acceleration (deg/s^2)
 const ANG_DAMP          = 0.88;  // angular velocity damping per second (exponential decay)
-const VEL_DAMP          = 0.995; // mild linear velocity drag per second
+// NO VEL_DAMP — translational motion is undamped (purely Newtonian)
 const FUEL_MAX          = 100;
 const FUEL_RATE_MAIN    = 7;
 const FUEL_RATE_RCS     = 2;
@@ -44,12 +46,19 @@ const BTN_Y   = H - 80;  // top of button bar
 const BTN_H   = 80;       // height of button bar
 
 // ---- Stage difficulty scaling ----
+// Stage 1: low gravity, no obstacles.
+// Stage 2+: gravity increases per stage; floating obstacles added and multiplied.
 function stageParams(stage) {
   const s = Math.min(stage, 8);
   return {
-    gravity:    GRAVITY_BASE * (1 + (s - 1) * 0.08),
-    padW:       Math.max(24, PAD_W_BASE - (s - 1) * 4),
-    stageBonus: s * 50,
+    // gravity increases ~12% per stage beyond stage 1
+    gravity:      GRAVITY_BASE * (1 + (s - 1) * 0.12),
+    padW:         Math.max(24, PAD_W_BASE - (s - 1) * 4),
+    stageBonus:   s * 50,
+    // obstacles: 0 in stage 1, then 2 + (s-2) extras per stage
+    obstacleCount: s <= 1 ? 0 : 2 + (s - 2),
+    // obstacle drift speed scales with stage
+    obstacleSpeed: 12 + (s - 1) * 4,
   };
 }
 
@@ -117,6 +126,27 @@ function buildGuide(startX, startY, pad, numPts) {
   return pts;
 }
 
+// ---- Floating obstacles (stages 2+) ----
+// Obstacles drift horizontally. They appear in the mid-descent zone (y 150-480)
+// and bounce off the left/right walls. Touching one = crash.
+function buildObstacles(count, speed) {
+  const obs = [];
+  if (count <= 0) return obs;
+  for (let i = 0; i < count; i++) {
+    // Spread evenly through descent zone, avoid spawning right at the start
+    const yBand   = 150 + (i / count) * 300 + Math.random() * 60;
+    const vxSign  = Math.random() < 0.5 ? 1 : -1;
+    const r       = 10 + Math.floor(Math.random() * 8); // radius 10-17
+    obs.push({
+      x:  30 + Math.random() * (W - 60),
+      y:  Math.max(150, Math.min(480, yBand)),
+      vx: (speed * 0.6 + Math.random() * speed * 0.8) * vxSign,
+      r,
+    });
+  }
+  return obs;
+}
+
 export class Game extends Scene {
 
   enter() {
@@ -136,7 +166,7 @@ export class Game extends Scene {
     this.x        = W / 2 + (Math.random() - 0.5) * 50;
     this.y        = LANDER_START_Y;
     this.vx       = (Math.random() - 0.5) * 4;  // near-zero initial horizontal speed
-    this.vy       = 2;                           // very slow initial downward speed
+    this.vy       = 2;                           // slow initial downward speed
 
     this._thrustMain = false;
     this._thrustRcsL = false;
@@ -158,6 +188,9 @@ export class Game extends Scene {
     this._stageScore    = 0;
     this._guideBonus    = 0;
     this.particles      = [];
+
+    // Floating obstacles (stage 2+)
+    this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed);
 
     this._keys = this._keys || { left: false, right: false, up: false };
   }
@@ -219,22 +252,20 @@ export class Game extends Scene {
 
     // ---- Read control inputs ----
     // Pointer press-and-hold in the bottom button bar (y > BTN_Y) is the primary control.
-    // Also accept press-and-hold anywhere below CONTROL_Y_MIN (for backward compat).
     // Top strip y < CONTROL_Y_MIN is ignored to avoid conflicting with the BACK button.
     this._thrustMain = false;
     this._thrustRcsL = false;
     this._thrustRcsR = false;
 
     if (ptr.down && ptr.y > CONTROL_Y_MIN) {
-      // Map pointer X to the three zones
       if (ptr.x < ZONE_L_MAX) {
-        // LEFT zone: RCS left jet -> CCW rotation (omega decreases)
+        // LEFT button pressed
         this._thrustRcsL = true;
       } else if (ptr.x > ZONE_R_MIN) {
-        // RIGHT zone: RCS right jet -> CW rotation (omega increases)
+        // RIGHT button pressed
         this._thrustRcsR = true;
       } else {
-        // CENTER zone: main engine
+        // CENTER: main engine
         this._thrustMain = true;
       }
     }
@@ -249,22 +280,28 @@ export class Game extends Scene {
       this._keys.up    = false;
     }
 
-    // ---- RCS attitude jets ----
-    // LEFT jet fires from the left side of the craft body, creating a CCW torque.
-    // omega < 0 => craft angle decreasing => ctx.rotate negative => CCW on screen.
-    // RIGHT jet fires from the right side, creating a CW torque (omega increases).
-    // omega > 0 => angle increasing => ctx.rotate positive => CW on screen.
+    // ---- RCS attitude jets — reaction-thruster convention ----
+    // Physical convention: the nozzle FIRES toward the button side; Newton's 3rd law
+    // pushes the craft nose the OPPOSITE way.
+    //
+    // LEFT button  -> left-side nozzle fires leftward -> nose pushed RIGHT -> CW rotation
+    //   omega += ANG_ACCEL * dt  (positive omega -> angle increases -> ctx.rotate(+rad) -> CW on screen)
+    //
+    // RIGHT button -> right-side nozzle fires rightward -> nose pushed LEFT -> CCW rotation
+    //   omega -= ANG_ACCEL * dt  (negative omega -> angle decreases -> ctx.rotate(-rad) -> CCW on screen)
+    //
+    // Keyboard: ArrowLeft maps to _thrustRcsL (same CW convention).
+    //           ArrowRight maps to _thrustRcsR (same CCW convention).
     if (this._thrustRcsL && this.fuel > 0) {
-      this.omega -= ANG_ACCEL * dt;   // CCW: omega decreases
+      this.omega += ANG_ACCEL * dt;   // CW: nose tilts RIGHT
       this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
     }
     if (this._thrustRcsR && this.fuel > 0) {
-      this.omega += ANG_ACCEL * dt;   // CW: omega increases
+      this.omega -= ANG_ACCEL * dt;   // CCW: nose tilts LEFT
       this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
     }
 
     // ---- Angular damping (mild drag so craft can be stabilized) ----
-    // ANG_DAMP is fraction of omega retained per second (exponential decay)
     this.omega *= Math.pow(ANG_DAMP, dt);
 
     // ---- Integrate omega -> angle ----
@@ -273,11 +310,9 @@ export class Game extends Scene {
     this.angle  = ((this.angle + 180) % 360 + 360) % 360 - 180;
 
     // ---- Main engine: thrust along craft's up-axis ----
-    // angle=0 = pointing straight up. Thrust direction = craft's up vector.
-    // craft up vector in screen coords: when angle=0, points in -Y (screen up).
-    // In canvas: +Y is down, so "up" is -Y.
-    // angle rotates from "up" (angle=0) clockwise.
-    // craft up unit vector: (-sin(angle_rad), -cos(angle_rad)) in canvas (x,y).
+    // angle=0 => pointing straight up. craft up vector in screen coords:
+    //   when angle=0, "up" is -Y (screen). ctx.rotate(+rad) rotates CW.
+    //   craft up unit vector: (-sin(angle_rad), -cos(angle_rad)) in canvas (x,y).
     if (this._thrustMain && this.fuel > 0) {
       const rad = this.angle * Math.PI / 180;
       this.vx  += (-Math.sin(rad)) * THRUST_ACCEL * dt;
@@ -286,12 +321,8 @@ export class Game extends Scene {
     }
 
     // ---- Gravity (straight down = +Y in canvas) ----
+    // NO translational damping. Purely Newtonian: only gravity and engine thrust change velocity.
     this.vy += this._gravity * dt;
-
-    // ---- Mild linear velocity drag ----
-    const vdamp = Math.pow(VEL_DAMP, dt * 60);
-    this.vx *= vdamp;
-    this.vy *= vdamp;
 
     // ---- Position update ----
     this.x += this.vx * dt;
@@ -308,6 +339,34 @@ export class Game extends Scene {
     if (this.y < 420) {
       this._guideDevTotal += this._distToGuide(this.x, this.y);
       this._guideDevCount += 1;
+    }
+
+    // ---- Update floating obstacles (stages 2+) ----
+    if (this.obstacles && this.obstacles.length > 0) {
+      for (const ob of this.obstacles) {
+        ob.x += ob.vx * dt;
+        // Bounce off walls
+        if (ob.x - ob.r < 0)     { ob.x = ob.r;     ob.vx = Math.abs(ob.vx); }
+        if (ob.x + ob.r > W)     { ob.x = W - ob.r; ob.vx = -Math.abs(ob.vx); }
+      }
+      // Check collision with lander (circle vs. point, craft body ~16x18 -> use 14px radius)
+      const craftR = 14;
+      for (const ob of this.obstacles) {
+        const dx = this.x - ob.x;
+        const dy = this.y - ob.y;
+        if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
+          // Hit an obstacle — crash
+          this._explode();
+          this.engine.audio.bad();
+          this.totalScore += Math.round((this.fuel || 0) * 2);
+          if (this.totalScore > this.high) {
+            this.high = this.totalScore;
+            this.engine.storage.setHigh(meta.id, this.high);
+          }
+          this.state = 'gameover';
+          return;
+        }
+      }
     }
 
     // ---- Terrain collision ----
@@ -427,6 +486,9 @@ export class Game extends Scene {
     // Descent trajectory guide
     this._drawGuide(ctx);
 
+    // Floating obstacles (stages 2+)
+    this._drawObstacles(ctx);
+
     // Terrain
     if (this.terrainPts && this.terrainPts.length > 0) {
       ctx.fillStyle = p.dark;
@@ -495,6 +557,40 @@ export class Game extends Scene {
     }
   }
 
+  // ---- Floating obstacles ----
+  _drawObstacles(ctx) {
+    if (!this.obstacles || this.obstacles.length === 0) return;
+    const p = P();
+    for (const ob of this.obstacles) {
+      // Draw as a jagged rock/asteroid (octagon-ish)
+      ctx.save();
+      ctx.translate(ob.x, ob.y);
+      ctx.fillStyle   = p.dark;
+      ctx.strokeStyle = p.bad;
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      const sides = 7;
+      for (let i = 0; i < sides; i++) {
+        // Slightly irregular radius for rock feel
+        const jitter = 0.75 + (((i * 37 + 13) % 7) / 7) * 0.5;
+        const angle  = (i / sides) * Math.PI * 2;
+        const rx     = Math.cos(angle) * ob.r * jitter;
+        const ry     = Math.sin(angle) * ob.r * jitter;
+        if (i === 0) ctx.moveTo(rx, ry);
+        else         ctx.lineTo(rx, ry);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Small warning highlight
+      ctx.fillStyle   = p.warn;
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
+      ctx.fillRect(ob.x - 2 - ob.x + ob.x, -2, 4, 4);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+
   // ---- Descent trajectory guide (dashed line) ----
   _drawGuide(ctx) {
     const p   = P();
@@ -554,11 +650,17 @@ export class Game extends Scene {
   }
 
   // ---- Lander craft with 4 RCS nozzles ----
-  // Rotation math:
-  //   omega > 0  -> this.angle increases -> ctx.rotate(+rad) -> canvas CW rotation (nose tilts RIGHT)
-  //   omega < 0  -> this.angle decreases -> ctx.rotate(-rad) -> canvas CCW rotation (nose tilts LEFT)
-  //   LEFT button  -> omega -= -> angle decreases -> CCW on screen (nose goes left)
-  //   RIGHT button -> omega += -> angle increases -> CW  on screen (nose goes right)
+  // Rotation math (ctx.rotate convention):
+  //   ctx.rotate(+rad) = clockwise (CW) on screen
+  //   ctx.rotate(-rad) = counter-clockwise (CCW) on screen
+  //
+  //   omega > 0 -> angle increases -> ctx.rotate(+rad) -> CW on screen (nose tilts RIGHT)
+  //   omega < 0 -> angle decreases -> ctx.rotate(-rad) -> CCW on screen (nose tilts LEFT)
+  //
+  //   LEFT  button -> omega += -> CW  (nose tilts right)   LEFT nozzle fires left -> reaction right
+  //   RIGHT button -> omega -= -> CCW (nose tilts left)   RIGHT nozzle fires right -> reaction left
+  //
+  // The FLAME is drawn on the FIRING nozzle side, consistent with actual exhaust direction.
   _drawLander(ctx, x, y, angleDeg) {
     const p   = P();
     if (typeof x !== 'number' || typeof y !== 'number') return;
@@ -568,7 +670,7 @@ export class Game extends Scene {
     ctx.translate(x, y);
     ctx.rotate(rad);  // positive rad = CW on canvas; negative = CCW
 
-    // Main engine flame (bottom nozzle, fires downward in body space = -Y body)
+    // Main engine flame (bottom nozzle, fires downward in body space)
     if (this._thrustMain && this.fuel > 0) {
       const fl = 10 + Math.random() * 10;
       ctx.fillStyle = p.warn;
@@ -616,11 +718,11 @@ export class Game extends Scene {
     ctx.strokeRect(-5, 9, 10, 5);
 
     // LEFT RCS nozzle (body left side, upper area)
-    // Fires leftward (in body frame), reaction torque is CCW.
+    // LEFT button fires LEFT nozzle to the LEFT. Reaction: nose goes RIGHT = CW = omega +.
+    // Flame jets LEFT from left nozzle.
     ctx.fillStyle = p.dark;
     ctx.fillRect(-12, -6, 4, 4);
     if (this._thrustRcsL && this.fuel > 0) {
-      // Flame jets LEFT from left nozzle
       ctx.fillStyle = p.warn;
       ctx.beginPath();
       ctx.moveTo(-12, -4);
@@ -634,11 +736,11 @@ export class Game extends Scene {
     ctx.strokeRect(-12, -6, 4, 4);
 
     // RIGHT RCS nozzle (body right side, upper area)
-    // Fires rightward (in body frame), reaction torque is CW.
+    // RIGHT button fires RIGHT nozzle to the RIGHT. Reaction: nose goes LEFT = CCW = omega -.
+    // Flame jets RIGHT from right nozzle.
     ctx.fillStyle = p.dark;
     ctx.fillRect(8, -6, 4, 4);
     if (this._thrustRcsR && this.fuel > 0) {
-      // Flame jets RIGHT from right nozzle
       ctx.fillStyle = p.warn;
       ctx.beginPath();
       ctx.moveTo(12, -4);
@@ -651,7 +753,7 @@ export class Game extends Scene {
     ctx.lineWidth   = 0.8;
     ctx.strokeRect(8, -6, 4, 4);
 
-    // Top attitude nozzle (small, for visual reference only)
+    // Top attitude nozzle (visual reference)
     ctx.fillStyle   = p.dark;
     ctx.fillRect(-3, -14, 6, 4);
     ctx.strokeStyle = p.dim;
@@ -703,26 +805,26 @@ export class Game extends Scene {
     this.engine.text('ω ' + Math.round(om), W - 8, 66, 11, omclr, 'right');
   }
 
-  // ---- Bottom button bar: three large tap targets with clear visual feedback ----
+  // ---- Bottom button bar ----
+  // Label convention (reaction-thruster):
+  //   LEFT  button -> fires left nozzle -> nose tilts RIGHT (CW)
+  //   RIGHT button -> fires right nozzle -> nose tilts LEFT (CCW)
+  // Labels reflect the NOSE direction for clarity to the player.
   _drawButtons(ctx) {
     const p = P();
 
-    const BW = 120; // width of each button
+    const BW = 120;
     const bY = BTN_Y;
     const bH = BTN_H;
 
-    // Helper to draw one button
-    const drawBtn = (bx, label, active) => {
-      // Background fill
+    const drawBtn = (bx, label, sublabel, active) => {
       ctx.fillStyle = active ? p.dim : p.dark;
       ctx.fillRect(bx, bY, BW, bH);
 
-      // Border — bright when active, dim when idle
       ctx.strokeStyle = active ? p.hi : p.dim;
       ctx.lineWidth   = active ? 2.5 : 1.5;
       ctx.strokeRect(bx + 1, bY + 1, BW - 2, bH - 2);
 
-      // Inner highlight bar at top when active
       if (active) {
         ctx.fillStyle = p.hi;
         ctx.globalAlpha = Math.max(0, Math.min(1, 0.25));
@@ -730,16 +832,19 @@ export class Game extends Scene {
         ctx.globalAlpha = 1;
       }
 
-      // Label
       const labelColor = active ? p.hi : p.fg;
-      this.engine.text(label, bx + BW / 2, bY + bH / 2 - 7, 13, labelColor, 'center');
+      this.engine.text(label,    bx + BW / 2, bY + bH / 2 - 14, 13, labelColor, 'center');
+      if (sublabel) {
+        this.engine.text(sublabel, bx + BW / 2, bY + bH / 2 + 2,  10, active ? p.warn : p.dim, 'center');
+      }
     };
 
-    drawBtn(0,   '◄ LEFT',  this._thrustRcsL);  // ◄ LEFT  (CCW rotation)
-    drawBtn(120, 'THRUST',       this._thrustMain);   // THRUST  (main engine)
-    drawBtn(240, 'RIGHT ►', this._thrustRcsR);   // RIGHT ► (CW rotation)
+    // LEFT button: nose tilts right (CW)    RIGHT button: nose tilts left (CCW)
+    drawBtn(0,   '◄ TILT R',  'NOSE RIGHT', this._thrustRcsL);
+    drawBtn(120, 'THRUST',    null,          this._thrustMain);
+    drawBtn(240, 'TILT L ►', 'NOSE LEFT',  this._thrustRcsR);
 
-    // Dividers between buttons
+    // Dividers
     ctx.strokeStyle = p.dim;
     ctx.lineWidth   = 1;
     ctx.beginPath(); ctx.moveTo(120, bY); ctx.lineTo(120, H); ctx.stroke();

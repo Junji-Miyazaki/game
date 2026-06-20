@@ -2296,51 +2296,69 @@ const BATTERY_X    = W / 2;
 const BATTERY_Y    = GROUND_Y - 4;
 
 // ミサイル（遅め＝狙いを要求する）
-const MISSILE_SPD  = 110;    // px/s（旧160から削減）
-const MAX_MISSILES = 2;      // 同時に飛ばせるミサイル数（少なく＝戦略的）
+const MISSILE_SPD   = 110;   // px/s
+const BASE_MAX_MISSILES = 2; // 初期同時ミサイル数
 const FIRE_COOLDOWN = 0.55;  // 発射間隔（秒）
 
-// 爆発
+// 爆発 — grow then FADE OUT (alpha, no shrink)
 const BLAST_GROW     = 38;   // 通常爆発最大半径
 const BLAST_GROW_BIG = 115;  // ビッグ爆発最大半径
-const BLAST_RATE     = 65;   // 拡大速度 px/s
-const BLAST_SHRINK   = 40;   // 縮小速度 px/s
+const BLAST_GROW_RATE = 50;  // 拡大速度 px/s（遅め）
+const BLAST_FADE_SEC  = 1.2; // フェードアウト時間（秒）— 合計アニメを長く
 
 // ビッグブラスト残弾
 const BIG_CHARGES_MAX  = 3;
 const BIG_RECHARGE_SEC = 14;
 
-// ブラストダメージ量
-const BLAST_DAMAGE_NORMAL = 1;
-const BLAST_DAMAGE_BIG    = 2;
+// 通常ブラストダメージ（パワーアップで増加）
+const BLAST_DAMAGE_NORMAL_BASE = 1;
+const BLAST_DAMAGE_BIG         = 3; // ビッグは常に3
 
-// ---- 隕石速度（ゆっくり：約1/3） ----
-const METEOR_SPD_MIN       = 2;   // 通常の最低速度 px/s
-const METEOR_SPD_MAX       = 5;   // 通常の最大速度 px/s
-const METEOR_SPD_MAX_LATE  = 7;   // ステージ後半の最大速度 px/s
+// ---- 隕石速度 ----
+const METEOR_SPD_MIN       = 2;
+const METEOR_SPD_MAX       = 5;
+const METEOR_SPD_MAX_LATE  = 7;
 
-// 高速隕石（約10%のスポーン）
 const FAST_CHANCE  = 0.10;
 const FAST_SPD_MIN = 14;
 const FAST_SPD_MAX = 24;
 
 // 隕石サイズ
 const METEOR_R_MIN   = 7;
-const METEOR_R_MAX   = 34;    // 通常最大（旧より大きめ）
+const METEOR_R_MAX   = 34;
 const GIANT_R_THRESH = 22;
 const SMALL_R_THRESH = 10;
 const LARGE_R_THRESH = 16;
 
-// ボス隕石
-const BOSS_R_MIN    = 48;    // ボス半径の最小
-const BOSS_R_MAX    = 70;    // ボス半径の最大
-const BOSS_SPD_MIN  = 1.5;  // ボス落下速度の最小 px/s
-const BOSS_SPD_MAX  = 2.5;  // ボス落下速度の最大 px/s
-const BOSS_HP_BASE  = 10;   // ボス基本HP（ステージ毎に+2）
+// ボス隕石 — 大型化！画面の半分近くを覆う威圧感
+const BOSS_R_MIN    = 95;    // 旧48から大幅増
+const BOSS_R_MAX    = 125;   // 旧70から大幅増（最大でW=360の1/3を超える）
+const BOSS_SPD_MIN  = 1.0;   // 大きい分ゆっくり
+const BOSS_SPD_MAX  = 1.8;
+const BOSS_HP_BASE  = 24;    // 旧10から大幅増
+const BOSS_HP_PER_STAGE = 5; // ステージ毎に+5（旧+2）
 
 // スコア
 const METEOR_SCORE_BASE = 10;
-const BOSS_SCORE_BASE   = 150;
+const BOSS_SCORE_BASE   = 250;
+
+// ---- ステージタイプ（ステージ2以降でサイクル） ----
+// STAGE_TYPES[i % STAGE_TYPES.length] で決定
+const STAGE_TYPES = [
+  'NORMAL', // 未使用（ステージ1固定）
+  'FAST',   // 全速度上昇
+  'SWARM',  // 密集スポーン
+  'TINY',   // 小型多数
+  'GIANT',  // 大型高HP
+  'CHAOS',  // 速度＋密度＋混合
+];
+
+// ---- アイテム隕石のパワーアップ種別 ----
+// 'MULTI'  : 同時ミサイル数+1（上限5）
+// 'POWER'  : 通常爆発ダメージ+1（上限3）
+// 'WIDE'   : 通常爆発半径+12（上限+36）
+// 'SCATTER': 爆発時に小さな破片ブラストを撒く
+const ITEM_TYPES = ['MULTI', 'POWER', 'WIDE', 'SCATTER'];
 
 // ---- HP計算（半径に基づく） ----
 function calcMeteorHP(r) {
@@ -2351,42 +2369,59 @@ function calcMeteorHP(r) {
 }
 
 // ---- ステージ定義 ----
-// 各ステージはスクリプト形式のスポーンイベント列（tSec=ステージ開始からの秒数）
-// type: 'meteor' | 'boss'
-// count: 同時スポーン数（通常のみ）
-// giant: trueで大きめサイズを強制
-function makeStageScript(stage) {
-  // stage: 0-indexed
-  // 基本的なスクリプト：序盤は1個ずつ、徐々に増える
-  // stage が上がるとイベント密度が高くなる
+function makeStageScript(stage, stageType) {
   const events = [];
-  const baseDelay = Math.max(3.5 - stage * 0.3, 1.2); // ステージが上がると間隔が縮む
-  const bossT = 70 + stage * 5; // ボス登場時刻（秒）
+  // ステージタイプに応じてパラメータを調整
+  let baseDelay  = Math.max(3.5 - stage * 0.25, 1.1);
+  let bossT      = 72 + stage * 4;
+  let itemChance = Math.min(0.08 + stage * 0.025, 0.22); // アイテム隕石出現確率
 
-  // 序盤フェーズ：1個ずつ
+  // タイプ別にbossT/baseDelayを調整
+  if (stageType === 'SWARM') { baseDelay *= 0.5; bossT = 55 + stage * 3; }
+  if (stageType === 'FAST')  { bossT = 60 + stage * 3; }
+  if (stageType === 'CHAOS') { baseDelay *= 0.65; bossT = 58 + stage * 3; }
+
   let t = 0;
-  // 最初のウェーブ：1個（小さめ）
-  events.push({ t, type: 'meteor', count: 1, giant: false });
+  // 序盤
+  events.push({ t, type: 'meteor', count: 1, forceSize: null, itemChance });
   t += baseDelay * 2.0;
-  events.push({ t, type: 'meteor', count: 1, giant: false });
+  events.push({ t, type: 'meteor', count: 1, forceSize: null, itemChance });
   t += baseDelay * 1.8;
 
-  // 中盤フェーズ：徐々に大きく/複数
-  events.push({ t, type: 'meteor', count: 1, giant: true });
+  // 中盤
+  const midGiant = (stageType === 'GIANT');
+  const midTiny  = (stageType === 'TINY');
+  events.push({ t, type: 'meteor', count: 1, forceSize: midGiant ? 'giant' : (midTiny ? 'tiny' : null), itemChance });
   t += baseDelay * 1.5;
-  events.push({ t, type: 'meteor', count: Math.min(1 + Math.floor(stage / 2), 2), giant: false });
+
+  let waveMax = 2;
+  if (stageType === 'SWARM') waveMax = 5;
+  else if (stageType === 'CHAOS') waveMax = 4;
+  else waveMax = Math.min(1 + Math.floor(stage / 2), 3);
+
+  events.push({ t, type: 'meteor', count: waveMax, forceSize: midGiant ? 'giant' : (midTiny ? 'tiny' : null), itemChance });
   t += baseDelay * 1.4;
-  events.push({ t, type: 'meteor', count: 1, giant: false });
+  events.push({ t, type: 'meteor', count: 1, forceSize: null, itemChance });
   t += baseDelay * 1.3;
-  events.push({ t, type: 'meteor', count: Math.min(1 + Math.floor(stage / 1.5), 3), giant: false });
+  events.push({ t, type: 'meteor', count: Math.min(1 + Math.floor(stage / 1.5), 4), forceSize: midGiant ? 'giant' : (midTiny ? 'tiny' : null), itemChance });
   t += baseDelay * 1.2;
 
-  // 後半フェーズ：密度上昇
-  let numLate = Math.min(2 + stage, 5);
+  // 後半
+  let numLate = Math.min(2 + stage, 6);
+  if (stageType === 'SWARM') numLate = Math.min(numLate + 3, 9);
+  if (stageType === 'CHAOS') numLate = Math.min(numLate + 2, 7);
+
   while (t < bossT - 10) {
     const cnt = Math.min(1 + Math.floor(Math.random() * numLate), numLate);
-    events.push({ t, type: 'meteor', count: cnt, giant: Math.random() < 0.2 });
-    t += Math.max(baseDelay * (0.9 - stage * 0.05), 1.0);
+    const giant = (stageType === 'GIANT') || (stageType === 'CHAOS' && Math.random() < 0.3) || Math.random() < 0.15;
+    const tiny  = (stageType === 'TINY') || (Math.random() < 0.05);
+    events.push({
+      t, type: 'meteor', count: cnt,
+      forceSize: giant ? 'giant' : (tiny ? 'tiny' : null),
+      itemChance,
+    });
+    const minGap = stageType === 'SWARM' ? 0.5 : 0.9;
+    t += Math.max(baseDelay * (0.85 - stage * 0.04), minGap);
   }
 
   // ボス登場
@@ -2395,20 +2430,15 @@ function makeStageScript(stage) {
 }
 
 // ---- 岩石ポリゴン頂点の生成 ----
-// 中心(0,0)を基準とした頂点配列 [{dx, dy}, ...] を返す
-// 角張った小惑星風（8〜11頂点、半径は0.6r〜1.1r でランダム）
 function makeRockVerts(r, seed) {
   const count = 8 + Math.floor((seed % 4));  // 8〜11頂点
   const verts = [];
   for (let i = 0; i < count; i++) {
-    // 均等角度に少し揺らぎを加える
     const baseAngle = (i / count) * Math.PI * 2;
-    // seededRandom：同じ隕石は毎フレーム同じ形にする（seedで決定論的に）
     const s1 = Math.sin(seed * 31.7 + i * 12.3);
     const s2 = Math.sin(seed * 17.1 + i * 7.9);
-    const angleJitter = (s1 * 0.5) / count; // 少しだけ角度をずらす
+    const angleJitter = (s1 * 0.5) / count;
     const angle = baseAngle + angleJitter;
-    // 半径は 0.6r〜1.1r でランダム（angular asteroid feel）
     const rFrac = 0.60 + 0.50 * ((s2 + 1) / 2);
     verts.push({ dx: Math.cos(angle) * r * rFrac, dy: Math.sin(angle) * r * rFrac });
   }
@@ -2416,11 +2446,20 @@ function makeRockVerts(r, seed) {
 }
 
 // ---- ユニークID ----
-let _nextBlastId = 1;
+let _nextBlastId  = 1;
 let _nextMeteorSeed = 1;
 
 // ---- ヘルパー ----
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+// ステージタイプの速度倍率
+function stageSpeedMult(stageType) {
+  if (stageType === 'FAST')  return 2.8;
+  if (stageType === 'SWARM') return 1.4;
+  if (stageType === 'TINY')  return 2.2;
+  if (stageType === 'CHAOS') return 2.0;
+  return 1.0;
+}
 
 class Game extends Scene {
   enter() {
@@ -2428,16 +2467,17 @@ class Game extends Scene {
     this.high       = this.engine.storage.getHigh(meta.id);
     this.dead       = false;
 
-    this._elapsed   = 0;  // ステージ内経過時間
+    this._elapsed   = 0;
 
     // ステージ
-    this._stage     = 0;  // 0-indexed
-    this._stageScript = makeStageScript(this._stage);
-    this._scriptIdx   = 0;  // 次に処理するスクリプトイベントのインデックス
-    this._bossPending = false; // ボスイベントを処理したか
-    this._bossAlive   = false; // ボス隕石が生存しているか
-    this._bossIdx     = -1;    // meteor配列内でのボスインデックス
-    this._stageClearing = false; // ステージクリア演出中
+    this._stage     = 0;
+    this._stageType = 'NORMAL';
+    this._stageScript = makeStageScript(this._stage, this._stageType);
+    this._scriptIdx   = 0;
+    this._bossPending = false;
+    this._bossAlive   = false;
+    this._bossIdx     = -1;
+    this._stageClearing = false;
     this._stageClearTimer = 0;
 
     this.cities     = Array(CITY_COUNT).fill(true);
@@ -2446,30 +2486,38 @@ class Game extends Scene {
     this.blasts     = [];
     this.cityBlasts = [];
 
-    this._spawnTimer  = 0;  // 未使用（スクリプト制御に移行）
-    this._fireCooldown = 0; // 発射クールダウンタイマ
+    this._fireCooldown = 0;
 
     this._bigCharges  = BIG_CHARGES_MAX;
     this._bigRecharge = 0;
     this._bigArmed    = false;
+
+    // パワーアップ状態
+    this._powerups = {
+      missileMax:    BASE_MAX_MISSILES, // MULTI
+      blastDamage:   BLAST_DAMAGE_NORMAL_BASE, // POWER
+      blastRadiusAdd: 0,  // WIDE（ピクセル加算）
+      scatter:       false, // SCATTER
+    };
   }
 
   _bigBtnRect() { return { x: W / 2 - 48, y: 44, w: 112, h: 28 }; }
 
-  // 通常隕石の速度（ステージが上がると少し速くなる）
   _calcNormalSpd() {
-    const frac = clamp(this._stage / 6, 0, 1);
+    const frac   = clamp(this._stage / 6, 0, 1);
     const spdMax = METEOR_SPD_MAX + (METEOR_SPD_MAX_LATE - METEOR_SPD_MAX) * frac;
-    return METEOR_SPD_MIN + Math.random() * (spdMax - METEOR_SPD_MIN);
+    const base   = METEOR_SPD_MIN + Math.random() * (spdMax - METEOR_SPD_MIN);
+    return base * stageSpeedMult(this._stageType);
   }
 
   _calcFastSpd() {
-    return FAST_SPD_MIN + Math.random() * (FAST_SPD_MAX - FAST_SPD_MIN);
+    const base = FAST_SPD_MIN + Math.random() * (FAST_SPD_MAX - FAST_SPD_MIN);
+    return base * clamp(stageSpeedMult(this._stageType) * 0.7, 1, 3);
   }
 
   // ---- onInput ----
   onInput(action, data) {
-    if (this._stageClearing) return; // ステージクリア演出中は操作無効
+    if (this._stageClearing) return;
     if (this.dead) {
       if (action === 'back') { this.engine.toMenu(); return; }
       if (action === 'tap' || action === 'confirm') { this.enter(); return; }
@@ -2496,8 +2544,9 @@ class Game extends Scene {
   // ---- 発射（クールダウン＋上限チェック） ----
   _fireMissile(tx, ty, big) {
     if (ty >= GROUND_Y) return;
-    if (this._fireCooldown > 0) return; // クールダウン中は撃てない
-    if (this.missiles.filter(m => !m.done).length >= MAX_MISSILES) return;
+    if (this._fireCooldown > 0) return;
+    const activeCount = this.missiles.filter(m => !m.done).length;
+    if (activeCount >= this._powerups.missileMax) return;
 
     if (big) {
       if (this._bigCharges <= 0) return;
@@ -2525,7 +2574,6 @@ class Game extends Scene {
   update(dt) {
     if (this.dead) return;
 
-    // 発射クールダウン更新
     if (this._fireCooldown > 0) {
       this._fireCooldown = Math.max(0, this._fireCooldown - dt);
     }
@@ -2534,16 +2582,21 @@ class Game extends Scene {
     if (this._stageClearing) {
       this._stageClearTimer -= dt;
       if (this._stageClearTimer <= 0) {
-        // 次のステージへ
         this._stage++;
         this._elapsed = 0;
-        this._stageScript = makeStageScript(this._stage);
+        // ステージ2以降でタイプ決定（1-indexed で0はNORMAL）
+        if (this._stage === 0) {
+          this._stageType = 'NORMAL';
+        } else {
+          const types = STAGE_TYPES.filter(t => t !== 'NORMAL');
+          this._stageType = types[(this._stage - 1) % types.length];
+        }
+        this._stageScript = makeStageScript(this._stage, this._stageType);
         this._scriptIdx = 0;
         this._bossPending = false;
         this._bossAlive = false;
         this._bossIdx = -1;
         this._stageClearing = false;
-        // 残隕石を掃除
         this.meteors = [];
         this.missiles = [];
         this.blasts = [];
@@ -2565,7 +2618,6 @@ class Game extends Scene {
     }
 
     // ---- スクリプト式スポーン ----
-    // ボス生存中は次のスクリプトを進めない（ボス破壊が先決）
     if (!this._bossAlive) {
       while (
         this._scriptIdx < this._stageScript.length &&
@@ -2578,13 +2630,13 @@ class Game extends Scene {
         } else if (ev.type === 'meteor') {
           const cnt = ev.count || 1;
           for (let c = 0; c < cnt; c++) {
-            this._spawnMeteor(ev.giant || false);
+            this._spawnMeteor(ev.forceSize, ev.itemChance || 0);
           }
         }
       }
     }
 
-    // 隕石移動（ボス含む）
+    // 隕石移動
     for (let i = this.meteors.length - 1; i >= 0; i--) {
       const m = this.meteors[i];
       if (!m || m.x == null) { this.meteors.splice(i, 1); continue; }
@@ -2595,34 +2647,30 @@ class Game extends Scene {
       if (dist < m.spd * dt + 1) {
         // 地面到達
         if (m.boss) {
-          // ボスが地面到達 → 都市への最大ダメージ（2都市破壊）
           this._impactCity(m.tx, m.ty);
           this._impactCity(m.tx, m.ty);
           this._bossAlive = false;
           this._bossIdx = -1;
+        } else if (m.isItem) {
+          // アイテム隕石が地面に落下しても何も得られない
         } else {
           this._impactCity(m.tx, m.ty);
         }
         this.meteors.splice(i, 1);
-        // 破壊されたボスのインデックスを無効化
         if (this._bossIdx === i) { this._bossAlive = false; this._bossIdx = -1; }
         else if (this._bossIdx > i) this._bossIdx--;
         continue;
       }
       const ratio = m.spd / dist;
-      const nx = m.x + dx * ratio * dt;
-      const ny = m.y + dy * ratio * dt;
+      m.x += dx * ratio * dt;
+      m.y += dy * ratio * dt;
 
       // 軌跡
       const trailMax = m.fast ? 8 : (m.boss ? 4 : 5);
       m.trail.push({ x: m.x, y: m.y });
       if (m.trail.length > trailMax) m.trail.shift();
 
-      // 岩のゆっくり回転
-      m.rot += (m.fast ? 0.8 : (m.boss ? 0.15 : 0.4)) * dt;
-
-      m.x = nx;
-      m.y = ny;
+      m.rot += (m.fast ? 0.8 : (m.boss ? 0.12 : 0.4)) * dt;
     }
 
     // ミサイル移動
@@ -2632,44 +2680,60 @@ class Game extends Scene {
       if (ms.done) { this.missiles.splice(i, 1); continue; }
       ms.x += ms.vx * dt;
       ms.y += ms.vy * dt;
-      const dx = ms.tx - ms.x;
-      const dy = ms.ty - ms.y;
-      if (Math.hypot(dx, dy) < MISSILE_SPD * dt * 1.5 + 4) {
+      const ddx = ms.tx - ms.x;
+      const ddy = ms.ty - ms.y;
+      if (Math.hypot(ddx, ddy) < MISSILE_SPD * dt * 1.5 + 4) {
         this._spawnBlast(ms.tx, ms.ty, ms.big);
         ms.done = true;
       }
     }
 
-    // 爆発更新
+    // 爆発更新 — grow then FADE (alpha decreases, radius stays at maxR)
     for (let i = this.blasts.length - 1; i >= 0; i--) {
       const b = this.blasts[i];
       if (!b) { this.blasts.splice(i, 1); continue; }
+
       if (b.growing) {
-        b.r += BLAST_RATE * dt;
-        if (b.r >= b.maxR) { b.r = b.maxR; b.growing = false; }
+        b.r += BLAST_GROW_RATE * dt;
+        if (b.r >= b.maxR) {
+          b.r = b.maxR;
+          b.growing = false;
+          b.fadeTimer = BLAST_FADE_SEC; // フェード開始
+        }
       } else {
-        b.r -= BLAST_SHRINK * dt;
-        if (b.r <= 0) { this.blasts.splice(i, 1); continue; }
+        // フェードアウト（半径は変えない or わずかに拡大して壮大に見せる）
+        b.fadeTimer -= dt;
+        b.r = Math.min(b.maxR * 1.05, b.r + 4 * dt); // わずかに膨らむ
+        if (b.fadeTimer <= 0) {
+          this.blasts.splice(i, 1);
+          continue;
+        }
       }
 
-      // 爆発ヒット判定
+      // 爆発ヒット判定（成長中＋フェード中も有効）
       for (let j = this.meteors.length - 1; j >= 0; j--) {
         const m = this.meteors[j];
         if (!m) continue;
         if (Math.hypot(m.x - b.x, m.y - b.y) > b.r + m.r) continue;
         if (m.hitBlastIds.has(b.id)) continue;
         m.hitBlastIds.add(b.id);
-        m.hp -= b.damage;
 
+        if (m.isItem) {
+          // アイテム隕石を撃ち落とした！
+          this._collectItem(m);
+          if (this._bossIdx > j) this._bossIdx--;
+          this.meteors.splice(j, 1);
+          continue;
+        }
+
+        m.hp -= b.damage;
         if (m.hp <= 0) {
-          // 撃墜
           if (m.boss) {
             this.score += BOSS_SCORE_BASE * (this._stage + 1);
             this._bossAlive = false;
             this._bossIdx = -1;
-            // ステージクリア！
             this._stageClearing = true;
-            this._stageClearTimer = 2.0;
+            this._stageClearTimer = 2.2;
             this.engine.audio.sequence([
               { freq: 440, dur: 0.08, type: 'square', vol: 0.15 },
               { freq: 660, dur: 0.08, type: 'square', vol: 0.15 },
@@ -2705,7 +2769,8 @@ class Game extends Scene {
   }
 
   // ---- 通常隕石スポーン ----
-  _spawnMeteor(forceGiant) {
+  // forceSize: null | 'giant' | 'tiny'
+  _spawnMeteor(forceSize, itemChance) {
     const x = 18 + Math.random() * (W - 36);
     const alive = this.cities.map((c, i) => c ? i : -1).filter(i => i >= 0);
     let tx;
@@ -2717,8 +2782,15 @@ class Game extends Scene {
     }
     const ty = GROUND_Y;
 
+    // アイテム隕石判定（ステージ1は出ない）
+    const spawnItem = this._stage >= 1 && Math.random() < (itemChance || 0);
+
     let r;
-    if (forceGiant || Math.random() < 0.12) {
+    if (forceSize === 'tiny') {
+      r = METEOR_R_MIN + Math.random() * (SMALL_R_THRESH - METEOR_R_MIN + 2);
+    } else if (forceSize === 'giant') {
+      r = GIANT_R_THRESH + Math.random() * (METEOR_R_MAX - GIANT_R_THRESH);
+    } else if (Math.random() < 0.12) {
       r = GIANT_R_THRESH + Math.random() * (METEOR_R_MAX - GIANT_R_THRESH);
     } else {
       r = Math.max(METEOR_R_MIN,
@@ -2726,10 +2798,14 @@ class Game extends Scene {
       );
     }
 
-    const isFast = Math.random() < FAST_CHANCE;
+    // アイテム隕石は固定サイズ（中くらい）
+    if (spawnItem) r = 14 + Math.random() * 6;
+
+    const isFast = !spawnItem && Math.random() < FAST_CHANCE;
     const spd = isFast ? this._calcFastSpd() : this._calcNormalSpd();
-    const maxHp = calcMeteorHP(r);
+    const maxHp = spawnItem ? 1 : calcMeteorHP(r);
     const seed = _nextMeteorSeed++;
+    const itemType = spawnItem ? ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)] : null;
 
     this.meteors.push({
       x, y: -METEOR_R_MAX - 4,
@@ -2737,9 +2813,11 @@ class Game extends Scene {
       hp: maxHp, maxHp,
       fast: isFast,
       boss: false,
+      isItem: spawnItem,
+      itemType,
       trail: [],
-      rot: Math.random() * Math.PI * 2, // 初期回転角
-      verts: makeRockVerts(r, seed),    // 岩石ポリゴン頂点（固定）
+      rot: Math.random() * Math.PI * 2,
+      verts: makeRockVerts(r, seed),
       seed,
       hitBlastIds: new Set(),
     });
@@ -2748,11 +2826,15 @@ class Game extends Scene {
   // ---- ボス隕石スポーン ----
   _spawnBoss() {
     const r = BOSS_R_MIN + Math.random() * (BOSS_R_MAX - BOSS_R_MIN);
-    const x = 60 + Math.random() * (W - 120);
-    const tx = 60 + Math.random() * (W - 120);
+    // 半径が大きいため、画面内に収めるようにx範囲を制限
+    const margin = r + 8;
+    const xMin = clamp(margin, 20, W - 20);
+    const xMax = clamp(W - margin, 20, W - 20);
+    const x  = xMin + Math.random() * Math.max(0, xMax - xMin);
+    const tx = xMin + Math.random() * Math.max(0, xMax - xMin);
     const ty = GROUND_Y;
     const spd = BOSS_SPD_MIN + Math.random() * (BOSS_SPD_MAX - BOSS_SPD_MIN);
-    const maxHp = BOSS_HP_BASE + this._stage * 2;
+    const maxHp = BOSS_HP_BASE + this._stage * BOSS_HP_PER_STAGE;
     const seed = _nextMeteorSeed++;
 
     const bossEntry = {
@@ -2761,6 +2843,8 @@ class Game extends Scene {
       hp: maxHp, maxHp,
       fast: false,
       boss: true,
+      isItem: false,
+      itemType: null,
       trail: [],
       rot: Math.random() * Math.PI * 2,
       verts: makeRockVerts(r, seed),
@@ -2779,22 +2863,71 @@ class Game extends Scene {
     ]);
   }
 
-  // 爆発スポーン
-  _spawnBlast(x, y, big) {
-    const maxR  = big ? BLAST_GROW_BIG : BLAST_GROW;
-    const dmg   = big ? BLAST_DAMAGE_BIG : BLAST_DAMAGE_NORMAL;
-    const id    = _nextBlastId++;
-    this.blasts.push({ x, y, r: 4, maxR, growing: true, big: !!big, id, damage: dmg });
-    this.engine.audio.pick();
-    if (big) {
-      this.engine.audio.sequence([
-        { freq: 330, dur: 0.06, type: 'square', vol: 0.18 },
-        { freq: 220, dur: 0.12, type: 'sawtooth', vol: 0.16 },
-      ]);
+  // ---- アイテム取得 ----
+  _collectItem(m) {
+    const type = m.itemType;
+    const pu = this._powerups;
+
+    if (type === 'MULTI') {
+      pu.missileMax = Math.min(pu.missileMax + 1, 5);
+    } else if (type === 'POWER') {
+      pu.blastDamage = Math.min(pu.blastDamage + 1, 3);
+    } else if (type === 'WIDE') {
+      pu.blastRadiusAdd = Math.min(pu.blastRadiusAdd + 12, 36);
+    } else if (type === 'SCATTER') {
+      pu.scatter = true;
+    }
+
+    // 取得音
+    this.engine.audio.sequence([
+      { freq: 880, dur: 0.06, type: 'square', vol: 0.16 },
+      { freq: 1320, dur: 0.08, type: 'square', vol: 0.18 },
+      { freq: 1760, dur: 0.10, type: 'square', vol: 0.20 },
+    ]);
+  }
+
+  // ---- 爆発スポーン ----
+  _spawnBlast(x, y, big, isScatter) {
+    const baseR   = big ? BLAST_GROW_BIG : (BLAST_GROW + this._powerups.blastRadiusAdd);
+    const maxR    = Math.max(6, baseR);
+    const dmg     = big ? BLAST_DAMAGE_BIG : this._powerups.blastDamage;
+    const id      = _nextBlastId++;
+    this.blasts.push({
+      x, y,
+      r: 4,
+      maxR,
+      growing: true,
+      fadeTimer: BLAST_FADE_SEC,
+      big: !!big,
+      id,
+      damage: dmg,
+      isScatter: !!isScatter,
+    });
+    if (!isScatter) {
+      this.engine.audio.pick();
+      if (big) {
+        this.engine.audio.sequence([
+          { freq: 330, dur: 0.06, type: 'square', vol: 0.18 },
+          { freq: 220, dur: 0.12, type: 'sawtooth', vol: 0.16 },
+        ]);
+      }
+      // SCATTERパワーアップ：通常爆発の周囲に小型爆発を6つ散布
+      if (!big && this._powerups.scatter) {
+        const count = 6;
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2;
+          const dist  = 28 + Math.random() * 18;
+          const sx = x + Math.cos(angle) * dist;
+          const sy = y + Math.sin(angle) * dist;
+          // 画面外に出ないようにクランプ
+          if (sy > GROUND_Y - 4) continue;
+          this._spawnBlast(sx, sy, false, true);
+        }
+      }
     }
   }
 
-  // 都市ダメージ
+  // ---- 都市ダメージ ----
   _impactCity(ix, iy) {
     let bestDist = Infinity, bestIdx = -1;
     for (let i = 0; i < CITY_COUNT; i++) {
@@ -2819,12 +2952,21 @@ class Game extends Scene {
     const p = P();
 
     // ---- HUD（x>=52 でBACKボタンを避ける） ----
-    const stageLabel = 'ST ' + (this._stage + 1);
-    this.engine.text(stageLabel, 52, 8, 15, p.mid, 'left');
-    this.engine.text('SCORE ' + this.score, W - 12, 8, 15, p.fg, 'right');
-    this.engine.text('BEST  ' + this.high, W - 12, 28, 12, p.dim, 'right');
+    const stageLabel = 'ST' + (this._stage + 1);
+    this.engine.text(stageLabel, 52, 8, 14, p.mid, 'left');
+
+    // ステージタイプラベル（ステージ2以降）
+    if (this._stage >= 1 && this._stageType !== 'NORMAL') {
+      this.engine.text(this._stageType, 52, 24, 11, p.warn, 'left');
+    }
+
+    this.engine.text('SCORE ' + this.score, W - 12, 8, 14, p.fg, 'right');
+    this.engine.text('BEST  ' + this.high,  W - 12, 26, 11, p.dim, 'right');
     const aliveCount = this.cities.filter(Boolean).length;
-    this.engine.text('CITY ' + aliveCount, 52, 28, 12, p.warn, 'left');
+    this.engine.text('CITY ' + aliveCount, 52, 38, 11, p.warn, 'left');
+
+    // パワーアップHUD（コンパクト表示）
+    this._drawPowerupHUD(ctx, p);
 
     // ビッグブラスト HUD
     this._drawBigChargeHUD(ctx, p);
@@ -2878,18 +3020,24 @@ class Game extends Scene {
     // ---- 隕石（岩石ポリゴン） ----
     for (const m of this.meteors) {
       if (!m) continue;
+
+      // アイテム隕石
+      if (m.isItem) {
+        this._drawItemMeteor(ctx, p, m);
+        continue;
+      }
+
       const damageFrac = m.maxHp > 1 ? clamp(1 - m.hp / m.maxHp, 0, 1) : 0;
-      const bodyColor = m.boss ? p.warn : (m.fast ? p.hi : p.bad);
+      const bodyColor  = m.boss ? p.warn : (m.fast ? p.hi : p.bad);
 
       // 軌跡
       const trailColor = m.boss ? p.warn : (m.fast ? p.hi : p.bad);
       for (let t = 0; t < m.trail.length; t++) {
         const pt = m.trail[t];
         if (!pt) continue;
-        const alpha = ((t + 1) / (m.trail.length + 1)) * (m.fast ? 0.55 : (m.boss ? 0.50 : 0.35));
+        const alpha = ((t + 1) / (m.trail.length + 1)) * (m.fast ? 0.55 : (m.boss ? 0.55 : 0.35));
         ctx.save();
         ctx.globalAlpha = clamp(alpha, 0, 1);
-        // 軌跡はシンプルな小円
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, Math.max(1, m.r * 0.35), 0, Math.PI * 2);
         ctx.strokeStyle = trailColor;
@@ -2898,9 +3046,9 @@ class Game extends Scene {
         ctx.restore();
       }
 
-      // ---- 岩石ポリゴン本体 ----
+      // 岩石ポリゴン本体
       if (m.verts && m.verts.length >= 3) {
-        const lineW = clamp(1.8 - damageFrac * 0.8, 0.5, 2.5);
+        const lineW    = clamp(1.8 - damageFrac * 0.8, 0.5, 2.5);
         const bodyAlpha = clamp(1 - damageFrac * 0.4, 0.3, 1);
 
         ctx.save();
@@ -2908,7 +3056,7 @@ class Game extends Scene {
         ctx.translate(m.x, m.y);
         ctx.rotate(m.rot);
 
-        // ボス：薄いフィル
+        // ボス：薄いフィル（暗く重厚な雰囲気）
         if (m.boss) {
           ctx.beginPath();
           ctx.moveTo(m.verts[0].dx, m.verts[0].dy);
@@ -2917,12 +3065,12 @@ class Game extends Scene {
           }
           ctx.closePath();
           ctx.fillStyle = p.dark;
-          ctx.globalAlpha = clamp(0.5 - damageFrac * 0.2, 0, 1);
+          ctx.globalAlpha = clamp(0.65 - damageFrac * 0.2, 0, 1);
           ctx.fill();
           ctx.globalAlpha = clamp(bodyAlpha, 0, 1);
         }
 
-        // アウトライン（ダメージを受けるほど暗くなる）
+        // アウトライン
         ctx.beginPath();
         ctx.moveTo(m.verts[0].dx, m.verts[0].dy);
         for (let vi = 1; vi < m.verts.length; vi++) {
@@ -2930,10 +3078,10 @@ class Game extends Scene {
         }
         ctx.closePath();
         ctx.strokeStyle = bodyColor;
-        ctx.lineWidth = lineW;
+        ctx.lineWidth = m.boss ? clamp(lineW * 2, 1, 4) : lineW;
         ctx.stroke();
 
-        // ダメージ亀裂感：hp/maxHpが下がったら内側に追加の折れ線
+        // ダメージ亀裂感
         if (damageFrac > 0.3 && m.verts.length >= 6) {
           ctx.globalAlpha = clamp(damageFrac * 0.5, 0, 1);
           ctx.beginPath();
@@ -2950,37 +3098,35 @@ class Game extends Scene {
 
         ctx.restore();
 
-        // ---- ボスのHP バー ----
+        // ボスのHP バー（大きいので常に表示）
         if (m.boss) {
-          const barW  = Math.min(m.r * 2.2, W - 20);
-          const barX  = m.x - barW / 2;
-          const barY  = m.y + m.r + 8;
-          const barH  = 5;
+          const barW  = clamp(m.r * 2.0, 80, W - 20);
+          const barX  = clamp(m.x - barW / 2, 6, W - barW - 6);
+          const barY  = clamp(m.y + m.r + 10, m.r + 10, GROUND_Y - 14);
+          const barH  = 7;
           const hpFrac = clamp(m.hp / m.maxHp, 0, 1);
-          // 背景
           ctx.save();
           ctx.fillStyle = p.dark;
           ctx.fillRect(barX, barY, barW, barH);
-          // HP量
           ctx.fillStyle = damageFrac > 0.6 ? p.bad : p.warn;
           ctx.fillRect(barX, barY, Math.max(0, barW * hpFrac), barH);
-          // 枠
           ctx.strokeStyle = p.mid;
           ctx.lineWidth = 1;
           ctx.strokeRect(barX, barY, barW, barH);
           ctx.restore();
-          // BOSSラベル
-          this.engine.text('BOSS', m.x, m.y - m.r - 18, 13, p.warn, 'center');
+          this.engine.text('BOSS', m.x, clamp(m.y - m.r - 20, 52, GROUND_Y - 40), 14, p.warn, 'center');
+          // HP数値表示
+          this.engine.text(m.hp + '/' + m.maxHp, m.x, clamp(m.y - m.r - 36, 52, GROUND_Y - 56), 11, p.dim, 'center');
         } else {
-          // ---- 通常隕石のHP ピップ ----
+          // 通常隕石のHP ピップ
           if (m.maxHp >= 2) {
-            const pipR  = 3;
+            const pipR   = 3;
             const pipGap = 8;
             const totalW = m.maxHp * pipR * 2 + (m.maxHp - 1) * (pipGap - pipR * 2);
             const startX = m.x - totalW / 2;
             const pipY   = m.y + m.r + 6;
             for (let k = 0; k < m.maxHp; k++) {
-              const px = startX + k * pipGap + pipR;
+              const px    = startX + k * pipGap + pipR;
               const alive = k < m.hp;
               ctx.save();
               ctx.globalAlpha = alive ? 0.9 : 0.25;
@@ -2995,56 +3141,78 @@ class Game extends Scene {
       }
     }
 
-    // ---- 爆発 ----
+    // ---- 爆発（grow then FADE OUT） ----
     for (const b of this.blasts) {
       if (!b) continue;
-      const alpha = b.growing ? 0.85 : clamp(b.r / b.maxR, 0, 1) * 0.7;
+
+      let alpha;
+      if (b.growing) {
+        // 成長中：徐々に鮮明に
+        alpha = clamp(b.r / b.maxR, 0, 1) * 0.9;
+      } else {
+        // フェードアウト（半径はキープ、アルファだけ落とす）
+        alpha = clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1) * 0.85;
+      }
+      alpha = clamp(alpha, 0, 1);
+
       ctx.save();
-      ctx.globalAlpha = clamp(alpha, 0, 1);
+      ctx.globalAlpha = alpha;
+
+      // 外輪
       ctx.beginPath();
       ctx.arc(b.x, b.y, Math.max(1, b.r), 0, Math.PI * 2);
-      ctx.strokeStyle = b.big ? p.warn : p.mid;
-      ctx.lineWidth = b.growing ? (b.big ? 3.5 : 2.5) : (b.big ? 2.5 : 1.5);
+      ctx.strokeStyle = b.big ? p.warn : (b.isScatter ? p.hi : p.mid);
+      ctx.lineWidth = b.big ? 3.5 : (b.isScatter ? 1.0 : 2.5);
       ctx.stroke();
+
+      // ビッグ爆発：内輪
       if (b.big && b.r > 10) {
         ctx.beginPath();
         ctx.arc(b.x, b.y, Math.max(1, b.r * 0.65), 0, Math.PI * 2);
         ctx.strokeStyle = p.hi;
         ctx.lineWidth = 1;
-        ctx.globalAlpha = clamp(alpha * 0.5, 0, 1);
+        ctx.globalAlpha = clamp(alpha * 0.6, 0, 1);
         ctx.stroke();
       }
+
+      // 内部フィル（薄く）
       ctx.beginPath();
       ctx.arc(b.x, b.y, Math.max(1, b.r * 0.55), 0, Math.PI * 2);
-      ctx.fillStyle = b.big ? p.warn : p.mid;
-      ctx.globalAlpha = clamp(alpha * 0.18, 0, 1);
+      ctx.fillStyle = b.big ? p.warn : (b.isScatter ? p.hi : p.mid);
+      ctx.globalAlpha = clamp(alpha * 0.15, 0, 1);
       ctx.fill();
+
       ctx.restore();
     }
 
     // ---- ステージクリアオーバーレイ ----
     if (this._stageClearing) {
-      const alpha = clamp(this._stageClearTimer / 2.0, 0, 1);
+      const alpha = clamp(this._stageClearTimer / 2.2, 0, 1);
       ctx.save();
-      ctx.globalAlpha = clamp(alpha * 0.85, 0, 1);
+      ctx.globalAlpha = clamp(alpha * 0.88, 0, 1);
       ctx.fillStyle = p.dark;
       ctx.fillRect(0, H / 2 - 60, W, 120);
       ctx.restore();
       this.engine.text('STAGE ' + (this._stage + 1) + ' CLEAR!', W / 2, H / 2 - 42, 28, p.warn, 'center');
-      this.engine.text('NEXT STAGE', W / 2, H / 2 + 4, 16, p.fg, 'center');
+      // 次ステージのタイプを予告
+      const nextStage = this._stage + 1;
+      const nextTypes = STAGE_TYPES.filter(t => t !== 'NORMAL');
+      const nextType  = nextTypes[nextStage % nextTypes.length];
+      this.engine.text('NEXT: ' + nextType, W / 2, H / 2 + 4, 16, p.mid, 'center');
     }
 
     // ---- ゲームオーバーオーバーレイ ----
     if (this.dead) {
-      this.engine.rect(0, H / 2 - 90, W, 180, p.dark);
-      this.engine.stroke(0, H / 2 - 90, W, 180, p.bad, 2);
-      this.engine.text('GAME OVER', W / 2, H / 2 - 72, 32, p.bad, 'center');
-      this.engine.text('SCORE  ' + this.score, W / 2, H / 2 - 28, 20, p.fg, 'center');
-      this.engine.text('BEST   ' + this.high,  W / 2, H / 2 + 2,  16, p.dim, 'center');
-      this.engine.text('TAP TO RETRY', W / 2, H / 2 + 42, 16, p.mid, 'center');
+      this.engine.rect(0, H / 2 - 90, W, 200, p.dark);
+      this.engine.stroke(0, H / 2 - 90, W, 200, p.bad, 2);
+      this.engine.text('GAME OVER', W / 2, H / 2 - 78, 32, p.bad, 'center');
+      this.engine.text('SCORE  ' + this.score, W / 2, H / 2 - 32, 20, p.fg, 'center');
+      this.engine.text('BEST   ' + this.high,  W / 2, H / 2 - 4,  16, p.dim, 'center');
+      this.engine.text('TAP TO RETRY', W / 2, H / 2 + 38, 16, p.mid, 'center');
+      this.engine.text('BACK: MENU',   W / 2, H / 2 + 62, 13, p.dim, 'center');
     }
 
-    // ---- クールダウン残量インジケータ（砲台の上に小さくバー表示） ----
+    // ---- クールダウンインジケータ ----
     if (this._fireCooldown > 0 && !this.dead) {
       const frac = clamp(1 - this._fireCooldown / FIRE_COOLDOWN, 0, 1);
       const barW = 28;
@@ -3057,6 +3225,58 @@ class Game extends Scene {
       ctx.fillRect(barX, barY, Math.max(0, barW * frac), 3);
       ctx.restore();
     }
+  }
+
+  // ---- アイテム隕石の描画 ----
+  _drawItemMeteor(ctx, p, m) {
+    if (!m.verts || m.verts.length < 3) return;
+    // パルス（点滅アニメ）
+    const pulse = 0.75 + 0.25 * Math.sin(this._elapsed * 5.0);
+
+    ctx.save();
+    ctx.globalAlpha = clamp(pulse, 0, 1);
+    ctx.translate(m.x, m.y);
+    ctx.rotate(m.rot);
+
+    // 外周ポリゴン（シアン色で目立たせる）
+    ctx.beginPath();
+    ctx.moveTo(m.verts[0].dx, m.verts[0].dy);
+    for (let vi = 1; vi < m.verts.length; vi++) {
+      ctx.lineTo(m.verts[vi].dx, m.verts[vi].dy);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = p.hi;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // 内部うっすらフィル
+    ctx.fillStyle = p.hi;
+    ctx.globalAlpha = clamp(pulse * 0.12, 0, 1);
+    ctx.fill();
+
+    ctx.restore();
+
+    // 中心アイコン（ラベル）
+    ctx.save();
+    ctx.globalAlpha = clamp(pulse, 0, 1);
+    const label = m.itemType ? m.itemType[0] : '?'; // 頭文字1文字
+    this.engine.text(label, m.x, m.y - 6, 13, p.warn, 'center');
+    ctx.restore();
+  }
+
+  // ---- パワーアップHUD ----
+  _drawPowerupHUD(ctx, p) {
+    // 右下のHUDエリアに小さく表示
+    const pu = this._powerups;
+    const parts = [];
+    if (pu.missileMax > BASE_MAX_MISSILES) parts.push('ML' + pu.missileMax);
+    if (pu.blastDamage > BLAST_DAMAGE_NORMAL_BASE) parts.push('PW' + pu.blastDamage);
+    if (pu.blastRadiusAdd > 0) parts.push('WD' + (pu.blastRadiusAdd / 12 | 0));
+    if (pu.scatter) parts.push('SC');
+
+    if (parts.length === 0) return;
+    const label = parts.join(' ');
+    // 右上エリアの下（スコアの下）
+    this.engine.text(label, W - 12, 44, 10, p.hi, 'right');
   }
 
   // ---- ビッグブラスト HUD ----
@@ -3089,7 +3309,7 @@ class Game extends Scene {
       const gaugeX = baseX;
       const gaugeY = baseY + 18;
       const gaugeW = 96;
-      const frac = clamp(this._bigRecharge / BIG_RECHARGE_SEC, 0, 1);
+      const frac   = clamp(this._bigRecharge / BIG_RECHARGE_SEC, 0, 1);
       this.engine.rect(gaugeX, gaugeY, gaugeW, 4, p.dark);
       this.engine.rect(gaugeX, gaugeY, Math.floor(gaugeW * frac), 4, p.warn);
     }
@@ -3159,9 +3379,10 @@ const CITY_XS = Array.from({ length: CITY_COUNT }, (_, i) =>
 // ---- js/games/lander.js ----
 (function(){
 // LANDER: Control attitude with RCS thrusters and soft-land on the lunar surface.
-// LEFT button  (x < 120): left RCS jet  -> omega DECREASES -> craft rotates CCW (nose tilts left)
-// RIGHT button (x > 240): right RCS jet -> omega INCREASES -> craft rotates CW  (nose tilts right)
-// THRUST button (center): main engine fires along craft's up-axis.
+// Reaction-thruster convention (physically correct):
+//   LEFT  button (x < 120): right-side thruster fires RIGHT -> reaction pushes nose LEFT  -> craft rotates CW  (omega +)
+//   RIGHT button (x > 240): left-side thruster fires LEFT  -> reaction pushes nose RIGHT -> craft rotates CCW (omega -)
+//   THRUST button (center): main engine fires along craft's up-axis.
 // Safe landing on the pad = STAGE CLEAR. Crash = GAME OVER.
 
 const meta = {
@@ -3172,13 +3393,14 @@ const meta = {
 };
 
 // ---- Physics tuning constants ----
-// Gravity is very weak (~1/5 of original) for a slow, contemplative descent.
-// ANG_ACCEL and THRUST_ACCEL are large enough that a short press is clearly visible.
-const GRAVITY_BASE      = 0.10;  // gravity (px/s^2) — very gentle, ~1/5 of old 0.5
-const THRUST_ACCEL      = 8.0;   // main engine thrust (px/s^2) — noticeably strong
-const ANG_ACCEL         = 40.0;  // RCS angular acceleration (deg/s^2) — clearly visible
+// GRAVITY_BASE: Stage-1 gravity in px/s^2. Craft descends ~0.6 px/s^2 -> reaches floor in ~30s from y=90.
+// NO translational damping (VEL_DAMP removed). Motion is purely Newtonian.
+// ANG_DAMP: mild angular drag so the pilot can stabilize attitude. Translational velocity is undamped.
+const GRAVITY_BASE      = 0.6;   // px/s^2 — gentle but real; craft visibly falls in ~25-35 s
+const THRUST_ACCEL      = 8.0;   // main engine thrust (px/s^2)
+const ANG_ACCEL         = 40.0;  // RCS angular acceleration (deg/s^2)
 const ANG_DAMP          = 0.88;  // angular velocity damping per second (exponential decay)
-const VEL_DAMP          = 0.995; // mild linear velocity drag per second
+// NO VEL_DAMP — translational motion is undamped (purely Newtonian)
 const FUEL_MAX          = 100;
 const FUEL_RATE_MAIN    = 7;
 const FUEL_RATE_RCS     = 2;
@@ -3202,12 +3424,19 @@ const BTN_Y   = H - 80;  // top of button bar
 const BTN_H   = 80;       // height of button bar
 
 // ---- Stage difficulty scaling ----
+// Stage 1: low gravity, no obstacles.
+// Stage 2+: gravity increases per stage; floating obstacles added and multiplied.
 function stageParams(stage) {
   const s = Math.min(stage, 8);
   return {
-    gravity:    GRAVITY_BASE * (1 + (s - 1) * 0.08),
-    padW:       Math.max(24, PAD_W_BASE - (s - 1) * 4),
-    stageBonus: s * 50,
+    // gravity increases ~12% per stage beyond stage 1
+    gravity:      GRAVITY_BASE * (1 + (s - 1) * 0.12),
+    padW:         Math.max(24, PAD_W_BASE - (s - 1) * 4),
+    stageBonus:   s * 50,
+    // obstacles: 0 in stage 1, then 2 + (s-2) extras per stage
+    obstacleCount: s <= 1 ? 0 : 2 + (s - 2),
+    // obstacle drift speed scales with stage
+    obstacleSpeed: 12 + (s - 1) * 4,
   };
 }
 
@@ -3275,6 +3504,27 @@ function buildGuide(startX, startY, pad, numPts) {
   return pts;
 }
 
+// ---- Floating obstacles (stages 2+) ----
+// Obstacles drift horizontally. They appear in the mid-descent zone (y 150-480)
+// and bounce off the left/right walls. Touching one = crash.
+function buildObstacles(count, speed) {
+  const obs = [];
+  if (count <= 0) return obs;
+  for (let i = 0; i < count; i++) {
+    // Spread evenly through descent zone, avoid spawning right at the start
+    const yBand   = 150 + (i / count) * 300 + Math.random() * 60;
+    const vxSign  = Math.random() < 0.5 ? 1 : -1;
+    const r       = 10 + Math.floor(Math.random() * 8); // radius 10-17
+    obs.push({
+      x:  30 + Math.random() * (W - 60),
+      y:  Math.max(150, Math.min(480, yBand)),
+      vx: (speed * 0.6 + Math.random() * speed * 0.8) * vxSign,
+      r,
+    });
+  }
+  return obs;
+}
+
 class Game extends Scene {
 
   enter() {
@@ -3294,7 +3544,7 @@ class Game extends Scene {
     this.x        = W / 2 + (Math.random() - 0.5) * 50;
     this.y        = LANDER_START_Y;
     this.vx       = (Math.random() - 0.5) * 4;  // near-zero initial horizontal speed
-    this.vy       = 2;                           // very slow initial downward speed
+    this.vy       = 2;                           // slow initial downward speed
 
     this._thrustMain = false;
     this._thrustRcsL = false;
@@ -3316,6 +3566,9 @@ class Game extends Scene {
     this._stageScore    = 0;
     this._guideBonus    = 0;
     this.particles      = [];
+
+    // Floating obstacles (stage 2+)
+    this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed);
 
     this._keys = this._keys || { left: false, right: false, up: false };
   }
@@ -3377,22 +3630,20 @@ class Game extends Scene {
 
     // ---- Read control inputs ----
     // Pointer press-and-hold in the bottom button bar (y > BTN_Y) is the primary control.
-    // Also accept press-and-hold anywhere below CONTROL_Y_MIN (for backward compat).
     // Top strip y < CONTROL_Y_MIN is ignored to avoid conflicting with the BACK button.
     this._thrustMain = false;
     this._thrustRcsL = false;
     this._thrustRcsR = false;
 
     if (ptr.down && ptr.y > CONTROL_Y_MIN) {
-      // Map pointer X to the three zones
       if (ptr.x < ZONE_L_MAX) {
-        // LEFT zone: RCS left jet -> CCW rotation (omega decreases)
+        // LEFT button pressed
         this._thrustRcsL = true;
       } else if (ptr.x > ZONE_R_MIN) {
-        // RIGHT zone: RCS right jet -> CW rotation (omega increases)
+        // RIGHT button pressed
         this._thrustRcsR = true;
       } else {
-        // CENTER zone: main engine
+        // CENTER: main engine
         this._thrustMain = true;
       }
     }
@@ -3407,22 +3658,28 @@ class Game extends Scene {
       this._keys.up    = false;
     }
 
-    // ---- RCS attitude jets ----
-    // LEFT jet fires from the left side of the craft body, creating a CCW torque.
-    // omega < 0 => craft angle decreasing => ctx.rotate negative => CCW on screen.
-    // RIGHT jet fires from the right side, creating a CW torque (omega increases).
-    // omega > 0 => angle increasing => ctx.rotate positive => CW on screen.
+    // ---- RCS attitude jets — reaction-thruster convention ----
+    // Physical convention: the nozzle FIRES toward the button side; Newton's 3rd law
+    // pushes the craft nose the OPPOSITE way.
+    //
+    // LEFT button  -> left-side nozzle fires leftward -> nose pushed RIGHT -> CW rotation
+    //   omega += ANG_ACCEL * dt  (positive omega -> angle increases -> ctx.rotate(+rad) -> CW on screen)
+    //
+    // RIGHT button -> right-side nozzle fires rightward -> nose pushed LEFT -> CCW rotation
+    //   omega -= ANG_ACCEL * dt  (negative omega -> angle decreases -> ctx.rotate(-rad) -> CCW on screen)
+    //
+    // Keyboard: ArrowLeft maps to _thrustRcsL (same CW convention).
+    //           ArrowRight maps to _thrustRcsR (same CCW convention).
     if (this._thrustRcsL && this.fuel > 0) {
-      this.omega -= ANG_ACCEL * dt;   // CCW: omega decreases
+      this.omega += ANG_ACCEL * dt;   // CW: nose tilts RIGHT
       this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
     }
     if (this._thrustRcsR && this.fuel > 0) {
-      this.omega += ANG_ACCEL * dt;   // CW: omega increases
+      this.omega -= ANG_ACCEL * dt;   // CCW: nose tilts LEFT
       this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
     }
 
     // ---- Angular damping (mild drag so craft can be stabilized) ----
-    // ANG_DAMP is fraction of omega retained per second (exponential decay)
     this.omega *= Math.pow(ANG_DAMP, dt);
 
     // ---- Integrate omega -> angle ----
@@ -3431,11 +3688,9 @@ class Game extends Scene {
     this.angle  = ((this.angle + 180) % 360 + 360) % 360 - 180;
 
     // ---- Main engine: thrust along craft's up-axis ----
-    // angle=0 = pointing straight up. Thrust direction = craft's up vector.
-    // craft up vector in screen coords: when angle=0, points in -Y (screen up).
-    // In canvas: +Y is down, so "up" is -Y.
-    // angle rotates from "up" (angle=0) clockwise.
-    // craft up unit vector: (-sin(angle_rad), -cos(angle_rad)) in canvas (x,y).
+    // angle=0 => pointing straight up. craft up vector in screen coords:
+    //   when angle=0, "up" is -Y (screen). ctx.rotate(+rad) rotates CW.
+    //   craft up unit vector: (-sin(angle_rad), -cos(angle_rad)) in canvas (x,y).
     if (this._thrustMain && this.fuel > 0) {
       const rad = this.angle * Math.PI / 180;
       this.vx  += (-Math.sin(rad)) * THRUST_ACCEL * dt;
@@ -3444,12 +3699,8 @@ class Game extends Scene {
     }
 
     // ---- Gravity (straight down = +Y in canvas) ----
+    // NO translational damping. Purely Newtonian: only gravity and engine thrust change velocity.
     this.vy += this._gravity * dt;
-
-    // ---- Mild linear velocity drag ----
-    const vdamp = Math.pow(VEL_DAMP, dt * 60);
-    this.vx *= vdamp;
-    this.vy *= vdamp;
 
     // ---- Position update ----
     this.x += this.vx * dt;
@@ -3466,6 +3717,34 @@ class Game extends Scene {
     if (this.y < 420) {
       this._guideDevTotal += this._distToGuide(this.x, this.y);
       this._guideDevCount += 1;
+    }
+
+    // ---- Update floating obstacles (stages 2+) ----
+    if (this.obstacles && this.obstacles.length > 0) {
+      for (const ob of this.obstacles) {
+        ob.x += ob.vx * dt;
+        // Bounce off walls
+        if (ob.x - ob.r < 0)     { ob.x = ob.r;     ob.vx = Math.abs(ob.vx); }
+        if (ob.x + ob.r > W)     { ob.x = W - ob.r; ob.vx = -Math.abs(ob.vx); }
+      }
+      // Check collision with lander (circle vs. point, craft body ~16x18 -> use 14px radius)
+      const craftR = 14;
+      for (const ob of this.obstacles) {
+        const dx = this.x - ob.x;
+        const dy = this.y - ob.y;
+        if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
+          // Hit an obstacle — crash
+          this._explode();
+          this.engine.audio.bad();
+          this.totalScore += Math.round((this.fuel || 0) * 2);
+          if (this.totalScore > this.high) {
+            this.high = this.totalScore;
+            this.engine.storage.setHigh(meta.id, this.high);
+          }
+          this.state = 'gameover';
+          return;
+        }
+      }
     }
 
     // ---- Terrain collision ----
@@ -3585,6 +3864,9 @@ class Game extends Scene {
     // Descent trajectory guide
     this._drawGuide(ctx);
 
+    // Floating obstacles (stages 2+)
+    this._drawObstacles(ctx);
+
     // Terrain
     if (this.terrainPts && this.terrainPts.length > 0) {
       ctx.fillStyle = p.dark;
@@ -3653,6 +3935,40 @@ class Game extends Scene {
     }
   }
 
+  // ---- Floating obstacles ----
+  _drawObstacles(ctx) {
+    if (!this.obstacles || this.obstacles.length === 0) return;
+    const p = P();
+    for (const ob of this.obstacles) {
+      // Draw as a jagged rock/asteroid (octagon-ish)
+      ctx.save();
+      ctx.translate(ob.x, ob.y);
+      ctx.fillStyle   = p.dark;
+      ctx.strokeStyle = p.bad;
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      const sides = 7;
+      for (let i = 0; i < sides; i++) {
+        // Slightly irregular radius for rock feel
+        const jitter = 0.75 + (((i * 37 + 13) % 7) / 7) * 0.5;
+        const angle  = (i / sides) * Math.PI * 2;
+        const rx     = Math.cos(angle) * ob.r * jitter;
+        const ry     = Math.sin(angle) * ob.r * jitter;
+        if (i === 0) ctx.moveTo(rx, ry);
+        else         ctx.lineTo(rx, ry);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Small warning highlight
+      ctx.fillStyle   = p.warn;
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
+      ctx.fillRect(ob.x - 2 - ob.x + ob.x, -2, 4, 4);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+
   // ---- Descent trajectory guide (dashed line) ----
   _drawGuide(ctx) {
     const p   = P();
@@ -3712,11 +4028,17 @@ class Game extends Scene {
   }
 
   // ---- Lander craft with 4 RCS nozzles ----
-  // Rotation math:
-  //   omega > 0  -> this.angle increases -> ctx.rotate(+rad) -> canvas CW rotation (nose tilts RIGHT)
-  //   omega < 0  -> this.angle decreases -> ctx.rotate(-rad) -> canvas CCW rotation (nose tilts LEFT)
-  //   LEFT button  -> omega -= -> angle decreases -> CCW on screen (nose goes left)
-  //   RIGHT button -> omega += -> angle increases -> CW  on screen (nose goes right)
+  // Rotation math (ctx.rotate convention):
+  //   ctx.rotate(+rad) = clockwise (CW) on screen
+  //   ctx.rotate(-rad) = counter-clockwise (CCW) on screen
+  //
+  //   omega > 0 -> angle increases -> ctx.rotate(+rad) -> CW on screen (nose tilts RIGHT)
+  //   omega < 0 -> angle decreases -> ctx.rotate(-rad) -> CCW on screen (nose tilts LEFT)
+  //
+  //   LEFT  button -> omega += -> CW  (nose tilts right)   LEFT nozzle fires left -> reaction right
+  //   RIGHT button -> omega -= -> CCW (nose tilts left)   RIGHT nozzle fires right -> reaction left
+  //
+  // The FLAME is drawn on the FIRING nozzle side, consistent with actual exhaust direction.
   _drawLander(ctx, x, y, angleDeg) {
     const p   = P();
     if (typeof x !== 'number' || typeof y !== 'number') return;
@@ -3726,7 +4048,7 @@ class Game extends Scene {
     ctx.translate(x, y);
     ctx.rotate(rad);  // positive rad = CW on canvas; negative = CCW
 
-    // Main engine flame (bottom nozzle, fires downward in body space = -Y body)
+    // Main engine flame (bottom nozzle, fires downward in body space)
     if (this._thrustMain && this.fuel > 0) {
       const fl = 10 + Math.random() * 10;
       ctx.fillStyle = p.warn;
@@ -3774,11 +4096,11 @@ class Game extends Scene {
     ctx.strokeRect(-5, 9, 10, 5);
 
     // LEFT RCS nozzle (body left side, upper area)
-    // Fires leftward (in body frame), reaction torque is CCW.
+    // LEFT button fires LEFT nozzle to the LEFT. Reaction: nose goes RIGHT = CW = omega +.
+    // Flame jets LEFT from left nozzle.
     ctx.fillStyle = p.dark;
     ctx.fillRect(-12, -6, 4, 4);
     if (this._thrustRcsL && this.fuel > 0) {
-      // Flame jets LEFT from left nozzle
       ctx.fillStyle = p.warn;
       ctx.beginPath();
       ctx.moveTo(-12, -4);
@@ -3792,11 +4114,11 @@ class Game extends Scene {
     ctx.strokeRect(-12, -6, 4, 4);
 
     // RIGHT RCS nozzle (body right side, upper area)
-    // Fires rightward (in body frame), reaction torque is CW.
+    // RIGHT button fires RIGHT nozzle to the RIGHT. Reaction: nose goes LEFT = CCW = omega -.
+    // Flame jets RIGHT from right nozzle.
     ctx.fillStyle = p.dark;
     ctx.fillRect(8, -6, 4, 4);
     if (this._thrustRcsR && this.fuel > 0) {
-      // Flame jets RIGHT from right nozzle
       ctx.fillStyle = p.warn;
       ctx.beginPath();
       ctx.moveTo(12, -4);
@@ -3809,7 +4131,7 @@ class Game extends Scene {
     ctx.lineWidth   = 0.8;
     ctx.strokeRect(8, -6, 4, 4);
 
-    // Top attitude nozzle (small, for visual reference only)
+    // Top attitude nozzle (visual reference)
     ctx.fillStyle   = p.dark;
     ctx.fillRect(-3, -14, 6, 4);
     ctx.strokeStyle = p.dim;
@@ -3861,26 +4183,26 @@ class Game extends Scene {
     this.engine.text('ω ' + Math.round(om), W - 8, 66, 11, omclr, 'right');
   }
 
-  // ---- Bottom button bar: three large tap targets with clear visual feedback ----
+  // ---- Bottom button bar ----
+  // Label convention (reaction-thruster):
+  //   LEFT  button -> fires left nozzle -> nose tilts RIGHT (CW)
+  //   RIGHT button -> fires right nozzle -> nose tilts LEFT (CCW)
+  // Labels reflect the NOSE direction for clarity to the player.
   _drawButtons(ctx) {
     const p = P();
 
-    const BW = 120; // width of each button
+    const BW = 120;
     const bY = BTN_Y;
     const bH = BTN_H;
 
-    // Helper to draw one button
-    const drawBtn = (bx, label, active) => {
-      // Background fill
+    const drawBtn = (bx, label, sublabel, active) => {
       ctx.fillStyle = active ? p.dim : p.dark;
       ctx.fillRect(bx, bY, BW, bH);
 
-      // Border — bright when active, dim when idle
       ctx.strokeStyle = active ? p.hi : p.dim;
       ctx.lineWidth   = active ? 2.5 : 1.5;
       ctx.strokeRect(bx + 1, bY + 1, BW - 2, bH - 2);
 
-      // Inner highlight bar at top when active
       if (active) {
         ctx.fillStyle = p.hi;
         ctx.globalAlpha = Math.max(0, Math.min(1, 0.25));
@@ -3888,16 +4210,19 @@ class Game extends Scene {
         ctx.globalAlpha = 1;
       }
 
-      // Label
       const labelColor = active ? p.hi : p.fg;
-      this.engine.text(label, bx + BW / 2, bY + bH / 2 - 7, 13, labelColor, 'center');
+      this.engine.text(label,    bx + BW / 2, bY + bH / 2 - 14, 13, labelColor, 'center');
+      if (sublabel) {
+        this.engine.text(sublabel, bx + BW / 2, bY + bH / 2 + 2,  10, active ? p.warn : p.dim, 'center');
+      }
     };
 
-    drawBtn(0,   '◄ LEFT',  this._thrustRcsL);  // ◄ LEFT  (CCW rotation)
-    drawBtn(120, 'THRUST',       this._thrustMain);   // THRUST  (main engine)
-    drawBtn(240, 'RIGHT ►', this._thrustRcsR);   // RIGHT ► (CW rotation)
+    // LEFT button: nose tilts right (CW)    RIGHT button: nose tilts left (CCW)
+    drawBtn(0,   '◄ TILT R',  'NOSE RIGHT', this._thrustRcsL);
+    drawBtn(120, 'THRUST',    null,          this._thrustMain);
+    drawBtn(240, 'TILT L ►', 'NOSE LEFT',  this._thrustRcsR);
 
-    // Dividers between buttons
+    // Dividers
     ctx.strokeStyle = p.dim;
     ctx.lineWidth   = 1;
     ctx.beginPath(); ctx.moveTo(120, bY); ctx.lineTo(120, H); ctx.stroke();
