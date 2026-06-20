@@ -270,137 +270,73 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
-// ---- クラシック ミサイルコマンド風爆発 ----
-// ソリッドフィルの凸凹ポリゴン雲。拡大しながらフリッカー。
-// 複数の爆発は XOR 合成でオーバーラップ部分がくり抜かれる。
+// ---- アニメ風赤プラズマ爆発（マクロス風丸い火球）----
+// XOR ポリゴン雲を廃止。加算合成('lighter')の放射グラデーション円で
+// 白熱コア→オレンジ→赤の柔らかい火球を描く。
+// 重なる爆発は加算で明るくなり自然なプラズマ感を演出する。
 
-// 爆発カラーサイクル（フリッカー用）— warn/hi/bad/white を高速切替
-const BLAST_FLICKER_COLORS = ['#ffd23f', '#e8ffe0', '#ff5b5b', '#ffffff', '#39ff14', '#ffd23f'];
+// 爆発1個をメインCtxに直接描画（加算合成ブロック内で呼ぶ）
+// alpha: フェードアウト係数 [0,1]
+// shimmer: コアの輝き変動 [0,1]（わずかに脈動）
+function _drawAnimeBlast(ctx, b, alpha, shimmer) {
+  const r = Math.max(1, b.r);
 
-// ポリゴン頂点数（爆発雲の粗さ）
-const BLAST_VERT_COUNT = 14;
-
-// オフスクリーンキャンバス（XOR合成用、遅延生成）
-let _blastOffscreen = null;
-
-function _getBlastOffscreen() {
-  if (_blastOffscreen) return _blastOffscreen;
-  if (typeof OffscreenCanvas !== 'undefined') {
+  // ビッグブラストは外側の柔らかいグロー層を追加
+  if (b.big && r > 8) {
+    const glowR = r * 1.35;
     try {
-      _blastOffscreen = new OffscreenCanvas(W, H);
-      if (!_blastOffscreen.getContext('2d')) _blastOffscreen = null;
-    } catch (_) { _blastOffscreen = null; }
+      const grd = ctx.createRadialGradient(b.x, b.y, Math.max(0.5, r * 0.4), b.x, b.y, Math.max(1, glowR));
+      grd.addColorStop(0, 'rgba(255,120,0,0)');
+      grd.addColorStop(0.5, 'rgba(220,30,0,0.18)');
+      grd.addColorStop(1, 'rgba(180,0,0,0)');
+      ctx.globalAlpha = clamp(alpha * 0.7, 0, 1);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, Math.max(1, glowR), 0, Math.PI * 2);
+      ctx.fill();
+    } catch (_) {}
   }
-  if (!_blastOffscreen) {
-    // ブラウザが OffscreenCanvas 非対応の場合は通常の canvas を生成
-    try {
-      const c = document.createElement('canvas');
-      c.width  = W;
-      c.height = H;
-      _blastOffscreen = c;
-      if (!_blastOffscreen.getContext('2d')) _blastOffscreen = null;
-    } catch (_) { _blastOffscreen = null; }
-  }
-  return _blastOffscreen;
+
+  // メイン火球：白熱コア(0)→明橙(0.18)→赤(0.55)→暗赤(0.85)→透明(1.0)
+  const coreShine = 0.85 + shimmer * 0.15; // コア輝度脈動
+  try {
+    const grd = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, Math.max(1, r));
+    grd.addColorStop(0,    `rgba(255,255,${Math.floor(200 * coreShine)},1)`);  // 白熱
+    grd.addColorStop(0.18, `rgba(255,${Math.floor(160 * coreShine)},0,1)`);   // 明橙
+    grd.addColorStop(0.45, 'rgba(255,40,0,0.95)');                             // 赤橙
+    grd.addColorStop(0.70, 'rgba(200,0,0,0.7)');                               // 赤
+    grd.addColorStop(0.88, 'rgba(140,0,0,0.35)');                              // 暗赤（柔らかいエッジ）
+    grd.addColorStop(1,    'rgba(80,0,0,0)');                                   // 透明
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, Math.max(1, r), 0, Math.PI * 2);
+    ctx.fill();
+  } catch (_) {}
 }
 
-// 爆発雲ポリゴン頂点生成（b.id + フレームカウンタ seed で揺れる）
-function _makeBlastCloudVerts(cx, cy, r, seed) {
-  const n     = BLAST_VERT_COUNT;
-  const verts = [];
-  for (let i = 0; i < n; i++) {
-    const baseAngle = (i / n) * Math.PI * 2;
-    // 揺れ：seedとiで決まる疑似ランダムなlumpiness
-    const s1 = Math.sin(seed * 3.7 + i * 5.1);
-    const s2 = Math.sin(seed * 7.3 + i * 2.9);
-    const angleJitter = (s1 * 0.4) / n;
-    const angle = baseAngle + angleJitter;
-    // 半径ジッター: 0.65〜1.0 のばらつき（岩石より控えめ）
-    const rFrac = 0.65 + 0.35 * ((s2 + 1) / 2);
-    verts.push({
-      x: cx + Math.cos(angle) * r * rFrac,
-      y: cy + Math.sin(angle) * r * rFrac,
-    });
-  }
-  return verts;
-}
-
-// 爆発ポリゴンを ctx に描く（fillStyle は呼び出し元で設定済み）
-function _drawBlastCloudPath(ctx, verts) {
-  if (!verts || verts.length < 3) return;
-  ctx.beginPath();
-  ctx.moveTo(verts[0].x, verts[0].y);
-  for (let i = 1; i < verts.length; i++) {
-    ctx.lineTo(verts[i].x, verts[i].y);
-  }
-  ctx.closePath();
-  ctx.fill();
-}
-
-// 全爆発をオフスクリーンに XOR で描き、メインキャンバスに転送
-// blasts: blast配列, p: パレット, frameCount: フレーム番号（フリッカー用）
-function drawAllBlastsXOR(mainCtx, blasts, p, frameCount) {
-  const oc = _getBlastOffscreen();
-  if (!oc) {
-    // フォールバック：XOR なしで直接描画
-    for (const b of blasts) {
-      if (!b) continue;
-      const r = Math.max(2, b.r);
-      const colorIdx = (Math.floor(frameCount / 2) + b.id) % BLAST_FLICKER_COLORS.length;
-      const verts = _makeBlastCloudVerts(b.x, b.y, r, b.id + frameCount * 0.05);
-      mainCtx.save();
-      mainCtx.fillStyle = BLAST_FLICKER_COLORS[colorIdx];
-      mainCtx.globalAlpha = 1.0;
-      _drawBlastCloudPath(mainCtx, verts);
-      mainCtx.restore();
-    }
-    return;
-  }
-
-  const oc2d = oc.getContext('2d');
-  if (!oc2d) return;
-
-  // オフスクリーンをクリア
-  oc2d.clearRect(0, 0, W, H);
-
-  // 全爆発を XOR 合成でオフスクリーンに焼く
-  oc2d.globalCompositeOperation = 'xor';
+// 全爆発を加算合成('lighter')で描画
+// 重なる爆発は色が加算されて明るい白熱プラズマになる
+function drawAllBlastsAdditive(mainCtx, blasts, frameCount) {
+  // 加算合成モードに切替
+  mainCtx.globalCompositeOperation = 'lighter';
 
   for (const b of blasts) {
     if (!b) continue;
-    const r = Math.max(2, b.r);
 
-    // フリッカーカラー：b.id と frameCount で異なるフェーズになるよう offset
-    const colorIdx = (Math.floor(frameCount / 2) + b.id) % BLAST_FLICKER_COLORS.length;
+    // フェード係数
+    const alpha = b.growing
+      ? 1.0
+      : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
 
-    // 揺らぎ seed: frameCount でわずかに変化 → ポリゴン輪郭がぶるぶる動く
-    const animSeed = b.id + Math.floor(frameCount / 3) * 0.17;
-    const verts = _makeBlastCloudVerts(b.x, b.y, r, animSeed);
+    // コアの輝き：低周波でわずかに脈動（フレーム依存）
+    const shimmer = 0.5 + 0.5 * Math.sin(frameCount * 0.18 + b.id * 1.7);
 
-    oc2d.fillStyle = BLAST_FLICKER_COLORS[colorIdx];
-    _drawBlastCloudPath(oc2d, verts);
-
-    // ビッグブラストは外周をもう一層描いてさらに大きく見せる
-    if (b.big && r > 12) {
-      const outerSeed = animSeed + 1.5;
-      const outerR    = r * 1.15;
-      const outerVerts = _makeBlastCloudVerts(b.x, b.y, outerR, outerSeed);
-      // 外層はフリッカーの1段階ずらし
-      const outerColorIdx = (colorIdx + 2) % BLAST_FLICKER_COLORS.length;
-      oc2d.fillStyle = BLAST_FLICKER_COLORS[outerColorIdx];
-      _drawBlastCloudPath(oc2d, outerVerts);
-    }
+    _drawAnimeBlast(mainCtx, b, alpha, shimmer);
   }
 
-  // XOR 合成をリセット
-  oc2d.globalCompositeOperation = 'source-over';
-
-  // オフスクリーンをメインキャンバスに normal 合成で転送
-  mainCtx.save();
+  // 合成モードを必ず source-over に戻す
   mainCtx.globalCompositeOperation = 'source-over';
-  mainCtx.globalAlpha = 1.0;
-  mainCtx.drawImage(oc, 0, 0);
-  mainCtx.restore();
 }
 
 export class Game extends Scene {
@@ -716,6 +652,16 @@ export class Game extends Scene {
       if (m.trail.length > trailMax) m.trail.shift();
 
       m.rot += (m.fast ? 0.8 : (m.boss ? 0.12 : 0.4)) * dt;
+
+      // ボス入場フェーズ：上半分が画面に入り終わるまで
+      // わずかに横揺れを加えて「舞い降りる」演出（ゆったり浮遊感）
+      if (m.boss && m.y < m.r * 0.8) {
+        const swayAmp   = 3.5;  // 最大振れ幅 px
+        const swayFreq  = 1.1;  // Hz
+        // _elapsed を使って時間を参照
+        const swayX = swayAmp * Math.sin(this._elapsed * swayFreq * Math.PI * 2);
+        m.x = clamp(m.x + swayX * dt, m.r * 0.5, W - m.r * 0.5);
+      }
     }
 
     // ミサイル移動
@@ -930,8 +876,10 @@ export class Game extends Scene {
     const maxHp = BOSS_HP_BASE + this._stage * BOSS_HP_PER_STAGE;
     const seed  = _nextMeteorSeed++;
 
+    // ボスは画面外上端からスタート（中心が画面上端より r だけ上）
+    // → プレイヤーはボスが上からゆっくり舞い降りるのを目撃できる
     const bossEntry = {
-      x, y: -r * 0.3,  // 少し上からスタート（top edgeからすぐ見える）
+      x, y: -r,  // 完全に画面外上端（ y=-r で円全体がオフスクリーン）
       tx, ty, spd, r,
       hp: maxHp, maxHp,
       fast: false,
@@ -1270,25 +1218,18 @@ export class Game extends Scene {
       ctx.restore();
     }
 
-    // ---- 爆発（クラシック ミサイルコマンド風：XOR ソリッドポリゴン）----
+    // ---- 爆発（アニメ風赤プラズマ火球：加算合成）----
     // フレームカウンタをインクリメント（render は毎フレーム呼ばれる）
     this._frameCount = (this._frameCount + 1) | 0;
 
     if (this.blasts.length > 0) {
-      // 成長中/フェード中の爆発のみ対象（消えかけは非表示）
-      const activeBlasts = this.blasts.filter(b => {
-        if (!b) return false;
-        // 成長中 → 常に表示
-        if (b.growing) return true;
-        // フェード中 → フリッカーで点滅（フェード残り時間で確率的に消す）
-        const fadeFrac = clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
-        // 残り20%以下になったらフレームごとに1/2で消える
-        if (fadeFrac < 0.2) return (this._frameCount & 1) === 0;
-        return true;
-      });
+      // 成長中/フェード中の爆発のみ対象
+      const activeBlasts = this.blasts.filter(b => b != null);
 
       if (activeBlasts.length > 0) {
-        drawAllBlastsXOR(ctx, activeBlasts, p, this._frameCount);
+        ctx.save();
+        drawAllBlastsAdditive(ctx, activeBlasts, this._frameCount);
+        ctx.restore();
       }
     }
 
