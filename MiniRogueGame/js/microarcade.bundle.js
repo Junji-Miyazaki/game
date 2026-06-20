@@ -1810,21 +1810,16 @@ const FLARE_START    = 3;     // initial chaff count
 const FLARE_REGEN_T  = 25;    // s between chaff regeneration
 const FLARE_MAX      = 5;     // max storable chaff
 
-// Chaff decoy behavior
-const CHAFF_LIFETIME     = 4.0;   // s chaff stays active redirecting all missiles (was 3s)
-const CHAFF_EXPLODE_R    = 170;   // px — blast radius at end-of-life (larger, was 110)
-const CHAFF_DEPLOY_DIST  = 130;   // px ahead/right of ship (toward missile origin)
-const CHAFF_FLY_DIST     = 80;    // px the chaff visually flies out before settling
-const CHAFF_TURN_BOOST   = 6.0;   // multiplier on missile turn rate while homing to chaff
+// Chaff decoy behavior — SCATTERED MULTI-BIT mode
+const CHAFF_BIT_COUNT    = 6;     // number of decoy bits spawned per deploy
+const CHAFF_LIFETIME     = 3.8;   // s each chaff bit lives
+const CHAFF_EXPLODE_R    = 55;    // px — per-bit pop radius at end-of-life
+const CHAFF_TURN_BOOST   = 7.0;   // multiplier on missile turn rate while homing to nearest bit
+const CHAFF_DRIFT_X      = -75;   // px/s leftward drift (recedes behind advancing fighter)
 
-// ---- Valkyrie constants ----
-const VALKYRIE_CHARGE_TIME  = 20;    // s to fill energy gauge from 0
-const VALKYRIE_DURATION     = 14.0;  // s of Valkyrie mode (was 9.5s)
-const VALKYRIE_AUTO_LIMIT   = 50;    // max missiles auto-destroyed per activation (was 22)
-const VALKYRIE_BEAM_SPD     = 600;   // px/s beam travel
-const VALKYRIE_SHOOT_CD     = 0.06;  // s between auto-shots (was 0.18 — much faster)
-const VALKYRIE_SPRAY_COUNT  = 3;     // beams per volley (spray multiple targets)
-const VALKYRIE_SPRAY_SPREAD = 0.18;  // rad — angular spread added to extra spray beams
+// ---- Screen-clear WIPE special constants ----
+const WIPE_CHARGE_TIME   = 20;    // s to fill energy gauge from 0
+const WIPE_FLASH_DUR     = 0.55;  // s of full-screen flash + shockwave
 
 // ---- On-screen button rects (logical coords) ----
 const BTN_FLARE = { x: 8, y: H - 70, w: 58, h: 52 };
@@ -2076,19 +2071,15 @@ class Game extends Scene {
     // ---- CHAFF/FLARE system ----
     this.flares    = FLARE_START;
     this.flareRegenTimer = 0;     // timer for slow regen
-    // Active chaff decoy: { x, y, t, lifetime, sparks: [{angle,dist,t}] }
-    this.chaff = null;
-    // Chaff end-of-life explosion flash: { x, y, t, dur }
-    this.chaffExplode = null;
+    // Active chaff bits: array of { x, y, vx, vy, t, lifetime, sparks:[...], dead }
+    this.chaffBits = [];
+    // Per-bit pop flashes: [{ x, y, t, dur }]
+    this.chaffExplodes = [];
 
-    // ---- VALKYRIE system ----
-    this.energy       = 0;        // 0..1 normalized
-    this.valkyrieMode = false;
-    this.valkyrieTimer = 0;       // time remaining in Valkyrie mode
-    this.valkyrieKills = 0;       // missiles destroyed this activation
-    this.valkyrieShootTimer = 0;  // cooldown between auto-shots
-    this.beams  = [];             // active Beam instances
-    this.sparks = [];             // hit spark VFX
+    // ---- WIPE (screen-clear special) system ----
+    this.energy    = 0;           // 0..1 normalized
+    this.wipeFlash = null;        // { t, dur, fx, fy } when active
+    this.sparks    = [];          // hit spark VFX
 
     // ---- Chaff pickup items ----
     this.pickups        = [];
@@ -2126,7 +2117,7 @@ class Game extends Scene {
         return;
       }
       if (inRect(x, y, BTN_VALKYRIE)) {
-        this._activateValkyrie();
+        this._activateWipe();
         return;
       }
       // Normal tap elsewhere — not used for anything in this game
@@ -2215,49 +2206,53 @@ class Game extends Scene {
       }
     }
 
-    // ---- Chaff decoy update ----
-    if (this.chaff) {
-      this.chaff.t += dt;
-      // Animate spark particles on the chaff
-      for (const sp of this.chaff.sparks) sp.t += dt;
+    // ---- Chaff bits update ----
+    for (const bit of this.chaffBits) {
+      if (bit.dead) continue;
+      bit.t += dt;
+      bit.x += (bit.vx + CHAFF_DRIFT_X) * dt;
+      bit.y += bit.vy * dt;
+      for (const sp of bit.sparks) sp.t += dt;
 
-      if (this.chaff.t >= this.chaff.lifetime) {
-        // Chaff explodes — destroy missiles within generous radius
-        const cx = this.chaff.x, cy = this.chaff.y;
+      if (bit.t >= bit.lifetime) {
+        // Pop: destroy nearby missiles, emit flash
         for (const m of this.missiles) {
           if (m.dead) continue;
-          const dx = m.x - cx, dy = m.y - cy;
+          const dx = m.x - bit.x, dy = m.y - bit.y;
           if (Math.sqrt(dx * dx + dy * dy) <= CHAFF_EXPLODE_R) {
             m.dead = true;
             this.sparks.push(new Spark(m.x, m.y));
           }
         }
-        // Leave a brief explosion flash, then clear chaff
-        this.chaff.exploding = true;
-        this.chaff.explodeT  = 0;
-        this.chaff.explodeDur = 0.5;
-        // We store it as chaffExplode so chaff homing stops immediately
-        this.chaffExplode = { x: cx, y: cy, t: 0, dur: 0.5 };
-        this.chaff = null;
+        this.chaffExplodes.push({ x: bit.x, y: bit.y, t: 0, dur: 0.45 });
+        bit.dead = true;
       }
     }
-    if (this.chaffExplode) {
-      this.chaffExplode.t += dt;
-      if (this.chaffExplode.t >= this.chaffExplode.dur) this.chaffExplode = null;
-    }
+    this.chaffBits = this.chaffBits.filter(b => !b.dead);
 
-    // ---- Missile update — home toward chaff if active (with turn boost), else toward player ----
-    const missileTargetX  = this.chaff ? this.chaff.x : this.fx;
-    const missileTargetY  = this.chaff ? this.chaff.y : this.fy;
-    const chaffActive     = !!this.chaff;
+    // Update lingering pop flashes
+    for (const ex of this.chaffExplodes) ex.t += dt;
+    this.chaffExplodes = this.chaffExplodes.filter(ex => ex.t < ex.dur);
+
+    // ---- Missile update — home toward nearest chaff bit (boosted turn) or player ----
+    const anyCharff = this.chaffBits.length > 0;
     for (const m of this.missiles) {
-      // Temporarily boost turn rate while chaff is pulling them in
+      let tx = this.fx, ty = this.fy;
+      if (anyCharff && m.homing) {
+        // Find nearest live chaff bit
+        let bestDist = Infinity;
+        for (const bit of this.chaffBits) {
+          const dx = bit.x - m.x, dy = bit.y - m.y;
+          const d  = dx * dx + dy * dy;
+          if (d < bestDist) { bestDist = d; tx = bit.x; ty = bit.y; }
+        }
+      }
       const savedTurnRate = m.turnRate;
-      if (chaffActive && m.homing) {
+      if (anyCharff && m.homing) {
         m.turnRate = Math.min(m.turnRate * CHAFF_TURN_BOOST, Math.PI * 3);
       }
-      m.update(dt, missileTargetX, missileTargetY);
-      m.turnRate = savedTurnRate;  // restore original (only boosted during chaff)
+      m.update(dt, tx, ty);
+      m.turnRate = savedTurnRate;
     }
     this.missiles = this.missiles.filter(m => !m.dead);
 
@@ -2272,91 +2267,17 @@ class Game extends Scene {
       this.flareRegenTimer = 0;
     }
 
-    // ---- Energy charge (charges even in Valkyrie mode for recharge after) ----
-    if (!this.valkyrieMode) {
-      this.energy = clamp(this.energy + dt / VALKYRIE_CHARGE_TIME, 0, 1);
+    // ---- Energy charge (recharges when no wipe active) ----
+    if (!this.wipeFlash) {
+      this.energy = clamp(this.energy + dt / WIPE_CHARGE_TIME, 0, 1);
     }
 
-    // ---- Valkyrie mode update ----
-    if (this.valkyrieMode) {
-      this.valkyrieTimer -= dt;
-      // Drain energy proportionally to duration
-      this.energy = clamp(this.energy - dt / VALKYRIE_DURATION, 0, 1);
-
-      if (this.valkyrieTimer <= 0 || this.valkyrieKills >= VALKYRIE_AUTO_LIMIT || this.energy <= 0) {
-        this.valkyrieMode  = false;
-        this.valkyrieTimer = 0;
-        this.energy        = 0;
-        // Start recharging fresh
-      }
-
-      // Auto-fire: spray VALKYRIE_SPRAY_COUNT beams per volley at different targets
-      if (this.valkyrieMode && this.valkyrieKills < VALKYRIE_AUTO_LIMIT) {
-        this.valkyrieShootTimer -= dt;
-        if (this.valkyrieShootTimer <= 0) {
-          this.valkyrieShootTimer = VALKYRIE_SHOOT_CD;
-          // Collect live missiles sorted by distance
-          const liveMissiles = this.missiles.filter(m => !m.dead && !m.exploding);
-          liveMissiles.sort((a, b) => {
-            const dxa = a.x - this.fx, dya = a.y - this.fy;
-            const dxb = b.x - this.fx, dyb = b.y - this.fy;
-            return (dxa * dxa + dya * dya) - (dxb * dxb + dyb * dyb);
-          });
-          // Gun-pod muzzle world position — matches _drawFighterValkyrie pixel muzzle
-          // SPRITE_OX=-21, CELL=3: muzzleOX = -21 + 18*3 = +33; muzzleOY = -33 + 9*3 + 1 = -5
-          const muzzleX = this.fx + (this._valkyrieMuzzleOX !== undefined ? this._valkyrieMuzzleOX : 33);
-          const muzzleY = this.fy + (this._valkyrieMuzzleOY !== undefined ? this._valkyrieMuzzleOY : -5);
-          // Fire up to VALKYRIE_SPRAY_COUNT beams — primary target + others with slight spread
-          const targets = liveMissiles.slice(0, VALKYRIE_SPRAY_COUNT);
-          for (let si = 0; si < targets.length; si++) {
-            const tgt = targets[si];
-            // For extra beams (si > 0) add random angular spread so they fan out
-            if (si === 0) {
-              this.beams.push(new Beam(muzzleX, muzzleY, tgt.x, tgt.y));
-            } else {
-              const spread = (Math.random() - 0.5) * VALKYRIE_SPRAY_SPREAD * 2;
-              const baseAngle = Math.atan2(tgt.y - muzzleY, tgt.x - muzzleX) + spread;
-              const dist = 200;
-              this.beams.push(new Beam(
-                muzzleX, muzzleY,
-                muzzleX + Math.cos(baseAngle) * dist,
-                muzzleY + Math.sin(baseAngle) * dist,
-              ));
-            }
-          }
-          // If no targets but mode is still active, fire a forward spray burst
-          if (targets.length === 0) {
-            for (let si = 0; si < VALKYRIE_SPRAY_COUNT; si++) {
-              const ang = (Math.random() - 0.5) * Math.PI * 0.5;
-              this.beams.push(new Beam(
-                muzzleX, muzzleY,
-                muzzleX + Math.cos(ang) * 300,
-                muzzleY + Math.sin(ang) * 300,
-              ));
-            }
-          }
-        }
-      }
+    // ---- WIPE flash update ----
+    if (this.wipeFlash) {
+      this.wipeFlash.t += dt;
+      if (this.wipeFlash.t >= this.wipeFlash.dur) this.wipeFlash = null;
     }
 
-    // ---- Beam update + beam-missile collision ----
-    for (const b of this.beams) {
-      b.update(dt);
-      if (b.dead) continue;
-      for (const m of this.missiles) {
-        if (m.dead || m.exploding) continue;
-        const dx = b.x - m.x;
-        const dy = b.y - m.y;
-        if (Math.sqrt(dx * dx + dy * dy) < MISSILE_R + 4) {
-          m.dead = true;
-          b.dead = true;
-          this.sparks.push(new Spark(m.x, m.y));
-          if (this.valkyrieMode) this.valkyrieKills++;
-          break;
-        }
-      }
-    }
-    this.beams  = this.beams.filter(b => !b.dead);
     this.sparks.forEach(s => s.update(dt));
     this.sparks = this.sparks.filter(s => !s.dead);
 
@@ -2386,8 +2307,8 @@ class Game extends Scene {
     // ---- Invuln countdown ----
     if (this._invuln > 0) this._invuln = Math.max(0, this._invuln - dt);
 
-    // ---- Collision detection (skip if invuln or in Valkyrie — Valkyrie has slight shield feel) ----
-    if (this._invuln <= 0 && !this.valkyrieMode) {
+    // ---- Collision detection (skip if invuln) ----
+    if (this._invuln <= 0) {
       for (const m of this.missiles) {
         if (m.dead || m.exploding) continue;
         const dx   = m.x - this.fx;
@@ -2428,45 +2349,55 @@ class Game extends Scene {
 
   _deployFlare() {
     if (this.flares <= 0) return;
-    if (this.chaff) return;  // already a chaff active
+    if (this.chaffBits.length > 0) return;  // chaff already active
     this.flares--;
-    this.flareRegenTimer = 0;  // reset regen timer on use
+    this.flareRegenTimer = 0;
 
-    // Launch chaff to the right/ahead of the ship (toward missile origin),
-    // clamped to the play area.
-    const cx = clamp(this.fx + CHAFF_DEPLOY_DIST, PLAY_LEFT + 20, PLAY_RIGHT - 20);
-    const cy = clamp(this.fy + (Math.random() - 0.5) * 60, PLAY_TOP + 20, PLAY_BOTTOM - 20);
-
-    // Generate spark particles for the chaff visual
-    const sparks = [];
-    for (let i = 0; i < 12; i++) {
-      sparks.push({
-        angle: Math.random() * Math.PI * 2,
-        dist:  10 + Math.random() * 20,
-        speed: 0.8 + Math.random() * 0.6,  // rotation speed multiplier
-        t:     Math.random() * Math.PI * 2, // phase offset for flicker
+    // Spawn CHAFF_BIT_COUNT bits, each flung in a different random direction
+    for (let i = 0; i < CHAFF_BIT_COUNT; i++) {
+      // Spread angles: some forward (toward missiles), some in all directions
+      const angle  = Math.random() * Math.PI * 2;
+      const speed  = 40 + Math.random() * 90;   // px/s initial scatter speed
+      const sparks = [];
+      for (let j = 0; j < 8; j++) {
+        sparks.push({
+          angle: Math.random() * Math.PI * 2,
+          dist:  6 + Math.random() * 14,
+          speed: 0.6 + Math.random() * 0.8,
+          t:     Math.random() * Math.PI * 2,
+        });
+      }
+      this.chaffBits.push({
+        x:        this.fx,
+        y:        this.fy,
+        vx:       Math.cos(angle) * speed,
+        vy:       Math.sin(angle) * speed,
+        t:        0,
+        lifetime: CHAFF_LIFETIME * (0.8 + Math.random() * 0.4),
+        sparks,
+        dead:     false,
       });
     }
-
-    this.chaff = {
-      x:        cx,
-      y:        cy,
-      t:        0,
-      lifetime: CHAFF_LIFETIME,
-      sparks,
-    };
 
     try { this.engine.audio.bad(); } catch (_) {}
   }
 
-  _activateValkyrie() {
-    if (this.energy < 1.0) return;   // not fully charged
-    if (this.valkyrieMode) return;    // already active
-    this.valkyrieMode    = true;
-    this.valkyrieTimer   = VALKYRIE_DURATION;
-    this.valkyrieKills   = 0;
-    this.valkyrieShootTimer = 0;
-    // Energy will drain in update
+  _activateWipe() {
+    if (this.energy < 1.0) return;    // not charged
+    if (this.wipeFlash) return;       // already firing
+
+    // Instantly destroy all on-screen missiles with sparks
+    for (const m of this.missiles) {
+      if (m.dead) continue;
+      m.dead = true;
+      this.sparks.push(new Spark(m.x, m.y));
+    }
+
+    // Full-screen flash + expanding shockwave from fighter
+    this.wipeFlash = { t: 0, dur: WIPE_FLASH_DUR, fx: this.fx, fy: this.fy };
+    this.energy = 0;
+
+    try { this.engine.audio.bad(); } catch (_) {}
   }
 
   _spawnVolley() {
@@ -2519,22 +2450,23 @@ class Game extends Scene {
       this._drawMissile(ctx, m, p);
     }
 
-    // ---- Valkyrie beams ----
-    if (this.beams.length > 0) {
-      this._drawBeams(ctx, p);
-    }
-
     // ---- Spark hit effects ----
     for (const s of this.sparks) {
       this._drawSpark(ctx, s, p);
     }
 
-    // ---- Chaff decoy + chaff explosion flash ----
-    if (this.chaff) {
-      this._drawChaff(ctx, this.chaff, p);
+    // ---- Scattered chaff bits ----
+    for (const bit of this.chaffBits) {
+      this._drawChaffBit(ctx, bit, p);
     }
-    if (this.chaffExplode) {
-      this._drawChaffExplosion(ctx, this.chaffExplode, p);
+    // Per-bit pop flashes
+    for (const ex of this.chaffExplodes) {
+      this._drawChaffExplosion(ctx, ex, p);
+    }
+
+    // ---- WIPE flash + shockwave ----
+    if (this.wipeFlash) {
+      this._drawWipeFlash(ctx, this.wipeFlash, p);
     }
 
     // ---- Chaff pickup items ----
@@ -2545,11 +2477,7 @@ class Game extends Scene {
     // ---- Fighter ----
     const blink = this._invuln > 0 && (Math.floor(this._invuln * 12) % 2 === 0);
     if ((!this.dead && !blink) || (this.explosion && this.explosion.t < 0.15)) {
-      if (this.valkyrieMode) {
-        this._drawFighterValkyrie(ctx, this.fx, this.fy, p);
-      } else {
-        this._drawFighter(ctx, this.fx, this.fy, p);
-      }
+      this._drawFighter(ctx, this.fx, this.fy, p);
     }
 
     // ---- Hit effect ----
@@ -2624,12 +2552,7 @@ class Game extends Scene {
     ctx.fillRect(barX, barY, barW, barH);
 
     const fillW = Math.floor(barW * clamp(this.energy, 0, 1));
-    if (this.valkyrieMode) {
-      // Pulsing gold when active
-      const pulse = 0.7 + 0.3 * Math.sin(this.elapsed * 12);
-      ctx.globalAlpha = clamp(pulse, 0, 1);
-      ctx.fillStyle = p.warn;
-    } else if (this.energy >= 1) {
+    if (this.energy >= 1) {
       ctx.globalAlpha = 0.9;
       ctx.fillStyle = p.warn;
     } else {
@@ -2640,7 +2563,7 @@ class Game extends Scene {
 
     // Energy label
     ctx.globalAlpha = 0.7;
-    const energyLabel = this.valkyrieMode ? 'VLK' : this.energy >= 1 ? 'FULL' : 'NRG';
+    const energyLabel = this.energy >= 1 ? 'FULL' : 'NRG';
     this.engine.text(energyLabel, barX + barW / 2, barY - 13, 10, p.mid, 'center');
 
     ctx.globalAlpha = clamp(savedA, 0, 1);
@@ -2674,66 +2597,27 @@ class Game extends Scene {
       ctx.fillRect(bf.x + 4, bf.y + bf.h - 8, Math.floor((bf.w - 8) * regenFrac), 4);
     }
 
-    // ---- VALKYRIE button (bottom-right) ----
+    // ---- WIPE button (bottom-right) ----
     const bv = BTN_VALKYRIE;
-    const valkReady  = this.energy >= 1.0 && !this.valkyrieMode;
-    const valkActive = this.valkyrieMode;
-    const valkAlpha  = (valkReady || valkActive) ? 0.9 : 0.30;
+    const wipeReady = this.energy >= 1.0;
+    const wipeAlpha = wipeReady ? 0.9 : 0.30;
 
-    ctx.globalAlpha = valkAlpha;
+    ctx.globalAlpha = wipeAlpha;
     ctx.fillStyle = p.dark;
     ctx.fillRect(bv.x, bv.y, bv.w, bv.h);
-    ctx.strokeStyle = valkActive ? p.warn : valkReady ? p.hi : p.dim;
-    ctx.lineWidth = valkActive ? 2 : 1.5;
+    ctx.strokeStyle = wipeReady ? p.hi : p.dim;
+    ctx.lineWidth = wipeReady ? 2 : 1.5;
     ctx.strokeRect(bv.x, bv.y, bv.w, bv.h);
 
-    ctx.globalAlpha = valkAlpha;
-    const vLabel = valkActive ? 'VLK!' : 'VLK';
-    const vColor = valkActive ? p.warn : valkReady ? p.hi : p.dim;
-    this.engine.text(vLabel, bv.x + bv.w / 2, bv.y + 6, 12, vColor, 'center');
-    const vSub = valkActive
-      ? Math.ceil(this.valkyrieTimer) + 's'
-      : valkReady ? 'RDY' : '';
-    if (vSub) {
-      this.engine.text(vSub, bv.x + bv.w / 2, bv.y + 24, 14, vColor, 'center');
+    ctx.globalAlpha = wipeAlpha;
+    const vColor = wipeReady ? p.hi : p.dim;
+    this.engine.text('WIPE', bv.x + bv.w / 2, bv.y + 6, 12, vColor, 'center');
+    if (wipeReady) {
+      this.engine.text('RDY', bv.x + bv.w / 2, bv.y + 24, 14, vColor, 'center');
     }
 
     ctx.globalAlpha = clamp(savedA, 0, 1);
     ctx.lineWidth = 1;
-  }
-
-  _drawBeams(ctx, p) {
-    const savedA   = ctx.globalAlpha;
-    const savedCap = ctx.lineCap;
-    try {
-      ctx.lineCap   = 'round';
-      ctx.lineWidth = 2.5;
-      for (const b of this.beams) {
-        if (!b.trail || b.trail.length < 2) continue;
-        for (let i = 1; i < b.trail.length; i++) {
-          const prev = b.trail[i - 1];
-          const cur  = b.trail[i];
-          if (!prev || !cur) continue;
-          const frac = i / b.trail.length;
-          ctx.globalAlpha = clamp(frac * 0.9, 0, 1);
-          ctx.strokeStyle = p.warn;
-          ctx.beginPath();
-          ctx.moveTo(prev.x, prev.y);
-          ctx.lineTo(cur.x, cur.y);
-          ctx.stroke();
-        }
-        // Bright tip
-        ctx.globalAlpha = clamp(0.95, 0, 1);
-        ctx.fillStyle = p.hi;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } finally {
-      ctx.globalAlpha = clamp(savedA, 0, 1);
-      ctx.lineCap     = savedCap;
-      ctx.lineWidth   = 1;
-    }
   }
 
   _drawSpark(ctx, s, p) {
@@ -2759,67 +2643,95 @@ class Game extends Scene {
     }
   }
 
-  // ---- Chaff decoy: bright sparkling/burning lure, draws all missiles toward it ----
-  _drawChaff(ctx, ch, p) {
-    if (!ch) return;
-    const savedA = ctx.globalAlpha;
-    const frac   = clamp(ch.t / ch.lifetime, 0, 1);
-    // Flicker intensity: fast sine wave
-    const flicker = 0.55 + 0.45 * Math.sin(ch.t * 28);
+  // ---- Single scattered chaff bit: bright sparkle drifting away ----
+  _drawChaffBit(ctx, bit, p) {
+    if (!bit || bit.dead) return;
+    const savedA  = ctx.globalAlpha;
+    const frac    = clamp(bit.t / bit.lifetime, 0, 1);
+    const flicker = 0.55 + 0.45 * Math.sin(bit.t * 28 + bit.x * 0.1);
     try {
-      // Faint attraction ring (grows as lifetime ticks down — shows danger zone)
-      const ringR = 30 + frac * (CHAFF_EXPLODE_R - 30);
-      ctx.globalAlpha = clamp(0.18 + 0.1 * Math.sin(ch.t * 6), 0, 1);
-      ctx.strokeStyle = p.warn;
-      ctx.lineWidth   = 1;
-      ctx.beginPath();
-      ctx.arc(ch.x, ch.y, ringR, 0, Math.PI * 2);
-      ctx.stroke();
-
       // Outer glow
-      ctx.globalAlpha = clamp(flicker * 0.35, 0, 1);
+      ctx.globalAlpha = clamp(flicker * 0.30 * (1 - frac * 0.5), 0, 1);
       ctx.fillStyle   = p.warn;
       ctx.beginPath();
-      ctx.arc(ch.x, ch.y, 16, 0, Math.PI * 2);
+      ctx.arc(bit.x, bit.y, 12, 0, Math.PI * 2);
       ctx.fill();
 
       // Core bright dot
-      ctx.globalAlpha = clamp(flicker * 0.95, 0, 1);
+      ctx.globalAlpha = clamp(flicker * 0.95 * (1 - frac * 0.3), 0, 1);
       ctx.fillStyle   = p.hi;
       ctx.beginPath();
-      ctx.arc(ch.x, ch.y, 5, 0, Math.PI * 2);
+      ctx.arc(bit.x, bit.y, 3.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // Inner hot-orange nucleus
+      // Hot nucleus
       ctx.globalAlpha = clamp(flicker * 0.8, 0, 1);
       ctx.fillStyle   = p.warn;
       ctx.beginPath();
-      ctx.arc(ch.x, ch.y, 3, 0, Math.PI * 2);
+      ctx.arc(bit.x, bit.y, 2, 0, Math.PI * 2);
       ctx.fill();
 
-      // Spark particles orbiting + drifting
-      for (const sp of ch.sparks) {
-        const spFrac  = clamp(sp.t / (ch.lifetime * 1.2), 0, 1);
+      // Spark particles
+      for (const sp of bit.sparks) {
+        const spFrac  = clamp(sp.t / (bit.lifetime * 1.1), 0, 1);
         const spAngle = sp.angle + sp.t * sp.speed * 2.5;
-        const spDist  = sp.dist * (0.6 + 0.4 * Math.sin(sp.t * 3 + sp.t));
-        const sx = ch.x + Math.cos(spAngle) * spDist;
-        const sy = ch.y + Math.sin(spAngle) * spDist;
-        ctx.globalAlpha = clamp((1 - spFrac) * flicker * 0.9, 0, 1);
+        const spDist  = sp.dist * (0.5 + 0.5 * Math.sin(sp.t * 3));
+        const sx = bit.x + Math.cos(spAngle) * spDist;
+        const sy = bit.y + Math.sin(spAngle) * spDist;
+        ctx.globalAlpha = clamp((1 - spFrac) * flicker * 0.85, 0, 1);
         ctx.fillStyle   = Math.sin(sp.t * 7) > 0 ? p.hi : p.warn;
         ctx.beginPath();
-        ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 1.2, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Countdown pulse ring — urgency indicator
-      const pulseR = 8 + Math.sin(ch.t * (6 + frac * 10)) * 6;
-      ctx.globalAlpha = clamp(0.5 + frac * 0.4, 0, 1);
-      ctx.strokeStyle = frac > 0.7 ? p.bad : p.warn;
-      ctx.lineWidth   = 1.5;
+      // Urgency pulse ring near end-of-life
+      if (frac > 0.6) {
+        const pulseR = 5 + Math.sin(bit.t * 14) * 4;
+        ctx.globalAlpha = clamp((frac - 0.6) * 1.8, 0, 1);
+        ctx.strokeStyle = p.bad;
+        ctx.lineWidth   = 1;
+        ctx.beginPath();
+        ctx.arc(bit.x, bit.y, Math.max(1, pulseR), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } finally {
+      ctx.globalAlpha = clamp(savedA, 0, 1);
+      ctx.lineWidth   = 1;
+    }
+  }
+
+  // ---- WIPE special: full-screen flash + expanding shockwave ring ----
+  _drawWipeFlash(ctx, wf, p) {
+    if (!wf) return;
+    const frac   = clamp(wf.t / wf.dur, 0, 1);
+    const savedA = ctx.globalAlpha;
+    try {
+      // Full-screen white flash (bright at t=0, fades quickly)
+      const flashAlpha = clamp((1 - frac * 2.5) * 0.75, 0, 1);
+      if (flashAlpha > 0) {
+        ctx.globalAlpha = flashAlpha;
+        ctx.fillStyle   = p.hi;
+        ctx.fillRect(0, PLAY_TOP, W, PLAY_BOTTOM - PLAY_TOP);
+      }
+
+      // Expanding shockwave ring from fighter
+      const ringR = frac * (W * 0.85);
+      ctx.globalAlpha = clamp((1 - frac) * 0.95, 0, 1);
+      ctx.strokeStyle = p.hi;
+      ctx.lineWidth   = 4 * (1 - frac) + 1;
       ctx.beginPath();
-      ctx.arc(ch.x, ch.y, Math.max(1, pulseR), 0, Math.PI * 2);
+      ctx.arc(wf.fx, wf.fy, Math.max(1, ringR), 0, Math.PI * 2);
       ctx.stroke();
 
+      // Second inner ring (warm tint)
+      const ring2R = frac * W * 0.55;
+      ctx.globalAlpha = clamp((1 - frac * 1.5) * 0.7, 0, 1);
+      ctx.strokeStyle = p.warn;
+      ctx.lineWidth   = 3 * (1 - frac) + 0.5;
+      ctx.beginPath();
+      ctx.arc(wf.fx, wf.fy, Math.max(1, ring2R), 0, Math.PI * 2);
+      ctx.stroke();
     } finally {
       ctx.globalAlpha = clamp(savedA, 0, 1);
       ctx.lineWidth   = 1;
@@ -3002,11 +2914,12 @@ class Game extends Scene {
     }
   }
 
-  // ---- Standard F-14 fighter ----
+  // ---- Standard F-14 fighter (slightly banked ~12°) ----
   _drawFighter(ctx, x, y, p) {
     const savedAlpha = ctx.globalAlpha;
     ctx.save();
     ctx.translate(x, y);
+    ctx.rotate(-0.21);  // ~12° bank — gives a dynamic tilt without looking wrong
     try {
       const WHITE = p.hi, TRIM = p.mid, GLASS = p.dark;
 
@@ -3072,16 +2985,7 @@ class Game extends Scene {
     }
   }
 
-  // ---- Pixel-art VF-1 Valkyrie battroid (20 cols × 24 rows @ 3px/cell = 60×72 px) ----
-  // Sprite faces RIGHT. Gun-pod arm extends right. Backpack/thrusters on LEFT.
-  // Legend: '.'=transparent  'O'=outline(p.hi)  'B'=body(p.mid)  'D'=shadow(p.dim)
-  //         'A'=visor/accent(p.warn, pulsed)    'G'=gun-barrel(p.hi)
-  // Col 0 = leftmost (backpack side); col 19 = rightmost (gun muzzle side).
-  // Row 0 = top (antenna). Row 25 = bottom (feet).
-  // Gun-pod muzzle tip: rightmost G cell at row 9, col 19 →
-  //   muzzleOX = SPRITE_OX + 20*CELL = -30 + 60 = +30 px right of fighter centre
-  //   muzzleOY = SPRITE_OY + 9*CELL + CELL/2 = -39 + 27 + 1.5 = -10.5 ≈ -11 px up
-
+  // (Valkyrie battroid removed — replaced by WIPE screen-clear special)
   _drawFighterValkyrie(ctx, x, y, p) {
     const savedAlpha = ctx.globalAlpha;
 
