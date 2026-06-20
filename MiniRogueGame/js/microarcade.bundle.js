@@ -1968,6 +1968,10 @@ class Game extends Scene {
     // Game over flag
     this.dead = false;
 
+    // ライフ制：被弾5発までOK。被弾後は一定時間無敵＋点滅。
+    this.lives  = 5;
+    this._invuln = 0;   // 無敵残り時間（秒）
+
     // Keyboard input state
     this.keyDir = { x: 0, y: 0 };
 
@@ -2048,17 +2052,33 @@ class Game extends Scene {
     }
     this.missiles = this.missiles.filter(m => !m.dead);
 
+    // ---- 無敵時間の更新 ----
+    if (this._invuln > 0) this._invuln = Math.max(0, this._invuln - dt);
+
     // ---- Collision (homing only, not exploding) ----
-    for (const m of this.missiles) {
-      if (m.dead || m.exploding) continue;
-      const dx   = m.x - this.fx;
-      const dy   = m.y - this.fy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < HIT_R + MISSILE_R) {
-        this._gameOver(m.x, m.y);
-        return;
+    if (this._invuln <= 0) {
+      for (const m of this.missiles) {
+        if (m.dead || m.exploding) continue;
+        const dx   = m.x - this.fx;
+        const dy   = m.y - this.fy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < HIT_R + MISSILE_R) {
+          m.dead = true;               // 当たったミサイルは消滅
+          this.lives -= 1;
+          if (this.lives <= 0) {       // ライフ切れでゲームオーバー
+            this._gameOver(m.x, m.y);
+            return;
+          }
+          // まだ生存：無敵1秒＋小爆発エフェクト
+          this._invuln = 1.0;
+          this.engine.audio.bad();
+          this.hitFx = { x: this.fx, y: this.fy, t: 0, dur: 0.4 };
+          break;
+        }
       }
     }
+    // 被弾エフェクト更新
+    if (this.hitFx) { this.hitFx.t += dt; if (this.hitFx.t > this.hitFx.dur) this.hitFx = null; }
   }
 
   _spawnVolley() {
@@ -2115,8 +2135,24 @@ class Game extends Scene {
     }
 
     // ---- Fighter ----
-    if (!this.dead || (this.explosion && this.explosion.t < 0.15)) {
+    // 無敵中は点滅（描画を間引く）
+    const blink = this._invuln > 0 && (Math.floor(this._invuln * 12) % 2 === 0);
+    if ((!this.dead && !blink) || (this.explosion && this.explosion.t < 0.15)) {
       this._drawFighter(ctx, this.fx, this.fy, p);
+    }
+
+    // ---- 被弾エフェクト（小さなリング）----
+    if (this.hitFx) {
+      const f = clamp(this.hitFx.t / this.hitFx.dur, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = clamp(1 - f, 0, 1);
+      ctx.strokeStyle = p.bad;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.hitFx.x, this.hitFx.y, Math.max(1, 6 + f * 18), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = 1;
     }
 
     // ---- Death explosion ----
@@ -2130,6 +2166,15 @@ class Game extends Scene {
     this.engine.text('TIME ' + secStr, 52, 34, 14, p.mid, 'left');
     const hiSec = (this.high / 100).toFixed(1) + 's';
     this.engine.text('BEST ' + hiSec, W - 8, 10, 14, p.dim, 'right');
+    // ライフ（残り被弾可能数）を小さな機体アイコンで表示
+    for (let i = 0; i < this.lives; i++) {
+      const lx = W - 12 - i * 13;
+      ctx.fillStyle = p.hi;
+      ctx.beginPath();
+      ctx.moveTo(lx, 30); ctx.lineTo(lx - 9, 34); ctx.lineTo(lx, 38);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // ---- Game over overlay ----
     if (this.dead) {
@@ -2324,81 +2369,87 @@ class Game extends Scene {
     // Fighter faces right (toward incoming missiles)
 
     try {
-      // ---- 「士」型の戦闘機（小さめ・右向き）----
-      // 縦棒=胴体、長い横棒=主翼（前寄り）、短い横棒=尾翼（後ろ）。
-      // 主翼は「後縁まっすぐ・前縁が後退」の鋭い直角三角形。
+      // ===== F-14 トムキャット（真上視点・右向き・白基調）=====
+      // 比率: 全長を基準に「機首が長い」「翼支点は約43%で後方」「双発は広い間隔」。
+      // 全長 ≈ 32px（ノーズ x=19 〜 排気 x=-13）。翼支点 x≈5（≒43%）。
+      const WHITE = p.hi, TRIM = p.mid, GLASS = p.dark;
 
-      // 胴体（細い紡錘＝士の縦棒）
-      ctx.fillStyle = p.fg;
-      ctx.beginPath();
-      ctx.moveTo(15, 0);      // 鋭いノーズ
-      ctx.lineTo(4, -2);
-      ctx.lineTo(-13, -2);
-      ctx.lineTo(-15, 0);     // テール
-      ctx.lineTo(-13, 2);
-      ctx.lineTo(4, 2);
-      ctx.closePath();
-      ctx.fill();
-
-      // 主翼（長い横棒・前寄り）：直角三角形。後縁(x=-5)が縦にまっすぐ、前縁が後退。
-      ctx.fillStyle = p.fg;
+      // ---- 主翼（中間後退で固定・大きめのテーパー翼）。翼支点 x≈5 ----
+      ctx.fillStyle = WHITE;
       // 上主翼
       ctx.beginPath();
-      ctx.moveTo(5, -1);     // 付け根 前
-      ctx.lineTo(-5, -22);   // 鋭い翼端（前縁が後退して尖る）
-      ctx.lineTo(-5, -1);    // 付け根 後（後縁はx=-5で縦にまっすぐ）
-      ctx.closePath();
-      ctx.fill();
-      // 下主翼（鏡像）
+      ctx.moveTo(9, -3);     // 付け根 前縁
+      ctx.lineTo(-4, -16);   // 翼端 前（前縁が後退）
+      ctx.lineTo(-8, -15);   // 翼端 後
+      ctx.lineTo(-2, -3);    // 付け根 後縁
+      ctx.closePath(); ctx.fill();
+      // 下主翼
       ctx.beginPath();
-      ctx.moveTo(5, 1);
-      ctx.lineTo(-5, 22);
-      ctx.lineTo(-5, 1);
-      ctx.closePath();
+      ctx.moveTo(9, 3); ctx.lineTo(-4, 16); ctx.lineTo(-8, 15); ctx.lineTo(-2, 3);
+      ctx.closePath(); ctx.fill();
+
+      // ---- 水平尾翼（テイラロン・後部）----
+      ctx.beginPath();
+      ctx.moveTo(-7, -2); ctx.lineTo(-13, -10); ctx.lineTo(-15, -9); ctx.lineTo(-11, -2);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-7, 2); ctx.lineTo(-13, 10); ctx.lineTo(-15, 9); ctx.lineTo(-11, 2);
+      ctx.closePath(); ctx.fill();
+
+      // ---- 中央フラットボディ＋ツインエンジン・ナセル（広い間隔・後部）----
+      ctx.fillStyle = WHITE;
+      ctx.beginPath();
+      ctx.moveTo(8, -7); ctx.lineTo(-13, -7); ctx.lineTo(-13, 7); ctx.lineTo(8, 7);
+      ctx.closePath(); ctx.fill();
+      // ナセルの仕切り（双発を表すトリムライン）
+      ctx.strokeStyle = TRIM; ctx.lineWidth = 1;
+      ctx.strokeRect(-13, -7, 21, 4);
+      ctx.strokeRect(-13,  3, 21, 4);
+
+      // ---- 機首（長くスリム：全長の約1/3）----
+      ctx.fillStyle = WHITE;
+      ctx.beginPath();
+      ctx.moveTo(19, 0);      // 鋭いノーズ先端
+      ctx.lineTo(8, -3);
+      ctx.lineTo(2, -5);
+      ctx.lineTo(-2, -5);
+      ctx.lineTo(-2, 5);
+      ctx.lineTo(2, 5);
+      ctx.lineTo(8, 3);
+      ctx.closePath(); ctx.fill();
+      // センターライン
+      ctx.strokeStyle = TRIM; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(19, 0); ctx.lineTo(2, 0); ctx.stroke();
+
+      // ---- コックピット（タンデム複座・暗色ガラス）----
+      ctx.fillStyle = GLASS;
+      ctx.beginPath();
+      ctx.ellipse(11, 0, 4, 1.8, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // 尾翼（短い横棒・後ろ）：同じく直角三角形で小さく
-      ctx.fillStyle = p.mid;
-      // 上尾翼
+      // ---- 双垂直尾翼（後部・ナセル上にハの字）----
+      ctx.fillStyle = TRIM;
       ctx.beginPath();
-      ctx.moveTo(-9, -1);
-      ctx.lineTo(-15, -10);
-      ctx.lineTo(-15, -1);
-      ctx.closePath();
-      ctx.fill();
-      // 下尾翼
+      ctx.moveTo(-4, -5); ctx.lineTo(-12, -9); ctx.lineTo(-13, -7); ctx.lineTo(-6, -4);
+      ctx.closePath(); ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(-9, 1);
-      ctx.lineTo(-15, 10);
-      ctx.lineTo(-15, 1);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(-4, 5); ctx.lineTo(-12, 9); ctx.lineTo(-13, 7); ctx.lineTo(-6, 4);
+      ctx.closePath(); ctx.fill();
 
-      // コックピット
-      ctx.fillStyle = p.hi;
-      ctx.beginPath();
-      ctx.ellipse(7, 0, 3, 1.4, 0, 0, Math.PI * 2);
-      ctx.fill();
       ctx.globalAlpha = clamp(savedAlpha, 0, 1);
 
-      // エンジン炎（テール後方・小さく）
-      const flameLen = 5 + Math.sin(this.flameTick * 18) * 3;
-      ctx.fillStyle = p.warn;
-      ctx.globalAlpha = clamp(0.9, 0, 1);
-      ctx.beginPath();
-      ctx.moveTo(-15, -1.5);
-      ctx.lineTo(-15 - flameLen, 0);
-      ctx.lineTo(-15, 1.5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = p.hi;
-      ctx.globalAlpha = clamp(0.75, 0, 1);
-      ctx.beginPath();
-      ctx.moveTo(-15, -1);
-      ctx.lineTo(-15 - flameLen * 0.55, 0);
-      ctx.lineTo(-15, 1);
-      ctx.closePath();
-      ctx.fill();
+      // ---- エンジン炎（双発・後方 y=±5）----
+      const flameLen = 6 + Math.sin(this.flameTick * 18) * 3;
+      for (const ey of [-5, 5]) {
+        ctx.fillStyle = p.warn; ctx.globalAlpha = clamp(0.9, 0, 1);
+        ctx.beginPath();
+        ctx.moveTo(-13, ey - 1.5); ctx.lineTo(-13 - flameLen, ey); ctx.lineTo(-13, ey + 1.5);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = p.hi; ctx.globalAlpha = clamp(0.75, 0, 1);
+        ctx.beginPath();
+        ctx.moveTo(-13, ey - 1); ctx.lineTo(-13 - flameLen * 0.55, ey); ctx.lineTo(-13, ey + 1);
+        ctx.closePath(); ctx.fill();
+      }
 
     } finally {
       ctx.restore();
