@@ -315,7 +315,9 @@ function _makeBlastPoly(r, seed, shimmerPhase) {
 }
 
 // 全爆発をオフスクリーンに XOR で描いてから mainCtx に source-over で合成
-// 重なり部分はXORで透明（黒抜き）になり日食のような効果が出る
+// 重なり部分はXORで透明（黒抜き）になり日食のような効果が出る。
+// さらに各雲の輪郭に明るいリムを stroke することで、
+// 重なった部分（三日月/月輪型）のエッジが光り、月輪（げつりん）のような演出になる。
 function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
   const offCtx = _getBlastOffscreen();
   if (!offCtx || !_blastOffscreen) {
@@ -331,16 +333,19 @@ function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
       mainCtx.beginPath();
       mainCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
       mainCtx.fill();
+      // フォールバック時も月輪リムを描く
+      mainCtx.globalAlpha = clamp(alpha * 0.7, 0, 1);
+      mainCtx.strokeStyle = '#ffaa66';
+      mainCtx.lineWidth   = Math.max(1, r * 0.06);
+      mainCtx.stroke();
       mainCtx.restore();
     }
     mainCtx.globalCompositeOperation = 'source-over';
     return;
   }
 
-  // オフスクリーンをクリア（透明）
+  // --- パス1: XOR ソリッドフィル（重なりを黒抜き/日食）---
   offCtx.clearRect(0, 0, W, H);
-
-  // XOR合成で全爆発を描く（重なり部分が透明になる）
   offCtx.globalCompositeOperation = 'xor';
 
   for (const b of blasts) {
@@ -349,8 +354,7 @@ function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
     if (alpha <= 0) continue;
 
     const r = Math.max(1, b.r);
-    // フレームとIDで色をフリッカー
-    const colorIdx = (frameCount + b.id) % _BLAST_COLORS.length;
+    const colorIdx    = (frameCount + b.id) % _BLAST_COLORS.length;
     const shimmerPhase = (frameCount * 0.22) + b.id * 1.3;
 
     const verts = _makeBlastPoly(r, b.id, shimmerPhase);
@@ -375,6 +379,44 @@ function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
   try {
     mainCtx.drawImage(_blastOffscreen, 0, 0);
   } catch (_) {}
+
+  // --- パス2: 月輪リム（各雲の輪郭に明るいリムを source-over で重ねる）---
+  // 重なり部分（XORで黒抜きされた三日月型エッジ）を含む全アウトラインに
+  // 薄い暖色の輝きを加え、月輪のような光るリングを表現する。
+  // このパスは mainCtx に直接 source-over で描くため、
+  // 黒抜き部分の縁も輝いて見える（三日月のリムが光るイメージ）。
+  mainCtx.globalCompositeOperation = 'source-over';
+  for (const b of blasts) {
+    if (!b) continue;
+    const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+    if (alpha <= 0) continue;
+
+    const r = Math.max(1, b.r);
+    const shimmerPhase = (frameCount * 0.22) + b.id * 1.3;
+    const verts = _makeBlastPoly(r, b.id, shimmerPhase);
+    if (!verts || verts.length < 3) continue;
+
+    // リム幅：半径に比例（小さな爆発でも最低1px）
+    const rimW = Math.max(1, r * 0.07);
+    // リムの輝度はフェードに合わせてやや弱く（主役はフィルなので控えめに）
+    const rimAlpha = clamp(alpha * 0.75, 0, 1);
+
+    mainCtx.save();
+    mainCtx.globalAlpha = rimAlpha;
+    mainCtx.translate(b.x, b.y);
+    mainCtx.beginPath();
+    mainCtx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) {
+      mainCtx.lineTo(verts[i].x, verts[i].y);
+    }
+    mainCtx.closePath();
+    // 暖かい明るいリム色（薄オレンジ〜白熱色）
+    mainCtx.strokeStyle = '#ffcc88';
+    mainCtx.lineWidth   = rimW;
+    mainCtx.stroke();
+    mainCtx.restore();
+  }
+
   // 必ず source-over に戻す
   mainCtx.globalCompositeOperation = 'source-over';
 }
@@ -693,6 +735,9 @@ export class Game extends Scene {
 
       m.rot += (m.fast ? 0.8 : (m.boss ? 0.12 : 0.4)) * dt;
 
+      // ヒットフラッシュタイマーのカウントダウン
+      if (m.flashTimer > 0) m.flashTimer = Math.max(0, m.flashTimer - dt);
+
       // ボス入場フェーズ：上半分が画面に入り終わるまで
       // わずかに横揺れを加えて「舞い降りる」演出（ゆったり浮遊感）
       if (m.boss && m.y < m.r * 0.8) {
@@ -756,6 +801,10 @@ export class Game extends Scene {
         }
 
         m.hp -= b.damage;
+        // ダメージを受けたが破壊されない場合はヒットフラッシュを起動
+        if (m.hp > 0) {
+          m.flashTimer = 0.13; // ~0.13秒間白くフラッシュ
+        }
         if (m.hp <= 0) {
           if (m.boss) {
             this.score += BOSS_SCORE_BASE * (this._stage + 1);
@@ -763,6 +812,7 @@ export class Game extends Scene {
             this._bossIdx   = -1;
             // ボス破壊演出
             this._spawnBossShatter(m.x, m.y, m.r);
+            m.flashTimer = 0; // 破壊時はフラッシュ不要
             // ボス破壊音（壮大な降下音）
             this.engine.audio.sequence([
               { freq: 880, dur: 0.09, type: 'sawtooth', vol: 0.20 },
@@ -902,6 +952,7 @@ export class Game extends Scene {
       verts: makeRockVerts(r, seed),
       seed,
       hitBlastIds: new Set(),
+      flashTimer: 0, // ヒットフラッシュタイマー（秒）
     });
   }
 
@@ -931,6 +982,7 @@ export class Game extends Scene {
       verts: makeRockVerts(r, seed),
       seed,
       hitBlastIds: new Set(),
+      flashTimer: 0, // ヒットフラッシュタイマー（秒）
     };
     this.meteors.push(bossEntry);
     this._bossIdx  = this.meteors.length - 1;
@@ -1133,18 +1185,18 @@ export class Game extends Scene {
       const damageFrac = m.maxHp > 1 ? clamp(1 - m.hp / m.maxHp, 0, 1) : 0;
       const bodyColor  = m.boss ? p.warn : (m.fast ? p.hi : p.bad);
 
-      // 軌跡
-      const trailColor = bodyColor;
-      for (let t = 0; t < m.trail.length; t++) {
-        const pt = m.trail[t];
-        if (!pt) continue;
-        const alpha = ((t + 1) / (m.trail.length + 1)) * (m.fast ? 0.55 : (m.boss ? 0.55 : 0.35));
+      // 軌跡のリング描画は廃止（隕石中央に輪が見える原因だったため）。
+      // 高速隕石だけ、細い尾を薄い線で表現する（中央に輪は出さない）。
+      if (m.fast && m.trail.length >= 2) {
         ctx.save();
-        ctx.globalAlpha = clamp(alpha, 0, 1);
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, Math.max(1, m.r * 0.35), 0, Math.PI * 2);
-        ctx.strokeStyle = trailColor;
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = bodyColor;
         ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(m.trail[0].x, m.trail[0].y);
+        for (let t = 1; t < m.trail.length; t++) {
+          if (m.trail[t]) ctx.lineTo(m.trail[t].x, m.trail[t].y);
+        }
         ctx.stroke();
         ctx.restore();
       }
@@ -1153,6 +1205,11 @@ export class Game extends Scene {
       if (m.verts && m.verts.length >= 3) {
         const lineW    = clamp(1.8 - damageFrac * 0.8, 0.5, 2.5);
         const bodyAlpha = clamp(1 - damageFrac * 0.4, 0.3, 1);
+
+        // ヒットフラッシュ：ダメージを受けたがまだ生きている場合、白く光らせる
+        const flashing = m.flashTimer > 0;
+        // フラッシュ強度（0→1でフェードアウト）
+        const flashStrength = flashing ? clamp(m.flashTimer / 0.13, 0, 1) : 0;
 
         ctx.save();
         ctx.globalAlpha = clamp(bodyAlpha, 0, 1);
@@ -1166,8 +1223,11 @@ export class Game extends Scene {
             ctx.lineTo(m.verts[vi].dx, m.verts[vi].dy);
           }
           ctx.closePath();
-          ctx.fillStyle = p.dark;
-          ctx.globalAlpha = clamp(0.65 - damageFrac * 0.2, 0, 1);
+          // フラッシュ中はボスの塗りも少し白くなる
+          ctx.fillStyle = flashing ? '#ffffff' : p.dark;
+          ctx.globalAlpha = flashing
+            ? clamp(flashStrength * 0.55, 0, 1)
+            : clamp(0.65 - damageFrac * 0.2, 0, 1);
           ctx.fill();
           ctx.globalAlpha = clamp(bodyAlpha, 0, 1);
         }
@@ -1178,8 +1238,18 @@ export class Game extends Scene {
           ctx.lineTo(m.verts[vi].dx, m.verts[vi].dy);
         }
         ctx.closePath();
-        ctx.strokeStyle = bodyColor;
-        ctx.lineWidth = m.boss ? clamp(lineW * 2, 1, 4) : lineW;
+
+        // フラッシュ中はアウトラインを白/明るい色に切り替え
+        if (flashing) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth   = m.boss
+            ? clamp(lineW * 2 + flashStrength * 2, 1, 6)
+            : clamp(lineW + flashStrength * 1.5, 0.5, 4);
+          ctx.globalAlpha = clamp(bodyAlpha * (0.5 + flashStrength * 0.5), 0, 1);
+        } else {
+          ctx.strokeStyle = bodyColor;
+          ctx.lineWidth   = m.boss ? clamp(lineW * 2, 1, 4) : lineW;
+        }
         ctx.stroke();
 
         // ---- ボスのダメージクラック表示 ----
@@ -1201,26 +1271,7 @@ export class Game extends Scene {
         }
 
         ctx.restore();
-
-        // 通常隕石のHP ピップ
-        if (!m.boss && m.maxHp >= 2) {
-          const pipR   = 3;
-          const pipGap = 8;
-          const totalW = m.maxHp * pipR * 2 + (m.maxHp - 1) * (pipGap - pipR * 2);
-          const startX = m.x - totalW / 2;
-          const pipY   = m.y + m.r + 6;
-          for (let k = 0; k < m.maxHp; k++) {
-            const px    = startX + k * pipGap + pipR;
-            const alive = k < m.hp;
-            ctx.save();
-            ctx.globalAlpha = alive ? 0.9 : 0.25;
-            ctx.beginPath();
-            ctx.arc(px, pipY, pipR, 0, Math.PI * 2);
-            ctx.fillStyle = alive ? (m.fast ? p.hi : p.bad) : p.dim;
-            ctx.fill();
-            ctx.restore();
-          }
-        }
+        // HP ピップは削除。代わりにヒットフラッシュで被弾を表現する。
       }
     }
 
