@@ -17,6 +17,8 @@
     <canvas id="screen"></canvas>
     <div id="crt"></div> <!-- 走査線オーバーレイ -->
   </div>
-  <script type="module" src="js/main.js"></script>
+  <!-- file:// でも動くようクラシックスクリプト（バンドル）を読み込む。
+       ソースは js/ のESモジュール。編集後は `node build.js` で再生成すること。 -->
+  <script src="js/microarcade.bundle.js"></script>
 </body>
 </html>

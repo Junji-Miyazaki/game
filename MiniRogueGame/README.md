@@ -12,15 +12,21 @@
 5. **BEEPER** — 光る順番を記憶して再現（サイモン）
 
 ## 動かし方
-ES モジュールを使うため `file://` 直開きでは動かない。ローカルサーバ経由で開く。
+`index.html` は結合済みのクラシックスクリプト（`js/microarcade.bundle.js`）を読み込むので、
+**PCでファイルをダブルクリックして直接開いても動く**（`file://` 可）。スマホ/公開も同様。
 
+ローカルサーバで動かしたい場合（同一LANのスマホ実機確認など）:
 ```bash
 cd MiniRogueGame
 node server.js        # → http://localhost:4173
-# または: python3 -m http.server 4173
 ```
 
-スマホで試すには同一LANのPCで上記を起動し、スマホのブラウザから `http://<PCのIP>:4173` を開く。
+### ソースを編集したら必ずビルド
+ソースは `js/` 以下の ES モジュール。編集後は結合バンドルを再生成すること:
+```bash
+node build.js         # js/microarcade.bundle.js を再生成
+```
+（`index.html` はバンドルのみを読み込む。`node build.js` を忘れると変更が反映されない。）
 
 ## 操作
 - **タップ / クリック** … 選択・トグル・解除
