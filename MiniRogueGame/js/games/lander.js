@@ -16,23 +16,40 @@ export const meta = {
 
 // ---- Physics tuning constants ----
 // GRAVITY_BASE: Stage-1 gravity in px/s^2. ゆっくりとした降下で余裕のある操作感。
-// THRUST_ACCEL: メインエンジン加速度。小さな補正を重ねる穏やかな推力。
+// THRUST_ACCEL: メインエンジン加速度。明確に降下を止められる適度な推力。
 // ANG_ACCEL: RCS回転加速度。慎重な姿勢制御のため抑え目。
 // ANG_DAMP: 角速度の減衰。パイロットが姿勢を安定させやすくする。
 // RCS_DRIFT: サイドジェットの横方向ドリフト量（px/s^2）。ジェット排気の反作用。
-const GRAVITY_BASE      = 0.35;  // px/s^2 — ステージ1は非常にゆっくりとした降下（旧値0.6）
-const THRUST_ACCEL      = 3.5;   // px/s^2 — 穏やかな主推力（旧値8.0）。小刻みな補正向き。
+const GRAVITY_BASE      = 0.25;  // px/s^2 — ステージ1はさらにゆっくりとした降下（旧値0.35）
+const THRUST_ACCEL      = 5.2;   // px/s^2 — 明確に降下を止められる推力（旧値3.5）。保持すれば確実に上昇。
 const ANG_ACCEL         = 28.0;  // deg/s^2 — 慎重な姿勢変更（旧値40.0）
 const ANG_DAMP          = 0.82;  // 角速度減衰（旧値0.88、より強い減衰で安定しやすく）
-const RCS_DRIFT         = 2.5;   // px/s^2 — サイドジェット横ドリフト（排気反作用、新規）
+const RCS_DRIFT         = 2.5;   // px/s^2 — サイドジェット横ドリフト（排気反作用）
 // NO VEL_DAMP — 並進運動はニュートン力学（減衰なし）
 const FUEL_MAX          = 100;
-const FUEL_RATE_MAIN    = 5;     // 旧7、穏やか推力に合わせ消費も削減
-const FUEL_RATE_RCS     = 1.5;   // 旧2
-const SAFE_VY           = 14;
-const SAFE_VX           = 8;
-const SAFE_ANGLE        = 18;
-const SAFE_OMEGA        = 12;
+const FUEL_RATE_MAIN    = 5;     // 燃料消費（主エンジン）
+const FUEL_RATE_RCS     = 1.5;   // 燃料消費（RCS）
+
+// ---- Landing tolerance constants ----
+// 成功着陸の許容値（緩め）。ここを下回れば即成功。
+const SAFE_VY           = 22;    // px/s 垂直速度上限（旧値14）
+const SAFE_VX           = 13;    // px/s 水平速度上限（旧値8）
+const SAFE_ANGLE        = 28;    // deg  傾き上限（旧値18）
+const SAFE_OMEGA        = 20;    // deg/s 角速度上限（旧値12）
+
+// バウンス許容値（SAFE_*を超えてもここを下回ればバウンスで再チャンス）。
+// BOUNCE_*はSAFE_*より大きな値。接触速度が低ければ「弾んで落ち着く」挙動。
+const BOUNCE_VY         = 45;    // px/s 垂直速度上限（これ以上は即クラッシュ）
+const BOUNCE_VX         = 26;    // px/s 水平速度上限（これ以上は即クラッシュ）
+const BOUNCE_ANGLE      = 55;    // deg  傾き上限（これ以上は即クラッシュ）
+const BOUNCE_OMEGA      = 40;    // deg/s 角速度上限（これ以上は即クラッシュ）
+
+// バウンス後の速度反発係数（着地面との反射）
+const BOUNCE_RESTITUTION = 0.28; // 垂直速度の残存率（0=完全吸収, 1=完全弾性）
+const BOUNCE_FRICTION    = 0.55; // 水平速度の残存率（摩擦）
+const BOUNCE_ANG_DAMP    = 0.45; // バウンス後の角速度残存率
+// バウンスで着陸成功とみなす速度しきい値（バウンス後にこれ以下になったら成功）
+const BOUNCE_SETTLE_VY   = 6;    // px/s
 const PAD_W_BASE        = 54;
 const TERRAIN_SEGS      = 18;
 const LANDER_START_Y    = 90;
@@ -191,6 +208,9 @@ export class Game extends Scene {
     this._stageScore    = 0;
     this._guideBonus    = 0;
     this.particles      = [];
+
+    // バウンス状態フラグ（マージナル着地後に弾んでいる最中）
+    this._bouncing = false;
 
     // ON COURSEポップインジケーター用タイマー
     this._onCourseTime = 0;   // ON COURSE状態の累積時間(秒)
@@ -400,68 +420,142 @@ export class Game extends Scene {
   }
 
   // ---- Collision & landing check ----
+  // 着地判定の優先順位:
+  //   1. パッドの外に接触 -> 即クラッシュ
+  //   2. パッド上 + SAFE_*以内 -> 即成功
+  //   3. パッド上 + BOUNCE_*以内 (マージナル) -> バウンス。次フレームで再判定。
+  //      バウンス後にvy <= BOUNCE_SETTLE_VYになれば成功として処理。
+  //   4. パッド上 + BOUNCE_*超え (高速/大傾き) -> 即クラッシュ
   _checkCollision() {
     const terrainY = this._terrainYAt(this.x);
     const footY    = this.y + 16;
 
     if (footY < terrainY) return;
 
-    const onPad   = (this.x >= this.pad.x && this.x <= this.pad.x + this.pad.w);
+    const onPad    = (this.x >= this.pad.x && this.x <= this.pad.x + this.pad.w);
+    const absVy    = Math.abs(this.vy);
+    const absVx    = Math.abs(this.vx);
     const absAngle = Math.abs(((this.angle + 180) % 360 + 360) % 360 - 180);
     const absOmega = Math.abs(this.omega);
 
-    const safeLand = onPad &&
-                     Math.abs(this.vy) <= SAFE_VY &&
-                     Math.abs(this.vx) <= SAFE_VX &&
-                     absAngle          <= SAFE_ANGLE &&
-                     absOmega          <= SAFE_OMEGA;
+    // パッド外接触 -> クラッシュ（地形 or 障害物）
+    if (!onPad) {
+      this._doCrash();
+      return;
+    }
+
+    // バウンス中の「静定チェック」: 前フレームのバウンスで速度が十分落ちていれば成功
+    if (this._bouncing) {
+      // vy が低ければ着地成功として扱う
+      if (absVy <= BOUNCE_SETTLE_VY && absVx <= SAFE_VX && absAngle <= SAFE_ANGLE) {
+        this._bouncing = false;
+        this._doSuccess(absAngle, absOmega);
+        return;
+      }
+      // バウンス後もまだ速すぎる/傾きすぎ -> クラッシュ
+      if (absVy > BOUNCE_VY || absVx > BOUNCE_VX || absAngle > BOUNCE_ANGLE) {
+        this._bouncing = false;
+        this._doCrash();
+        return;
+      }
+      // まだ接触中だがゆっくりと落ち着いている -> もう一度バウンス処理
+    }
+
+    // ---- 即成功ウィンドウ（SAFE_* 以内）----
+    const safeLand = absVy <= SAFE_VY &&
+                     absVx <= SAFE_VX &&
+                     absAngle <= SAFE_ANGLE &&
+                     absOmega <= SAFE_OMEGA;
 
     if (safeLand) {
-      this.y  = terrainY - 16;
-      this.vx = 0; this.vy = 0; this.omega = 0;
-
-      const sp        = stageParams(this.stage);
-      const fuelBonus = Math.round(this.fuel * 10);
-
-      // 着地精度ボーナス: 速度・姿勢が安全値を下回るほど高得点
-      const softBonus = Math.round(Math.max(0, SAFE_VY - Math.abs(this.vy)) * 8);
-      const horzBonus = Math.round(Math.max(0, SAFE_VX - Math.abs(this.vx)) * 6);
-      const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - absAngle) * 5);
-      const omgBonus  = Math.round(Math.max(0, SAFE_OMEGA - absOmega) * 4);
-
-      // 軌道追従ボーナス: 誘導線を忠実にたどるほど高得点（最大400点）
-      // avgDev 0px -> 400点, avgDev GUIDE_THRESHOLD(30px) -> 100点, それ以上 -> 0点
-      let guideBonus = 0;
-      if (this._guideDevCount > 0) {
-        const avgDev = this._guideDevTotal / this._guideDevCount;
-        // avgDev=0 -> 400, avgDev=60 -> 0 (勾配: -400/60)
-        guideBonus = Math.round(Math.max(0, 400 - avgDev * (400 / 60)));
-      }
-      this._guideBonus  = guideBonus;
-      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
-      this.totalScore  += this._stageScore;
-
-      if (this.totalScore > this.high) {
-        this.high = this.totalScore;
-        this.engine.storage.setHigh(meta.id, this.high);
-      }
-
-      this.engine.audio.good();
-      this.state = 'cleared';
-
-    } else {
-      this._explode();
-      this.engine.audio.bad();
-
-      this.totalScore += Math.round((this.fuel || 0) * 2);
-
-      if (this.totalScore > this.high) {
-        this.high = this.totalScore;
-        this.engine.storage.setHigh(meta.id, this.high);
-      }
-
-      this.state = 'gameover';
+      this._bouncing = false;
+      this._doSuccess(absAngle, absOmega);
+      return;
     }
+
+    // ---- マージナル着地ウィンドウ（BOUNCE_* 以内）-> バウンス ----
+    // 速度・角度が「そこそこ許容範囲」なら物理的に弾ませる。
+    // 機体が大きく傾いていると、倒れた側のレッグが食い込んでより強く弾む。
+    const canBounce = absVy <= BOUNCE_VY &&
+                      absVx <= BOUNCE_VX &&
+                      absAngle <= BOUNCE_ANGLE &&
+                      absOmega <= BOUNCE_OMEGA;
+
+    if (canBounce) {
+      // クラフトを地面面上に押し戻す
+      this.y = terrainY - 16;
+
+      // 傾きが大きいほどバウンス反発が強くなる（物理的: 傾いた着地は不均一な接触）
+      const tiltFactor = 1.0 + (absAngle / BOUNCE_ANGLE) * 0.5;  // 1.0 〜 1.5 倍
+      this.vy    = -Math.abs(this.vy) * BOUNCE_RESTITUTION * tiltFactor;
+      this.vx   *= BOUNCE_FRICTION;
+      this.omega *= BOUNCE_ANG_DAMP;
+
+      // 傾いた着地は機体を少し起き直させる（着地衝撃で揺れが収まる方向）
+      const tipCorrection = -this.angle * 0.15;
+      this.omega += tipCorrection;
+
+      this._bouncing = true;
+      // バウンス音（軽いクリック）
+      this.engine.audio.beep && this.engine.audio.beep(200, 0.07, 'square', 0.10);
+      return;
+    }
+
+    // ---- BOUNCE_* 超え -> 即クラッシュ ----
+    this._bouncing = false;
+    this._doCrash();
+  }
+
+  // ---- 着地成功処理 ----
+  _doSuccess(absAngle, absOmega) {
+    const terrainY = this._terrainYAt(this.x);
+    // 速度ゼロにする前にボーナス計算用の値を保存
+    const landVy = Math.abs(this.vy || 0);
+    const landVx = Math.abs(this.vx || 0);
+    this.y  = terrainY - 16;
+    this.vx = 0; this.vy = 0; this.omega = 0;
+
+    const sp        = stageParams(this.stage);
+    const fuelBonus = Math.round((this.fuel || 0) * 10);
+
+    // 着地精度ボーナス: 速度・姿勢が安全値を下回るほど高得点（landing時の実速度を使用）
+    const softBonus = Math.round(Math.max(0, SAFE_VY - landVy) * 8);
+    const horzBonus = Math.round(Math.max(0, SAFE_VX - landVx) * 6);
+    const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - (absAngle || 0)) * 5);
+    const omgBonus  = Math.round(Math.max(0, SAFE_OMEGA - (absOmega || 0)) * 4);
+
+    // 軌道追従ボーナス: 誘導線を忠実にたどるほど高得点（最大400点）
+    let guideBonus = 0;
+    if (this._guideDevCount > 0) {
+      const avgDev = this._guideDevTotal / this._guideDevCount;
+      guideBonus = Math.round(Math.max(0, 400 - avgDev * (400 / 60)));
+    }
+    this._guideBonus  = guideBonus;
+    this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
+    this.totalScore  += this._stageScore;
+
+    if (this.totalScore > this.high) {
+      this.high = this.totalScore;
+      this.engine.storage.setHigh(meta.id, this.high);
+    }
+
+    this.engine.audio.good();
+    this.state = 'cleared';
+  }
+
+  // ---- クラッシュ処理 ----
+  _doCrash() {
+    this._explode();
+    this.engine.audio.bad();
+
+    this.totalScore += Math.round((this.fuel || 0) * 2);
+
+    if (this.totalScore > this.high) {
+      this.high = this.totalScore;
+      this.engine.storage.setHigh(meta.id, this.high);
+    }
+
+    this.state = 'gameover';
   }
 
   // ---- Explosion particles ----

@@ -1,7 +1,7 @@
 // METEOR : ゆっくり迫る隕石をミサイルで迎撃するストラテジー防衛ゲーム。
 // ステージ制：序盤は1個ずつ読んで破壊、徐々に密度が上がりステージ末にボス隕石登場。
 // 全都市が破壊されたらゲームオーバー。
-// 各都市が発射台。MULTI/POWER/WIDE/SCATTERアイテムで戦力強化。
+// 各都市が発射台。MULTI/POWER/WIDE/SCATTER/RAPIDアイテムで戦力強化。
 import { Scene, W, H } from '../core/engine.js';
 import { P } from '../core/palette.js';
 
@@ -21,6 +21,11 @@ const GROUND_Y    = H - 40;
 // ミサイル
 const MISSILE_SPD    = 115;  // px/s
 const FIRE_COOLDOWN  = 0.55; // 発射間隔（秒）
+
+// 同時飛翔上限（通常）
+const MISSILES_CAP_NORMAL = 4;
+// RAPID中の同時飛翔上限 = min(launcherSlots * shotsPerCity, 10)
+const MISSILES_CAP_RAPID  = 10;
 
 // 爆発 — grow then FADE OUT (alpha, no shrink)
 const BLAST_GROW      = 38;   // 通常爆発最大半径
@@ -52,14 +57,13 @@ const GIANT_R_THRESH = 22;
 const SMALL_R_THRESH = 10;
 const LARGE_R_THRESH = 16;
 
-// ボス隕石 — さらに巨大化！画面幅の半分近くを占める圧倒的スケール
-// W=360, r≤170 → 直径340, 画面幅のほぼ全体
-const BOSS_R_MIN   = 150;  // 以前の95から大幅増
-const BOSS_R_MAX   = 170;  // 画面を圧迫する最大サイズ
-const BOSS_SPD_MIN = 0.7;  // 大きい分ゆっくり
-const BOSS_SPD_MAX = 1.2;
-const BOSS_HP_BASE = 30;   // 大きくなった分HPも増加
-const BOSS_HP_PER_STAGE = 6;
+// ボス隕石 — 1.5倍巨大化（r≒230-255）、画面幅をはみ出す圧倒的スケール
+const BOSS_R_MIN   = 230;  // 1.5x増 (旧150→230)
+const BOSS_R_MAX   = 255;  // 1.5x増 (旧170→255)
+const BOSS_SPD_MIN = 2.5;  // 速度を大幅増（旧0.7）→ ぐんぐん迫る
+const BOSS_SPD_MAX = 3.8;  // 速度を大幅増（旧1.2）
+const BOSS_HP_BASE = 16;   // HP削減（旧30→16）
+const BOSS_HP_PER_STAGE = 3; // HP増加（旧6→3）
 
 // スコア
 const METEOR_SCORE_BASE = 10;
@@ -70,6 +74,11 @@ const SCATTER_AMMO_PER_PICKUP = 3;
 
 // バフタイマー（秒）— POWER/WIDE/SPEEDバフは有限時間後に消える（FIFOスタック）
 const BUFF_DURATION = 18;
+
+// RAPIDバフ（時間制限）
+const RAPID_DURATION    = 10; // 秒
+const RAPID_SHOTS_CITY  = 2;  // 1都市あたりの同時発射数
+const RAPID_COOLDOWN    = 0.28; // RAPIDバフ中の発射間隔短縮
 
 // ---- ステージタイプ ----
 const STAGE_TYPES = [
@@ -86,7 +95,8 @@ const STAGE_TYPES = [
 // 'POWER'  : 撃った都市の通常ダメージ+1 — 一時バフ（有限タイマー）
 // 'WIDE'   : 撃った都市の爆発半径+12 — 一時バフ
 // 'SCATTER': 3発のスキャッター特殊弾を付与（グローバル弾薬）
-const ITEM_TYPES = ['MULTI', 'POWER', 'WIDE', 'SCATTER'];
+// 'RAPID'  : 時間限定 連射強化（1都市2発・上限10、RAPID_DURATIONs）
+const ITEM_TYPES = ['MULTI', 'POWER', 'WIDE', 'SCATTER', 'RAPID'];
 
 // ---- HP計算 ----
 function calcMeteorHP(r) {
@@ -260,6 +270,76 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
+// ---- ソフト・グロー爆発描画（ラジアルグラジエント）----
+// magenta/pink プラズマバースト。ビッグ/スキャッターはサイズ・強度が異なる。
+function drawBloomBlast(ctx, b, alpha) {
+  const r = Math.max(2, b.r);
+  const a = clamp(alpha, 0, 1);
+  if (a <= 0) return;
+
+  ctx.save();
+
+  // ---- レイヤー1: 外周のソフトハロー ----
+  {
+    const haloR = r;
+    if (haloR > 1) {
+      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, haloR);
+      grad.addColorStop(0,   `rgba(255, 92, 242, ${clamp(a * 0.55, 0, 1)})`);
+      grad.addColorStop(0.35,`rgba(255, 43, 208, ${clamp(a * 0.35, 0, 1)})`);
+      grad.addColorStop(0.65,`rgba(200, 20, 180, ${clamp(a * 0.15, 0, 1)})`);
+      grad.addColorStop(1,   `rgba(160, 0, 140, 0)`);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, haloR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+
+  // ---- レイヤー2: 中間グロー ----
+  {
+    const midR = Math.max(2, r * 0.55);
+    if (midR > 1) {
+      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, midR);
+      grad.addColorStop(0,   `rgba(255, 200, 255, ${clamp(a * 0.80, 0, 1)})`);
+      grad.addColorStop(0.4, `rgba(255, 100, 240, ${clamp(a * 0.60, 0, 1)})`);
+      grad.addColorStop(1,   `rgba(255, 43, 208, 0)`);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, midR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+
+  // ---- レイヤー3: ホワイトコア ----
+  {
+    const coreR = Math.max(1, r * 0.22);
+    if (coreR > 0.5) {
+      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, coreR);
+      grad.addColorStop(0,   `rgba(255, 255, 255, ${clamp(a * 0.95, 0, 1)})`);
+      grad.addColorStop(0.5, `rgba(255, 220, 255, ${clamp(a * 0.75, 0, 1)})`);
+      grad.addColorStop(1,   `rgba(255, 92, 242, 0)`);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, coreR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+
+  // ビッグブラストは追加の外側リング（さらに輝く）
+  if (b.big && r > 12) {
+    const ringR = Math.max(2, r * 1.08);
+    const ringGrad = ctx.createRadialGradient(b.x, b.y, Math.max(1, r * 0.85), b.x, b.y, ringR);
+    ringGrad.addColorStop(0,   `rgba(255, 150, 255, ${clamp(a * 0.40, 0, 1)})`);
+    ringGrad.addColorStop(1,   `rgba(255, 43, 208, 0)`);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, ringR, 0, Math.PI * 2);
+    ctx.fillStyle = ringGrad;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 export class Game extends Scene {
   enter() {
     this.score = 0;
@@ -303,6 +383,9 @@ export class Game extends Scene {
 
     // スキャッター特殊弾（グローバル残弾数）
     this._scatterAmmo = 0;
+
+    // RAPIDバフ（時間制限、グローバル）
+    this._rapidTimer = 0; // >0 = アクティブ（秒カウントダウン）
   }
 
   _bigBtnRect() { return { x: W / 2 - 48, y: 44, w: 112, h: 28 }; }
@@ -381,17 +464,29 @@ export class Game extends Scene {
     }
   }
 
+  // ---- 同時飛翔上限計算 ----
+  _getMissileCap() {
+    const isRapid = this._rapidTimer > 0;
+    if (isRapid) {
+      return Math.min(this._launcherSlots * RAPID_SHOTS_CITY, MISSILES_CAP_RAPID);
+    }
+    return Math.min(this._launcherSlots, MISSILES_CAP_NORMAL);
+  }
+
   // ---- 発射（クールダウン＋上限チェック） ----
   _fireMissile(tx, ty, big) {
     if (ty >= GROUND_Y) return;
     if (this._fireCooldown > 0) return;
     const activeCount = this.missiles.filter(m => !m.done).length;
-    if (activeCount >= this._launcherSlots) return;
+    const cap = this._getMissileCap();
+    if (activeCount >= cap) return;
 
-    // 発射元都市の決定
+    // 発射元都市の決定 — 手動選択があればそれ、なければタップ先に最も近い都市
     let cityIdx = -1;
     if (this._selectedCity >= 0 && this.cities[this._selectedCity] && this.cities[this._selectedCity].alive) {
       cityIdx = this._selectedCity;
+      // 手動選択は1発撃ったら解除（次は再選択 or 自動）
+      this._selectedCity = -1;
     } else {
       cityIdx = this._nearestAliveCity(tx);
     }
@@ -424,7 +519,9 @@ export class Game extends Scene {
       scatter: useScatter,
       cityIdx,   // 発射元都市（バフ参照用）
     });
-    this._fireCooldown = FIRE_COOLDOWN;
+
+    // RAPIDバフ中はクールダウン短縮
+    this._fireCooldown = this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN;
     this.engine.audio.move();
   }
 
@@ -434,6 +531,11 @@ export class Game extends Scene {
 
     if (this._fireCooldown > 0) {
       this._fireCooldown = Math.max(0, this._fireCooldown - dt);
+    }
+
+    // RAPIDタイマー更新
+    if (this._rapidTimer > 0) {
+      this._rapidTimer = Math.max(0, this._rapidTimer - dt);
     }
 
     // ステージクリアオーバーレイのタイマー（ゲームは止まらない）
@@ -756,19 +858,16 @@ export class Game extends Scene {
   // ---- ボス隕石スポーン ----
   _spawnBoss() {
     const r = BOSS_R_MIN + Math.random() * (BOSS_R_MAX - BOSS_R_MIN);
-    // 画面内に収める（上部から登場、左右に収める）
-    const margin = r + 6;
-    const xMin = clamp(margin, 10, W - 10);
-    const xMax = clamp(W - margin, 10, W - 10);
-    const x  = xMin + Math.random() * Math.max(0, xMax - xMin);
-    const tx = xMin + Math.random() * Math.max(0, xMax - xMin);
+    // ボスは画面中央に配置 — 巨大なので左右にはみ出す（意図的）
+    const x  = W / 2;
+    const tx = W / 2 + (Math.random() - 0.5) * 40; // 少しランダムな着地点
     const ty = GROUND_Y;
     const spd   = BOSS_SPD_MIN + Math.random() * (BOSS_SPD_MAX - BOSS_SPD_MIN);
     const maxHp = BOSS_HP_BASE + this._stage * BOSS_HP_PER_STAGE;
     const seed  = _nextMeteorSeed++;
 
     const bossEntry = {
-      x, y: -r - 4,
+      x, y: -r * 0.3,  // 少し上からスタート（top edgeからすぐ見える）
       tx, ty, spd, r,
       hp: maxHp, maxHp,
       fast: false,
@@ -804,18 +903,21 @@ export class Game extends Scene {
     } else if (type === 'POWER') {
       // 発射元都市のパワーバフを1スタック追加
       const ci = cityIdx >= 0 && this.cities[cityIdx] ? cityIdx : this._nearestAliveCity(m.x);
-      if (ci >= 0 && this.cities[ci].alive) {
+      if (ci >= 0 && this.cities[ci] && this.cities[ci].alive) {
         this.cities[ci].buffs.power.push({ timer: BUFF_DURATION });
       }
     } else if (type === 'WIDE') {
       // 発射元都市のワイドバフを1スタック追加
       const ci = cityIdx >= 0 && this.cities[cityIdx] ? cityIdx : this._nearestAliveCity(m.x);
-      if (ci >= 0 && this.cities[ci].alive) {
+      if (ci >= 0 && this.cities[ci] && this.cities[ci].alive) {
         this.cities[ci].buffs.wide.push({ timer: BUFF_DURATION });
       }
     } else if (type === 'SCATTER') {
       // スキャッター特殊弾3発付与（グローバル弾薬）
       this._scatterAmmo += SCATTER_AMMO_PER_PICKUP;
+    } else if (type === 'RAPID') {
+      // RAPIDバフ：時間制限で連射強化
+      this._rapidTimer = RAPID_DURATION;
     }
 
     // 取得音
@@ -916,10 +1018,8 @@ export class Game extends Scene {
     const aliveCount = this.cities.filter(c => c.alive).length;
     this.engine.text('CITY ' + aliveCount, 52, 38, 11, p.warn, 'left');
 
-    // スキャッター残弾
-    if (this._scatterAmmo > 0) {
-      this.engine.text('SC:' + this._scatterAmmo, 52, 52, 11, p.hi, 'left');
-    }
+    // ボスHPバー（トップHUDストリップ内、ボスが画面内に入ったときのみ表示）
+    this._drawBossHPHud(ctx, p);
 
     // ビッグブラスト HUD
     this._drawBigChargeHUD(ctx, p);
@@ -1030,7 +1130,11 @@ export class Game extends Scene {
         ctx.lineWidth = m.boss ? clamp(lineW * 2, 1, 4) : lineW;
         ctx.stroke();
 
-        if (damageFrac > 0.3 && m.verts.length >= 6) {
+        // ---- ボスのダメージクラック表示 ----
+        if (m.boss && damageFrac > 0 && m.verts.length >= 6) {
+          this._drawBossCracks(ctx, p, m, damageFrac);
+        } else if (!m.boss && damageFrac > 0.3 && m.verts.length >= 6) {
+          // 通常隕石の簡易クラック
           ctx.globalAlpha = clamp(damageFrac * 0.5, 0, 1);
           ctx.beginPath();
           const v0 = m.verts[0];
@@ -1046,43 +1150,23 @@ export class Game extends Scene {
 
         ctx.restore();
 
-        // ボスのHP バー（ボスが実際に存在する時のみ描画）
-        if (m.boss && this._bossAlive) {
-          const barW   = clamp(m.r * 2.0, 80, W - 20);
-          const barX   = clamp(m.x - barW / 2, 6, W - barW - 6);
-          const barY   = clamp(m.y + m.r + 10, m.r + 10, GROUND_Y - 14);
-          const barH   = 7;
-          const hpFrac = clamp(m.hp / m.maxHp, 0, 1);
-          ctx.save();
-          ctx.fillStyle = p.dark;
-          ctx.fillRect(barX, barY, barW, barH);
-          ctx.fillStyle = damageFrac > 0.6 ? p.bad : p.warn;
-          ctx.fillRect(barX, barY, Math.max(0, barW * hpFrac), barH);
-          ctx.strokeStyle = p.mid;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(barX, barY, barW, barH);
-          ctx.restore();
-          this.engine.text('BOSS', m.x, clamp(m.y - m.r - 20, 52, GROUND_Y - 40), 14, p.warn, 'center');
-          this.engine.text(m.hp + '/' + m.maxHp, m.x, clamp(m.y - m.r - 36, 52, GROUND_Y - 56), 11, p.dim, 'center');
-        } else if (!m.boss) {
-          // 通常隕石のHP ピップ
-          if (m.maxHp >= 2) {
-            const pipR   = 3;
-            const pipGap = 8;
-            const totalW = m.maxHp * pipR * 2 + (m.maxHp - 1) * (pipGap - pipR * 2);
-            const startX = m.x - totalW / 2;
-            const pipY   = m.y + m.r + 6;
-            for (let k = 0; k < m.maxHp; k++) {
-              const px    = startX + k * pipGap + pipR;
-              const alive = k < m.hp;
-              ctx.save();
-              ctx.globalAlpha = alive ? 0.9 : 0.25;
-              ctx.beginPath();
-              ctx.arc(px, pipY, pipR, 0, Math.PI * 2);
-              ctx.fillStyle = alive ? (m.fast ? p.hi : p.bad) : p.dim;
-              ctx.fill();
-              ctx.restore();
-            }
+        // 通常隕石のHP ピップ
+        if (!m.boss && m.maxHp >= 2) {
+          const pipR   = 3;
+          const pipGap = 8;
+          const totalW = m.maxHp * pipR * 2 + (m.maxHp - 1) * (pipGap - pipR * 2);
+          const startX = m.x - totalW / 2;
+          const pipY   = m.y + m.r + 6;
+          for (let k = 0; k < m.maxHp; k++) {
+            const px    = startX + k * pipGap + pipR;
+            const alive = k < m.hp;
+            ctx.save();
+            ctx.globalAlpha = alive ? 0.9 : 0.25;
+            ctx.beginPath();
+            ctx.arc(px, pipY, pipR, 0, Math.PI * 2);
+            ctx.fillStyle = alive ? (m.fast ? p.hi : p.bad) : p.dim;
+            ctx.fill();
+            ctx.restore();
           }
         }
       }
@@ -1122,44 +1206,23 @@ export class Game extends Scene {
       ctx.restore();
     }
 
-    // ---- 爆発（grow then FADE OUT） ----
+    // ---- 爆発（SOFT GLOWING BLOOM） ----
     for (const b of this.blasts) {
       if (!b) continue;
 
       let alpha;
       if (b.growing) {
-        alpha = clamp(b.r / b.maxR, 0, 1) * 0.9;
+        alpha = clamp(b.r / Math.max(1, b.maxR), 0, 1) * 0.92;
       } else {
-        alpha = clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1) * 0.85;
+        alpha = clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1) * 0.88;
       }
       alpha = clamp(alpha, 0, 1);
 
-      ctx.save();
-      ctx.globalAlpha = alpha;
-
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, Math.max(1, b.r), 0, Math.PI * 2);
-      ctx.strokeStyle = b.big ? p.warn : (b.isScatter ? p.hi : p.mid);
-      ctx.lineWidth   = b.big ? 3.5 : (b.isScatter ? 1.0 : 2.5);
-      ctx.stroke();
-
-      if (b.big && b.r > 10) {
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, Math.max(1, b.r * 0.65), 0, Math.PI * 2);
-        ctx.strokeStyle = p.hi;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = clamp(alpha * 0.6, 0, 1);
-        ctx.stroke();
-      }
-
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, Math.max(1, b.r * 0.55), 0, Math.PI * 2);
-      ctx.fillStyle = b.big ? p.warn : (b.isScatter ? p.hi : p.mid);
-      ctx.globalAlpha = clamp(alpha * 0.15, 0, 1);
-      ctx.fill();
-
-      ctx.restore();
+      drawBloomBlast(ctx, b, alpha);
     }
+
+    // ---- 左端アクティブアイテムパネル ----
+    this._drawActiveItemsPanel(ctx, p);
 
     // ---- ステージクリアオーバーレイ（非停止：フロート表示のみ）----
     if (this._clearOverlay) {
@@ -1195,7 +1258,8 @@ export class Game extends Scene {
 
     // ---- クールダウンインジケータ（選択都市付近に表示）----
     if (this._fireCooldown > 0 && !this.dead) {
-      const frac    = clamp(1 - this._fireCooldown / FIRE_COOLDOWN, 0, 1);
+      const coolRef = this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN;
+      const frac    = clamp(1 - this._fireCooldown / coolRef, 0, 1);
       const barW    = 28;
       // 選択都市がある場合はその上、なければ画面中央下
       let barX, barY;
@@ -1212,6 +1276,218 @@ export class Game extends Scene {
       ctx.fillStyle = p.mid;
       ctx.fillRect(barX, barY, Math.max(0, barW * frac), 3);
       ctx.restore();
+    }
+  }
+
+  // ---- ボスHPバー（トップHUDストリップ内） ----
+  // ボスが画面内に入ったとき（boss.y + boss.r > 0）のみ表示
+  _drawBossHPHud(ctx, p) {
+    if (!this._bossAlive || this._bossIdx < 0) return;
+    const boss = this.meteors[this._bossIdx];
+    if (!boss) return;
+
+    // ボスが画面内に入っていなければ表示しない（バグ修正）
+    if (boss.y + boss.r <= 0) return;
+
+    const hpFrac     = clamp(boss.hp / boss.maxHp, 0, 1);
+    const damageFrac = 1 - hpFrac;
+
+    // トップHUDストリップ内に細いバーを引く（y=52〜58 あたり）
+    const barX = 52;
+    const barY = 52;
+    const barW = W - barX - 8;
+    const barH = 5;
+
+    ctx.save();
+    // 背景
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(barX, barY, barW, barH);
+    // HP残量
+    const fillColor = damageFrac > 0.6 ? p.bad : p.warn;
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(barX, barY, Math.max(0, barW * hpFrac), barH);
+    // 枠
+    ctx.strokeStyle = p.dim;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.restore();
+
+    // "BOSS" ラベル + HP数値
+    this.engine.text('BOSS', barX, barY - 14, 11, p.warn, 'left');
+    this.engine.text(boss.hp + '/' + boss.maxHp, barX + barW, barY - 14, 11, p.dim, 'right');
+  }
+
+  // ---- ボスクラック描画（ダメージ可視化） ----
+  // ctx はボス中心に translate + rotate 済みの状態で呼ばれる
+  _drawBossCracks(ctx, p, m, damageFrac) {
+    if (!m.verts || m.verts.length < 6) return;
+    const verts = m.verts;
+    const n     = verts.length;
+    const r     = m.r;
+
+    ctx.save();
+    ctx.strokeStyle = p.dim;
+
+    // HP残量に応じてクラックの本数と長さが増える（閾値3段階）
+    const phase1 = damageFrac > 0.25; // 25%ダメージ
+    const phase2 = damageFrac > 0.50; // 50%ダメージ
+    const phase3 = damageFrac > 0.75; // 75%ダメージ
+
+    if (phase1) {
+      // クラック1: 中心から頂点0と頂点2を結ぶ線
+      ctx.globalAlpha = clamp(damageFrac * 0.65, 0, 1);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(verts[0].dx * 0.1, verts[0].dy * 0.1);
+      ctx.lineTo(verts[0].dx * 0.85, verts[0].dy * 0.85);
+      ctx.moveTo(verts[Math.floor(n / 3)].dx * 0.15, verts[Math.floor(n / 3)].dy * 0.15);
+      ctx.lineTo(verts[Math.floor(n / 3)].dx * 0.80, verts[Math.floor(n / 3)].dy * 0.80);
+      ctx.strokeStyle = p.warn;
+      ctx.stroke();
+    }
+
+    if (phase2) {
+      // クラック2: 頂点同士を繋ぐ斜め線（ひびが広がる）
+      ctx.globalAlpha = clamp((damageFrac - 0.5) * 2 * 0.7, 0, 1);
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = p.bad;
+      ctx.beginPath();
+      const v1 = verts[1];
+      const v4 = verts[Math.min(4, n - 1)];
+      const v6 = verts[Math.min(6, n - 1)];
+      ctx.moveTo(v1.dx * 0.9, v1.dy * 0.9);
+      ctx.lineTo(v4.dx * 0.6, v4.dy * 0.6);
+      ctx.lineTo(v6.dx * 0.85, v6.dy * 0.85);
+      ctx.stroke();
+      // 内部亀裂
+      ctx.globalAlpha = clamp((damageFrac - 0.5) * 1.4 * 0.5, 0, 1);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = p.dim;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.25, -r * 0.1);
+      ctx.lineTo(r * 0.4, r * 0.35);
+      ctx.moveTo(r * 0.1, -r * 0.3);
+      ctx.lineTo(-r * 0.35, r * 0.2);
+      ctx.stroke();
+    }
+
+    if (phase3) {
+      // クラック3: 大きな分裂線（ほぼ崩壊状態）
+      ctx.globalAlpha = clamp((damageFrac - 0.75) * 4 * 0.85, 0, 1);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = p.bad;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.8, -r * 0.2);
+      ctx.lineTo(r * 0.6, r * 0.5);
+      ctx.moveTo(r * 0.7, -r * 0.5);
+      ctx.lineTo(-r * 0.5, r * 0.6);
+      ctx.stroke();
+      // 欠けたチャンクの輪郭（崩れたエッジ）
+      ctx.globalAlpha = clamp((damageFrac - 0.75) * 3 * 0.5, 0, 1);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = p.warn;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      const cv = verts[Math.floor(n * 0.6)];
+      ctx.arc(cv.dx * 0.7, cv.dy * 0.7, r * 0.18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.restore();
+  }
+
+  // ---- 左端アクティブアイテムパネル ----
+  // BACKボタン（y:8..44）を避けて y=52 から下へ縦並び
+  _drawActiveItemsPanel(ctx, p) {
+    const panelX  = 2;   // 左端から
+    const barW    = 36;  // カウントダウンバーの幅
+    const barH    = 4;
+    const rowH    = 18;  // 1行の高さ
+    let   rowY    = 58;  // 開始Y（BACKボタン下 + 少し余白）
+
+    const labelX  = panelX;
+    const barX    = panelX;
+
+    // ---- SCATTERの残弾 ----
+    if (this._scatterAmmo > 0) {
+      ctx.save();
+      // ラベル
+      this.engine.text('SC', labelX, rowY, 9, p.hi, 'left');
+      // ドット状の残弾表示
+      for (let i = 0; i < Math.min(this._scatterAmmo, 9); i++) {
+        ctx.beginPath();
+        ctx.arc(panelX + 16 + i * 5, rowY + 5, 2, 0, Math.PI * 2);
+        ctx.fillStyle = p.hi;
+        ctx.fill();
+      }
+      ctx.restore();
+      rowY += rowH;
+    }
+
+    // ---- ランチャースロット数（MULTIで増加） ----
+    if (this._launcherSlots > 2) {
+      ctx.save();
+      this.engine.text('SL', labelX, rowY, 9, p.mid, 'left');
+      for (let i = 0; i < this._launcherSlots; i++) {
+        ctx.beginPath();
+        ctx.arc(panelX + 16 + i * 5, rowY + 5, 2, 0, Math.PI * 2);
+        ctx.fillStyle = i < this._launcherSlots ? p.mid : p.dark;
+        ctx.fill();
+      }
+      ctx.restore();
+      rowY += rowH;
+    }
+
+    // ---- RAPIDバフ（タイマー）----
+    if (this._rapidTimer > 0) {
+      const frac = clamp(this._rapidTimer / RAPID_DURATION, 0, 1);
+      ctx.save();
+      this.engine.text('RP', labelX, rowY, 9, p.warn, 'left');
+      // カウントダウンバー
+      ctx.fillStyle = p.dark;
+      ctx.fillRect(barX + 14, rowY + 5, barW, barH);
+      ctx.fillStyle = p.warn;
+      ctx.fillRect(barX + 14, rowY + 5, Math.max(0, barW * frac), barH);
+      // 秒数
+      this.engine.text(Math.ceil(this._rapidTimer) + 's', barX + 14 + barW + 2, rowY, 9, p.warn, 'left');
+      ctx.restore();
+      rowY += rowH;
+    }
+
+    // ---- POWERバフ（都市別タイマー）----
+    for (let ci = 0; ci < CITY_COUNT; ci++) {
+      const city = this.cities[ci];
+      if (!city || !city.alive || !city.buffs.power.length) continue;
+      // 最大タイマー（最も長いもの）を代表として表示
+      const maxT = Math.max(...city.buffs.power.map(b => b.timer));
+      const frac = clamp(maxT / BUFF_DURATION, 0, 1);
+      ctx.save();
+      this.engine.text('PW' + (ci + 1), labelX, rowY, 9, p.warn, 'left');
+      ctx.fillStyle = p.dark;
+      ctx.fillRect(barX + 20, rowY + 5, barW - 4, barH);
+      ctx.fillStyle = p.warn;
+      ctx.fillRect(barX + 20, rowY + 5, Math.max(0, (barW - 4) * frac), barH);
+      ctx.restore();
+      rowY += rowH;
+      if (rowY > GROUND_Y - 30) break;
+    }
+
+    // ---- WIDEバフ（都市別タイマー）----
+    for (let ci = 0; ci < CITY_COUNT; ci++) {
+      const city = this.cities[ci];
+      if (!city || !city.alive || !city.buffs.wide.length) continue;
+      const maxT = Math.max(...city.buffs.wide.map(b => b.timer));
+      const frac = clamp(maxT / BUFF_DURATION, 0, 1);
+      ctx.save();
+      this.engine.text('WD' + (ci + 1), labelX, rowY, 9, p.hi, 'left');
+      ctx.fillStyle = p.dark;
+      ctx.fillRect(barX + 20, rowY + 5, barW - 4, barH);
+      ctx.fillStyle = p.hi;
+      ctx.fillRect(barX + 20, rowY + 5, Math.max(0, (barW - 4) * frac), barH);
+      ctx.restore();
+      rowY += rowH;
+      if (rowY > GROUND_Y - 30) break;
     }
   }
 
@@ -1250,7 +1526,7 @@ export class Game extends Scene {
   // ---- ビッグブラスト HUD ----
   _drawBigChargeHUD(ctx, p) {
     const baseX = W / 2 - 40;
-    const baseY = 52;
+    const baseY = 60;
     const b = this._bigBtnRect();
     if (this._bigArmed) {
       this.engine.stroke(b.x, b.y, b.w, b.h, p.hi, 2);
@@ -1275,7 +1551,7 @@ export class Game extends Scene {
     }
     if (this._bigCharges < BIG_CHARGES_MAX) {
       const gaugeX = baseX;
-      const gaugeY = baseY + 18;
+      const gaugeY = baseY + 16;
       const gaugeW = 96;
       const frac   = clamp(this._bigRecharge / BIG_RECHARGE_SEC, 0, 1);
       this.engine.rect(gaugeX, gaugeY, gaugeW, 4, p.dark);
