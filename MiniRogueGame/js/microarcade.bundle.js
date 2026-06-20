@@ -1805,17 +1805,21 @@ const LULL_EVERY     = 13.5;  // s between lulls (within active spawning)
 const LULL_DUR       = 2.5;   // s duration of lull
 const LULL_MSG_DUR   = 1.8;   // s to show "WAVE CLEAR" text
 
-// ---- Flare constants ----
-const FLARE_START    = 3;     // initial flare count
-const FLARE_RADIUS   = 90;    // px — blast radius
-const FLARE_DUR      = 0.55;  // s — visual flash duration
-const FLARE_REGEN_T  = 25;    // s between flare regeneration
-const FLARE_MAX      = 5;     // max storable flares
+// ---- Chaff/Flare constants ----
+const FLARE_START    = 3;     // initial chaff count
+const FLARE_REGEN_T  = 25;    // s between chaff regeneration
+const FLARE_MAX      = 5;     // max storable chaff
+
+// Chaff decoy behavior
+const CHAFF_LIFETIME     = 3.0;   // s chaff stays active redirecting all missiles
+const CHAFF_EXPLODE_R    = 110;   // px — blast radius at end-of-life (generous)
+const CHAFF_DEPLOY_DIST  = 130;   // px ahead/right of ship (toward missile origin)
+const CHAFF_FLY_DIST     = 80;    // px the chaff visually flies out before settling
 
 // ---- Valkyrie constants ----
 const VALKYRIE_CHARGE_TIME = 20;   // s to fill energy gauge from 0
-const VALKYRIE_DURATION    = 5.5;  // s of Valkyrie mode
-const VALKYRIE_AUTO_LIMIT  = 12;   // max missiles auto-destroyed per activation
+const VALKYRIE_DURATION    = 9.5;  // s of Valkyrie mode (increased from 5.5s)
+const VALKYRIE_AUTO_LIMIT  = 22;   // max missiles auto-destroyed per activation
 const VALKYRIE_BEAM_SPD    = 600;  // px/s beam travel
 const VALKYRIE_SHOOT_CD    = 0.18; // s between auto-shots
 
@@ -2037,10 +2041,13 @@ class Game extends Scene {
     // Engine flame animation
     this.flameTick = 0;
 
-    // ---- FLARE system ----
+    // ---- CHAFF/FLARE system ----
     this.flares    = FLARE_START;
-    this.flareEffect = null;      // { x, y, t, dur } current detonation VFX
     this.flareRegenTimer = 0;     // timer for slow regen
+    // Active chaff decoy: { x, y, t, lifetime, sparks: [{angle,dist,t}] }
+    this.chaff = null;
+    // Chaff end-of-life explosion flash: { x, y, t, dur }
+    this.chaffExplode = null;
 
     // ---- VALKYRIE system ----
     this.energy       = 0;        // 0..1 normalized
@@ -2170,19 +2177,46 @@ class Game extends Scene {
       }
     }
 
-    // ---- Missile update ----
+    // ---- Chaff decoy update ----
+    if (this.chaff) {
+      this.chaff.t += dt;
+      // Animate spark particles on the chaff
+      for (const sp of this.chaff.sparks) sp.t += dt;
+
+      if (this.chaff.t >= this.chaff.lifetime) {
+        // Chaff explodes — destroy missiles within generous radius
+        const cx = this.chaff.x, cy = this.chaff.y;
+        for (const m of this.missiles) {
+          if (m.dead) continue;
+          const dx = m.x - cx, dy = m.y - cy;
+          if (Math.sqrt(dx * dx + dy * dy) <= CHAFF_EXPLODE_R) {
+            m.dead = true;
+            this.sparks.push(new Spark(m.x, m.y));
+          }
+        }
+        // Leave a brief explosion flash, then clear chaff
+        this.chaff.exploding = true;
+        this.chaff.explodeT  = 0;
+        this.chaff.explodeDur = 0.5;
+        // We store it as chaffExplode so chaff homing stops immediately
+        this.chaffExplode = { x: cx, y: cy, t: 0, dur: 0.5 };
+        this.chaff = null;
+      }
+    }
+    if (this.chaffExplode) {
+      this.chaffExplode.t += dt;
+      if (this.chaffExplode.t >= this.chaffExplode.dur) this.chaffExplode = null;
+    }
+
+    // ---- Missile update — home toward chaff if active, else toward player ----
+    const missileTargetX = this.chaff ? this.chaff.x : this.fx;
+    const missileTargetY = this.chaff ? this.chaff.y : this.fy;
     for (const m of this.missiles) {
-      m.update(dt, this.fx, this.fy);
+      m.update(dt, missileTargetX, missileTargetY);
     }
     this.missiles = this.missiles.filter(m => !m.dead);
 
-    // ---- Flare effect update ----
-    if (this.flareEffect) {
-      this.flareEffect.t += dt;
-      if (this.flareEffect.t >= this.flareEffect.dur) this.flareEffect = null;
-    }
-
-    // ---- Flare regen (1 flare every FLARE_REGEN_T seconds, up to max) ----
+    // ---- Chaff regen (1 per FLARE_REGEN_T s, up to max) ----
     if (this.flares < FLARE_MAX) {
       this.flareRegenTimer += dt;
       if (this.flareRegenTimer >= FLARE_REGEN_T) {
@@ -2290,22 +2324,34 @@ class Game extends Scene {
 
   _deployFlare() {
     if (this.flares <= 0) return;
+    if (this.chaff) return;  // already a chaff active
     this.flares--;
     this.flareRegenTimer = 0;  // reset regen timer on use
-    // Destroy all missiles within radius
-    let destroyed = 0;
-    for (const m of this.missiles) {
-      if (m.dead) continue;
-      const dx = m.x - this.fx;
-      const dy = m.y - this.fy;
-      if (Math.sqrt(dx * dx + dy * dy) <= FLARE_RADIUS) {
-        m.dead = true;
-        destroyed++;
-      }
+
+    // Launch chaff to the right/ahead of the ship (toward missile origin),
+    // clamped to the play area.
+    const cx = clamp(this.fx + CHAFF_DEPLOY_DIST, PLAY_LEFT + 20, PLAY_RIGHT - 20);
+    const cy = clamp(this.fy + (Math.random() - 0.5) * 60, PLAY_TOP + 20, PLAY_BOTTOM - 20);
+
+    // Generate spark particles for the chaff visual
+    const sparks = [];
+    for (let i = 0; i < 12; i++) {
+      sparks.push({
+        angle: Math.random() * Math.PI * 2,
+        dist:  10 + Math.random() * 20,
+        speed: 0.8 + Math.random() * 0.6,  // rotation speed multiplier
+        t:     Math.random() * Math.PI * 2, // phase offset for flicker
+      });
     }
-    // Visual flash
-    this.flareEffect = { x: this.fx, y: this.fy, t: 0, dur: FLARE_DUR };
-    // Small audio cue if possible (reuse existing audio)
+
+    this.chaff = {
+      x:        cx,
+      y:        cy,
+      t:        0,
+      lifetime: CHAFF_LIFETIME,
+      sparks,
+    };
+
     try { this.engine.audio.bad(); } catch (_) {}
   }
 
@@ -2379,9 +2425,12 @@ class Game extends Scene {
       this._drawSpark(ctx, s, p);
     }
 
-    // ---- Flare detonation flash ----
-    if (this.flareEffect) {
-      this._drawFlareEffect(ctx, this.flareEffect, p);
+    // ---- Chaff decoy + chaff explosion flash ----
+    if (this.chaff) {
+      this._drawChaff(ctx, this.chaff, p);
+    }
+    if (this.chaffExplode) {
+      this._drawChaffExplosion(ctx, this.chaffExplode, p);
     }
 
     // ---- Fighter ----
@@ -2502,7 +2551,7 @@ class Game extends Scene {
     ctx.strokeRect(bf.x, bf.y, bf.w, bf.h);
 
     ctx.globalAlpha = flareAlpha;
-    this.engine.text('FLR', bf.x + bf.w / 2, bf.y + 6, 12, p.warn, 'center');
+    this.engine.text('CHF', bf.x + bf.w / 2, bf.y + 6, 12, p.warn, 'center');
     this.engine.text(`x${this.flares}`, bf.x + bf.w / 2, bf.y + 24, 16, p.hi, 'center');
 
     // Regen progress pip
@@ -2601,35 +2650,103 @@ class Game extends Scene {
     }
   }
 
-  _drawFlareEffect(ctx, fx, p) {
-    if (!fx) return;
-    const frac   = clamp(fx.t / fx.dur, 0, 1);
+  // ---- Chaff decoy: bright sparkling/burning lure, draws all missiles toward it ----
+  _drawChaff(ctx, ch, p) {
+    if (!ch) return;
+    const savedA = ctx.globalAlpha;
+    const frac   = clamp(ch.t / ch.lifetime, 0, 1);
+    // Flicker intensity: fast sine wave
+    const flicker = 0.55 + 0.45 * Math.sin(ch.t * 28);
+    try {
+      // Faint attraction ring (grows as lifetime ticks down — shows danger zone)
+      const ringR = 30 + frac * (CHAFF_EXPLODE_R - 30);
+      ctx.globalAlpha = clamp(0.18 + 0.1 * Math.sin(ch.t * 6), 0, 1);
+      ctx.strokeStyle = p.warn;
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Outer glow
+      ctx.globalAlpha = clamp(flicker * 0.35, 0, 1);
+      ctx.fillStyle   = p.warn;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core bright dot
+      ctx.globalAlpha = clamp(flicker * 0.95, 0, 1);
+      ctx.fillStyle   = p.hi;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner hot-orange nucleus
+      ctx.globalAlpha = clamp(flicker * 0.8, 0, 1);
+      ctx.fillStyle   = p.warn;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Spark particles orbiting + drifting
+      for (const sp of ch.sparks) {
+        const spFrac  = clamp(sp.t / (ch.lifetime * 1.2), 0, 1);
+        const spAngle = sp.angle + sp.t * sp.speed * 2.5;
+        const spDist  = sp.dist * (0.6 + 0.4 * Math.sin(sp.t * 3 + sp.t));
+        const sx = ch.x + Math.cos(spAngle) * spDist;
+        const sy = ch.y + Math.sin(spAngle) * spDist;
+        ctx.globalAlpha = clamp((1 - spFrac) * flicker * 0.9, 0, 1);
+        ctx.fillStyle   = Math.sin(sp.t * 7) > 0 ? p.hi : p.warn;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Countdown pulse ring — urgency indicator
+      const pulseR = 8 + Math.sin(ch.t * (6 + frac * 10)) * 6;
+      ctx.globalAlpha = clamp(0.5 + frac * 0.4, 0, 1);
+      ctx.strokeStyle = frac > 0.7 ? p.bad : p.warn;
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, Math.max(1, pulseR), 0, Math.PI * 2);
+      ctx.stroke();
+
+    } finally {
+      ctx.globalAlpha = clamp(savedA, 0, 1);
+      ctx.lineWidth   = 1;
+    }
+  }
+
+  // ---- Chaff end-of-life explosion burst ----
+  _drawChaffExplosion(ctx, ex, p) {
+    if (!ex) return;
+    const frac   = clamp(ex.t / ex.dur, 0, 1);
     const savedA = ctx.globalAlpha;
     try {
-      // Expanding bright ring
-      const r1 = FLARE_RADIUS * frac;
-      ctx.globalAlpha = clamp((1 - frac) * 0.85, 0, 1);
+      // Expanding shockwave ring
+      const r1 = CHAFF_EXPLODE_R * frac;
+      ctx.globalAlpha = clamp((1 - frac) * 0.9, 0, 1);
       ctx.strokeStyle = p.hi;
       ctx.lineWidth   = 3.5;
       ctx.beginPath();
-      ctx.arc(fx.x, fx.y, Math.max(1, r1), 0, Math.PI * 2);
+      ctx.arc(ex.x, ex.y, Math.max(1, r1), 0, Math.PI * 2);
       ctx.stroke();
 
-      // Inner warm glow
-      const r2 = FLARE_RADIUS * 0.55 * frac;
-      ctx.globalAlpha = clamp((1 - frac * 1.6) * 0.7, 0, 1);
+      // Second ring (warm)
+      const r2 = CHAFF_EXPLODE_R * 0.65 * frac;
+      ctx.globalAlpha = clamp((1 - frac * 1.5) * 0.75, 0, 1);
       ctx.strokeStyle = p.warn;
-      ctx.lineWidth   = 6;
+      ctx.lineWidth   = 5;
       ctx.beginPath();
-      ctx.arc(fx.x, fx.y, Math.max(1, r2), 0, Math.PI * 2);
+      ctx.arc(ex.x, ex.y, Math.max(1, r2), 0, Math.PI * 2);
       ctx.stroke();
 
-      // Flash fill center (only at start)
-      if (frac < 0.2) {
-        ctx.globalAlpha = clamp((0.2 - frac) * 4 * 0.5, 0, 1);
-        ctx.fillStyle = p.hi;
+      // Central flash
+      if (frac < 0.3) {
+        ctx.globalAlpha = clamp((0.3 - frac) / 0.3 * 0.7, 0, 1);
+        ctx.fillStyle   = p.hi;
         ctx.beginPath();
-        ctx.arc(fx.x, fx.y, 28, 0, Math.PI * 2);
+        ctx.arc(ex.x, ex.y, 30, 0, Math.PI * 2);
         ctx.fill();
       }
     } finally {
@@ -2846,83 +2963,210 @@ class Game extends Scene {
     }
   }
 
-  // ---- Valkyrie (transformed) fighter — glowing battroid-ish form ----
+  // ---- Valkyrie battroid (humanoid robot) — facing right, gun-arm extends right ----
+  // Coordinate system: x+ = right (forward), y+ = down. Robot is ~38px wide, ~44px tall.
+  //   HEAD  : small box centered around (6, -18)
+  //   TORSO : main rectangle from (-4,-13) to (10,2)
+  //   WAIST : narrow link at (0,-2) to (6,2)
+  //   HIPS  : box (-2,2) to (8,8)
+  //   LEGS  : two rects below hips, slightly angled
+  //   GUN ARM (right/forward): extends from shoulder at (10,-10) forward to (26,-10)
+  //   LEFT ARM : shorter, behind at (-4,-10) extending back
+  //   SHOULDER FINS: swept back decorative plates
   _drawFighterValkyrie(ctx, x, y, p) {
     const savedAlpha = ctx.globalAlpha;
     ctx.save();
     ctx.translate(x, y);
     try {
-      // Pulsing aura glow behind ship
-      const pulse = 0.3 + 0.25 * Math.sin(this.elapsed * 14);
-      ctx.globalAlpha = clamp(pulse, 0, 1);
+      const pulse = 0.28 + 0.22 * Math.sin(this.elapsed * 14);
+
+      // --- Aura glow ---
+      ctx.globalAlpha = clamp(pulse * 0.55, 0, 1);
       ctx.fillStyle   = p.warn;
       ctx.beginPath();
-      ctx.arc(0, 0, 22, 0, Math.PI * 2);
+      ctx.arc(2, -4, 28, 0, Math.PI * 2);
       ctx.fill();
-
-      ctx.globalAlpha = clamp(pulse * 0.7, 0, 1);
+      ctx.globalAlpha = clamp(pulse * 0.35, 0, 1);
       ctx.fillStyle   = p.hi;
       ctx.beginPath();
-      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.arc(2, -4, 16, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.globalAlpha = clamp(savedAlpha, 0, 1);
 
-      // Main body — wider/blockier battroid chest
+      // ---- LEGS (draw first so body overlaps) ----
+      // Right leg (lower, forward-right in robot space = down-right on screen)
+      ctx.fillStyle = p.mid;
+      // Thigh right
+      ctx.beginPath();
+      ctx.moveTo(2, 8); ctx.lineTo(6, 8); ctx.lineTo(8, 18); ctx.lineTo(2, 18);
+      ctx.closePath(); ctx.fill();
+      // Shin right (slightly wider, knee protrusion)
+      ctx.fillStyle = p.fg;
+      ctx.beginPath();
+      ctx.moveTo(1, 18); ctx.lineTo(8, 18); ctx.lineTo(9, 26); ctx.lineTo(0, 26);
+      ctx.closePath(); ctx.fill();
+      // Foot right
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(-2, 24, 13, 4);
+
+      // Left leg (slightly offset, mirrored vertically = up on canvas)
+      ctx.fillStyle = p.mid;
+      // Thigh left
+      ctx.beginPath();
+      ctx.moveTo(-4, 8); ctx.lineTo(0, 8); ctx.lineTo(-1, 18); ctx.lineTo(-6, 18);
+      ctx.closePath(); ctx.fill();
+      // Shin left
+      ctx.fillStyle = p.fg;
+      ctx.beginPath();
+      ctx.moveTo(-7, 18); ctx.lineTo(0, 18); ctx.lineTo(-1, 26); ctx.lineTo(-8, 26);
+      ctx.closePath(); ctx.fill();
+      // Foot left
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(-10, 24, 12, 4);
+
+      // ---- HIPS ----
+      ctx.fillStyle = p.warn;
+      ctx.fillRect(-3, 4, 12, 6);
+      // Hip highlight
+      ctx.fillStyle = p.hi;
+      ctx.fillRect(0, 5, 6, 2);
+
+      // ---- WAIST ----
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(-1, 1, 9, 5);
+
+      // ---- TORSO (chest) ----
       ctx.fillStyle = p.warn;
       ctx.beginPath();
-      ctx.moveTo(20, 0);      // nose
-      ctx.lineTo(12, -6);
-      ctx.lineTo(0, -8);
-      ctx.lineTo(-14, -8);
-      ctx.lineTo(-14, 8);
-      ctx.lineTo(0, 8);
-      ctx.lineTo(12, 6);
+      // Slightly trapezoidal chest, wider at shoulders
+      ctx.moveTo(-3, 1);    // lower-left
+      ctx.lineTo(10, 1);    // lower-right
+      ctx.lineTo(13, -6);   // upper-right (shoulder)
+      ctx.lineTo(8, -14);   // upper-chest right
+      ctx.lineTo(-2, -14);  // upper-chest left
+      ctx.lineTo(-6, -6);   // upper-left (shoulder)
       ctx.closePath();
       ctx.fill();
 
-      // Center chest highlight
+      // Chest V-fin / armor plate highlight
       ctx.fillStyle = p.hi;
       ctx.beginPath();
-      ctx.moveTo(18, 0); ctx.lineTo(12, -4); ctx.lineTo(6, -4); ctx.lineTo(6, 4); ctx.lineTo(12, 4);
+      ctx.moveTo(4, -1); ctx.lineTo(9, -1); ctx.lineTo(11, -8); ctx.lineTo(6, -12); ctx.lineTo(2, -8);
       ctx.closePath(); ctx.fill();
 
-      // Forward swept wings (transformed)
+      // Cockpit eye / chest gem — glowing
+      const eyePulse = 0.7 + 0.3 * Math.sin(this.elapsed * 18);
+      ctx.globalAlpha = clamp(eyePulse, 0, 1);
+      ctx.fillStyle   = p.warn;
+      ctx.beginPath();
+      ctx.ellipse(6, -6, 4, 2.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = p.hi;
+      ctx.beginPath();
+      ctx.ellipse(6, -6, 2.5, 1.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+
+      // ---- SHOULDER FINS (swept-back decorative plates on each shoulder) ----
+      ctx.fillStyle = p.mid;
+      // Right shoulder fin (top shoulder = negative y)
+      ctx.beginPath();
+      ctx.moveTo(8, -14); ctx.lineTo(14, -20); ctx.lineTo(6, -20); ctx.lineTo(4, -14);
+      ctx.closePath(); ctx.fill();
+      // Left shoulder fin
+      ctx.beginPath();
+      ctx.moveTo(-2, -14); ctx.lineTo(-10, -20); ctx.lineTo(-6, -20); ctx.lineTo(-4, -14);
+      ctx.closePath(); ctx.fill();
+      // Fin highlights
+      ctx.fillStyle = p.fg;
+      ctx.beginPath();
+      ctx.moveTo(8, -14); ctx.lineTo(12, -18); ctx.lineTo(8, -18); ctx.lineTo(6, -14);
+      ctx.closePath(); ctx.fill();
+
+      // ---- LEFT ARM (rear, angled back) ----
       ctx.fillStyle = p.mid;
       ctx.beginPath();
-      ctx.moveTo(6, -6); ctx.lineTo(-8, -20); ctx.lineTo(-12, -18); ctx.lineTo(-2, -6);
+      ctx.moveTo(-3, -12); ctx.lineTo(-7, -12); ctx.lineTo(-14, -6); ctx.lineTo(-11, -4); ctx.lineTo(-5, -8);
       ctx.closePath(); ctx.fill();
+      // Fist / hand
+      ctx.fillStyle = p.fg;
       ctx.beginPath();
-      ctx.moveTo(6, 6); ctx.lineTo(-8, 20); ctx.lineTo(-12, 18); ctx.lineTo(-2, 6);
+      ctx.moveTo(-14, -6); ctx.lineTo(-18, -8); ctx.lineTo(-19, -4); ctx.lineTo(-14, -3);
       ctx.closePath(); ctx.fill();
 
-      // Shoulder gun pods
-      ctx.fillStyle = p.hi;
-      ctx.fillRect(2, -10, 10, 4);
-      ctx.fillRect(2, 6, 10, 4);
-
-      // Cockpit — glowing gold
+      // ---- GUN ARM (right, forward — extends toward missiles) ----
+      // Upper arm from shoulder
+      ctx.fillStyle = p.mid;
+      ctx.beginPath();
+      ctx.moveTo(11, -10); ctx.lineTo(11, -14); ctx.lineTo(20, -12); ctx.lineTo(20, -8);
+      ctx.closePath(); ctx.fill();
+      // Forearm / gun barrel housing
       ctx.fillStyle = p.warn;
       ctx.beginPath();
-      ctx.ellipse(13, 0, 4, 2, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(20, -13); ctx.lineTo(20, -7); ctx.lineTo(28, -8); ctx.lineTo(28, -12);
+      ctx.closePath(); ctx.fill();
+      // Gun barrel (twin)
       ctx.fillStyle = p.hi;
-      ctx.beginPath();
-      ctx.ellipse(13, 0, 2, 1, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(25, -13, 10, 2.5);   // upper barrel
+      ctx.fillRect(25, -9,  10, 2.5);   // lower barrel
+      // Muzzle flash/glow during auto-fire
+      const shooting = this.valkyrieShootTimer < 0.05;
+      if (shooting) {
+        const mPulse = 0.9;
+        ctx.globalAlpha = clamp(mPulse, 0, 1);
+        ctx.fillStyle   = p.warn;
+        ctx.beginPath();
+        ctx.arc(36, -10, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = p.hi;
+        ctx.beginPath();
+        ctx.arc(36, -10, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+      }
 
-      // Afterburner plumes — intense during Valkyrie
+      // ---- HEAD ----
+      // Neck
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(2, -17, 5, 4);
+      // Head box
+      ctx.fillStyle = p.warn;
+      ctx.fillRect(-1, -26, 11, 10);
+      // Helmet highlight
+      ctx.fillStyle = p.hi;
+      ctx.fillRect(0, -25, 9, 3);
+      // Visor / sensor band (glowing)
+      const visorPulse = 0.8 + 0.2 * Math.sin(this.elapsed * 10);
+      ctx.globalAlpha = clamp(visorPulse, 0, 1);
+      ctx.fillStyle   = p.warn;
+      ctx.fillRect(1, -21, 8, 3);
+      ctx.fillStyle   = p.hi;
+      ctx.fillRect(3, -21, 4, 2);
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+      // Side antenna
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(8, -29, 2, 5);
+      ctx.fillRect(-2, -27, 2, 4);
+
+      // ---- THRUSTER PACK / BACKPACK (left side of robot = down on canvas) ----
+      ctx.fillStyle = p.mid;
+      ctx.fillRect(-8, -10, 6, 10);
+      // Thruster nozzles
       const flameLen = 10 + Math.sin(this.flameTick * 22) * 5;
-      for (const ey of [-5, 5]) {
-        ctx.fillStyle = p.warn; ctx.globalAlpha = clamp(1.0, 0, 1);
+      for (const ey of [-7, -1]) {
+        ctx.fillStyle   = p.warn;
+        ctx.globalAlpha = clamp(1.0, 0, 1);
         ctx.beginPath();
-        ctx.moveTo(-14, ey - 2.5); ctx.lineTo(-14 - flameLen, ey); ctx.lineTo(-14, ey + 2.5);
+        ctx.moveTo(-8, ey - 2); ctx.lineTo(-8 - flameLen, ey + 1); ctx.lineTo(-8, ey + 2.5);
         ctx.closePath(); ctx.fill();
-        ctx.fillStyle = p.hi; ctx.globalAlpha = clamp(0.9, 0, 1);
+        ctx.fillStyle   = p.hi;
+        ctx.globalAlpha = clamp(0.85, 0, 1);
         ctx.beginPath();
-        ctx.moveTo(-14, ey - 1.5); ctx.lineTo(-14 - flameLen * 0.6, ey); ctx.lineTo(-14, ey + 1.5);
+        ctx.moveTo(-8, ey - 1); ctx.lineTo(-8 - flameLen * 0.55, ey + 0.5); ctx.lineTo(-8, ey + 1.5);
         ctx.closePath(); ctx.fill();
       }
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
 
     } finally {
       ctx.restore();
