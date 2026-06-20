@@ -1414,13 +1414,14 @@ export class Game extends Scene {
           const ch = c < row.length ? row[c] : '.';
           if (ch === '.' || ch === ' ') continue;
 
+          // 白基調（自機ジェットと統一）：ボディ=白(p.hi)、アウトライン/陰=緑(p.mid/p.dim)
           let colour;
-          if      (ch === 'O') colour = p.hi;
-          else if (ch === 'B') colour = p.mid;
-          else if (ch === 'D') colour = p.dim;
-          else if (ch === 'G') colour = p.hi;
-          else if (ch === 'A') colour = p.warn;
-          else colour = p.mid;
+          if      (ch === 'O') colour = p.mid;   // アウトライン＝緑のライン
+          else if (ch === 'B') colour = p.hi;    // ボディ＝白
+          else if (ch === 'D') colour = p.dim;   // 陰＝濃い緑
+          else if (ch === 'G') colour = p.mid;   // ガンポッド＝緑
+          else if (ch === 'A') colour = p.warn;  // バイザー＝アンバー
+          else colour = p.hi;
 
           let cellAlpha = savedAlpha;
           if (ch === 'A') cellAlpha = clamp(savedAlpha * visorPulse, 0, 1);
