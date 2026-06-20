@@ -181,7 +181,7 @@ export class Game {
       atk: Math.round(b.atk * (1 + (this.p.level - 1) * 0.05)),
       defense: b.defense, evade: 0.03, xpReward: b.xpReward,
       speed: 0.95, scale: b.scale, tint: b.tint,
-      aggressive: true, senseRange: 7, atkInterval: 0.9,   // relentless — out-heal it with lifesteal
+      aggressive: true, senseRange: b.senseRange || 7, atkInterval: b.atkInterval || 0.9,
       wx: bx, wy: by, homeX: bx, homeY: by,
       t: 0, face: 1, walk: 0, hurt: 0, atkTimer: 0.5, deathT: 0, aggro: false,
     };
@@ -624,22 +624,32 @@ export class Game {
     this.drawGround();
     this.drawBlood();
 
-    // build depth-sorted draw list (monsters + loot). The player is drawn last so
-    // large monsters never fully occlude the character.
+    // depth-sorted draw list — player included so front/back ordering is correct
     const list = [];
     for (const it of this.loot) list.push({ d: it.wx + it.wy - 0.3, kind: 'loot', o: it });
     for (const m of this.monsters) list.push({ d: m.wx + m.wy, kind: 'mon', o: m });
+    list.push({ d: this.p.wx + this.p.wy, kind: 'player' });
     list.sort((a, b) => a.d - b.d);
 
+    const ps = this.toScreen(this.p.wx, this.p.wy);
+    let playerDrawn = false;
     for (const e of list) {
       if (e.kind === 'loot') {
         const s = this.toScreen(e.o.wx, e.o.wy);
         drawLoot(ctx, { x: s.x, y: s.y, t: e.o.t, color: e.o.color });
+      } else if (e.kind === 'player') {
+        this.drawPlayer(); playerDrawn = true;
       } else {
-        this.drawMonster(e.o);
+        // a monster drawn in front of the player that overlaps it fades so the
+        // character stays visible (esp. huge bosses standing nearer the camera)
+        let fade = 1;
+        if (playerDrawn) {
+          const ms = this.toScreen(e.o.wx, e.o.wy);
+          if (Math.abs(ms.x - ps.x) < 48 && Math.abs(ms.y - ps.y) < 72) fade = 0.8;
+        }
+        this.drawMonster(e.o, fade);
       }
     }
-    this.drawPlayer();
 
     this.drawParticles();
     this.drawAmbient();
@@ -932,10 +942,10 @@ export class Game {
     ctx.restore();
   }
 
-  drawMonster(m) {
+  drawMonster(m, fade = 1) {
     const ctx = this.ctx;
     const s = this.toScreen(m.wx, m.wy);
-    if (m.hp <= 0) { ctx.globalAlpha = Math.max(0, 1 - m.deathT / 0.4); }
+    ctx.globalAlpha = (m.hp <= 0 ? Math.max(0, 1 - m.deathT / 0.4) : 1) * fade;
     const sc = (m.scale || 1) * (m.isBoss ? 1.15 : 1.5);   // monsters ~char-size and up
     drawShadow(ctx, s.x, s.y, 16 * sc, 7 * sc);
     drawMonster(ctx, m.sprite, { x: s.x, y: s.y, scale: sc, face: m.face, t: m.t, walk: m.walk, hurt: m.hurt, tint: m.tint });

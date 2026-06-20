@@ -211,46 +211,55 @@ function fighterSide(ctx, D) {
   const { s, face, t, walk, atk, god, moving } = D, P = PAL;
   ctx.save(); ctx.scale(face, 1);                 // draw facing right; mirror for left
   const stride = moving ? Math.sin(t * 9) : Math.sin(t * 2.2) * 0.05;
-  drawLeg(ctx, -1 * s, -26 * s, -stride * 1.3, s, darken(P.LEG, 18), P.BOOT, 1);  // far leg
-  ctx.fillStyle = P.SKIRT;
-  ctx.beginPath(); ctx.moveTo(-5 * s, -32 * s); ctx.lineTo(6 * s, -32 * s);
-  ctx.lineTo(7 * s, -19 * s); ctx.lineTo(-6 * s, -19 * s); ctx.closePath(); ctx.fill();
-  drawLeg(ctx, 1.5 * s, -26 * s, stride * 1.3, s, P.LEG2, P.BOOT, 1);            // near leg
-  // ponytail trailing behind (-x)
+  const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
+  drawLeg(ctx, -1.5 * s, -26 * s, -stride * 1.3, s, darken(P.LEG, 18), P.BOOT, 1);  // far leg
+  // ponytail trailing behind
   const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
   ctx.fillStyle = P.HAIR;
   ctx.beginPath();
-  ctx.moveTo(-2 * s, -57 * s);
-  ctx.quadraticCurveTo(-17 * s, -51 * s + sway, -15 * s, -32 * s + sway);
-  ctx.quadraticCurveTo(-9 * s, -44 * s, -2 * s, -52 * s);
+  ctx.moveTo(-3 * s, -57 * s);
+  ctx.quadraticCurveTo(-18 * s, -50 * s + sway, -15 * s, -31 * s + sway);
+  ctx.quadraticCurveTo(-10 * s, -44 * s, -3 * s, -52 * s);
   ctx.closePath(); ctx.fill();
-  const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
-  // torso profile (chest forward +x)
+  // skirt
+  ctx.fillStyle = P.SKIRT;
+  ctx.beginPath(); ctx.moveTo(-6 * s, -32 * s); ctx.lineTo(6 * s, -32 * s);
+  ctx.lineTo(7.5 * s, -18 * s); ctx.lineTo(-7 * s, -18 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-7 * s, -19.5 * s, 14.5 * s, 2.2 * s);
+  drawLeg(ctx, 2 * s, -26 * s, stride * 1.3, s, P.LEG2, P.BOOT, 1);                // near leg
+  // torso profile — fuller body so it reads as a person, not a chevron
   ctx.beginPath();
-  ctx.moveTo(-4 * s, -47 * s);
-  ctx.quadraticCurveTo(5 * s, -45 * s, 4.5 * s, -38 * s);
-  ctx.quadraticCurveTo(5 * s, -34 * s, 2 * s, -32 * s);
-  ctx.lineTo(-3 * s, -32 * s);
-  ctx.quadraticCurveTo(-5 * s, -40 * s, -4 * s, -47 * s);
+  ctx.moveTo(-5 * s, -47 * s);
+  ctx.quadraticCurveTo(4.5 * s, -46 * s, 5.5 * s, -39 * s);
+  ctx.quadraticCurveTo(6 * s, -34 * s, 3 * s, -32 * s);
+  ctx.lineTo(-4.5 * s, -32 * s);
+  ctx.quadraticCurveTo(-6 * s, -40 * s, -5 * s, -47 * s);
   ctx.closePath();
-  const tg = ctx.createLinearGradient(-4 * s, -47 * s, 5 * s, -32 * s);
-  tg.addColorStop(0, P.ARM); tg.addColorStop(1, P.ARM_D);
+  const tg = ctx.createLinearGradient(-5 * s, -47 * s, 6 * s, -32 * s);
+  tg.addColorStop(0, '#eef2f8'); tg.addColorStop(.5, P.ARM); tg.addColorStop(1, P.ARM_D);
   ctx.fillStyle = tg; ctx.fill(); ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
-  ctx.fillStyle = P.LEATHER; ctx.fillRect(-3.5 * s, -33.5 * s, 8 * s, 2.4 * s);   // belt
-  ctx.fillStyle = P.ARM_D; ctx.beginPath(); ctx.ellipse(-1 * s, -46 * s, 3.4 * s, 2.6 * s, 0, 0, 7); ctx.fill();
-  // head profile
-  ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.5 * s, -51 * s, 3 * s, 3.5 * s);
-  ctx.fillStyle = P.SKIN; ctx.beginPath(); ctx.arc(0.5 * s, -56 * s, 5.3 * s, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(5 * s, -56.5 * s); ctx.lineTo(6.6 * s, -54.8 * s); ctx.lineTo(5 * s, -53.4 * s); ctx.closePath(); ctx.fill(); // nose
+  ctx.fillStyle = P.LEATHER; ctx.fillRect(-4.5 * s, -33.5 * s, 9.5 * s, 2.4 * s);   // belt
+  ctx.fillStyle = P.ARM_D; ctx.beginPath(); ctx.ellipse(-1.5 * s, -46.5 * s, 4 * s, 3 * s, 0, 0, 7); ctx.fill(); // pauldron
+  // neck + head (rounder, bigger)
+  ctx.fillStyle = P.SKIN_D; ctx.fillRect(-1.5 * s, -51 * s, 3.4 * s, 3.5 * s);
+  ctx.fillStyle = P.SKIN; ctx.beginPath(); ctx.arc(1 * s, -56 * s, 5.6 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(6.1 * s, -55.4 * s, 1.3 * s, -1.4, 1.4); ctx.fill();     // soft nose bump
+  // hair cap over top/back of head
   ctx.fillStyle = P.HAIR;
-  ctx.beginPath(); ctx.arc(0, -57.5 * s, 5.9 * s, Math.PI * 0.72, Math.PI * 2.12); ctx.lineTo(-1.5 * s, -53 * s); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#3a2a22'; ctx.beginPath(); ctx.arc(3 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
-  // shield on near arm (in front of torso)
-  ctx.save(); ctx.translate(2 * s, -30 * s + shB);
-  ctx.fillStyle = '#9aa6ba'; ctx.beginPath(); ctx.ellipse(0, 0, 4.5 * s, 9 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0.5 * s, -57 * s, 6 * s, Math.PI * 0.6, Math.PI * 2.04);
+  ctx.quadraticCurveTo(-2 * s, -52 * s, -4 * s, -53 * s);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3a2a22'; ctx.beginPath(); ctx.arc(3.6 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#4a3326'; ctx.lineWidth = 0.9 * s;
+  ctx.beginPath(); ctx.moveTo(2.6 * s, -58 * s); ctx.lineTo(4.8 * s, -57.6 * s); ctx.stroke();
+  // shield on near arm (front)
+  ctx.save(); ctx.translate(2.5 * s, -29 * s + shB);
+  ctx.fillStyle = '#9aa6ba'; ctx.beginPath(); ctx.ellipse(0, 0, 5 * s, 9 * s, 0, 0, 7); ctx.fill();
   ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.6 * s; ctx.stroke();
+  ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2 * s, 0, 7); ctx.fill();
   ctx.restore();
-  // sword arm forward (face=1 inside the mirrored space)
+  // sword arm forward
   drawSwordArm(ctx, 3 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god);
   ctx.restore();
 }
@@ -348,6 +357,7 @@ export function drawMonster(ctx, sprite, o) {
     case 'ogre': ogre(ctx, o); break;
     case 'golem': golem(ctx, o); break;
     case 'skeleton': skeleton(ctx, o); break;
+    case 'dragon': dragon(ctx, o); break;
     default: lizardman(ctx, o);
   }
   ctx.restore();
@@ -531,6 +541,60 @@ function skeleton(ctx, o) {
   ctx.fillStyle = '#ff5a3a';
   ctx.beginPath(); ctx.arc(-2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
+}
+
+// ---------- DRAGON (apex boss) ----------
+function dragonWing(ctx, ox, oy, s, t, flap, scl, far) {
+  ctx.save(); ctx.translate(ox, oy); ctx.rotate(-0.6 - flap);
+  ctx.fillStyle = far ? `rgba(${hexrgb(darken(t, 35))},0.5)` : `rgba(${hexrgb(t)},0.82)`;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-30 * s * scl, -20 * s * scl, -46 * s * scl, -2 * s * scl);
+  ctx.quadraticCurveTo(-32 * s * scl, 2 * s * scl, -24 * s * scl, 9 * s * scl);
+  ctx.quadraticCurveTo(-28 * s * scl, 1 * s * scl, -13 * s * scl, 7 * s * scl);
+  ctx.quadraticCurveTo(-17 * s * scl, 0, 0, 4 * s * scl);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = `rgba(${hexrgb(darken(t, 55))},0.7)`; ctx.lineWidth = 1.5 * s;
+  for (const e of [[-46, -2], [-24, 9], [-13, 7]]) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(e[0] * s * scl, e[1] * s * scl); ctx.stroke(); }
+  ctx.restore();
+}
+function dragon(ctx, o) {
+  const s = o.scale, t = o.tint, flap = Math.sin(o.t * 3) * 0.35;
+  const D = darken(t, 40), L = lighten(t, 30), BELLY = lighten(t, 55);
+  // tail
+  ctx.strokeStyle = D; ctx.lineCap = 'round'; ctx.lineWidth = 6 * s;
+  ctx.beginPath(); ctx.moveTo(-12 * s, -20 * s);
+  ctx.quadraticCurveTo(-30 * s, -16 * s, -36 * s, -2 * s); ctx.stroke();
+  ctx.fillStyle = D; tri(ctx, -36 * s, -2 * s, -43 * s, -3 * s, -35 * s, -8 * s);
+  // far wing
+  dragonWing(ctx, 0, -34 * s, s, t, flap * 0.8, 0.55, true);
+  // body
+  ctx.beginPath(); ctx.ellipse(-2 * s, -22 * s, 16 * s, 12 * s, 0, 0, 7);
+  const bg = ctx.createLinearGradient(-18 * s, -34 * s, 14 * s, -10 * s);
+  bg.addColorStop(0, L); bg.addColorStop(.6, t); bg.addColorStop(1, D);
+  ctx.fillStyle = bg; ctx.fill();
+  ctx.strokeStyle = darken(t, 70); ctx.lineWidth = 1.4 * s; ctx.stroke();
+  ctx.fillStyle = BELLY; ctx.beginPath(); ctx.ellipse(0, -15 * s, 9 * s, 6 * s, 0, 0, 7); ctx.fill();
+  // hind legs
+  ctx.fillStyle = D;
+  ctx.beginPath(); ctx.ellipse(-8 * s, -6 * s, 5 * s, 7 * s, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6 * s, -5 * s, 5 * s, 7 * s, 0, 0, 7); ctx.fill();
+  // back spikes
+  ctx.fillStyle = D;
+  for (const p of [[12, -34], [4, -33], [-4, -32], [-12, -28]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 2) * s, (p[1] - 6) * s, (p[0] + 2) * s, (p[1] - 2) * s);
+  // near wing (big, in front)
+  dragonWing(ctx, 0, -34 * s, s, t, flap, 1, false);
+  // neck + head
+  ctx.strokeStyle = t; ctx.lineWidth = 9 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(8 * s, -28 * s); ctx.quadraticCurveTo(18 * s, -40 * s, 21 * s, -48 * s); ctx.stroke();
+  ctx.fillStyle = L; ctx.beginPath(); ctx.ellipse(23 * s, -49 * s, 7 * s, 5 * s, -0.3, 0, 7); ctx.fill();
+  ctx.fillStyle = t; tri(ctx, 27 * s, -51 * s, 34 * s, -48 * s, 27 * s, -45 * s);  // snout
+  ctx.strokeStyle = BELLY; ctx.lineWidth = 2 * s;                                   // horns
+  ctx.beginPath(); ctx.moveTo(20 * s, -53 * s); ctx.lineTo(16 * s, -61 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(23 * s, -53 * s); ctx.lineTo(22 * s, -62 * s); ctx.stroke();
+  ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 9 * s;                               // glowing eye
+  ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(24 * s, -50 * s, 1.7 * s, 0, 7); ctx.fill();
+  ctx.shadowBlur = 0;
 }
 
 // ---------- LOOT ----------

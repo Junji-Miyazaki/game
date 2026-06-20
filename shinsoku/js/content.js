@@ -5,7 +5,7 @@
  * Exports:
  *   MONSTERS        — dictionary of 6 enemy definitions (kobold/lizardman/wraith/ogre/golem/skeleton)
  *   ITEM_OPTIONS    — array of droppable affix definitions
- *   AREAS           — dictionary of 3 area definitions forming a loop
+ *   AREAS           — dictionary of 4 area definitions forming a loop (dungeon/grassland/forest/dragon_lair)
  *   rollDrop(tier, rng)         — returns null | affix-object | gear-object
  *   spawnTableFor(playerLevel)  — returns weighted spawn array (fallback)
  *
@@ -253,20 +253,28 @@ export const ITEM_OPTIONS = [
 // ---------------------------------------------------------------------------
 // 3. AREAS
 //
-// Three areas forming a loop: dungeon → grassland → forest → dungeon
+// Four areas forming a loop:
+//   dungeon → grassland → forest → dragon_lair → dungeon
 //
 // Each area has:
-//   id, name, theme, radius, spawn (weighted table), boss, next, prev
+//   id, name, theme, kind, radius, spawn (weighted table), boss, next, prev
 //
-// Spawn weights use only the 6 valid sprite keys:
-//   kobold, lizardman, wraith, ogre, golem, skeleton
+// kind:
+//   "field"  — no boss spawns; rooms are free-roam grinding zones
+//   "dragon" — activates the boss encounter (dragon_lair only)
 //
-// Boss balance:
-//   dungeon  / 封印の守護者  — highest defense, meant to wall unprepared players
-//   grassland/ 草原の巨王    — huge HP pool, medium defense, straightforward
-//   forest   / 森の死霊王    — glass-cannon wraith scaled to boss stats; big HP,
-//                             very high evasion implied (renderer should apply
-//                             wraith evade model), lethal atk
+// Spawn weights use only the 7 valid sprite keys:
+//   kobold, lizardman, wraith, ogre, golem, skeleton, dragon
+//
+// Field-room "elite" monsters (ogre in grassland, golem in forest) use
+// weight 1 vs 4-6 for signature monsters — they appear rarely as roaming
+// threats with no boss bar, not a scripted encounter.
+//
+// Dragon balance:
+//   hpMax 120 000 — intended to require extensive farming to chip down
+//   atk 95 raw   — painful per hit, but not one-shot; defense gear matters
+//   atkInterval 1.1 s — attacks fast; lifesteal gear makes the difference
+//   senseRange 9  — notices the player from across much of the lair
 // ---------------------------------------------------------------------------
 
 export const AREAS = {
@@ -274,48 +282,33 @@ export const AREAS = {
     id:     "dungeon",
     name:   "地下牢",
     theme:  "dungeon",
-    radius: 11,
+    kind:   "field",
+    radius: 12,
+    // Signature: undead jail — skeletons dominant, kobold packs, light lizardman
     spawn: [
+      { sprite: "skeleton",  weight: 6 },
       { sprite: "kobold",    weight: 5 },
-      { sprite: "lizardman", weight: 4 },
-      { sprite: "wraith",    weight: 2 },
-      { sprite: "skeleton",  weight: 1 },
+      { sprite: "lizardman", weight: 2 },
     ],
-    boss: {
-      sprite:    "golem",
-      name:      "七つの封印の守護者",
-      hpMax:     2400,
-      atk:       34,
-      defense:   18,           // heavily armoured — players need good atk to chip through
-      xpReward:  1200,
-      scale:     2.8,
-      tint:      "#666070",    // darker, more ancient stone than a regular golem
-    },
+    boss: null,
     next: "grassland",
-    prev: "forest",
+    prev: "dragon_lair",
   },
 
   grassland: {
     id:     "grassland",
     name:   "草原",
     theme:  "grassland",
+    kind:   "field",
     radius: 14,
+    // Signature: reptile plains — lizardmen everywhere, kobold skirmishers,
+    // rare roaming ogre elite (weight 1) for danger without a boss encounter
     spawn: [
+      { sprite: "lizardman", weight: 6 },
       { sprite: "kobold",    weight: 4 },
-      { sprite: "lizardman", weight: 4 },
-      { sprite: "skeleton",  weight: 4 },
-      { sprite: "wraith",    weight: 1 },
+      { sprite: "ogre",      weight: 1 },  // elite — rare bruiser, no boss bar
     ],
-    boss: {
-      sprite:    "ogre",
-      name:      "草原の巨王",
-      hpMax:     1800,
-      atk:       38,
-      defense:   8,
-      xpReward:  800,
-      scale:     2.6,
-      tint:      "#a05040",
-    },
+    boss: null,
     next: "forest",
     prev: "dungeon",
   },
@@ -324,25 +317,50 @@ export const AREAS = {
     id:     "forest",
     name:   "深森",
     theme:  "forest",
+    kind:   "field",
     radius: 13,
+    // Signature: haunted wood — wraiths and skeletons dominant,
+    // rare roaming golem elite (weight 1) as a dormant guardian
     spawn: [
-      { sprite: "skeleton",  weight: 5 },
       { sprite: "wraith",    weight: 5 },
-      { sprite: "lizardman", weight: 3 },
-      { sprite: "ogre",      weight: 1 },
+      { sprite: "skeleton",  weight: 5 },
+      { sprite: "golem",     weight: 1 },  // elite — dormant guardian, no boss bar
     ],
+    boss: null,
+    next: "dragon_lair",
+    prev: "grassland",
+  },
+
+  dragon_lair: {
+    id:     "dragon_lair",
+    name:   "竜の巣",
+    theme:  "dungeon",
+    kind:   "dragon",
+    radius: 15,
+    // Light minion presence — mostly atmosphere; the dragon IS the content
+    spawn: [
+      { sprite: "wraith",   weight: 3 },
+      { sprite: "skeleton", weight: 2 },
+    ],
+    // Ancient dragon — near-unkillable until the player has grinded
+    // lifesteal + attack speed + gear deep into the field loops.
+    // atk 95 raw: painful per hit but not one-shot at moderate defense.
+    // atkInterval 1.1 s: hits fast — lifesteal becomes load-bearing.
+    // hpMax 120 000: a long war of attrition, not a burst-down race.
     boss: {
-      sprite:    "wraith",
-      name:      "森の死霊王",
-      hpMax:     1400,         // glass-cannon model: big HP, no defense, dies to burst
-      atk:       42,           // lethal — forces the player to kite
-      defense:   0,
-      xpReward:  900,
-      scale:     2.4,
-      tint:      "#5a3080",    // deep indigo — visibly different from regular wraith
+      sprite:      "dragon",
+      name:        "古龍 ヴァルガ",
+      hpMax:       120000,
+      atk:         95,
+      defense:     22,
+      xpReward:    50000,
+      scale:       3.6,
+      tint:        "#a83232",   // deep crimson
+      senseRange:  9,           // notices the player from across the lair
+      atkInterval: 1.1,         // seconds between attacks
     },
     next: "dungeon",
-    prev: "grassland",
+    prev: "forest",
   },
 };
 
