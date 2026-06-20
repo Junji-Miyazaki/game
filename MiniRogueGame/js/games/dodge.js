@@ -1,6 +1,6 @@
 // DODGE : 弾幕ミサイル回避ゲーム（板野サーカス風）
-// ヴァルキリー型ファイターを操作して、右から迫るホーミングミサイルをかわす。
-// ミサイルは最大旋回速度で制限されるため、慣性でオーバーシュートしてらせん軌跡（板野サーカス）を描く。
+// F-14 トムキャット型ファイターを操作して、右から迫るホーミングミサイルをかわす。
+// ミサイルはスパイラル軌道を描きながら（コークスクリュー）プレイヤーに向かう。
 import { Scene, W, H } from '../core/engine.js';
 import { P } from '../core/palette.js';
 
@@ -28,8 +28,10 @@ const HIT_R = 10;
 // ミサイル先端の当たり判定半径
 const MISSILE_R = 5;
 
-// ミサイルトレイルの最大保存点数（長い飛行機雲のために増量）
-const TRAIL_MAX = 140;
+// ミサイルトレイルの最大保存点数
+// 画面端→端を埋めるため大幅増量 (~360px / ~3px per frame at 60fps = ~120 frames minimum)
+// 余裕を持って 400 点確保し、長い螺旋軌跡を画面全体に表示する
+const TRAIL_MAX = 400;
 
 // スターフィールドの星数
 const STAR_COUNT = 50;
@@ -92,10 +94,19 @@ class Missile {
     this.selfDestruct  = Math.random() < 0.4; // 40%の確率で自爆
     this.disengageTime = 0;            // 離脱後の経過時間
 
-    // トレイル（飛行機雲）— {x, y, wiggleOffset} を保存
-    this.trail = [];       // [{x, y}]
+    // スパイラル（コークスクリュー）パラメータ
+    // 各ミサイルで異なるスパイラルを描かせる
+    this.spiralRadius  = 8 + Math.random() * 18;   // スパイラル半径（px）: 8〜26
+    this.spiralSpeed   = 4.5 + Math.random() * 4;  // スパイラル角速度（rad/s）: 4.5〜8.5
+    this.spiralPhase   = Math.random() * Math.PI * 2; // 初期位相
+    this.spiralAngle   = this.spiralPhase;           // 現在のスパイラル角度（積算）
+    // 離脱後、スパイラル半径を徐々に拡大してルーピングを強調
+    this.spiralExpand  = Math.random() < 0.5;        // 50%の確率でスパイラル拡大
+
+    // トレイル（飛行機雲）— {x, y} を保存
+    this.trail = [];
     this.wigglePhase = Math.random() * Math.PI * 2; // 各ミサイルで位相をずらす
-    this.wiggleFreq  = 8 + Math.random() * 6;       // ジグザグ振動数（1秒あたり）
+    this.wiggleFreq  = 6 + Math.random() * 6;       // ジグザグ振動数（1秒あたり）
 
     this.age  = 0;
     this.dead = false;
@@ -110,6 +121,16 @@ class Missile {
   update(dt, targetX, targetY) {
     if (this.dead) return;
     this.age += dt;
+
+    // スパイラル角度の積算（常に更新）
+    this.spiralAngle += this.spiralSpeed * dt;
+
+    // 現在のスパイラル半径を計算
+    let sr = this.spiralRadius;
+    if (!this.homing && this.spiralExpand) {
+      // 離脱後はスパイラル半径を拡大（より大きなループ）
+      sr = this.spiralRadius + this.disengageTime * 12;
+    }
 
     if (this.homing) {
       // ---- ホーミング段階 ----
@@ -151,9 +172,17 @@ class Missile {
       }
     }
 
-    // 位置更新
-    this.x += Math.cos(this.angle) * this.speed * dt;
-    this.y += Math.sin(this.angle) * this.speed * dt;
+    // ---- コークスクリュー（スパイラル）オフセット計算 ----
+    // 進行方向に垂直なベクトルを「法線」として使い、
+    // そこにスパイラルオフセットを加算することで螺旋軌道にする
+    const perpX = -Math.sin(this.angle); // 進行方向の垂直（法線）
+    const perpY =  Math.cos(this.angle);
+    const spiralOffX = perpX * Math.sin(this.spiralAngle) * sr;
+    const spiralOffY = perpY * Math.sin(this.spiralAngle) * sr;
+
+    // 位置更新（基本移動 + スパイラルオフセット）
+    this.x += Math.cos(this.angle) * this.speed * dt + spiralOffX * dt * this.speed * 0.06;
+    this.y += Math.sin(this.angle) * this.speed * dt + spiralOffY * dt * this.speed * 0.06;
 
     // トレイル記録
     this._recordTrail();
@@ -270,6 +299,15 @@ export class Game extends Scene {
     // 自機を遊技エリア内にクランプ
     this.fx = clamp(this.fx, PLAY_LEFT + 20, FIGHTER_MAX_X);
     this.fy = clamp(this.fy, PLAY_TOP + 16, PLAY_BOTTOM - 16);
+
+    // 可変後退翼：速く動くほど翼を畳んで「矢印」、止まると展開して「十字」
+    const mvx = this.fx - (this._lastFx == null ? this.fx : this._lastFx);
+    const mvy = this.fy - (this._lastFy == null ? this.fy : this._lastFy);
+    const moveSpeed = Math.hypot(mvx, mvy) / Math.max(dt, 0.001);
+    this._lastFx = this.fx; this._lastFy = this.fy;
+    const sweepTarget = clamp(moveSpeed / 240, 0, 1);
+    this._wingSweep = (this._wingSweep == null ? 0 : this._wingSweep);
+    this._wingSweep += (sweepTarget - this._wingSweep) * Math.min(1, dt * 6);
 
     // ---- スターフィールド更新 ----
     for (const s of this.stars) s.update(dt);
@@ -394,8 +432,13 @@ export class Game extends Scene {
 
   // ---- 飛行機雲（Itano Circus contrail）描画 ----
   _drawMissile(ctx, m, p) {
+    if (!m || m.dead) return;
     const trail = m.trail;
-    if (!trail || trail.length < 2) return;
+    if (!trail || trail.length < 2) {
+      // トレイルが短くても弾頭だけ描く
+      if (!m.exploding) this._drawMissileHead(ctx, m, p);
+      return;
+    }
 
     const savedAlpha     = ctx.globalAlpha;
     const savedLineCap   = ctx.lineCap;
@@ -408,14 +451,24 @@ export class Game extends Scene {
 
       const len = trail.length;
 
-      // ---- 長い飛行機雲をジグザグ細線で描画 ----
+      // ---- 長い螺旋飛行機雲をジグザグ細線で描画 ----
       // 各点をトレイル沿いに垂直方向へ微振動させて「ぶれた蒸気」を表現
-      // wiggle: 高周波ジグザグ（perp方向に±wiggleAmp）
-      const wiggleAmp  = 2.0;  // 振れ幅（px）
+      const wiggleAmp  = 1.5;  // 振れ幅（px）細く
+
+      // フェード係数（離脱後はゆっくりフェードアウト）
+      let globalFade = 1.0;
+      if (!m.homing) {
+        // 離脱後: disengageTimeに応じてゆっくりフェード（3秒かけてゆっくり消える）
+        globalFade = clamp(1 - m.disengageTime * 0.33, 0.15, 1);
+      }
+      if (m.exploding) {
+        globalFade *= clamp(1 - m.explodeTimer / m.explodeDur, 0, 1) * 0.6;
+      }
 
       for (let i = 1; i < len; i++) {
         const prev = trail[i - 1];
         const cur  = trail[i];
+        if (!prev || !cur) continue;
 
         // 進行方向に垂直なベクトルを求める
         const dx  = cur.x - prev.x;
@@ -428,43 +481,36 @@ export class Game extends Scene {
         // frac: 0(古い末端)→1(ミサイル先端)
         const frac = i / len;
 
-        // アルファ: 先端付近は明るく、後ろほど薄れる
-        // また離脱後は全体的に薄くフェードアウト
-        let baseAlpha = frac * frac * 0.9;
-        if (!m.homing) {
-          // 離脱後: disengageTimeに応じてトレイル全体を薄くする
-          const fadeOut = clamp(1 - m.disengageTime * 0.7, 0.1, 1);
-          baseAlpha *= fadeOut;
-        }
-        if (m.exploding) {
-          // 爆発中: さらに薄く
-          baseAlpha *= clamp(1 - m.explodeTimer / m.explodeDur, 0, 1) * 0.6;
-        }
+        // アルファ: 先端付近は明るく、後ろほど薄れる（二乗カーブよりも線形に近い）
+        // 長い尾を残すため末端でも 0 にならないよう底上げ
+        let baseAlpha = (frac * 0.75 + 0.05) * globalFade;
         const alpha = clamp(baseAlpha, 0, 1);
-        if (alpha <= 0) continue;
+        if (alpha <= 0.005) continue;
 
         // ジグザグ振動: 各セグメントの中間点に適用
-        const segPhase = m.wigglePhase + (i / len) * m.wiggleFreq * Math.PI * 2;
-        const wiggle   = Math.sin(segPhase) * wiggleAmp * (1 - frac * 0.5); // 先端近くは振れ小さく
+        const segPhase0 = m.wigglePhase + ((i - 1) / len) * m.wiggleFreq * Math.PI * 2;
+        const segPhase1 = m.wigglePhase + (i / len) * m.wiggleFreq * Math.PI * 2;
+        const w0 = Math.sin(segPhase0) * wiggleAmp * (1 - (i - 1) / len * 0.4);
+        const w1 = Math.sin(segPhase1) * wiggleAmp * (1 - frac * 0.4);
 
         // 振動させた座標
-        const wx0 = prev.x + px * (Math.sin(segPhase - 0.3) * wiggleAmp * (1 - (i - 1) / len * 0.5));
-        const wy0 = prev.y + py * (Math.sin(segPhase - 0.3) * wiggleAmp * (1 - (i - 1) / len * 0.5));
-        const wx1 = cur.x  + px * wiggle;
-        const wy1 = cur.y  + py * wiggle;
+        const wx0 = prev.x + px * w0;
+        const wy0 = prev.y + py * w0;
+        const wx1 = cur.x  + px * w1;
+        const wy1 = cur.y  + py * w1;
 
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = clamp(alpha, 0, 1);
 
-        // 色: 先端寄り(frac>0.7)はwarn(黄橙)→hi(白)、中間はwarn、後方はdim
-        if (frac > 0.85) {
+        // 色: 先端寄り(frac>0.85)はhi(白)、中間はwarn(黄橙)、後方はmid/dim
+        if (frac > 0.88) {
           ctx.strokeStyle = p.hi;
-          ctx.lineWidth   = 1.5;
-        } else if (frac > 0.6) {
+          ctx.lineWidth   = 1.8;
+        } else if (frac > 0.65) {
           ctx.strokeStyle = p.warn;
           ctx.lineWidth   = 1.5;
-        } else if (frac > 0.3) {
+        } else if (frac > 0.35) {
           ctx.strokeStyle = p.mid;
-          ctx.lineWidth   = 1.0;
+          ctx.lineWidth   = 1.2;
         } else {
           ctx.strokeStyle = p.dim;
           ctx.lineWidth   = 1.0;
@@ -477,22 +523,16 @@ export class Game extends Scene {
       }
 
       // ---- ミサイル先端（爆発中は先端を描かない）----
-      if (!m.exploding && trail.length > 0) {
-        const head = trail[trail.length - 1];
-        ctx.globalAlpha = 1;
-
-        // 外側光彩（warn色）
-        ctx.fillStyle = p.warn;
-        ctx.fillRect(head.x - 4, head.y - 3, 8, 6);
-        // 明るいコア
-        ctx.fillStyle = p.hi;
-        ctx.fillRect(head.x - 2, head.y - 1, 4, 2);
+      if (!m.exploding) {
+        this._drawMissileHead(ctx, m, p);
       }
 
       // ---- 離脱後自爆エフェクト ----
       if (m.exploding && trail.length > 0) {
         const ex = trail[trail.length - 1];
-        this._drawMissileExplosion(ctx, ex.x, ex.y, m.explodeTimer / m.explodeDur, p);
+        if (ex) {
+          this._drawMissileExplosion(ctx, ex.x, ex.y, m.explodeTimer / m.explodeDur, p);
+        }
       }
 
     } finally {
@@ -503,8 +543,74 @@ export class Game extends Scene {
     }
   }
 
+  // ---- ミサイル弾頭描画（小型ミサイル/ダーツ形状） ----
+  _drawMissileHead(ctx, m, p) {
+    if (!m) return;
+    const savedAlpha = ctx.globalAlpha;
+    try {
+      ctx.globalAlpha = 1;
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.rotate(m.angle);
+
+      // ---- ミサイル本体 ----
+      // ノーズコーン（鋭い先端、右側）
+      ctx.fillStyle = p.hi;
+      ctx.beginPath();
+      ctx.moveTo(10, 0);    // ノーズ先端
+      ctx.lineTo(4, -2);    // 上肩
+      ctx.lineTo(4,  2);    // 下肩
+      ctx.closePath();
+      ctx.fill();
+
+      // 細い円筒ボディ（warn色）
+      ctx.fillStyle = p.warn;
+      ctx.beginPath();
+      ctx.rect(-4, -2, 8, 4);  // x:-4〜4, y:-2〜2
+      ctx.fill();
+
+      // ボディ上の細いストライプ（hi色）
+      ctx.fillStyle = p.hi;
+      ctx.beginPath();
+      ctx.rect(0, -1, 4, 2);
+      ctx.fill();
+
+      // テールフィン（小さい三角形×2: 上下）
+      ctx.fillStyle = p.warn;
+      // 上フィン
+      ctx.beginPath();
+      ctx.moveTo(-4, -2);
+      ctx.lineTo(-8, -6);
+      ctx.lineTo(-4,  0);
+      ctx.closePath();
+      ctx.fill();
+      // 下フィン
+      ctx.beginPath();
+      ctx.moveTo(-4,  2);
+      ctx.lineTo(-8,  6);
+      ctx.lineTo(-4,  0);
+      ctx.closePath();
+      ctx.fill();
+
+      // エンジン排気（小さい炎）
+      ctx.fillStyle = p.warn;
+      ctx.globalAlpha = clamp(0.85, 0, 1);
+      ctx.beginPath();
+      ctx.moveTo(-4, -1.5);
+      ctx.lineTo(-9,  0);
+      ctx.lineTo(-4,  1.5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    } finally {
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+    }
+  }
+
   // 小さい自爆爆発（ミサイルが離脱後に自爆するとき）
   _drawMissileExplosion(ctx, x, y, frac, p) {
+    if (typeof x !== 'number' || typeof y !== 'number') return;
     const r = 3 + frac * 18;
     const savedAlpha = ctx.globalAlpha;
     try {
@@ -525,37 +631,129 @@ export class Game extends Scene {
     }
   }
 
+  // ---- F-14 トムキャット風シルエット描画 ----
   _drawFighter(ctx, x, y, p) {
-    // ヴァルキリー風の小型ファイター（三角矢印型）
-    ctx.fillStyle = p.fg;
-    ctx.beginPath();
-    ctx.moveTo(x + 18, y);           // 機首
-    ctx.lineTo(x - 10, y - 8);       // 上翼端
-    ctx.lineTo(x - 6, y);            // 中央くびれ
-    ctx.lineTo(x - 10, y + 8);       // 下翼端
-    ctx.closePath();
-    ctx.fill();
+    const savedAlpha = ctx.globalAlpha;
+    ctx.save();
+    ctx.translate(x, y);
+    // F-14 は右向き（ミサイルに向かう方向）
 
-    // ハイライト（機体上部）
-    ctx.fillStyle = p.hi;
-    ctx.beginPath();
-    ctx.moveTo(x + 18, y);
-    ctx.lineTo(x - 4, y - 3);
-    ctx.lineTo(x - 6, y);
-    ctx.closePath();
-    ctx.fill();
+    try {
+      // sw: 0=翼を展開（上から見て十字） 1=翼を後退（鋭い矢印）。速度で可変。
+      const sw = this._wingSweep == null ? 0 : this._wingSweep;
+      const lerp = (a, b) => a + (b - a) * sw;
+      const tfx = lerp(8, -14), tfy = lerp(30, 22);   // 翼端 前縁
+      const tbx = lerp(-4, -22), tby = lerp(30, 12);  // 翼端 後縁
 
-    // コックピット
-    ctx.fillStyle = p.mid;
-    ctx.fillRect(x + 2, y - 2, 8, 4);
+      // ---- 可変後退翼（胴体の下に先に描く）----
+      ctx.fillStyle = p.fg;
+      // 上翼
+      ctx.beginPath();
+      ctx.moveTo(8, -5); ctx.lineTo(tfx, -tfy); ctx.lineTo(tbx, -tby); ctx.lineTo(-5, -5);
+      ctx.closePath(); ctx.fill();
+      // 下翼
+      ctx.beginPath();
+      ctx.moveTo(8, 5); ctx.lineTo(tfx, tfy); ctx.lineTo(tbx, tby); ctx.lineTo(-5, 5);
+      ctx.closePath(); ctx.fill();
+      // 翼端ミサイルレール
+      ctx.fillStyle = p.hi;
+      ctx.fillRect(tfx - 1, -tfy - 1, 2, 2);
+      ctx.fillRect(tbx - 1, -tby - 1, 2, 2);
+      ctx.fillRect(tfx - 1,  tfy - 1, 2, 2);
+      ctx.fillRect(tbx - 1,  tby - 1, 2, 2);
 
-    // エンジン炎（点滅アニメーション）
-    const flameLen = 6 + Math.sin(this.flameTick * 18) * 4;
-    const flameW   = 3 + Math.sin(this.flameTick * 22) * 1.5;
-    ctx.fillStyle = p.warn;
-    ctx.fillRect(x - 10 - flameLen, y - flameW / 2, flameLen, flameW);
-    ctx.fillStyle = p.hi;
-    ctx.fillRect(x - 10 - flameLen * 0.5, y - flameW * 0.3, flameLen * 0.5, flameW * 0.6);
+      // ---- ツインエンジン・ダクト（正面から見ると「四角い穴2つ」）----
+      ctx.fillStyle = p.dim;
+      ctx.fillRect(-20, -8, 16, 6);
+      ctx.fillRect(-20,  2, 16, 6);
+      // ダクトの暗い穴
+      ctx.fillStyle = p.dark;
+      ctx.fillRect(-20, -7, 6, 4);
+      ctx.fillRect(-20,  3, 6, 4);
+
+      // ---- 胴体：フラットな板＋鋭い機首（上から見た形）----
+      ctx.fillStyle = p.fg;
+      ctx.beginPath();
+      ctx.moveTo(26, 0);        // 鋭いノーズ先端
+      ctx.lineTo(13, -4);
+      ctx.lineTo(-6, -7);
+      ctx.lineTo(-20, -6);
+      ctx.lineTo(-20,  6);
+      ctx.lineTo(-6,  7);
+      ctx.lineTo(13,  4);
+      ctx.closePath();
+      ctx.fill();
+      // 中央リッジ（メカ感）
+      ctx.strokeStyle = p.mid; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-18, 0); ctx.stroke();
+
+      // ---- 双垂直尾翼（後部にハの字）----
+      ctx.fillStyle = p.mid;
+      ctx.beginPath();
+      ctx.moveTo(-8, -5); ctx.lineTo(-19, -13); ctx.lineTo(-21, -11); ctx.lineTo(-12, -4);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-8,  5); ctx.lineTo(-19,  13); ctx.lineTo(-21,  11); ctx.lineTo(-12,  4);
+      ctx.closePath(); ctx.fill();
+
+      // ---- コックピットキャノピー ----
+      ctx.fillStyle = p.hi;
+      ctx.beginPath();
+      ctx.ellipse(10, -1, 5, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // キャノピーハイライト（光沢）
+      ctx.fillStyle = p.fg;
+      ctx.globalAlpha = clamp(0.6, 0, 1);
+      ctx.beginPath();
+      ctx.ellipse(11, -1.5, 2.5, 1, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+
+      // ---- エンジン炎（点滅アニメーション）----
+      const flameLen = 7 + Math.sin(this.flameTick * 18) * 4;
+      const flameW   = 2 + Math.sin(this.flameTick * 22) * 1;
+
+      // 上エンジン炎
+      ctx.fillStyle = p.warn;
+      ctx.globalAlpha = clamp(0.9, 0, 1);
+      ctx.beginPath();
+      ctx.moveTo(-18, -3.5);
+      ctx.lineTo(-18 - flameLen, -3.5 + flameW * 0.5);
+      ctx.lineTo(-18, -1.5);
+      ctx.closePath();
+      ctx.fill();
+      // コア（hi色）
+      ctx.fillStyle = p.hi;
+      ctx.globalAlpha = clamp(0.75, 0, 1);
+      ctx.beginPath();
+      ctx.moveTo(-18, -3);
+      ctx.lineTo(-18 - flameLen * 0.55, -2.5);
+      ctx.lineTo(-18, -2);
+      ctx.closePath();
+      ctx.fill();
+
+      // 下エンジン炎
+      ctx.fillStyle = p.warn;
+      ctx.globalAlpha = clamp(0.9, 0, 1);
+      ctx.beginPath();
+      ctx.moveTo(-18, 3.5);
+      ctx.lineTo(-18 - flameLen, 3.5 - flameW * 0.5);
+      ctx.lineTo(-18, 1.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = p.hi;
+      ctx.globalAlpha = clamp(0.75, 0, 1);
+      ctx.beginPath();
+      ctx.moveTo(-18, 3);
+      ctx.lineTo(-18 - flameLen * 0.55, 2.5);
+      ctx.lineTo(-18, 2);
+      ctx.closePath();
+      ctx.fill();
+
+    } finally {
+      ctx.restore();
+      ctx.globalAlpha = clamp(savedAlpha, 0, 1);
+    }
   }
 
   _drawExplosion(ctx, exp, p) {
@@ -594,7 +792,7 @@ export class Game extends Scene {
     // 半透明パネル
     const savedAlpha = ctx.globalAlpha;
     try {
-      ctx.globalAlpha = 0.82;
+      ctx.globalAlpha = clamp(0.82, 0, 1);
       ctx.fillStyle   = p.dark;
       ctx.fillRect(30, H / 2 - 90, W - 60, 200);
     } finally {

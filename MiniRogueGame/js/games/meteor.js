@@ -270,155 +270,102 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
-// ---- ソリッド塗り爆発雲（レトロフラットスタイル）----
-// グラデーション/グローなし。赤系ソリッドカラーの粗い手描き風円形ポリゴンで描く。
-// 重なる爆発は XOR合成でブラックアウトし、日食/クレセント効果を演出する。
-// オフスクリーンキャンバスに全爆発をXORで描いてから mainCtx に合成する。
+// ---- コース・ピクセルスペックル爆発（Missile Command 風）----
+// フラットな赤雲・XOR合成・月輪リムを廃止し、
+// 大きな正方形セル（~8px）を高速カラーサイクルで埋めるスペックルで置換。
+// セル色は毎1〜2フレームごとにランダム化されフラッシュ白に見える。
+// 円境界は大セルのブロックエッジで自然にガタガタになる（狙い通り）。
 
-// オフスクリーンキャンバス（遅延初期化、W×Hサイズ）
-let _blastOffscreen = null;
-let _blastOffCtx    = null;
+// スペックル色セット：ビビッド多色 + 約28%をブラック（ネガティブ）
+const _SPECKLE_COLORS = [
+  '#ffffff', // 白（最も多く出ることで「フラッシュ白」に見える）
+  '#ffffff',
+  '#ffffff',
+  '#00ff88', // 輝くグリーン
+  '#ff00ff', // マゼンタ
+  '#00ffff', // シアン
+  '#ffff00', // 黄
+  '#ff4400', // 赤オレンジ
+  '#ff9900', // オレンジ
+  '#4466ff', // ブルー
+  '#000000', // ブラック（ネガティブ）
+  '#000000', // ブラック
+  '#000000', // ブラック（全14色中3色 ≒ 21%、白3+ブラック3=43%でコントラスト）
+  '#ffffff',
+];
+const _SPECKLE_COLOR_COUNT = _SPECKLE_COLORS.length; // 14
 
-function _getBlastOffscreen() {
-  if (_blastOffscreen && _blastOffCtx) return _blastOffCtx;
-  try {
-    _blastOffscreen = document.createElement('canvas');
-    _blastOffscreen.width  = W;
-    _blastOffscreen.height = H;
-    _blastOffCtx = _blastOffscreen.getContext('2d');
-    if (!_blastOffCtx) { _blastOffscreen = null; _blastOffCtx = null; }
-  } catch (_) {
-    _blastOffscreen = null; _blastOffCtx = null;
-  }
-  return _blastOffCtx;
+// セルサイズ（論理px）— 大きいほどブロッキーでレトロらしい
+const _CELL = 8;
+
+// 高速シードPRNG（xorshift32相当の整数ハッシュ）
+// 引数はすべて整数化済みと仮定。戻り値 0〜1 の float。
+function _speckleRand(cx, cy, blastId, tick) {
+  // Wang hash 風のビット混合
+  let h = (cx * 2246822519) ^ (cy * 3266489917) ^ (blastId * 668265263) ^ (tick * 374761393);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return (h & 0xffff) / 0x10000; // 0〜0.9999...
 }
 
-// 赤系フリッカーカラー（3色を frameCount でサイクル）
-const _BLAST_COLORS = ['#ff2200', '#ff5500', '#cc0000'];
-
-// 爆発雲の粗い手描き風円ポリゴン頂点列を生成する
-// r: 半径, seed: 爆発ID（形状安定のため）, shimmerPhase: 0..2π（per-frame微変化）
-function _makeBlastPoly(r, seed, shimmerPhase) {
-  const VCOUNT = 30; // 頂点数（多めで丸く見える）
-  const verts = [];
-  for (let i = 0; i < VCOUNT; i++) {
-    const angle = (i / VCOUNT) * Math.PI * 2;
-    // 小さなジッター（0.85〜1.00r）で粒状・手描き感を出す
-    // shimmerPhase でわずかに毎フレーム揺れる（エッジのちらつき）
-    const s1 = Math.sin(seed * 13.7 + i * 9.1);
-    const s2 = Math.sin(seed * 7.3  + i * 4.3 + shimmerPhase);
-    const jitter = 0.875 + 0.075 * s1 + 0.05 * s2; // 0.85〜1.00
-    const pr = Math.max(1, r * clamp(jitter, 0.85, 1.0));
-    verts.push({ x: Math.cos(angle) * pr, y: Math.sin(angle) * pr });
-  }
-  return verts;
-}
-
-// 全爆発をオフスクリーンに XOR で描いてから mainCtx に source-over で合成
-// 重なり部分はXORで透明（黒抜き）になり日食のような効果が出る。
-// さらに各雲の輪郭に明るいリムを stroke することで、
-// 重なった部分（三日月/月輪型）のエッジが光り、月輪（げつりん）のような演出になる。
-function drawAllBlastsSolidXOR(mainCtx, blasts, frameCount) {
-  const offCtx = _getBlastOffscreen();
-  if (!offCtx || !_blastOffscreen) {
-    // フォールバック：オフスクリーンが使えない場合は source-over で塗る
-    mainCtx.globalCompositeOperation = 'source-over';
-    for (const b of blasts) {
-      if (!b) continue;
-      const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
-      const r = Math.max(1, b.r);
-      mainCtx.save();
-      mainCtx.globalAlpha = clamp(alpha, 0, 1);
-      mainCtx.fillStyle = _BLAST_COLORS[frameCount % _BLAST_COLORS.length];
-      mainCtx.beginPath();
-      mainCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
-      mainCtx.fill();
-      // フォールバック時も月輪リムを描く
-      mainCtx.globalAlpha = clamp(alpha * 0.7, 0, 1);
-      mainCtx.strokeStyle = '#ffaa66';
-      mainCtx.lineWidth   = Math.max(1, r * 0.06);
-      mainCtx.stroke();
-      mainCtx.restore();
-    }
-    mainCtx.globalCompositeOperation = 'source-over';
-    return;
-  }
-
-  // --- パス1: XOR ソリッドフィル（重なりを黒抜き/日食）---
-  offCtx.clearRect(0, 0, W, H);
-  offCtx.globalCompositeOperation = 'xor';
-
+// 全爆発をスペックルで描画（source-over のみ、XOR合成なし）
+// mainCtx: メインCanvas2Dコンテキスト（論理座標系）
+// blasts: アクティブ爆発オブジェクト配列
+// frameCount: インクリメントカウンタ（色フリッカー用、1フレームおきに更新）
+function drawAllBlastsSpeckle(mainCtx, blasts, frameCount) {
   for (const b of blasts) {
     if (!b) continue;
-    const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
+    const r = Math.max(1, b.r);
+    // フェードアウト用アルファ（成長中は1.0、フェード中は線形減衰）
+    const alpha = b.growing
+      ? 1.0
+      : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
     if (alpha <= 0) continue;
 
-    const r = Math.max(1, b.r);
-    const colorIdx    = (frameCount + b.id) % _BLAST_COLORS.length;
-    const shimmerPhase = (frameCount * 0.22) + b.id * 1.3;
+    const bx = b.x;
+    const by = b.y;
+    const id = b.id | 0;
 
-    const verts = _makeBlastPoly(r, b.id, shimmerPhase);
-    if (!verts || verts.length < 3) continue;
+    // ★全面を1色で塗る。フレームごとに色を高速サイクルさせ、爆発の「全面」が
+    //   白・カラフル・黒(ネガ)と明滅する。ドット単位ではなく面全体が点滅する。
+    const cidx = (_speckleRand(id, 7, 13, frameCount) * _SPECKLE_COLOR_COUNT) | 0;
+    const fillCol = _SPECKLE_COLORS[cidx];
 
-    offCtx.save();
-    offCtx.globalAlpha = clamp(alpha, 0, 1);
-    offCtx.fillStyle   = _BLAST_COLORS[colorIdx];
-    offCtx.translate(b.x, b.y);
-    offCtx.beginPath();
-    offCtx.moveTo(verts[0].x, verts[0].y);
-    for (let i = 1; i < verts.length; i++) {
-      offCtx.lineTo(verts[i].x, verts[i].y);
-    }
-    offCtx.closePath();
-    offCtx.fill();
-    offCtx.restore();
-  }
-
-  // オフスクリーンを mainCtx に source-over で合成
-  mainCtx.globalCompositeOperation = 'source-over';
-  try {
-    mainCtx.drawImage(_blastOffscreen, 0, 0);
-  } catch (_) {}
-
-  // --- パス2: 月輪リム（各雲の輪郭に明るいリムを source-over で重ねる）---
-  // 重なり部分（XORで黒抜きされた三日月型エッジ）を含む全アウトラインに
-  // 薄い暖色の輝きを加え、月輪のような光るリングを表現する。
-  // このパスは mainCtx に直接 source-over で描くため、
-  // 黒抜き部分の縁も輝いて見える（三日月のリムが光るイメージ）。
-  mainCtx.globalCompositeOperation = 'source-over';
-  for (const b of blasts) {
-    if (!b) continue;
-    const alpha = b.growing ? 1.0 : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
-    if (alpha <= 0) continue;
-
-    const r = Math.max(1, b.r);
-    const shimmerPhase = (frameCount * 0.22) + b.id * 1.3;
-    const verts = _makeBlastPoly(r, b.id, shimmerPhase);
-    if (!verts || verts.length < 3) continue;
-
-    // リム幅：半径に比例（小さな爆発でも最低1px）
-    const rimW = Math.max(1, r * 0.07);
-    // リムの輝度はフェードに合わせてやや弱く（主役はフィルなので控えめに）
-    const rimAlpha = clamp(alpha * 0.75, 0, 1);
+    // グリッドをブラスト中心から±r の矩形に限定（粗いセルで縁をガタガタに）
+    const x0 = Math.floor((bx - r) / _CELL);
+    const x1 = Math.ceil ((bx + r) / _CELL);
+    const y0 = Math.floor((by - r) / _CELL);
+    const y1 = Math.ceil ((by + r) / _CELL);
 
     mainCtx.save();
-    mainCtx.globalAlpha = rimAlpha;
-    mainCtx.translate(b.x, b.y);
-    mainCtx.beginPath();
-    mainCtx.moveTo(verts[0].x, verts[0].y);
-    for (let i = 1; i < verts.length; i++) {
-      mainCtx.lineTo(verts[i].x, verts[i].y);
+    mainCtx.globalCompositeOperation = 'source-over';
+    mainCtx.globalAlpha = clamp(alpha, 0, 1);
+    mainCtx.fillStyle = fillCol;
+
+    for (let gy = y0; gy <= y1; gy++) {
+      const cy = gy * _CELL + _CELL * 0.5;
+      const dy = cy - by;
+
+      for (let gx = x0; gx <= x1; gx++) {
+        const cx = gx * _CELL + _CELL * 0.5;
+        const dx = cx - bx;
+
+        // セルごとに半径ジッターでエッジを粗く（綺麗な円にしない）
+        const jitter = 0.88 + 0.22 * _speckleRand(gx * 7 + 3, gy * 5 + 1, id, 0);
+        const effectiveR = r * jitter;
+        if (dx * dx + dy * dy > effectiveR * effectiveR) continue;
+
+        mainCtx.fillRect(gx * _CELL, gy * _CELL, _CELL, _CELL);
+      }
     }
-    mainCtx.closePath();
-    // 暖かい明るいリム色（薄オレンジ〜白熱色）
-    mainCtx.strokeStyle = '#ffcc88';
-    mainCtx.lineWidth   = rimW;
-    mainCtx.stroke();
+
     mainCtx.restore();
   }
 
-  // 必ず source-over に戻す
+  // 安全のため compositeOperation / alpha をデフォルトに戻す
   mainCtx.globalCompositeOperation = 'source-over';
+  mainCtx.globalAlpha = 1;
 }
 
 export class Game extends Scene {
@@ -1309,7 +1256,7 @@ export class Game extends Scene {
       ctx.restore();
     }
 
-    // ---- 爆発（ソリッド赤雲：XOR重なり黒抜き）----
+    // ---- 爆発（コースピクセルスペックル：Missile Command 風）----
     // フレームカウンタをインクリメント（render は毎フレーム呼ばれる）
     this._frameCount = (this._frameCount + 1) | 0;
 
@@ -1318,9 +1265,7 @@ export class Game extends Scene {
       const activeBlasts = this.blasts.filter(b => b != null);
 
       if (activeBlasts.length > 0) {
-        ctx.save();
-        drawAllBlastsSolidXOR(ctx, activeBlasts, this._frameCount);
-        ctx.restore();
+        drawAllBlastsSpeckle(ctx, activeBlasts, this._frameCount);
       }
     }
 
