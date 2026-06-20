@@ -42,6 +42,8 @@ export const MONSTERS = {
     tint:      "#c8a46e",     // tan/brown
     packMin:   2,
     packMax:   4,
+    aggressive: false,        // timid — never approaches; only retaliates
+    senseRange: 0,
   },
 
   lizardman: {
@@ -59,6 +61,8 @@ export const MONSTERS = {
     tint:      "#6fcf6f",     // green
     packMin:   1,
     packMax:   2,
+    aggressive: false,        // territorial but won't chase; retaliates
+    senseRange: 0,
   },
 
   wraith: {
@@ -76,6 +80,8 @@ export const MONSTERS = {
     tint:      "#c8b4e8",     // pale lavender
     packMin:   1,
     packMax:   2,
+    aggressive: false,        // drifts; only fights when provoked
+    senseRange: 0,
   },
 
   ogre: {
@@ -93,6 +99,8 @@ export const MONSTERS = {
     tint:      "#a05040",     // dull red-brown
     packMin:   1,
     packMax:   1,
+    aggressive: true,         // territorial — senses & lumbers toward the player
+    senseRange: 5,
   },
 
   golem: {
@@ -110,6 +118,8 @@ export const MONSTERS = {
     tint:      "#888890",     // grey stone
     packMin:   1,
     packMax:   1,
+    aggressive: false,        // dormant guardian — wakes only when attacked
+    senseRange: 0,
   },
 };
 

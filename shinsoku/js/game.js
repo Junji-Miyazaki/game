@@ -4,8 +4,7 @@ import { drawShadow, drawFighter, drawMonster, drawLoot } from './sprites.js';
 
 const TW = 64, TH = 32;                 // iso tile width/height
 const SAVE_KEY = 'shinsoku_save_v1';
-const ATTACK_RANGE = 1.5;               // tiles
-const AGGRO_RANGE = 6.0;                // monsters ignore the player beyond this
+const ATTACK_RANGE = 1.7;               // tiles (bigger monsters need a touch more)
 const MAX_MONSTERS = 7;
 const GOD_THRESHOLD = 8;                // effective atk/s to enter 神速
 
@@ -190,7 +189,7 @@ export class Game {
     if (rng() < m.evade) { this.float(sp.x, sp.y - 30, 'Miss', '#ffffff', 15); return; }
     const variance = 0.85 + rng() * 0.3;
     const dmg = Math.max(1, Math.round(p.atk * variance - m.defense));
-    m.hp -= dmg; m.hurt = 1;
+    m.hp -= dmg; m.hurt = 1; m.aggro = true;   // retaliate
     const crit = variance > 1.08;
     // at 神速 the hit rate is huge — throttle floats/particles for readability + perf
     const god = this.isGod();
@@ -242,18 +241,39 @@ export class Game {
     const p = this.p;
     const dx = p.wx - m.wx, dy = p.wy - m.wy, d = hyp(dx, dy);
     m.atkTimer -= dt;
-    // stay aggroed once engaged, but ignore the player from far away
-    if (!m.aggro && d <= AGGRO_RANGE) m.aggro = true;
-    if (m === this.target) m.aggro = true;
-    if (!m.aggro) { m.idle = (m.idle || 0) + dt; return; } // passive: idle until provoked
+    // Aggro rules: most monsters are passive and never approach. Only `aggressive`
+    // types sense and chase (within senseRange). Any monster aggros once you
+    // target or hit it (retaliation), then stays engaged.
+    if (!m.aggro) {
+      if (m === this.target) m.aggro = true;
+      else if (m.aggressive && d <= (m.senseRange || 0)) m.aggro = true;
+    }
+    if (!m.aggro) { this.wander(m, dt); return; }
     if (d > ATTACK_RANGE - 0.3) {
       const step = Math.min(m.speed * dt, d);
       m.wx += dx / d * step; m.wy += dy / d * step; m.walk = 1;
-      const s0 = this.toScreen(m.wx - dx, m.wy - dy), s1 = this.toScreen(m.wx, m.wy);
-      m.face = s1.x >= s0.x ? 1 : -1;
-    } else if (m.atkTimer <= 0) {
-      m.atkTimer = 1.4;   // monster attacks ~ every 1.4s
-      this.monsterHit(m);
+      m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
+    } else {
+      m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
+      if (m.atkTimer <= 0) { m.atkTimer = 1.4; this.monsterHit(m); }
+    }
+  }
+
+  // Passive monsters stroll around their spawn point (gives the walk animation life).
+  wander(m, dt) {
+    if (m.wcd === undefined) { m.wcd = rng() * 2.5; m.wtx = m.wx; m.wty = m.wy; }
+    m.wcd -= dt;
+    if (m.wcd <= 0) {
+      m.wcd = 2.5 + rng() * 3.5;
+      const homeD = hyp(m.homeX - m.wx, m.homeY - m.wy);
+      if (homeD > 5) { m.wtx = m.homeX; m.wty = m.homeY; }        // leash back home
+      else { const a = rng() * 6.28, r = 1 + rng() * 2.5; m.wtx = m.wx + Math.cos(a) * r; m.wty = m.wy + Math.sin(a) * r; }
+    }
+    const dx = m.wtx - m.wx, dy = m.wty - m.wy, d = hyp(dx, dy);
+    if (d > 0.15) {
+      const step = Math.min(m.speed * 0.35 * dt, d);
+      m.wx += dx / d * step; m.wy += dy / d * step; m.walk = 1;
+      m.face = this.toScreen(m.wtx, m.wty).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
     }
   }
 
@@ -305,11 +325,13 @@ export class Game {
       ...def,
       wx: this.p.wx + Math.cos(ang) * dist,
       wy: this.p.wy + Math.sin(ang) * dist,
+      homeX: this.p.wx + Math.cos(ang) * dist,
+      homeY: this.p.wy + Math.sin(ang) * dist,
       hpMax: Math.round(def.hpMax * lvScale),
       hp: Math.round(def.hpMax * lvScale),
       atk: Math.round(def.atk * (1 + (this.p.level - 1) * 0.06)),
       xpReward: Math.round(def.xpReward * (1 + (this.p.level - 1) * 0.08)),
-      t: rng() * 3, face: 1, walk: 0, hurt: 0, atkTimer: rng(), deathT: 0,
+      t: rng() * 3, face: 1, walk: 0, hurt: 0, atkTimer: rng(), deathT: 0, aggro: false,
     });
   }
 
@@ -360,23 +382,22 @@ export class Game {
     ctx.clearRect(0, 0, this.W, this.H);
     this.drawGround();
 
-    // build depth-sorted draw list
+    // build depth-sorted draw list (monsters + loot). The player is drawn last so
+    // large monsters never fully occlude the character.
     const list = [];
     for (const it of this.loot) list.push({ d: it.wx + it.wy - 0.3, kind: 'loot', o: it });
     for (const m of this.monsters) list.push({ d: m.wx + m.wy, kind: 'mon', o: m });
-    list.push({ d: this.p.wx + this.p.wy, kind: 'player' });
     list.sort((a, b) => a.d - b.d);
 
     for (const e of list) {
       if (e.kind === 'loot') {
         const s = this.toScreen(e.o.wx, e.o.wy);
         drawLoot(ctx, { x: s.x, y: s.y, t: e.o.t, color: e.o.color });
-      } else if (e.kind === 'mon') {
-        this.drawMonster(e.o);
       } else {
-        this.drawPlayer();
+        this.drawMonster(e.o);
       }
     }
+    this.drawPlayer();
 
     this.drawParticles();
     this.drawFloats();
@@ -420,7 +441,7 @@ export class Game {
     const ctx = this.ctx;
     const s = this.toScreen(m.wx, m.wy);
     if (m.hp <= 0) { ctx.globalAlpha = Math.max(0, 1 - m.deathT / 0.4); }
-    const sc = (m.scale || 1) * 1.0;
+    const sc = (m.scale || 1) * 1.5;   // monsters ~char-size and up
     drawShadow(ctx, s.x, s.y, 16 * sc, 7 * sc);
     drawMonster(ctx, m.sprite, { x: s.x, y: s.y, scale: sc, face: m.face, t: m.t, walk: m.walk, hurt: m.hurt, tint: m.tint });
     ctx.globalAlpha = 1;

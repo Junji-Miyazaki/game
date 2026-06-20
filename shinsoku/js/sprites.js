@@ -28,140 +28,178 @@ function darken(hex, amt) {
   return `rgb(${r},${g},${b})`;
 }
 
-// ---------- FIGHTER ----------
+// ---------- FIGHTER (female swordsman, articulated vector) ----------
 // opts: {x,y,scale,face(-1|1),t,walk(0..1),attackP(-1 idle, else 0..1),god,hpRatio}
+// Facing flips the BODY/legs/head, but the SWORD is always anchored on screen-right
+// (right hand) and the SHIELD always on screen-left (left hand) — they never swap.
 export function drawFighter(ctx, o) {
-  const s = o.scale, face = o.face || 1;
-  const bob = Math.sin(o.t * 5) * 2 * (o.walk > .05 ? 1 : .4);
+  const s = o.scale, face = o.face >= 0 ? 1 : -1, t = o.t || 0;
+  const walk = o.walk || 0, atk = (o.attackP == null ? -1 : o.attackP), god = o.god;
+  const moving = walk > 0.05;
+  const bob = (moving ? Math.abs(Math.sin(t * 9)) * 2.4 : Math.sin(t * 2.2) * 1.0) * s;
+
   ctx.save();
-  ctx.translate(o.x, o.y);
+  ctx.translate(o.x, o.y - bob);
 
   // godspeed aura
-  if (o.god) {
-    const ag = ctx.createRadialGradient(0, -34 * s, 0, 0, -34 * s, 46 * s);
-    ag.addColorStop(0, 'rgba(255,122,223,.32)');
-    ag.addColorStop(1, 'rgba(255,122,223,0)');
-    ctx.fillStyle = ag;
-    ctx.beginPath(); ctx.arc(0, -34 * s, 46 * s, 0, 7); ctx.fill();
+  if (god) {
+    const ag = ctx.createRadialGradient(0, -36 * s, 0, 0, -36 * s, 50 * s);
+    ag.addColorStop(0, 'rgba(255,122,223,.30)'); ag.addColorStop(1, 'rgba(255,122,223,0)');
+    ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -36 * s, 50 * s, 0, 7); ctx.fill();
   }
 
-  ctx.scale(face, 1);
-  ctx.translate(0, bob);
+  // palette
+  const SKIN = '#f1c9a5', SKIN_D = '#cf9f78';
+  const HAIR = '#5e3a24', HAIR_HL = '#8a5630';
+  const ARM = '#dbe2ec', ARM_D = '#97a3b8', GOLD = '#e8c870';
+  const SKIRT = '#6a2f73', SKIRT_D = '#431d4a', LEG = '#3c3548', BOOT = '#5a4a36';
+  const seg = (x1, y1, x2, y2, w, c) => {
+    ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  };
 
-  const STEEL = '#c8d2e0', STEEL_D = '#7d8aa0', CLOTH = '#3a2d6e', GOLD = '#e8c870';
-
-  // legs
-  const stride = Math.sin(o.t * 9) * 5 * o.walk;
-  legArmored(ctx, -5 * s, -2 * s, stride * s, s, STEEL, STEEL_D, CLOTH);
-  legArmored(ctx, 5 * s, -2 * s, -stride * s, s, STEEL, STEEL_D, CLOTH);
-
-  // torso (cuirass)
-  roundRect(ctx, -11 * s, -42 * s, 22 * s, 30 * s, 7 * s);
-  const tg = ctx.createLinearGradient(-11 * s, -42 * s, 11 * s, -12 * s);
-  tg.addColorStop(0, lighten(STEEL, 25)); tg.addColorStop(.5, STEEL); tg.addColorStop(1, STEEL_D);
-  ctx.fillStyle = tg; ctx.fill();
-  ctx.strokeStyle = darken(STEEL, 60); ctx.lineWidth = 1.4 * s; ctx.stroke();
-  // chest emblem
-  ctx.fillStyle = GOLD; ctx.beginPath();
-  ctx.moveTo(0, -38 * s); ctx.lineTo(5 * s, -28 * s); ctx.lineTo(0, -20 * s); ctx.lineTo(-5 * s, -28 * s);
+  // ---- HAIR (ponytail behind, flows opposite to facing) ----
+  const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
+  ctx.fillStyle = HAIR;
+  ctx.beginPath();
+  ctx.moveTo(-face * 3 * s, -57 * s);
+  ctx.quadraticCurveTo(-face * 15 * s, -52 * s + sway, -face * 12 * s, -34 * s + sway);
+  ctx.quadraticCurveTo(-face * 8 * s, -42 * s, -face * 3 * s, -50 * s);
   ctx.closePath(); ctx.fill();
-  // pauldron (back arm)
-  shoulder(ctx, -12 * s, -40 * s, 7 * s, s, STEEL, STEEL_D);
 
-  // head + helm
-  ctx.fillStyle = '#e7c9a5';
-  ctx.beginPath(); ctx.arc(0, -50 * s, 7.5 * s, 0, 7); ctx.fill();
-  roundRect(ctx, -8 * s, -60 * s, 16 * s, 13 * s, 5 * s);
-  const hg = ctx.createLinearGradient(0, -60 * s, 0, -47 * s);
-  hg.addColorStop(0, lighten(STEEL, 30)); hg.addColorStop(1, STEEL_D);
-  ctx.fillStyle = hg; ctx.fill();
-  ctx.strokeStyle = darken(STEEL, 60); ctx.lineWidth = 1 * s; ctx.stroke();
-  // helm plume
-  ctx.fillStyle = o.god ? '#ff7adf' : '#c8443a';
-  ctx.beginPath(); ctx.moveTo(0, -64 * s);
-  ctx.quadraticCurveTo(10 * s, -64 * s, 12 * s, -52 * s);
-  ctx.quadraticCurveTo(6 * s, -58 * s, 0 * s, -58 * s); ctx.closePath(); ctx.fill();
-  // visor slit
-  ctx.fillStyle = '#1a1a22'; ctx.fillRect(-6 * s, -53 * s, 12 * s, 2.4 * s);
+  // ---- LEGS (articulated stride, lead toward facing) ----
+  const stride = moving ? Math.sin(t * 9) : Math.sin(t * 2.2) * 0.06;
+  drawLeg(ctx, -2.5 * s, -25 * s, -stride, s, LEG, BOOT, face);  // back leg
+  drawLeg(ctx, 2.5 * s, -25 * s, stride, s, '#463f54', BOOT, face); // front leg (lighter)
 
-  // SWORD ARM — slash animation
-  const atk = o.attackP; // -1 idle else 0..1
-  let armA;
-  if (atk >= 0) {
-    // raise then sweep down across the front
-    armA = atk < .35
-      ? lerp(-1.9, -2.5, atk / .35)        // wind up (up-back)
-      : lerp(-2.5, 0.5, (atk - .35) / .65); // sweep down/forward
-  } else {
-    armA = -1.5 + Math.sin(o.t * 3) * 0.08; // idle ready
-  }
-  drawSwordArm(ctx, 9 * s, -36 * s, armA, s, STEEL, STEEL_D, GOLD, o.god, atk);
+  // ---- SKIRT / TASSET ----
+  ctx.fillStyle = SKIRT;
+  ctx.beginPath();
+  ctx.moveTo(-7.5 * s, -31 * s); ctx.lineTo(7.5 * s, -31 * s);
+  ctx.lineTo(10.5 * s, -18 * s); ctx.lineTo(face * 2 * s, -16 * s); ctx.lineTo(-10.5 * s, -18 * s);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = SKIRT_D; ctx.fillRect(-10.5 * s, -19.5 * s, 21 * s, 2.4 * s);
 
-  // shield (front)
-  shieldOnArm(ctx, -11 * s, -30 * s, s, STEEL, STEEL_D, GOLD);
+  // ---- SHIELD ARM (left / screen -x, FIXED) — drawn behind torso ----
+  const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
+  seg(-5.5 * s, -45 * s, -11 * s, -33 * s + shB, 4.5 * s, SKIN); // arm
+
+  // ---- TORSO (slim hourglass breastplate) ----
+  ctx.beginPath();
+  ctx.moveTo(-7 * s, -46 * s);
+  ctx.quadraticCurveTo(-8 * s, -38 * s, -4.5 * s, -31 * s);
+  ctx.lineTo(4.5 * s, -31 * s);
+  ctx.quadraticCurveTo(8 * s, -38 * s, 7 * s, -46 * s);
+  ctx.quadraticCurveTo(3.4 * s, -49.5 * s, 0, -47.6 * s);
+  ctx.quadraticCurveTo(-3.4 * s, -49.5 * s, -7 * s, -46 * s);
+  ctx.closePath();
+  const tg = ctx.createLinearGradient(-7 * s, -49 * s, 7 * s, -31 * s);
+  tg.addColorStop(0, '#eef2f8'); tg.addColorStop(.5, ARM); tg.addColorStop(1, ARM_D);
+  ctx.fillStyle = tg; ctx.fill();
+  ctx.strokeStyle = '#6c7891'; ctx.lineWidth = 1 * s; ctx.stroke();
+  seg(0, -47 * s, 0, -31 * s, 1.3 * s, GOLD);            // center trim
+  ctx.fillStyle = GOLD; ctx.fillRect(-5 * s, -32.5 * s, 10 * s, 2 * s); // waist trim
+
+  // ---- NECK + HEAD ----
+  ctx.fillStyle = SKIN_D; ctx.fillRect(-2 * s, -50 * s, 4 * s, 3.5 * s);
+  ctx.fillStyle = SKIN;
+  ctx.beginPath(); ctx.arc(face * 0.5 * s, -55 * s, 5.8 * s, 0, 7); ctx.fill();
+  // hair fringe / top
+  ctx.fillStyle = HAIR;
+  ctx.beginPath();
+  ctx.arc(0, -56.5 * s, 6.4 * s, Math.PI * 0.92, Math.PI * 2.08);
+  ctx.quadraticCurveTo(face * 6 * s, -54 * s, face * 4 * s, -52.5 * s);
+  ctx.quadraticCurveTo(0, -55 * s, -face * 4 * s, -53 * s);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = HAIR_HL; ctx.fillRect(-face * 1 * s, -62 * s, face * 3 * s, 2 * s);
+  // eyes (toward facing)
+  ctx.fillStyle = '#3a2a22';
+  ctx.beginPath(); ctx.arc(face * 1.8 * s, -55 * s, 1 * s, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(face * 4.2 * s, -55 * s, 1 * s, 0, 7); ctx.fill();
+
+  // ---- SHIELD (left hand, in front, FIXED screen -x) ----
+  ctx.save(); ctx.translate(-12 * s, -30 * s + shB);
+  const sg = ctx.createRadialGradient(-2 * s, -2 * s, 1, 0, 0, 11 * s);
+  sg.addColorStop(0, '#cfd7e3'); sg.addColorStop(1, '#7d889d');
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, 9.5 * s, 0, 7); ctx.fill();
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.fillStyle = GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.8 * s, 0, 7); ctx.fill();
+  ctx.restore();
+
+  // ---- SWORD ARM (right hand, FIXED screen +x anchor; blade leads facing) ----
+  drawSwordArm(ctx, 5 * s, -45 * s, atk, t, face, s, SKIN, GOLD, god);
 
   ctx.restore();
 }
 
-function drawSwordArm(ctx, sx, sy, ang, s, steel, steelD, gold, god, atk) {
-  const upLen = 13 * s, foreLen = 12 * s;
-  const ex = sx + Math.cos(ang) * upLen, ey = sy + Math.sin(ang) * upLen;
-  const fAng = ang + 0.5;
-  const hx = ex + Math.cos(fAng) * foreLen, hy = ey + Math.sin(fAng) * foreLen;
-  // upper arm
-  ctx.strokeStyle = steelD; ctx.lineWidth = 7 * s; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-  ctx.strokeStyle = steel; ctx.lineWidth = 5 * s;
-  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(hx, hy); ctx.stroke();
-  // blade
-  const bAng = fAng + 0.15;
-  const tipx = hx + Math.cos(bAng) * 40 * s, tipy = hy + Math.sin(bAng) * 40 * s;
-  // motion-blur arc during sweep
-  if (atk >= .35) {
-    const sweep = (atk - .35) / .65;
-    ctx.strokeStyle = god ? `rgba(255,122,223,${.5 * (1 - sweep)})` : `rgba(220,235,255,${.45 * (1 - sweep)})`;
-    ctx.lineWidth = 6 * s;
-    ctx.beginPath(); ctx.arc(sx, sy, 30 * s, fAng - 1.4, fAng + .2); ctx.stroke();
+function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
+  const thigh = 12 * s, shin = 12 * s;
+  const a1 = Math.PI / 2 + phase * 0.5 * face;       // swing along facing
+  const kx = hipX + Math.cos(a1) * thigh, ky = hipY + Math.sin(a1) * thigh;
+  const a2 = a1 + (phase * face < 0 ? 0.55 : 0.08);  // bend the trailing knee
+  const fx = kx + Math.cos(a2) * shin, fy = ky + Math.sin(a2) * shin;
+  ctx.strokeStyle = col; ctx.lineCap = 'round';
+  ctx.lineWidth = 5.5 * s; ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kx, ky); ctx.stroke();
+  ctx.lineWidth = 4.5 * s; ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+  ctx.fillStyle = boot; ctx.beginPath(); ctx.ellipse(fx + face * 2 * s, fy + 1 * s, 5 * s, 2.8 * s, 0, 0, 7); ctx.fill();
+}
+
+// Sword arm with raise→strike→recover. Joints given as forehand keyframes (dx,dy
+// from shoulder); x is multiplied by `face` so the blade leads toward facing while
+// the shoulder stays on screen-right (= the right hand, always).
+function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god) {
+  const KF = {
+    idle:   { e: [2, 10],  h: [3, 20],  p: [4, 41] },   // sword lowered
+    wind:   { e: [-3, -7], h: [-8, -17], p: [-5, -42] }, // raised overhead (windup)
+    strike: { e: [9, -4],  h: [19, 2],  p: [40, 9] },   // extended forward
+    down:   { e: [5, 9],   h: [10, 21], p: [16, 41] },  // cut-through, low
+  };
+  let A, B, f;
+  if (atk < 0)        { A = KF.idle;  B = KF.idle;  f = 0; }
+  else if (atk < .25) { A = KF.idle;  B = KF.wind;  f = atk / .25; }
+  else if (atk < .50) { A = KF.wind;  B = KF.strike; f = (atk - .25) / .25; }
+  else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
+  else                { A = KF.down;  B = KF.idle;  f = (atk - .70) / .30; }
+  const mix = (a, b) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+  const e = mix(A.e, B.e), h = mix(A.h, B.h), p = mix(A.p, B.p);
+  const ex = sx + e[0] * face * s, ey = sy + e[1] * s;
+  const hx = sx + h[0] * face * s, hy = sy + h[1] * s;
+  const tx = sx + p[0] * face * s, ty = sy + p[1] * s;
+
+  // motion-blur arc during the strike
+  if (atk >= .28 && atk < .64) {
+    const k = (atk - .28) / .36;
+    ctx.strokeStyle = god ? `rgba(255,122,223,${.6 * (1 - k)})` : `rgba(220,235,255,${.5 * (1 - k)})`;
+    ctx.lineWidth = 6 * s; ctx.lineCap = 'round';
+    const a0 = -1.7, a1 = 0.6;
+    ctx.beginPath();
+    if (face >= 0) ctx.arc(sx, sy + 4 * s, 36 * s, a0, a1);
+    else ctx.arc(sx, sy + 4 * s, 36 * s, Math.PI - a1, Math.PI - a0);
+    ctx.stroke();
   }
-  // guard
-  ctx.strokeStyle = gold; ctx.lineWidth = 4 * s;
+
+  // arm: upper (skin) + forearm (skin)
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#e6bd97'; ctx.lineWidth = 5 * s;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.strokeStyle = skin; ctx.lineWidth = 4 * s;
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke();
+
+  // sword: guard, then blade hand→tip
+  const bx = tx - hx, by = ty - hy, bl = Math.hypot(bx, by) || 1, nx = -by / bl, ny = bx / bl;
+  ctx.strokeStyle = gold; ctx.lineWidth = 3 * s;
   ctx.beginPath();
-  ctx.moveTo(hx + Math.cos(bAng + 1.6) * 5 * s, hy + Math.sin(bAng + 1.6) * 5 * s);
-  ctx.lineTo(hx - Math.cos(bAng + 1.6) * 5 * s, hy - Math.sin(bAng + 1.6) * 5 * s);
+  ctx.moveTo(hx + nx * 5 * s, hy + ny * 5 * s); ctx.lineTo(hx - nx * 5 * s, hy - ny * 5 * s);
   ctx.stroke();
-  // blade body
-  const grad = ctx.createLinearGradient(hx, hy, tipx, tipy);
-  grad.addColorStop(0, '#aebccf'); grad.addColorStop(.5, '#ffffff'); grad.addColorStop(1, '#d6e4f5');
-  ctx.strokeStyle = grad; ctx.lineWidth = 4.5 * s; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tipx, tipy); ctx.stroke();
+  const bg = ctx.createLinearGradient(hx, hy, tx, ty);
+  bg.addColorStop(0, '#aebccf'); bg.addColorStop(.5, '#ffffff'); bg.addColorStop(1, '#dce8f6');
+  ctx.strokeStyle = bg; ctx.lineWidth = 4 * s;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
   if (god) {
-    ctx.strokeStyle = 'rgba(255,122,223,.6)'; ctx.lineWidth = 8 * s;
-    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tipx, tipy); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,122,223,.55)'; ctx.lineWidth = 8 * s;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
   }
   ctx.lineCap = 'butt';
-}
-
-function shieldOnArm(ctx, x, y, s, steel, steelD, gold) {
-  ctx.save(); ctx.translate(x, y);
-  roundRect(ctx, -8 * s, -8 * s, 16 * s, 22 * s, 6 * s);
-  const g = ctx.createLinearGradient(-8 * s, -8 * s, 8 * s, 14 * s);
-  g.addColorStop(0, lighten(steel, 20)); g.addColorStop(1, steelD);
-  ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle = gold; ctx.lineWidth = 1.6 * s; ctx.stroke();
-  ctx.fillStyle = gold; ctx.beginPath(); ctx.arc(0, 2 * s, 2.6 * s, 0, 7); ctx.fill();
-  ctx.restore();
-}
-
-function legArmored(ctx, x, top, foot, s, steel, steelD, cloth) {
-  ctx.strokeStyle = cloth; ctx.lineWidth = 6 * s; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + foot, top + 14 * s); ctx.stroke();
-  ctx.fillStyle = steelD; // boot
-  ctx.beginPath(); ctx.ellipse(x + foot, top + 15 * s, 5 * s, 3 * s, 0, 0, 7); ctx.fill();
-}
-function shoulder(ctx, x, y, r, s, steel, steelD) {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, lighten(steel, 30)); g.addColorStop(1, steelD);
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
 }
 
 // ---------- MONSTERS ----------
