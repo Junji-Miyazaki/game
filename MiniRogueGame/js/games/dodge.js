@@ -394,8 +394,10 @@ export class Game extends Scene {
       const overFlare    = inRect(ptr.x, ptr.y, BTN_FLARE);
       const overValkyrie = inRect(ptr.x, ptr.y, BTN_VALKYRIE);
       if (!overFlare && !overValkyrie) {
+        // 指の少し上に機体が来るよう追従点をオフセット（指で機体が隠れないように）
+        const TOUCH_OFFSET_Y = 42;
         const tdx  = ptr.x - this.fx;
-        const tdy  = ptr.y - this.fy;
+        const tdy  = (ptr.y - TOUCH_OFFSET_Y) - this.fy;
         const dist = Math.sqrt(tdx * tdx + tdy * tdy);
         if (dist > 1) {
           const step = Math.min(FIGHTER_FOLLOW * dt, dist);
@@ -1356,14 +1358,12 @@ export class Game extends Scene {
 
     const COLS   = 20;
     const NROWS  = ROWS.length;
-    const CELL   = 3;            // px per bitmap cell
+    const CELL   = 2;            // px per bitmap cell（小さめに：旧3→2で約2/3サイズ）
 
     // Sprite origin (top-left of col 0, row 0) relative to fighter centre (x,y).
-    // Sprite is 60px wide, 72px tall.
-    // Centre horizontally at col 7.5 ≈ col 7 * 3 = 21 px → SPRITE_OX = -(7*3) = -21
-    // Vertically: place centre at row 11 (waist) → SPRITE_OY = -(11*3) = -33
-    const SPRITE_OX = -21;   // left edge of col 0
-    const SPRITE_OY = -33;   // top edge of row 0
+    // 中心：横は col 7、縦は row 11（腰）に合わせる。CELL から導出して常に中央寄せ。
+    const SPRITE_OX = -(7 * CELL);   // left edge of col 0
+    const SPRITE_OY = -(11 * CELL);  // top edge of row 0
 
     // Muzzle: rightmost G in rows 8-9 is col 17 (0-indexed), right edge = col 18*CELL
     //   muzzleOX = SPRITE_OX + 18 * CELL = -21 + 54 = +33
