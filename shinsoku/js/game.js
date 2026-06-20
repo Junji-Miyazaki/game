@@ -8,6 +8,12 @@ const ATTACK_RANGE = 1.7;               // tiles (bigger monsters need a touch m
 const MAX_MONSTERS = 7;
 const ARENA_R = 11;                     // dungeon arena radius (tiles)
 const ISO_U = (64 / 2) * Math.SQRT2;    // world-circle radius (tiles) -> screen px (x)
+// active skills (timed buffs); effect & duration scale with skill level
+const HASTE_PER_LV = 0.85;              // +85% attack speed per 神速 level while active
+const POWER_PER_LV = 0.30;              // +30% attack power per 剛力 level
+const VIG_PER_LV = 45;                  // +45 max HP per 活力 level
+const SKILL_DUR = lv => 3 + lv * 1.5;   // buff duration in seconds
+const SKILL_CD = 14;                    // cooldown after the buff ends
 const GOD_THRESHOLD = 8;                // effective atk/s to enter 神速
 
 const rng = Math.random;
@@ -29,8 +35,14 @@ export class Game {
     this.cam = { x: 0, y: 0 };
     this.last = 0;
     this.running = false;
-    this.godBurst = 0;     // remaining seconds of 神速 burst
-    this.burstCd = 0;      // cooldown remaining
+    // active skills: rem=buff seconds left, cd=cooldown left, lv=level it was cast at
+    this.buffs = {
+      speed: { rem: 0, cd: 0, lv: 0 },
+      power: { rem: 0, cd: 0, lv: 0 },
+      hp: { rem: 0, cd: 0, lv: 0, bonus: 0 },
+    };
+    this.hitFlash = 0;     // red screen flash when taking damage
+    this.blood = [];       // lingering ground blood decals
     this.visualSwing = 0;
     this.initPlayer();
     this.bindUI();
@@ -46,7 +58,7 @@ export class Game {
       hp: 100, hpMax: 100,
       atk: 15, atkSpeed: 1.25, defense: 4,
       baseEvasion: 0.05, moveSpeed: 3.4,
-      skillPoints: 0, skills: { atk: 0, hp: 0, move: 0 },
+      skillPoints: 0, skills: { speed: 0, power: 0, hp: 0 },
       opt: { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 },
       equip: { sword: 'なし', shield: 'なし', armor: 'なし' },
       atkTimer: 0,
@@ -55,7 +67,10 @@ export class Game {
   load() {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-      if (s && s.level) { this.p = Object.assign(this.p, s); this.p.hp = this.p.hpMax; }
+      if (s && s.level) {
+        this.p = Object.assign(this.p, s); this.p.hp = this.p.hpMax;
+        if (!this.p.skills || !('speed' in this.p.skills)) this.p.skills = { speed: 0, power: 0, hp: 0 };
+      }
     } catch (e) {}
   }
   save() {
@@ -66,8 +81,14 @@ export class Game {
   // derived
   get aps() { return this.effectiveAPS(); }
   effectiveAPS() {
-    const burst = this.godBurst > 0 ? 5 : 1;
-    return this.p.atkSpeed * (1 + this.p.opt.atkSpeedPct / 100) * burst;
+    const b = this.buffs.speed;
+    let mult = 1 + this.p.opt.atkSpeedPct / 100;
+    if (b.rem > 0) mult += b.lv * HASTE_PER_LV;
+    return this.p.atkSpeed * mult;
+  }
+  atkEff() {
+    const b = this.buffs.power;
+    return this.p.atk * (b.rem > 0 ? 1 + b.lv * POWER_PER_LV : 1);
   }
   effEvasion() { return clamp(this.p.baseEvasion + this.p.opt.evasionPct / 100, 0, 0.85); }
   isGod() { return this.effectiveAPS() >= GOD_THRESHOLD; }
@@ -94,8 +115,9 @@ export class Game {
   // ---------------- update ----------------
   update(dt) {
     const p = this.p;
-    if (this.godBurst > 0) this.godBurst -= dt;
-    if (this.burstCd > 0) { this.burstCd -= dt; if (this.burstCd <= 0) this.refreshSpecialBtn(); }
+    this.updateBuffs(dt);
+    this.updateSkillHUD();
+    if (this.hitFlash > 0) this.hitFlash -= dt;
 
     // movement intent
     let mv = { x: 0, y: 0 };
@@ -163,6 +185,8 @@ export class Game {
     this.fx = this.fx.filter(f => f.t < f.life);
     for (const pt of this.parts) { pt.t += dt; pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 120 * dt; }
     this.parts = this.parts.filter(pt => pt.t < pt.life);
+    for (const b of this.blood) b.t += dt;
+    this.blood = this.blood.filter(b => b.t < b.life);
 
     // keep the fighter inside the dungeon arena
     this.clampArena(p);
@@ -198,7 +222,7 @@ export class Game {
     // monster dodge
     if (rng() < m.evade) { this.float(sp.x, sp.y - 30, 'Miss', '#ffffff', 15); return; }
     const variance = 0.85 + rng() * 0.3;
-    const dmg = Math.max(1, Math.round(p.atk * variance - m.defense));
+    const dmg = Math.max(1, Math.round(this.atkEff() * variance - m.defense));
     m.hp -= dmg; m.hurt = 1; m.aggro = true;   // retaliate
     const crit = variance > 1.08;
     // at 神速 the hit rate is huge — throttle floats/particles for readability + perf
@@ -211,7 +235,11 @@ export class Game {
       p.hp = Math.min(p.hpMax, p.hp + heal);
       if (showFx && rng() < 0.5) this.float(this.toScreen(p.wx, p.wy).x, this.toScreen(p.wx, p.wy).y - 60, '+' + heal, '#6bff8a', 12);
     }
-    if (showFx) this.spark(sp.x, sp.y - 24, god ? '#ff7adf' : '#fff2c8', god ? 4 : 3);
+    if (showFx) {
+      this.spark(sp.x, sp.y - 24, god ? '#ff7adf' : '#fff2c8', god ? 4 : 3);
+      this.spark(sp.x, sp.y - 22, '#9c1414', 3);                 // blood spray
+      if (rng() < 0.3) this.addBlood(m.wx, m.wy, 0.7 + rng() * 0.5);
+    }
     if (m.hp <= 0) this.killMonster(m);
   }
 
@@ -223,6 +251,8 @@ export class Game {
     const sp = this.toScreen(m.wx, m.wy);
     this.float(sp.x, sp.y - 44, '+' + xp + ' XP', '#9fd8ff', 12);
     for (let i = 0; i < 8; i++) this.spark(sp.x, sp.y - 20, m.tint, 1);
+    for (let i = 0; i < 10; i++) this.spark(sp.x, sp.y - 18, '#7e1010', 1);   // death blood burst
+    this.addBlood(m.wx, m.wy, 1.1 + rng() * 0.7);
     // loot
     const drop = rollDrop(m.tier, rng);
     if (drop) this.loot.push({ wx: m.wx, wy: m.wy, t: 0, ...drop });
@@ -292,13 +322,15 @@ export class Game {
   monsterHit(m) {
     const p = this.p;
     const ps = this.toScreen(p.wx, p.wy);
-    if (this.godBurst > 0 || rng() < this.effEvasion()) {
+    if (rng() < this.effEvasion()) {
       this.float(ps.x, ps.y - 64, 'MISS', '#cfeaff', 14); return;
     }
     const dmg = Math.max(1, Math.round(m.atk - p.defense));
     p.hp = Math.max(0, p.hp - dmg);
     this.float(ps.x + (rng() * 12 - 6), ps.y - 60, '-' + dmg, '#ff6b6b', 15);
-    this.spark(ps.x, ps.y - 40, '#ff6b6b', 4);
+    this.spark(ps.x, ps.y - 40, '#b01818', 5);
+    this.hitFlash = 0.32;
+    if (rng() < 0.4) this.addBlood(p.wx, p.wy, 0.6 + rng() * 0.4);
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
   }
@@ -382,6 +414,44 @@ export class Game {
     document.getElementById('toasts').appendChild(el);
     setTimeout(() => el.remove(), 1800);
   }
+  addBlood(wx, wy, r) {
+    this.blood.push({ wx, wy, t: 0, life: 9, r, seed: (rng() * 1e5) | 0 });
+    if (this.blood.length > 46) this.blood.shift();
+  }
+
+  // ---------------- skills ----------------
+  updateBuffs(dt) {
+    for (const k of ['speed', 'power', 'hp']) {
+      const b = this.buffs[k];
+      if (b.rem > 0) {
+        b.rem -= dt;
+        if (b.rem <= 0) {
+          b.rem = 0;
+          if (k === 'hp' && b.bonus) { this.p.hpMax -= b.bonus; this.p.hp = Math.min(this.p.hp, this.p.hpMax); b.bonus = 0; }
+          this.updateHUD();
+        }
+      }
+      if (b.cd > 0) b.cd -= dt;
+    }
+  }
+  activateSkill(key) {
+    const lv = this.p.skills[key], b = this.buffs[key];
+    if (lv <= 0 || b.rem > 0 || b.cd > 0) return;
+    b.lv = lv; b.rem = SKILL_DUR(lv); b.cd = b.rem + SKILL_CD;
+    const names = { speed: '神速', power: '剛力', hp: '活力' };
+    const cols = { speed: '#ff7adf', power: '#ff8a3a', hp: '#5be07b' };
+    if (key === 'hp') { b.bonus = lv * VIG_PER_LV; this.p.hpMax += b.bonus; this.p.hp += b.bonus; }
+    const sp = this.toScreen(this.p.wx, this.p.wy);
+    this.float(sp.x, sp.y - 80, names[key] + '！', cols[key], 22);
+    for (let i = 0; i < 14; i++) this.spark(sp.x, sp.y - 30, cols[key], 2);
+    this.updateHUD();
+  }
+  spendSkill(sk) {
+    const p = this.p;
+    if (p.skillPoints <= 0 || !(sk in p.skills)) return;
+    p.skillPoints--; p.skills[sk]++;
+    this.updateHUD(); this.save();
+  }
 
   // ---------------- iso projection ----------------
   toScreenRaw(wx, wy) { return { x: (wx - wy) * TW / 2, y: (wx + wy) * TH / 2 }; }
@@ -396,6 +466,7 @@ export class Game {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.W, this.H);
     this.drawGround();
+    this.drawBlood();
 
     // build depth-sorted draw list (monsters + loot). The player is drawn last so
     // large monsters never fully occlude the character.
@@ -416,6 +487,34 @@ export class Game {
 
     this.drawParticles();
     this.drawFloats();
+
+    // red flash when the player takes a hit
+    if (this.hitFlash > 0) {
+      const a = Math.min(0.42, this.hitFlash);
+      const g = ctx.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.2, this.W / 2, this.H / 2, this.H * 0.72);
+      g.addColorStop(0, 'rgba(170,0,0,0)'); g.addColorStop(1, `rgba(170,0,0,${a})`);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, this.W, this.H);
+    }
+  }
+
+  // lingering crimson blood splats on the floor (projected onto the iso plane)
+  drawBlood() {
+    const ctx = this.ctx;
+    for (const b of this.blood) {
+      const s = this.toScreen(b.wx, b.wy);
+      const a = b.t < b.life * 0.6 ? 0.5 : 0.5 * (1 - (b.t - b.life * 0.6) / (b.life * 0.4));
+      if (a <= 0) continue;
+      ctx.save(); ctx.translate(s.x, s.y); ctx.scale(1, 0.5); ctx.globalAlpha = a;
+      ctx.fillStyle = '#560c0c';
+      let seed = b.seed;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+      for (let i = 0; i < 6; i++) {
+        const ang = rnd() * 6.283, d = rnd() * 16 * b.r, rr = (2 + rnd() * 5) * b.r;
+        ctx.beginPath(); ctx.arc(Math.cos(ang) * d, Math.sin(ang) * d, rr, 0, 7); ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
   }
 
   drawGround() {
@@ -657,34 +756,28 @@ export class Game {
     $('e-sword').textContent = p.equip.sword;
     $('e-shield').textContent = p.equip.shield;
     $('e-armor').textContent = p.equip.armor;
+    // skills: allocation rows + skill-bar levels
     $('s-sp').textContent = p.skillPoints;
-    $('sk-atk').textContent = 'Lv' + p.skills.atk;
-    $('sk-hp').textContent = 'Lv' + p.skills.hp;
-    $('sk-move').textContent = 'Lv' + p.skills.move;
     const can = p.skillPoints > 0;
-    document.querySelectorAll('.skbtn').forEach(b => { b.disabled = !can; b.classList.toggle('canbuy', can); });
+    for (const k of ['speed', 'power', 'hp']) {
+      $('al-' + k).textContent = 'Lv' + p.skills[k];
+      $('lv-' + k).textContent = 'Lv' + p.skills[k];
+      document.getElementById('act-' + k).disabled = p.skills[k] <= 0;
+    }
+    document.querySelectorAll('.plus').forEach(b => { b.disabled = !can; });
+    this.updateSkillHUD();
   }
 
-  spendSkill(sk) {
-    const p = this.p;
-    if (p.skillPoints <= 0) return;
-    p.skillPoints--; p.skills[sk]++;
-    if (sk === 'atk') p.atk += 4;
-    else if (sk === 'hp') { p.hpMax += 25; p.hp += 25; }
-    else if (sk === 'move') p.moveSpeed += 0.4;
-    this.updateHUD(); this.save();
-  }
-
-  triggerSpecial() {
-    if (this.burstCd > 0) return;
-    this.godBurst = 5; this.burstCd = 30;
-    this.float(this.W / 2, this.H / 2 - 40, '神速発動！', '#ff7adf', 28);
-    this.refreshSpecialBtn();
-  }
-  refreshSpecialBtn() {
-    const b = document.getElementById('btnSpecial');
-    if (this.burstCd > 0) { b.disabled = true; b.textContent = Math.ceil(this.burstCd); }
-    else { b.disabled = false; b.innerHTML = '<b>神</b>'; }
+  // per-frame skill-bar state (active glow + cooldown countdown)
+  updateSkillHUD() {
+    for (const k of ['speed', 'power', 'hp']) {
+      const btn = document.getElementById('act-' + k), b = this.buffs[k], cd = document.getElementById('cd-' + k);
+      if (!btn) continue;
+      const active = b.rem > 0, cooling = !active && b.cd > 0;
+      btn.classList.toggle('active', active);
+      btn.classList.toggle('cooling', cooling);
+      cd.textContent = cooling ? Math.ceil(b.cd) : '';
+    }
   }
 
   // ---------------- input / UI ----------------
@@ -724,8 +817,8 @@ export class Game {
     // buttons
     document.getElementById('btnStatus').onclick = () => document.getElementById('status').classList.toggle('open');
     document.getElementById('closeStatus').onclick = () => document.getElementById('status').classList.remove('open');
-    document.getElementById('btnSpecial').onclick = () => this.triggerSpecial();
-    document.querySelectorAll('.skbtn').forEach(b => b.onclick = () => this.spendSkill(b.dataset.sk));
+    document.querySelectorAll('.actbtn').forEach(b => b.onclick = () => this.activateSkill(b.dataset.sk));
+    document.querySelectorAll('.plus').forEach(b => b.onclick = () => this.spendSkill(b.dataset.sk));
   }
 
   moveJoy(e, center, knob) {

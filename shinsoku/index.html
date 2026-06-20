@@ -22,7 +22,7 @@
     <div class="aps" id="v-aps"><span id="v-apsnum">1.0</span> <small>atk/s</small> <em id="v-godspeed">神速</em></div>
   </div>
 
-  <!-- Right status / equipment / skills panel -->
+  <!-- Right status / equipment / skill-allocation panel -->
   <div id="status" class="panel">
     <div class="phead">STATUS <button id="closeStatus">×</button></div>
     <div class="stats">
@@ -40,16 +40,31 @@
     </div>
     <div class="skills">
       <div class="sp">SKILL POINTS: <b id="s-sp">0</b></div>
-      <button class="skbtn" data-sk="atk"><b>攻撃力 +</b><span id="sk-atk">Lv0</span></button>
-      <button class="skbtn" data-sk="hp"><b>最大HP +</b><span id="sk-hp">Lv0</span></button>
-      <button class="skbtn" data-sk="move"><b>移動速度 +</b><span id="sk-move">Lv0</span></button>
+      <div class="skrow"><span>神速 <small>攻撃速度</small></span><b id="al-speed">Lv0</b><button class="plus" data-sk="speed">＋</button></div>
+      <div class="skrow"><span>剛力 <small>攻撃力</small></span><b id="al-power">Lv0</b><button class="plus" data-sk="power">＋</button></div>
+      <div class="skrow"><span>活力 <small>最大HP</small></span><b id="al-hp">Lv0</b><button class="plus" data-sk="hp">＋</button></div>
     </div>
+  </div>
+
+  <!-- Bottom skill bar — active timed-buff skills -->
+  <div id="skillbar">
+    <button class="actbtn speed" id="act-speed" data-sk="speed">
+      <span class="glyph">神速</span><span class="lvl" id="lv-speed">Lv0</span>
+      <span class="cd" id="cd-speed"></span>
+    </button>
+    <button class="actbtn power" id="act-power" data-sk="power">
+      <span class="glyph">剛力</span><span class="lvl" id="lv-power">Lv0</span>
+      <span class="cd" id="cd-power"></span>
+    </button>
+    <button class="actbtn hp" id="act-hp" data-sk="hp">
+      <span class="glyph">活力</span><span class="lvl" id="lv-hp">Lv0</span>
+      <span class="cd" id="cd-hp"></span>
+    </button>
   </div>
 
   <!-- Bottom-right control buttons -->
   <div id="controls">
     <button id="btnStatus" class="cbtn">▦</button>
-    <button id="btnSpecial" class="cbtn special" title="ウェーブ"><b>神</b></button>
   </div>
 
   <!-- Virtual joystick (mobile) -->
@@ -69,7 +84,7 @@
         <li>移動：WASD / 矢印 / 左下スティック</li>
         <li>攻撃：敵をタップ／クリックで自動追撃</li>
         <li>拾う：ドロップの上を歩く</li>
-        <li>育成：▦ でステータス・スキル割り振り</li>
+        <li>スキル：下のスロットをタップで発動（▦で割り振り）</li>
       </ul>
     </div>
   </div>

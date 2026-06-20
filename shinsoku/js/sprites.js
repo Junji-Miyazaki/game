@@ -80,9 +80,10 @@ export function drawFighter(ctx, o) {
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = SKIRT_D; ctx.fillRect(-10.5 * s, -19.5 * s, 21 * s, 2.4 * s);
 
-  // ---- SHIELD ARM (left / screen -x, FIXED) — drawn behind torso ----
+  // ---- SHIELD ARM (LEFT hand = screen +x, FIXED) — drawn behind torso ----
+  // (character faces the camera, so the left hand is on the viewer's right)
   const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
-  seg(-5.5 * s, -45 * s, -11 * s, -33 * s + shB, 4.5 * s, SKIN); // arm
+  seg(5.5 * s, -45 * s, 11 * s, -33 * s + shB, 4.5 * s, SKIN); // arm
 
   // ---- TORSO (slim hourglass breastplate) ----
   ctx.beginPath();
@@ -117,8 +118,8 @@ export function drawFighter(ctx, o) {
   ctx.beginPath(); ctx.arc(face * 1.8 * s, -55 * s, 1 * s, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(face * 4.2 * s, -55 * s, 1 * s, 0, 7); ctx.fill();
 
-  // ---- SHIELD (left hand, in front, FIXED screen -x) ----
-  ctx.save(); ctx.translate(-12 * s, -30 * s + shB);
+  // ---- SHIELD (LEFT hand, in front, FIXED screen +x) ----
+  ctx.save(); ctx.translate(12 * s, -30 * s + shB);
   const sg = ctx.createRadialGradient(-2 * s, -2 * s, 1, 0, 0, 11 * s);
   sg.addColorStop(0, '#cfd7e3'); sg.addColorStop(1, '#7d889d');
   ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, 9.5 * s, 0, 7); ctx.fill();
@@ -126,8 +127,8 @@ export function drawFighter(ctx, o) {
   ctx.fillStyle = GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.8 * s, 0, 7); ctx.fill();
   ctx.restore();
 
-  // ---- SWORD ARM (right hand, FIXED screen +x anchor; blade leads facing) ----
-  drawSwordArm(ctx, 5 * s, -45 * s, atk, t, face, s, SKIN, GOLD, god);
+  // ---- SWORD ARM (RIGHT hand = screen -x anchor; blade leads facing) ----
+  drawSwordArm(ctx, -5 * s, -45 * s, atk, t, face, s, SKIN, GOLD, god);
 
   ctx.restore();
 }
