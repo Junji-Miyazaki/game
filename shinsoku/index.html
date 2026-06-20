@@ -30,14 +30,16 @@
       <div><label>攻撃速度 SPD</label><b id="s-spd">0</b></div>
       <div><label>防御力 DEF</label><b id="s-def">0</b></div>
       <div><label>回避 EVA</label><b id="s-eva">0%</b></div>
-      <div><label>HP吸収 LEECH</label><b id="s-leech">0%</b></div>
       <div><label>移動 MOVE</label><b id="s-move">0</b></div>
     </div>
     <div class="equip">
-      <div class="slot"><i>剣</i><span id="e-sword">なし</span></div>
-      <div class="slot"><i>盾</i><span id="e-shield">なし</span></div>
-      <div class="slot"><i>鎧</i><span id="e-armor">なし</span></div>
+      <div class="gslot"><i>剣</i><div class="gtxt"><span id="e-sword">なし</span><small id="eo-sword"></small></div></div>
+      <div class="gslot"><i>盾</i><div class="gtxt"><span id="e-shield">なし</span><small id="eo-shield"></small></div></div>
+      <div class="gslot armorslot"><i>鎧</i><div class="gtxt"><span id="e-armor">なし</span><small id="eo-armor"></small></div></div>
+      <div class="armorleech">鎧オプション：HP吸収 <b id="e-leech">0%</b></div>
     </div>
+    <div class="invhead">所持品 <small>(装備で付け替え)</small></div>
+    <div id="inv" class="inv"></div>
     <div class="skills">
       <div class="sp">SKILL POINTS: <b id="s-sp">0</b></div>
       <div class="skrow"><span>神速 <small>攻撃速度</small></span><b id="al-speed">Lv0</b><button class="plus" data-sk="speed">＋</button></div>

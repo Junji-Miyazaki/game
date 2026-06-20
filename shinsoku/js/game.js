@@ -65,7 +65,8 @@ export class Game {
       baseEvasion: 0.05, moveSpeed: 3.4,
       skillPoints: 0, skills: { speed: 0, power: 0, hp: 0 },
       opt: { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 },
-      equip: { sword: 'なし', shield: 'なし', armor: 'なし' },
+      gear: { sword: null, shield: null, armor: null },   // equipped items (or null)
+      bag: [],                                            // spare gear (unequipped)
       atkTimer: 0, areaId: 'dungeon',
     };
   }
@@ -75,6 +76,8 @@ export class Game {
       if (s && s.level) {
         this.p = Object.assign(this.p, s); this.p.hp = this.p.hpMax;
         if (!this.p.skills || !('speed' in this.p.skills)) this.p.skills = { speed: 0, power: 0, hp: 0 };
+        if (!this.p.gear || typeof this.p.gear.sword === 'string') this.p.gear = { sword: null, shield: null, armor: null };
+        if (!Array.isArray(this.p.bag)) this.p.bag = [];
       }
     } catch (e) {}
   }
@@ -175,9 +178,10 @@ export class Game {
     const m = {
       id: 'boss', name: b.name, sprite: b.sprite, isBoss: true, tier: 6,
       hpMax: Math.round(b.hpMax * lvScale), hp: Math.round(b.hpMax * lvScale),
-      atk: b.atk, defense: b.defense, evade: 0.03, xpReward: b.xpReward,
+      atk: Math.round(b.atk * (1 + (this.p.level - 1) * 0.05)),
+      defense: b.defense, evade: 0.03, xpReward: b.xpReward,
       speed: 0.95, scale: b.scale, tint: b.tint,
-      aggressive: true, senseRange: 6,
+      aggressive: true, senseRange: 7, atkInterval: 0.9,   // relentless — out-heal it with lifesteal
       wx: bx, wy: by, homeX: bx, homeY: by,
       t: 0, face: 1, walk: 0, hurt: 0, atkTimer: 0.5, deathT: 0, aggro: false,
     };
@@ -413,7 +417,7 @@ export class Game {
       m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
     } else {
       m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
-      if (m.atkTimer <= 0) { m.atkTimer = 1.4; this.monsterHit(m); }
+      if (m.atkTimer <= 0) { m.atkTimer = m.atkInterval || 1.2; this.monsterHit(m); }
     }
   }
 
@@ -442,7 +446,10 @@ export class Game {
     if (rng() < this.effEvasion()) {
       this.float(ps.x, ps.y - 64, 'MISS', '#cfeaff', 14); return;
     }
-    const dmg = Math.max(1, Math.round(m.atk - p.defense));
+    // percentage mitigation: defense scales down damage but never to zero, so even
+    // weak monsters chip and hard-hitting bosses stay threatening
+    const mit = p.defense / (p.defense + 28);
+    const dmg = Math.max(1, Math.round(m.atk * (1 - mit)));
     p.hp = Math.max(0, p.hp - dmg);
     this.float(ps.x + (rng() * 12 - 6), ps.y - 60, '-' + dmg, '#ff6b6b', 15);
     this.spark(ps.x, ps.y - 40, '#b01818', 5);
@@ -490,8 +497,9 @@ export class Game {
       wx: ax, wy: ay, homeX: ax, homeY: ay,
       hpMax: Math.round(def.hpMax * lvScale),
       hp: Math.round(def.hpMax * lvScale),
-      atk: Math.round(def.atk * (1 + (this.p.level - 1) * 0.06)),
+      atk: Math.round(def.atk * (1 + (this.p.level - 1) * 0.09)),
       xpReward: Math.round(def.xpReward * (1 + (this.p.level - 1) * 0.08)),
+      atkInterval: 1.2,
       t: rng() * 3, face: 1, walk: 0, hurt: 0, atkTimer: rng(), deathT: 0, aggro: false,
     });
   }
@@ -508,10 +516,10 @@ export class Game {
   }
   pickup(it) {
     const p = this.p;
-    if (it.kind === 'gear') {           // weapon/armor/shield with multiple options
-      for (const o of it.options) this.applyOption(o);
-      p.equip[it.slot] = it.name;
-    } else {                            // single permanent option item (affix)
+    if (it.kind === 'gear') {                 // weapon/armor/shield — equipment
+      if (!p.gear[it.slot]) this.equipGear(it); // auto-equip an empty slot
+      else this.bagAdd(it);                     // else stash; swap in the panel
+    } else {                                   // single permanent option item (affix)
       this.applyOption({ stat: it.stat, value: it.value });
     }
     SFX.pickup(it.rarity);
@@ -520,6 +528,30 @@ export class Game {
     this.toast(it.text, it.color);
     this.updateHUD();
     this.save();
+  }
+
+  // add/remove a gear item's option contributions to live stats (sign +1/-1)
+  applyGear(item, sign) {
+    const p = this.p;
+    for (const o of item.options) {
+      if (o.stat === 'atkSpeedPct' || o.stat === 'hpAbsorbPct' || o.stat === 'evasionPct') {
+        p.opt[o.stat] = (p.opt[o.stat] || 0) + sign * o.value;
+      } else {
+        p[o.stat] = (p[o.stat] || 0) + sign * o.value;
+        if (o.stat === 'hpMax') { if (sign > 0) p.hp += o.value; else p.hp = Math.min(p.hp, p.hpMax); }
+      }
+    }
+  }
+  bagAdd(item) { this.p.bag.push(item); if (this.p.bag.length > 12) this.p.bag.shift(); }
+  equipGear(item) {
+    const p = this.p, slot = item.slot;
+    const i = p.bag.indexOf(item); if (i >= 0) p.bag.splice(i, 1);
+    if (p.gear[slot]) { this.applyGear(p.gear[slot], -1); this.bagAdd(p.gear[slot]); }
+    p.gear[slot] = item; this.applyGear(item, +1);
+    this.updateHUD(); this.save();
+  }
+  discardGear(idx) {
+    if (idx >= 0 && idx < this.p.bag.length) { this.p.bag.splice(idx, 1); this.updateHUD(); this.save(); }
   }
 
   // ---------------- FX ----------------
@@ -985,11 +1017,18 @@ export class Game {
     $('s-spd').textContent = aps.toFixed(1);
     $('s-def').textContent = p.defense;
     $('s-eva').textContent = Math.round(this.effEvasion() * 100) + '%';
-    $('s-leech').textContent = Math.round(p.opt.hpAbsorbPct) + '%';
     $('s-move').textContent = p.moveSpeed.toFixed(1);
-    $('e-sword').textContent = p.equip.sword;
-    $('e-shield').textContent = p.equip.shield;
-    $('e-armor').textContent = p.equip.armor;
+    // equipped gear (name + options); HP吸収 shown as an armor property
+    const optTxt = it => it ? it.options.map(o => o.label + '+' + o.value + o.suffix).join(' / ') : '';
+    for (const slot of ['sword', 'shield', 'armor']) {
+      const it = p.gear[slot];
+      const nameEl = $('e-' + slot), optEl = $('eo-' + slot);
+      nameEl.textContent = it ? it.name : 'なし';
+      nameEl.style.color = it ? it.color : '';
+      optEl.textContent = optTxt(it);
+    }
+    $('e-leech').textContent = Math.round(p.opt.hpAbsorbPct) + '%';
+    this.renderInventory();
     // skills: allocation rows + skill-bar levels
     $('s-sp').textContent = p.skillPoints;
     const can = p.skillPoints > 0;
@@ -1000,6 +1039,22 @@ export class Game {
     }
     document.querySelectorAll('.plus').forEach(b => { b.disabled = !can; });
     this.updateSkillHUD();
+  }
+
+  renderInventory() {
+    const el = document.getElementById('inv'); if (!el) return;
+    const bag = this.p.bag;
+    if (!bag.length) { el.innerHTML = '<div class="invempty">（空）</div>'; return; }
+    const slotIcon = { sword: '剣', shield: '盾', armor: '鎧' };
+    el.innerHTML = bag.map((it, i) => {
+      const opts = it.options.map(o => o.label + '+' + o.value + o.suffix).join(' / ');
+      return `<div class="invrow" style="border-color:${it.color}55">
+        <i>${slotIcon[it.slot] || '?'}</i>
+        <div class="invinfo"><span style="color:${it.color}">${it.name}</span><small>${opts}</small></div>
+        <button class="invbtn eq" data-idx="${i}">装備</button>
+        <button class="invbtn dc" data-idx="${i}">捨</button>
+      </div>`;
+    }).join('');
   }
 
   // per-frame skill-bar state (active glow + cooldown countdown)
@@ -1052,6 +1107,12 @@ export class Game {
     document.getElementById('btnStatus').onclick = () => document.getElementById('status').classList.toggle('open');
     document.getElementById('closeStatus').onclick = () => document.getElementById('status').classList.remove('open');
     document.getElementById('btnMute').onclick = (e) => { const m = SFX.toggle(); e.currentTarget.textContent = m ? '🔇' : '🔊'; };
+    document.getElementById('inv').addEventListener('click', e => {
+      const b = e.target.closest('.invbtn'); if (!b) return;
+      const idx = +b.dataset.idx;
+      if (b.classList.contains('eq')) { const it = this.p.bag[idx]; if (it) this.equipGear(it); }
+      else this.discardGear(idx);
+    });
     document.querySelectorAll('.actbtn').forEach(b => b.onclick = () => this.activateSkill(b.dataset.sk));
     document.querySelectorAll('.plus').forEach(b => b.onclick = () => this.spendSkill(b.dataset.sk));
   }

@@ -802,3 +802,29 @@ body.touch #stick { display: block; }
   .actbtn { width: 62px; height: 62px; }
   .actbtn .glyph { font-size: 20px; }
 }
+
+/* ── Equipment rows + inventory (gear panel) ─────────────────── */
+.equip .gslot { display: flex; align-items: center; gap: 8px; }
+.equip .gslot .gtxt { display: flex; flex-direction: column; line-height: 1.2; overflow: hidden; }
+.equip .gslot .gtxt span { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.equip .gslot .gtxt small { font-size: 9px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.armorleech { font-size: 10px; color: var(--dim); margin-top: 4px; text-align: right; }
+.armorleech b { color: #ff8a7a; font-size: 12px; }
+
+.invhead { font-size: 10px; letter-spacing: 2px; color: var(--gold); font-weight: 700;
+  margin: 10px 0 5px; border-top: 1px solid var(--gold3); padding-top: 8px; }
+.invhead small { color: var(--dim); letter-spacing: 0; font-weight: 400; }
+.inv { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
+.invempty { font-size: 10px; color: var(--dim); padding: 4px 2px; }
+.invrow { display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.3);
+  border: 1px solid rgba(184,146,58,.3); border-radius: 4px; padding: 3px 5px; }
+.invrow > i { font-style: normal; width: 18px; height: 18px; flex: none; display: grid; place-items: center;
+  background: linear-gradient(180deg,#2a2418,#15110a); border: 1px solid var(--gold2);
+  border-radius: 3px; color: var(--gold); font-size: 10px; }
+.invinfo { display: flex; flex-direction: column; line-height: 1.15; overflow: hidden; flex: 1; min-width: 0; }
+.invinfo span { font-size: 11px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invinfo small { font-size: 8.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invbtn { flex: none; font-size: 10px; padding: 3px 6px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--gold2); background: linear-gradient(180deg,#26221a,#15120c); color: var(--gold); }
+.invbtn.dc { border-color: #7a3a3a; color: #d88; }
+.invbtn:active { transform: translateY(1px); }
