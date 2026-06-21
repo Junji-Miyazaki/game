@@ -349,13 +349,16 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   // every frame (it tracks the arm instead of looking detached/reversed mid-swing).
   // w is the turn from "blade continues the forearm" (0 = straight, 180°): small |w| = the
   // blade extends the arm (down follow-through ~150-170°); |w|~90° = cocked open (strike).
+  // bd = elbow bend SIDE (+1 forward reaches / -1 the raised wind-up). It interpolates, so the
+  // arm straightens at the apex of the swing and re-bends the other way (what a real elbow does)
+  // instead of the joint hyperextending/reversing when the hand crosses overhead.
   const KF = {
-    //        hand           wrist (rad, relative to forearm; + = cock toward palm/down)
-    idle:   { h: [6, 28],    w:  0.00 },                // lowered, blade straight in line with the arm
-    wind:   { h: [-15, -24], w:  0.00 },                // raised back, blade straight in line with the arm
-    strike: { h: [27, 9],    w: -1.45 },                // arm forward, blade cocked OPEN (~100°)
-    down:   { h: [19, 23],   w:  0.00 },                // follow-through, blade straight in line with the arm
-    raise:  { h: [-2, -20],  w:  0.00 },                // skill flourish, blade straight up the arm
+    //        hand           wrist (rad, rel. forearm; -=cock up)   elbow side
+    idle:   { h: [6, 28],    w:  0.00, bd:  1 },        // lowered, blade straight in line with the arm
+    wind:   { h: [-15, -24], w:  0.00, bd: -1 },        // raised back, blade straight in line with the arm
+    strike: { h: [27, 9],    w: -1.45, bd:  1 },        // arm forward, blade cocked OPEN (~100°)
+    down:   { h: [19, 23],   w:  0.00, bd:  1 },        // follow-through, blade straight in line with the arm
+    raise:  { h: [-2, -20],  w:  0.00, bd: -1 },        // skill flourish, blade straight up the arm
   };
   let A, B, f;
   if (cast >= 0) {                                       // skill-cast flourish overrides
@@ -378,12 +381,13 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   const rr = rA + (rB - rA) * f, th = thA + dth * f;
   const hX = rr * Math.cos(th), hY = rr * Math.sin(th);
   const wr = A.w + (B.w - A.w) * f;
-  // --- 2-bone IK: shoulder(0,0) -> elbow -> hand, fixed bend side (elbow trails naturally) ---
+  // --- 2-bone IK: shoulder(0,0) -> elbow -> hand, with an interpolating bend side ---
   let d = Math.hypot(hX, hY); d = Math.max(Math.abs(Lu - Lf) + 0.01, Math.min(Lu + Lf - 0.01, d));
-  const ux = hX / (d || 1), uy = hY / (d || 1);
   const ca = (Lu * Lu - Lf * Lf + d * d) / (2 * d);
-  const hh = Math.sqrt(Math.max(0, Lu * Lu - ca * ca));
-  const eX = ux * ca - uy * hh, eY = uy * ca + ux * hh;   // bend side: +perp(-uy,ux)
+  const alpha = Math.acos(Math.max(-1, Math.min(1, ca / Lu)));   // upper-arm angle off shoulder→hand
+  const bend = A.bd + (B.bd - A.bd) * f;                          // +1 / -1, flips through 0 = straight arm
+  const beta = Math.atan2(hY, hX) + bend * alpha;                 // elbow angular position
+  const eX = Lu * Math.cos(beta), eY = Lu * Math.sin(beta);
   const ex = sx + eX * face * s, ey = sy + eY * s;
   const hx = sx + hX * face * s, hy = sy + hY * s;
   const fa = Math.atan2(hy - ey, hx - ex);              // forearm angle (screen space, face-aware)
