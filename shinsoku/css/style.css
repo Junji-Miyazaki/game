@@ -400,12 +400,11 @@ html, body {
 #skillbar {
   position: absolute;
   bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 12px;
   z-index: 10;
 
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   padding: 7px 10px;
 
@@ -451,6 +450,40 @@ html, body {
 }
 #skillbar::before { left: 4px; }
 #skillbar::after  { right: 4px; }
+
+/* ── Compact vitals tucked into the action bar (left of the skills) ── */
+.minivitals {
+  flex: 0 0 auto;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 1px 9px 1px 5px;
+  margin-right: 1px;
+  border-right: 1px solid var(--gold3);
+}
+.minivitals .mv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  color: var(--dim);
+  line-height: 1;
+}
+.minivitals .mv-head .lvl b {
+  color: var(--goldhi); font-weight: 900; font-size: 14px;
+  text-shadow: 0 0 6px var(--gold);
+}
+.minivitals .aps { margin-top: 0; font-size: 10px; }
+.minivitals .aps #v-apsnum { font-size: 12px; }
+.minivitals .aps em { margin-left: 5px; }
+.minivitals .bar { margin-bottom: 0; }
+.minivitals .bar.hp { height: 13px; }
+.minivitals .bar.xp { height: 6px; margin-top: 1px; }
+.minivitals .bartxt { font-size: 9px; }
+
+/* on touch devices the joystick owns the bottom-left, so center the action bar */
+body.touch #skillbar { left: 50%; transform: translateX(-50%); }
 
 /* ── Active skill buttons  (.actbtn) ─────────────────────── */
 .actbtn {

@@ -11,17 +11,6 @@
 <div id="app">
   <canvas id="view"></canvas>
 
-  <!-- Top-left player vitals -->
-  <div id="vitals" class="panel">
-    <div class="row">
-      <span class="cls" id="v-class">WARRIOR</span>
-      <span class="lvl">Lv <b id="v-level">1</b></span>
-    </div>
-    <div class="bar hp" id="hpbar"><div class="fill" id="v-hpfill"></div><span class="bartxt" id="v-hptxt">100/100</span></div>
-    <div class="bar xp"><div class="fill" id="v-xpfill"></div><span class="bartxt" id="v-xptxt">XP</span></div>
-    <div class="aps" id="v-aps"><span id="v-apsnum">1.0</span> <small>atk/s</small> <em id="v-godspeed">神速</em></div>
-  </div>
-
   <!-- Right status / equipment / skill-allocation panel -->
   <div id="status" class="panel">
     <div class="phead">STATUS <span class="stp">STAT P: <b id="s-stp">0</b></span><button id="closeStatus">×</button></div>
@@ -51,8 +40,16 @@
     <div id="opts" class="inv"></div>
   </div>
 
-  <!-- Bottom skill bar — active timed-buff skills -->
+  <!-- Bottom action bar — compact vitals + active timed-buff skills -->
   <div id="skillbar">
+    <div class="minivitals">
+      <div class="mv-head">
+        <span class="lvl">Lv <b id="v-level">1</b></span>
+        <span class="aps" id="v-aps"><b id="v-apsnum">1.0</b><small>atk/s</small><em id="v-godspeed">神速</em></span>
+      </div>
+      <div class="bar hp" id="hpbar"><div class="fill" id="v-hpfill"></div><span class="bartxt" id="v-hptxt">100/100</span></div>
+      <div class="bar xp"><div class="fill" id="v-xpfill"></div><span class="bartxt" id="v-xptxt">XP</span></div>
+    </div>
     <button class="actbtn speed" id="act-speed" data-sk="speed">
       <span class="glyph">神速</span><span class="lvl" id="lv-speed">Lv0</span>
       <span class="cd" id="cd-speed"></span>
