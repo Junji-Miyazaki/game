@@ -351,6 +351,14 @@ export class Game {
     if (d > this.R - 0.6) { const k = (this.R - 0.6) / d; o.wx *= k; o.wy *= k; }
   }
 
+  // brief heal/hurt glow on the HP bar (throttled so godspeed doesn't flicker)
+  flashHp(type) {
+    if (this._t - (this._hpFlashAt || -9) < 0.18) return;
+    this._hpFlashAt = this._t;
+    const el = document.getElementById('hpbar'); if (!el) return;
+    el.classList.remove('heal', 'hurt'); void el.offsetWidth; el.classList.add(type);
+  }
+
   stepToward(p, tx, ty, speed, dt, isDir) {
     const dx = tx - p.wx, dy = ty - p.wy;
     const d = hyp(dx, dy);
@@ -383,6 +391,7 @@ export class Game {
     if (p.opt.hpAbsorbPct > 0 && p.hp < p.hpMax) {
       const heal = Math.max(1, Math.round(dmg * p.opt.hpAbsorbPct / 100));
       p.hp = Math.min(p.hpMax, p.hp + heal);
+      this.flashHp('heal');
       if (showFx && rng() < 0.5) this.float(this.toScreen(p.wx, p.wy).x, this.toScreen(p.wx, p.wy).y - 60, '+' + heal, '#6bff8a', 12);
     }
     if (showFx) {
@@ -502,7 +511,7 @@ export class Game {
     this.float(ps.x + (rng() * 12 - 6), ps.y - 60, '-' + dmg, '#ff6b6b', 15);
     this.spark(ps.x, ps.y - 40, '#b01818', 5);
     SFX.playerHurt();
-    this.hitFlash = 0.32; this.lastHurt = this._t;
+    this.hitFlash = 0.32; this.lastHurt = this._t; this.flashHp('hurt');
     if (rng() < 0.4) this.addBlood(p.wx, p.wy, 0.6 + rng() * 0.4);
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
