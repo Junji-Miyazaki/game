@@ -302,8 +302,10 @@ function fighterSide(ctx, D) {
   ctx.fillStyle = '#3a2a22'; ctx.beginPath(); ctx.arc(3.6 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
   ctx.strokeStyle = '#4a3326'; ctx.lineWidth = 0.9 * s;
   ctx.beginPath(); ctx.moveTo(2.6 * s, -58 * s); ctx.lineTo(4.8 * s, -57.6 * s); ctx.stroke();
-  // shield on near arm (front)
-  ctx.save(); ctx.translate(2.5 * s, -29 * s + shB);
+  // shield on near arm (front) — punches FORWARD to guard on the wind-up, pulls BACK on the strike
+  const shDX = (aWind * 9 - aStrike * 9) * s;
+  const shDY = (-aWind * 2 + aStrike * 1) * s;
+  ctx.save(); ctx.translate(2.5 * s + shDX, -29 * s + shB + shDY);
   ctx.fillStyle = '#9aa6ba'; ctx.beginPath(); ctx.ellipse(0, 0, 5 * s, 9 * s, 0, 0, 7); ctx.fill();
   ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.6 * s; ctx.stroke();
   ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2 * s, 0, 7); ctx.fill();
@@ -342,15 +344,18 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   // IK with a fixed bend side, so the joint articulates the same natural way every frame
   // (it can never invert/hyperextend). The blade is a rigid, fixed-length segment.
   const Lu = 16, Lf = 15, L = 30;                       // upper-arm / forearm / blade lengths
-  // blade angles are CONTINUOUS (not wrapped) so the swing arcs forward, not back over the
-  // shoulder: wind(up-back) -> strike(up, open/obtuse to the arm) -> down(down-FORWARD).
+  // The blade is RIGID and its angle is measured RELATIVE TO THE FOREARM (wrist offset w),
+  // not as an absolute angle — so the hand→blade angle the player reads stays controlled in
+  // every frame (it tracks the arm instead of looking detached/reversed mid-swing).
+  // w is the turn from "blade continues the forearm" (0 = straight, 180°): small |w| = the
+  // blade extends the arm (down follow-through ~150-170°); |w|~90° = cocked open (strike).
   const KF = {
-    //        hand           blade-angle (rad, face=1: 0=fwd, -PI/2=up, +PI/2=down)
-    idle:   { h: [6, 28],    b:  1.30 },                // lowered, blade points down-forward
-    wind:   { h: [-15, -24], b: -2.45 },               // cocked back, arm extended up over the shoulder
-    strike: { h: [27, 9],    b: -1.85 },               // arm forward, blade open (obtuse) to the arm
-    down:   { h: [19, 23],   b:  1.00 },               // follow-through, blade points down-forward
-    raise:  { h: [-2, -20],  b: -1.57 },               // skill flourish, blade straight up
+    //        hand           wrist (rad, relative to forearm; + = cock toward palm/down)
+    idle:   { h: [6, 28],    w:  0.00 },                // lowered, blade straight in line with the arm
+    wind:   { h: [-15, -24], w:  0.00 },                // raised back, blade straight in line with the arm
+    strike: { h: [27, 9],    w: -1.45 },                // arm forward, blade cocked OPEN (~100°)
+    down:   { h: [19, 23],   w:  0.00 },                // follow-through, blade straight in line with the arm
+    raise:  { h: [-2, -20],  w:  0.00 },                // skill flourish, blade straight up the arm
   };
   let A, B, f;
   if (cast >= 0) {                                       // skill-cast flourish overrides
@@ -363,11 +368,16 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   else if (atk < .50) { A = KF.wind;  B = KF.strike; f = (atk - .25) / .25; }
   else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
   else                { A = KF.down;  B = KF.idle;  f = (atk - .70) / .30; }
-  const hX = A.h[0] + (B.h[0] - A.h[0]) * f, hY = A.h[1] + (B.h[1] - A.h[1]) * f;
-  // Blade angle lerps linearly along the continuous values (a forward arc). During the
-  // strike->down cut, ease-in so the blade stays OPEN against the arm, then drops late.
-  const fb = (A === KF.strike && B === KF.down) ? f * f : f;
-  const bAng = A.b + (B.b - A.b) * fb;
+  // Interpolate the hand in POLAR around the shoulder so the arm swings on an ARC at roughly
+  // constant reach. (A linear position-lerp cuts a chord through the shoulder and crumples the
+  // arm mid-swing, which made the wind-up blade look reversed/180°-off.)
+  const rA = Math.hypot(A.h[0], A.h[1]), rB = Math.hypot(B.h[0], B.h[1]);
+  const thA = Math.atan2(A.h[1], A.h[0]);
+  let dth = Math.atan2(B.h[1], B.h[0]) - thA;
+  while (dth > Math.PI) dth -= 2 * Math.PI; while (dth < -Math.PI) dth += 2 * Math.PI;
+  const rr = rA + (rB - rA) * f, th = thA + dth * f;
+  const hX = rr * Math.cos(th), hY = rr * Math.sin(th);
+  const wr = A.w + (B.w - A.w) * f;
   // --- 2-bone IK: shoulder(0,0) -> elbow -> hand, fixed bend side (elbow trails naturally) ---
   let d = Math.hypot(hX, hY); d = Math.max(Math.abs(Lu - Lf) + 0.01, Math.min(Lu + Lf - 0.01, d));
   const ux = hX / (d || 1), uy = hY / (d || 1);
@@ -376,7 +386,8 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   const eX = ux * ca - uy * hh, eY = uy * ca + ux * hh;   // bend side: +perp(-uy,ux)
   const ex = sx + eX * face * s, ey = sy + eY * s;
   const hx = sx + hX * face * s, hy = sy + hY * s;
-  const ba = face >= 0 ? bAng : (Math.PI - bAng);       // blade angle mirrors with facing
+  const fa = Math.atan2(hy - ey, hx - ex);              // forearm angle (screen space, face-aware)
+  const ba = fa + wr * face;                            // blade = forearm + wrist (mirrors w/ facing)
   const tx = hx + Math.cos(ba) * L * s, ty = hy + Math.sin(ba) * L * s;
 
   // motion-blur arc during the strike
