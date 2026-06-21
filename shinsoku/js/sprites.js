@@ -46,17 +46,36 @@ export function drawFighter(ctx, o) {
   const s = o.scale, face = o.face >= 0 ? 1 : -1, t = o.t || 0;
   const walk = o.walk || 0, atk = (o.attackP == null ? -1 : o.attackP), god = !!o.god;
   const view = o.view || 'front';
+  const run = o.run || 0;                                   // 0..1 run intensity
+  const cast = (o.cast == null ? -1 : o.cast);              // skill-cast phase (-1 idle)
   const moving = walk > 0.05;
-  const bob = (moving ? Math.abs(Math.sin(t * 9)) * 2.4 : Math.sin(t * 2.2) * 1.0) * s;
+  const gaitF = 9 + run * 6;                                // stride frequency (run is faster)
+  const footfall = moving ? Math.abs(Math.cos(t * gaitF)) : 0;
+  const bob = (moving ? Math.abs(Math.sin(t * gaitF)) * (2.2 + run * 1.8) : Math.sin(t * 2.2) * 1.0) * s;
+
+  // ---- squash & stretch (volume-preserving) + strike lunge ----
+  let sy = 1 + Math.sin(t * 2.2) * 0.012;                   // breathe
+  if (moving) sy -= footfall * (0.04 + run * 0.05);         // dip on each footfall
+  let lunge = 0;
+  if (atk >= 0) {
+    if (atk < 0.25) sy -= (atk / 0.25) * 0.09;              // wind-up crouch (anticipation)
+    else if (atk < 0.5) { const k = (atk - 0.25) / 0.25; sy += k * 0.13; lunge = k; }  // strike: stretch + lunge
+    else if (atk < 0.7) lunge = 1 - (atk - 0.5) / 0.2;      // hold then recover
+  }
+  if (cast >= 0) sy += Math.sin(cast * Math.PI) * 0.16;     // cast: rise up on toes
+  const sx = 1 - (sy - 1) * 0.6;                            // widen when squashed, narrow when stretched
 
   ctx.save();
-  ctx.translate(o.x, o.y - bob);
-  if (god) {
-    const ag = ctx.createRadialGradient(0, -38 * s, 0, 0, -38 * s, 52 * s);
-    ag.addColorStop(0, 'rgba(255,122,223,.30)'); ag.addColorStop(1, 'rgba(255,122,223,0)');
-    ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -38 * s, 52 * s, 0, 7); ctx.fill();
+  ctx.translate(o.x + face * lunge * 7 * s, o.y - bob);
+  if (god || cast >= 0) {
+    const ar = 52 * s, gl = cast >= 0 ? Math.sin(cast * Math.PI) : 1;
+    const ag = ctx.createRadialGradient(0, -38 * s, 0, 0, -38 * s, ar);
+    const col = god ? '255,122,223' : '255,210,90';
+    ag.addColorStop(0, `rgba(${col},${0.30 * gl})`); ag.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -38 * s, ar, 0, 7); ctx.fill();
   }
-  const D = { s, face, t, walk, atk, god, moving };
+  ctx.scale(sx, sy);                                        // squash & stretch around the feet
+  const D = { s, face, t, walk, atk, god, moving, run, cast, gaitF };
   if (view === 'back') fighterBack(ctx, D);
   else if (view === 'side') fighterSide(ctx, D);
   else fighterFront(ctx, D);
@@ -64,8 +83,8 @@ export function drawFighter(ctx, o) {
 }
 
 function fighterFront(ctx, D) {
-  const { s, face, t, walk, atk, god, moving } = D, P = PAL;
-  const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
+  const { s, face, t, walk, atk, god, moving, gaitF, cast } = D, P = PAL;
+  const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * gaitF) * 2 * s : 0);
   // ponytail behind (long, flows opposite facing)
   ctx.fillStyle = P.HAIR;
   ctx.beginPath();
@@ -74,7 +93,7 @@ function fighterFront(ctx, D) {
   ctx.quadraticCurveTo(-face * 11 * s, -40 * s, -face * 3 * s, -50 * s);
   ctx.closePath(); ctx.fill();
   // legs
-  const stride = moving ? Math.sin(t * 9) : Math.sin(t * 2.2) * 0.06;
+  const stride = moving ? Math.sin(t * gaitF) : Math.sin(t * 2.2) * 0.06;
   drawLeg(ctx, -2.5 * s, -26 * s, -stride, s, P.LEG, P.BOOT, face);
   drawLeg(ctx, 2.5 * s, -26 * s, stride, s, P.LEG2, P.BOOT, face);
   // skirt
@@ -148,12 +167,12 @@ function fighterFront(ctx, D) {
   ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.6 * s, 0, 7); ctx.fill();
   ctx.restore();
   // sword arm (RIGHT hand = -x)
-  drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god);
+  drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god, cast);
 }
 
 function fighterBack(ctx, D) {
-  const { s, t, walk, atk, god, moving } = D, P = PAL;
-  const stride = moving ? Math.sin(t * 9) : 0;
+  const { s, t, walk, atk, god, moving, gaitF, cast } = D, P = PAL;
+  const stride = moving ? Math.sin(t * gaitF) : 0;
   drawLeg(ctx, -2.5 * s, -26 * s, -stride, s, P.LEG, P.BOOT, 1);
   drawLeg(ctx, 2.5 * s, -26 * s, stride, s, P.LEG2, P.BOOT, 1);
   ctx.fillStyle = P.SKIRT;
@@ -189,7 +208,7 @@ function fighterBack(ctx, D) {
   ctx.fillStyle = P.HAIR; ctx.beginPath(); ctx.arc(0, -56 * s, 6 * s, 0, 7); ctx.fill();
   ctx.fillStyle = P.GOLD; ctx.fillRect(-5 * s, -58.5 * s, 10 * s, 1.6 * s);
   // long ponytail down the back
-  const psw = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
+  const psw = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * gaitF) * 2 * s : 0);
   ctx.fillStyle = P.HAIR;
   ctx.beginPath();
   ctx.moveTo(-3.5 * s, -54 * s);
@@ -204,17 +223,17 @@ function fighterBack(ctx, D) {
   ctx.fillStyle = '#6f7a8c'; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
   ctx.strokeStyle = P.ARM_D; ctx.lineWidth = 2 * s; ctx.stroke();
   ctx.restore();
-  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god);
+  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god, cast);
 }
 
 function fighterSide(ctx, D) {
-  const { s, face, t, walk, atk, god, moving } = D, P = PAL;
+  const { s, face, t, walk, atk, god, moving, gaitF, cast } = D, P = PAL;
   ctx.save(); ctx.scale(face, 1);                 // draw facing right; mirror for left
-  const stride = moving ? Math.sin(t * 9) : Math.sin(t * 2.2) * 0.05;
+  const stride = moving ? Math.sin(t * gaitF) : Math.sin(t * 2.2) * 0.05;
   const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
   drawLeg(ctx, -1.5 * s, -26 * s, -stride * 1.3, s, darken(P.LEG, 18), P.BOOT, 1);  // far leg
   // ponytail trailing behind
-  const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * 9) * 2 * s : 0);
+  const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * gaitF) * 2 * s : 0);
   ctx.fillStyle = P.HAIR;
   ctx.beginPath();
   ctx.moveTo(-3 * s, -57 * s);
@@ -260,7 +279,7 @@ function fighterSide(ctx, D) {
   ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2 * s, 0, 7); ctx.fill();
   ctx.restore();
   // sword arm forward
-  drawSwordArm(ctx, 3 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god);
+  drawSwordArm(ctx, 3 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god, cast);
   ctx.restore();
 }
 
@@ -283,15 +302,21 @@ function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
 // Sword arm with raise→strike→recover. Joints given as forehand keyframes (dx,dy
 // from shoulder); x is multiplied by `face` so the blade leads toward facing while
 // the shoulder stays on screen-right (= the right hand, always).
-function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god) {
+function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   const KF = {
     idle:   { e: [2, 10],  h: [3, 20],  p: [4, 41] },   // sword lowered
     wind:   { e: [-3, -7], h: [-8, -17], p: [-5, -42] }, // raised overhead (windup)
     strike: { e: [9, -4],  h: [19, 2],  p: [40, 9] },   // extended forward
     down:   { e: [5, 9],   h: [10, 21], p: [16, 41] },  // cut-through, low
+    raise:  { e: [-1, -10], h: [-2, -22], p: [0, -48] }, // skill flourish, blade straight up
   };
   let A, B, f;
-  if (atk < 0)        { A = KF.idle;  B = KF.idle;  f = 0; }
+  if (cast >= 0) {                                       // skill-cast flourish overrides
+    if (cast < .35)      { A = KF.idle;  B = KF.raise; f = cast / .35; }
+    else if (cast < .7)  { A = KF.raise; B = KF.raise; f = 0; }
+    else                 { A = KF.raise; B = KF.idle;  f = (cast - .7) / .3; }
+  }
+  else if (atk < 0)   { A = KF.idle;  B = KF.idle;  f = 0; }
   else if (atk < .25) { A = KF.idle;  B = KF.wind;  f = atk / .25; }
   else if (atk < .50) { A = KF.wind;  B = KF.strike; f = (atk - .25) / .25; }
   else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
@@ -574,25 +599,39 @@ function bat(ctx, o) {
   tri(ctx, 2 * s, -19 * s, 3 * s, -16 * s, 1 * s, -19 * s);
 }
 function spider(ctx, o) {
-  const s = o.scale, t = o.tint, leg = Math.sin(o.t * 9 + o.x) * 0.25;
-  const D = darken(t, 25), L = lighten(t, 30);
-  // 8 legs (4 each side), bent, animated
-  ctx.strokeStyle = D; ctx.lineWidth = 2 * s; ctx.lineCap = 'round';
+  const s = o.scale, t = o.tint;
+  const D = darken(t, 28), L = lighten(t, 42), BLK = darken(t, 55);
+  // 8 legs: 4 per side, articulated hip→raised knee→foot, rippling
   for (const dir of [-1, 1]) for (let i = 0; i < 4; i++) {
-    const a = (-0.5 + i * 0.42) + dir * 0.0, ph = leg * (i % 2 ? 1 : -1);
-    const kx = dir * (7 + i * 1.5) * s, ky = (-14 + i * 1.2) * s;
-    const ex = dir * (16 + i * 2) * s, ey = (-6 + i * 2 + ph * 6) * s;
-    ctx.beginPath(); ctx.moveTo(dir * 4 * s, -14 * s); ctx.lineTo(kx, ky - 4 * s); ctx.lineTo(ex, ey); ctx.stroke();
+    const fwd = i - 1.5;
+    const ph = Math.sin(o.t * 7 + o.x + i * 1.2 + (dir > 0 ? 2.1 : 0)) * 0.6;
+    const hipx = dir * 4 * s, hipy = -14 * s;
+    const kneex = dir * (12 + Math.abs(fwd) * 1.4) * s, kneey = (-23 - i * 0.4 + ph) * s; // knee up high
+    const footx = dir * (19 + fwd * 2.2) * s, footy = (-1 + ph * 1.6) * s;                // foot on ground
+    ctx.strokeStyle = D; ctx.lineCap = 'round';
+    ctx.lineWidth = 2.4 * s; ctx.beginPath(); ctx.moveTo(hipx, hipy); ctx.lineTo(kneex, kneey); ctx.stroke();
+    ctx.lineWidth = 1.7 * s; ctx.beginPath(); ctx.moveTo(kneex, kneey); ctx.lineTo(footx, footy); ctx.stroke();
+    ctx.fillStyle = BLK; ctx.beginPath(); ctx.arc(footx, footy, 1.1 * s, 0, 7); ctx.fill();  // foot tip
   }
-  // abdomen (big rear) + cephalothorax (front)
-  body(ctx, t, -10 * s, -22 * s, 20 * s, 16 * s);
-  ctx.fillStyle = L; for (const m of [[-3, -16], [3, -16], [0, -12]]) { ctx.beginPath(); ctx.arc(m[0] * s, m[1] * s, 1.6 * s, 0, 7); ctx.fill(); }  // markings
-  body(ctx, D, -5 * s, -20 * s, 10 * s, 9 * s);
-  // eyes cluster + fangs
-  ctx.fillStyle = '#ffd23a';
-  for (const e of [[-2.5, -18], [-1, -19], [1, -19], [2.5, -18]]) { ctx.beginPath(); ctx.arc(e[0] * s, e[1] * s, 0.9 * s, 0, 7); ctx.fill(); }
-  ctx.strokeStyle = '#1a1018'; ctx.lineWidth = 1.6 * s;
-  ctx.beginPath(); ctx.moveTo(-2 * s, -13 * s); ctx.lineTo(-2.5 * s, -10 * s); ctx.moveTo(2 * s, -13 * s); ctx.lineTo(2.5 * s, -10 * s); ctx.stroke();
+  // abdomen (bulbous rear)
+  ctx.beginPath(); ctx.ellipse(-5 * s, -15 * s, 11 * s, 9.5 * s, 0, 0, 7);
+  const ag = ctx.createRadialGradient(-8 * s, -19 * s, 1, -5 * s, -15 * s, 13 * s);
+  ag.addColorStop(0, L); ag.addColorStop(.55, t); ag.addColorStop(1, BLK);
+  ctx.fillStyle = ag; ctx.fill(); ctx.strokeStyle = BLK; ctx.lineWidth = 1 * s; ctx.stroke();
+  // abdomen marking (pale hourglass)
+  ctx.fillStyle = L;
+  ctx.beginPath(); ctx.moveTo(-5 * s, -20 * s); ctx.lineTo(-2.5 * s, -15 * s); ctx.lineTo(-5 * s, -10.5 * s); ctx.lineTo(-7.5 * s, -15 * s); ctx.closePath(); ctx.fill();
+  // cephalothorax (front head segment)
+  ctx.fillStyle = D; ctx.beginPath(); ctx.ellipse(6 * s, -13 * s, 6.5 * s, 5.2 * s, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = BLK; ctx.lineWidth = 1 * s; ctx.stroke();
+  // glowing eye cluster
+  ctx.fillStyle = '#ff4a3a'; ctx.shadowColor = '#ff4a3a'; ctx.shadowBlur = 4 * s;
+  for (const e of [[8, -15], [10.5, -14], [8, -12], [10.5, -11.5], [12, -13]]) { ctx.beginPath(); ctx.arc(e[0] * s, e[1] * s, 1 * s, 0, 7); ctx.fill(); }
+  ctx.shadowBlur = 0;
+  // chelicerae / fangs
+  ctx.strokeStyle = BLK; ctx.lineWidth = 2 * s; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(11 * s, -10.5 * s); ctx.lineTo(13.5 * s, -7.5 * s);
+  ctx.moveTo(12.5 * s, -11 * s); ctx.lineTo(15 * s, -8.5 * s); ctx.stroke();
 }
 function guardian(ctx, o) {
   const s = o.scale, t = o.tint, sway = Math.sin(o.t * 2 + o.x) * 1.5 * o.walk;

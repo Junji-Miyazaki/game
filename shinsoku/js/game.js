@@ -15,15 +15,21 @@ const VIG_PER_LV = 45;                  // +45 max HP per 活力 level
 const SKILL_DUR = lv => 3 + lv * 1.5;   // buff duration in seconds
 const SKILL_CD = 14;                    // cooldown after the buff ends
 const GOD_THRESHOLD = 8;                // effective atk/s to enter 神速
+const CAST_DUR = 0.55;                  // skill-cast flourish length (s)
 // dragon breath (apex boss special, telegraphed fire cone)
 const BREATH_DUR = 1.7;                 // total seconds of one breath
 const BREATH_CD = 6.5;                  // cooldown between breaths
 const BREATH_RANGE = 8;                 // tiles
 const BREATH_HALF = 0.5;                // cone half-angle (rad, ~29°)
+// mid-boss slam-nova special (ogre/golem/wraith bosses)
+const SLAM_DUR = 1.3;                   // total seconds
+const SLAM_CD = 5.5;                    // cooldown
+const SLAM_RADIUS = 4.6;               // tiles the shockwave reaches
 
 const rng = Math.random;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const hyp = (x, y) => Math.hypot(x, y);
+const hexToRgb = h => { const n = parseInt(h.slice(1), 16); return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`; };
 
 export class Game {
   constructor() {
@@ -54,6 +60,7 @@ export class Game {
     this.buildLayout(this.area);   // 2部屋＋通路レイアウトを早期に用意（enterArea前のupdateでも安全に）
     this.maxMon = 8; this.exit = null; this.boss = null;
     this.loops = 0; this.areaLevel = 1; this.bossRespawnAt = 0;
+    this.castAnim = 0;     // skill-cast flourish timer
     this.pview = 'front';  // current player view (front/back/side)
     this.ambient = [];     // ambient environment motes (screen-space)
     this.initPlayer();
@@ -241,6 +248,7 @@ export class Game {
       wx: bx, wy: by, homeX: bx, homeY: by,
       t: 0, face: 1, walk: 0, hurt: 0, atkTimer: 0.5, deathT: 0, aggro: false,
       breathT: -1, breathCd: 3.5, breathAng: 0, breathTick: 0,   // dragon breath state
+      skillT: -1, skillCd: 4,                                    // mid-boss slam state
     };
     this.monsters.push(m); this.boss = m;
   }
@@ -269,6 +277,7 @@ export class Game {
     this.updateBuffs(dt);
     this.updateSkillHUD();
     if (this.hitFlash > 0) this.hitFlash -= dt;
+    if (this.castAnim > 0) this.castAnim -= dt;
     // rest regen — HP recovers over time, faster out of combat
     if (p.hp > 0 && p.hp < p.hpMax) {
       const outOfCombat = (this._t - (this.lastHurt || -99)) > 3.5;
@@ -543,8 +552,35 @@ export class Game {
         return;
       }
     }
+    // ---- MID-BOSS SLAM NOVA (ogre/golem/wraith bosses): telegraphed AoE ring ----
+    if (m.isBoss && m.sprite !== 'dragon') {
+      if (m.skillT >= 0) {
+        const prev = m.skillT; m.skillT += dt / SLAM_DUR;
+        if (prev < 0.5 && m.skillT >= 0.5) this.slamHit(m);   // impact moment
+        m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
+        if (m.skillT >= 1) { m.skillT = -1; m.skillCd = SLAM_CD; }
+        return;                                               // root in place while slamming
+      }
+      m.skillCd -= dt;
+      if (m.skillCd <= 0 && d <= SLAM_RADIUS + 2) {
+        m.skillT = 0; SFX.skill('power');
+        this.float(this.toScreen(m.wx, m.wy).x, this.toScreen(m.wx, m.wy).y - 70 * m.scale, '叩きつけ！', '#ffcaa0', 18);
+        return;
+      }
+    }
+    // ---- ELITE CHARGE: periodic speed burst (a quick lunge at the player) ----
+    let spd = m.speed;
+    if (m.elite) {
+      m.speedBoost = Math.max(0, (m.speedBoost || 0) - dt);
+      m.chargeCd = (m.chargeCd == null ? rng() * 3 : m.chargeCd) - dt;
+      if (m.chargeCd <= 0 && d > 2 && d < 7) {
+        m.speedBoost = 0.55; m.chargeCd = 3.5 + rng() * 2;
+        const es = this.toScreen(m.wx, m.wy); for (let i = 0; i < 5; i++) this.spark(es.x, es.y - 18, '#c878ff', 1);
+      }
+      if (m.speedBoost > 0) spd = m.speed * 3.4;
+    }
     if (d > ATTACK_RANGE - 0.3) {
-      const step = Math.min(m.speed * dt, d);
+      const step = Math.min(spd * dt, d);
       m.wx += dx / d * step; m.wy += dy / d * step; m.walk = 1;
       this.clampArena(m);
       m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
@@ -609,6 +645,24 @@ export class Game {
     this.float(ps.x + (rng() * 12 - 6), ps.y - 58, '-' + dmg, '#ff9a3a', 16);
     this.spark(ps.x, ps.y - 34, '#ff6a1e', 4);
     this.hitFlash = 0.4; this.lastHurt = this._t; this.flashHp('hurt');
+    this.updateHUD();
+    if (p.hp <= 0) this.onDeath();
+  }
+
+  // mid-boss slam impact — AoE around the boss; dodge by being outside the ring
+  slamHit(m) {
+    const p = this.p, d = hyp(p.wx - m.wx, p.wy - m.wy);
+    const bs = this.toScreen(m.wx, m.wy);
+    for (let i = 0; i < 18; i++) this.spark(bs.x, bs.y - 6, '#e8c8a0', 2);   // dust burst
+    this.addBlood(m.wx, m.wy, 0);
+    if (d > SLAM_RADIUS) return;                       // outside the shockwave — safe
+    const ps = this.toScreen(p.wx, p.wy);
+    if (rng() < this.effEvasion()) { this.float(ps.x, ps.y - 64, 'MISS', '#cfeaff', 14); return; }
+    const mit = p.defense / (p.defense + 28);
+    const dmg = Math.max(1, Math.round(m.atk * 1.7 * (1 - mit)));
+    p.hp = Math.max(0, p.hp - dmg);
+    this.float(ps.x + (rng() * 12 - 6), ps.y - 58, '-' + dmg, '#ffcaa0', 17);
+    this.hitFlash = 0.45; this.lastHurt = this._t; this.flashHp('hurt');
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
   }
@@ -779,9 +833,10 @@ export class Game {
     const cols = { speed: '#ff7adf', power: '#ff8a3a', hp: '#5be07b' };
     if (key === 'hp') { b.bonus = lv * VIG_PER_LV; this.p.hpMax += b.bonus; this.p.hp += b.bonus; }
     SFX.skill(key);
+    this.castAnim = CAST_DUR;                 // play the weapon-raise flourish
     const sp = this.toScreen(this.p.wx, this.p.wy);
     this.float(sp.x, sp.y - 80, names[key] + '！', cols[key], 22);
-    for (let i = 0; i < 14; i++) this.spark(sp.x, sp.y - 30, cols[key], 2);
+    for (let i = 0; i < 22; i++) this.spark(sp.x, sp.y - 30, cols[key], 2);   // bigger burst
     this.updateHUD();
   }
   spendSkill(sk) {
@@ -845,6 +900,7 @@ export class Game {
     }
 
     if (this.boss && this.boss.sprite === 'dragon' && this.boss.breathT >= 0) this.drawBreath(this.boss);
+    for (const m of this.monsters) if (m.isBoss && m.sprite !== 'dragon' && m.skillT >= 0) this.drawBossSkill(m);
     this.drawParticles();
     this.drawAmbient();
     this.drawFloats();
@@ -894,6 +950,28 @@ export class Game {
     const mg = ctx.createRadialGradient(hx, hy, 0, hx, hy, 18 * sc);
     mg.addColorStop(0, `rgba(255,225,130,${intensity})`); mg.addColorStop(1, 'rgba(255,120,30,0)');
     ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(hx, hy, 18 * sc, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+
+  // mid-boss slam telegraph + shockwave ring (projected onto the iso floor)
+  drawBossSkill(m) {
+    const ctx = this.ctx, c = this.toScreen(m.wx, m.wy), U = ISO_U, ph = m.skillT;
+    const col = m.tint || '#e8c8a0';
+    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
+    if (ph < 0.5) {                                   // windup: growing warning ring
+      const r = (ph / 0.5) * SLAM_RADIUS * U, a = 0.25 + ph * 0.3;
+      ctx.strokeStyle = `rgba(255,120,60,${a})`; ctx.lineWidth = 4; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.arc(0, 0, SLAM_RADIUS * U, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = `rgba(255,120,60,${0.08 * a})`; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+    } else {                                          // shockwave bursts outward, fading
+      const k = (ph - 0.5) / 0.5, r = k * SLAM_RADIUS * U, a = (1 - k) * 0.8;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(${hexToRgb(col)},${a})`; ctx.lineWidth = 8 * (1 - k * 0.5);
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,240,200,${a * 0.8})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.92, 0, 7); ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -1274,9 +1352,11 @@ export class Game {
       }
       ctx.globalAlpha = 1;
     }
+    const run = p.walk ? clamp((p.moveSpeed - 2) / 2, 0.4, 1) : 0;
+    const cast = this.castAnim > 0 ? (1 - this.castAnim / CAST_DUR) : -1;
     drawFighter(ctx, {
       x: s.x, y: s.y, scale: 1, face: p.face, view, t: this._t || 0,
-      walk: p.walk || 0, attackP: this.attacking ? (this.visualSwing % 1) : -1, god,
+      walk: p.walk || 0, run, cast, attackP: this.attacking ? (this.visualSwing % 1) : -1, god,
     });
     p.walk = 0;
   }
