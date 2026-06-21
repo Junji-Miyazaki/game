@@ -61,6 +61,7 @@ export class Game {
     this.maxMon = 8; this.exit = null; this.boss = null;
     this.loops = 0; this.areaLevel = 1; this.bossRespawnAt = 0;
     this.castAnim = 0;     // skill-cast flourish timer
+    this.hurtAnim = 0;     // flinch/recoil timer on taking a hit
     this.pview = 'front';  // current player view (front/back/side)
     this.ambient = [];     // ambient environment motes (screen-space)
     this.initPlayer();
@@ -278,6 +279,7 @@ export class Game {
     this.updateSkillHUD();
     if (this.hitFlash > 0) this.hitFlash -= dt;
     if (this.castAnim > 0) this.castAnim -= dt;
+    if (this.hurtAnim > 0) this.hurtAnim -= dt;
     // rest regen — HP recovers over time, faster out of combat
     if (p.hp > 0 && p.hp < p.hpMax) {
       const outOfCombat = (this._t - (this.lastHurt || -99)) > 3.5;
@@ -623,7 +625,7 @@ export class Game {
     this.float(ps.x + (rng() * 12 - 6), ps.y - 60, '-' + dmg, '#ff6b6b', 15);
     this.spark(ps.x, ps.y - 40, '#b01818', 5);
     SFX.playerHurt();
-    this.hitFlash = 0.32; this.lastHurt = this._t; this.flashHp('hurt');
+    this.hitFlash = 0.32; this.lastHurt = this._t; this.hurtAnim = 0.25; this.flashHp('hurt');
     if (rng() < 0.4) this.addBlood(p.wx, p.wy, 0.6 + rng() * 0.4);
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
@@ -644,7 +646,7 @@ export class Game {
     p.hp = Math.max(0, p.hp - dmg);
     this.float(ps.x + (rng() * 12 - 6), ps.y - 58, '-' + dmg, '#ff9a3a', 16);
     this.spark(ps.x, ps.y - 34, '#ff6a1e', 4);
-    this.hitFlash = 0.4; this.lastHurt = this._t; this.flashHp('hurt');
+    this.hitFlash = 0.4; this.lastHurt = this._t; this.hurtAnim = 0.25; this.flashHp('hurt');
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
   }
@@ -662,7 +664,7 @@ export class Game {
     const dmg = Math.max(1, Math.round(m.atk * 1.7 * (1 - mit)));
     p.hp = Math.max(0, p.hp - dmg);
     this.float(ps.x + (rng() * 12 - 6), ps.y - 58, '-' + dmg, '#ffcaa0', 17);
-    this.hitFlash = 0.45; this.lastHurt = this._t; this.flashHp('hurt');
+    this.hitFlash = 0.45; this.lastHurt = this._t; this.hurtAnim = 0.25; this.flashHp('hurt');
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
   }
@@ -1354,9 +1356,10 @@ export class Game {
     }
     const run = p.walk ? clamp((p.moveSpeed - 2) / 2, 0.4, 1) : 0;
     const cast = this.castAnim > 0 ? (1 - this.castAnim / CAST_DUR) : -1;
+    const hurt = this.hurtAnim > 0 ? clamp(this.hurtAnim / 0.25, 0, 1) : 0;
     drawFighter(ctx, {
       x: s.x, y: s.y, scale: 1, face: p.face, view, t: this._t || 0,
-      walk: p.walk || 0, run, cast, attackP: this.attacking ? (this.visualSwing % 1) : -1, god,
+      walk: p.walk || 0, run, cast, hurt, attackP: this.attacking ? (this.visualSwing % 1) : -1, god,
     });
     p.walk = 0;
   }
