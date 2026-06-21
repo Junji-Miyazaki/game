@@ -15,6 +15,11 @@ const VIG_PER_LV = 45;                  // +45 max HP per 活力 level
 const SKILL_DUR = lv => 3 + lv * 1.5;   // buff duration in seconds
 const SKILL_CD = 14;                    // cooldown after the buff ends
 const GOD_THRESHOLD = 8;                // effective atk/s to enter 神速
+// dragon breath (apex boss special, telegraphed fire cone)
+const BREATH_DUR = 1.7;                 // total seconds of one breath
+const BREATH_CD = 6.5;                  // cooldown between breaths
+const BREATH_RANGE = 8;                 // tiles
+const BREATH_HALF = 0.5;                // cone half-angle (rad, ~29°)
 
 const rng = Math.random;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -235,6 +240,7 @@ export class Game {
       aggressive: true, senseRange: b.senseRange || 7, atkInterval: b.atkInterval || 0.9,
       wx: bx, wy: by, homeX: bx, homeY: by,
       t: 0, face: 1, walk: 0, hurt: 0, atkTimer: 0.5, deathT: 0, aggro: false,
+      breathT: -1, breathCd: 3.5, breathAng: 0, breathTick: 0,   // dragon breath state
     };
     this.monsters.push(m); this.boss = m;
   }
@@ -516,6 +522,27 @@ export class Game {
       else if (m.aggressive && d <= (m.senseRange || 0)) m.aggro = true;
     }
     if (!m.aggro) { this.wander(m, dt); return; }
+    // ---- DRAGON BREATH (ranged telegraphed fire cone) ----
+    if (m.sprite === 'dragon') {
+      if (m.breathT >= 0) {                       // mid-breath: rear up and exhale, no melee
+        m.breathT += dt / BREATH_DUR;
+        m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
+        if (m.breathT >= 0.4 && m.breathT < 0.85) {
+          m.breathTick -= dt;
+          if (m.breathTick <= 0) { m.breathTick = 0.2; this.breathHit(m); }
+        }
+        if (m.breathT >= 1) { m.breathT = -1; m.breathCd = BREATH_CD; }
+        return;
+      }
+      m.breathCd -= dt;
+      if (m.breathCd <= 0 && d <= BREATH_RANGE + 1) {   // begin a breath aimed where you stand
+        m.breathAng = Math.atan2(p.wy - m.wy, p.wx - m.wx);
+        m.breathT = 0; m.breathTick = 0; m.face = this.toScreen(p.wx, p.wy).x >= this.toScreen(m.wx, m.wy).x ? 1 : -1;
+        this.float(this.toScreen(m.wx, m.wy).x, this.toScreen(m.wx, m.wy).y - 80 * m.scale, 'ＧＲＡＡＡ', '#ff7a2a', 22);
+        SFX.skill('power');
+        return;
+      }
+    }
     if (d > ATTACK_RANGE - 0.3) {
       const step = Math.min(m.speed * dt, d);
       m.wx += dx / d * step; m.wy += dy / d * step; m.walk = 1;
@@ -562,6 +589,26 @@ export class Game {
     SFX.playerHurt();
     this.hitFlash = 0.32; this.lastHurt = this._t; this.flashHp('hurt');
     if (rng() < 0.4) this.addBlood(p.wx, p.wy, 0.6 + rng() * 0.4);
+    this.updateHUD();
+    if (p.hp <= 0) this.onDeath();
+  }
+
+  // damage tick from the dragon's fire cone (only if you're still inside it — dodgeable)
+  breathHit(m) {
+    const p = this.p;
+    const dx = p.wx - m.wx, dy = p.wy - m.wy, d = hyp(dx, dy);
+    if (d > BREATH_RANGE) return;
+    let da = Math.atan2(p.wy - m.wy, p.wx - m.wx) - m.breathAng;
+    da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+    if (da > BREATH_HALF) return;                 // stepped out of the cone — dodged
+    const ps = this.toScreen(p.wx, p.wy);
+    if (rng() < this.effEvasion()) { this.float(ps.x, ps.y - 64, 'MISS', '#cfeaff', 14); return; }
+    const mit = p.defense / (p.defense + 28);
+    const dmg = Math.max(1, Math.round(m.atk * 1.5 * (1 - mit)));
+    p.hp = Math.max(0, p.hp - dmg);
+    this.float(ps.x + (rng() * 12 - 6), ps.y - 58, '-' + dmg, '#ff9a3a', 16);
+    this.spark(ps.x, ps.y - 34, '#ff6a1e', 4);
+    this.hitFlash = 0.4; this.lastHurt = this._t; this.flashHp('hurt');
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
   }
@@ -797,6 +844,7 @@ export class Game {
       }
     }
 
+    if (this.boss && this.boss.sprite === 'dragon' && this.boss.breathT >= 0) this.drawBreath(this.boss);
     this.drawParticles();
     this.drawAmbient();
     this.drawFloats();
@@ -811,6 +859,42 @@ export class Game {
 
     this.drawBossBar();
     this.drawMinimap();
+  }
+
+  // dragon fire-breath cone — telegraph (windup) then a roaring jet of flame
+  drawBreath(m) {
+    const ctx = this.ctx, ph = m.breathT, sc = (m.scale || 1) * 1.15;
+    const hs = this.toScreen(m.wx, m.wy);
+    const hx = hs.x, hy = hs.y - 52 * sc;                 // mouth (high on the head)
+    const windup = ph < 0.4, intensity = windup ? (ph / 0.4) : (ph < 0.85 ? 1 : Math.max(0, 1 - (ph - 0.85) / 0.15));
+    ctx.save();
+    // telegraph line during windup so the player can step out of the cone
+    if (windup) {
+      const far = this.toScreen(m.wx + Math.cos(m.breathAng) * BREATH_RANGE, m.wy + Math.sin(m.breathAng) * BREATH_RANGE);
+      ctx.strokeStyle = `rgba(255,120,40,${0.35 * intensity})`; ctx.lineWidth = 3;
+      ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(far.x, far.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // flame jet (additive blobs widening to a cone toward breathAng)
+    ctx.globalCompositeOperation = 'lighter';
+    const N = 16;
+    for (let i = 1; i <= N; i++) {
+      const tt = i / N;
+      const gp = this.toScreen(m.wx + Math.cos(m.breathAng) * tt * BREATH_RANGE, m.wy + Math.sin(m.breathAng) * tt * BREATH_RANGE);
+      const x = hx + (gp.x - hx) * tt, y = hy + (gp.y - hy) * tt;     // arc from mouth down to ground
+      const flick = 0.7 + Math.sin(this._t * 32 + i * 1.3) * 0.3;
+      const r = (5 + tt * 30) * flick;
+      const col = tt < 0.4 ? '255,240,170' : tt < 0.72 ? '255,150,45' : '210,55,20';
+      const a = intensity * (0.55 * (1 - tt * 0.45)) * flick;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    }
+    // mouth glow
+    const mg = ctx.createRadialGradient(hx, hy, 0, hx, hy, 18 * sc);
+    mg.addColorStop(0, `rgba(255,225,130,${intensity})`); mg.addColorStop(1, 'rgba(255,120,30,0)');
+    ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(hx, hy, 18 * sc, 0, 7); ctx.fill();
+    ctx.restore();
   }
 
   // top-center boss HP bar (shown while the area boss lives)
@@ -1140,7 +1224,25 @@ export class Game {
     ctx.globalAlpha = (m.hp <= 0 ? Math.max(0, 1 - m.deathT / 0.4) : 1) * fade;
     const sc = (m.scale || 1) * (m.isBoss ? 1.15 : 1.5);   // monsters ~char-size and up
     drawShadow(ctx, s.x, s.y, 16 * sc, 7 * sc);
+    // elite menace: pulsing violet aura beneath/around the body
+    if (m.elite && m.hp > 0) {
+      const pl = 0.6 + Math.sin(this._t * 4 + m.wx) * 0.4;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const ag = ctx.createRadialGradient(s.x, s.y - 16 * sc, 0, s.x, s.y - 16 * sc, 34 * sc);
+      ag.addColorStop(0, `rgba(190,110,255,${0.28 * pl})`); ag.addColorStop(1, 'rgba(190,110,255,0)');
+      ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(s.x, s.y - 16 * sc, 34 * sc, 0, 7); ctx.fill();
+      ctx.restore();
+    }
     drawMonster(ctx, m.sprite, { x: s.x, y: s.y, scale: sc, face: m.face, t: m.t, walk: m.walk, hurt: m.hurt, tint: m.tint });
+    // elite crown marker above the head
+    if (m.elite && m.hp > 0) {
+      const cy = s.y - 60 * sc;
+      ctx.fillStyle = '#d6a3ff';
+      ctx.beginPath();
+      ctx.moveTo(s.x - 6, cy); ctx.lineTo(s.x - 6, cy - 5); ctx.lineTo(s.x - 3, cy - 2); ctx.lineTo(s.x, cy - 6);
+      ctx.lineTo(s.x + 3, cy - 2); ctx.lineTo(s.x + 6, cy - 5); ctx.lineTo(s.x + 6, cy);
+      ctx.closePath(); ctx.fill();
+    }
     ctx.globalAlpha = 1;
     // HP bar (bosses use the top bar instead)
     if (m.hp > 0 && m.hp < m.hpMax && !m.isBoss) {
