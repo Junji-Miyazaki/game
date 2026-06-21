@@ -333,12 +333,19 @@ function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
 // from shoulder); x is multiplied by `face` so the blade leads toward facing while
 // the shoulder stays on screen-right (= the right hand, always).
 function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
+  // Articulated arm: explicit ELBOW + HAND keyframes (elbow always bends the natural,
+  // anatomical way — point trailing down/back, never hyperextended up). The blade is a
+  // RIGID segment: its direction is the forearm angle plus a controlled wrist offset (w),
+  // and its length is constant — so the hand→blade angle stays a natural ~90° and the
+  // blade can never fold back on itself.
+  const L = 30;                                              // blade length (local units)
   const KF = {
-    idle:   { e: [2, 10],   h: [3, 20],   p: [4, 41] },   // sword lowered, ready
-    wind:   { e: [-6, -2],  h: [-15, -8], p: [-34, -20] }, // blade cocked UP & BACK over shoulder
-    strike: { e: [11, -7],  h: [26, 1],   p: [49, 14] },   // big forward down-cut
-    down:   { e: [3, 12],   h: [3, 26],   p: [-6, 49] },   // sweep through to low-front
-    raise:  { e: [-1, -10], h: [-2, -22], p: [0, -48] },   // skill flourish, blade straight up
+    //        elbow        hand          wrist(rad)
+    idle:   { e: [3, 11],  h: [5, 22],    w: -0.07 },        // lowered, ready — blade hangs down
+    wind:   { e: [4, -12], h: [-10, -14], w:  0.56 },        // cocked up & back over the shoulder
+    strike: { e: [14, 5],  h: [28, 4],    w: -1.59 },        // arm punched forward, blade up ~90°
+    down:   { e: [11, 9],  h: [18, 22],   w:  0.49 },        // follow-through, blade sweeps low
+    raise:  { e: [-1, -7], h: [-2, -18],  w:  0.08 },        // skill flourish, blade straight up
   };
   let A, B, f;
   if (cast >= 0) {                                       // skill-cast flourish overrides
@@ -352,10 +359,13 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
   else                { A = KF.down;  B = KF.idle;  f = (atk - .70) / .30; }
   const mix = (a, b) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-  const e = mix(A.e, B.e), h = mix(A.h, B.h), p = mix(A.p, B.p);
+  const e = mix(A.e, B.e), h = mix(A.h, B.h);
+  const w = A.w + (B.w - A.w) * f;
   const ex = sx + e[0] * face * s, ey = sy + e[1] * s;
   const hx = sx + h[0] * face * s, hy = sy + h[1] * s;
-  const tx = sx + p[0] * face * s, ty = sy + p[1] * s;
+  const fa = Math.atan2(hy - ey, hx - ex);              // forearm angle (screen space, face-aware)
+  const ba = fa + w * face;                             // blade = forearm + wrist (mirrors w/ facing)
+  const tx = hx + Math.cos(ba) * L * s, ty = hy + Math.sin(ba) * L * s;
 
   // motion-blur arc during the strike
   if (atk >= .28 && atk < .64) {
