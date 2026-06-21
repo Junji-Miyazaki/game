@@ -75,6 +75,22 @@ export function drawFighter(ctx, o) {
     else aStrike = 1 - (atk - 0.7) / 0.3;                   // recover
   }
 
+  // ---- SPINE / TRUNK tilt — the parent bone that drives the whole swing (baseball-pitch
+  // trunk rotation). The upper body arches BACK on the take-back, then snaps FORWARD through
+  // impact and the follow-through, so the torso leads and the sword arm trails — instead of
+  // the shoulder just spinning a circle in place. Take-back eases out (jiwatto), the down-cut
+  // eases in (snap). +deg = lean forward (toward the facing direction).
+  let spine = 0;
+  if (atk >= 0) {
+    const eOut = x => 1 - (1 - x) * (1 - x), eIn = x => x * x;
+    let deg;
+    if (atk < 0.25)      deg = -13 * eOut(atk / 0.25);                  // take-back: arch back
+    else if (atk < 0.5)  deg = -13 + 25 * eIn((atk - 0.25) / 0.25);     // impact: snap forward
+    else if (atk < 0.7)  deg = 12 + 12 * eOut((atk - 0.5) / 0.2);       // follow-through: deep lean
+    else                 deg = 24 * (1 - eOut((atk - 0.7) / 0.3));      // residual: settle to neutral
+    spine = deg * Math.PI / 180;
+  }
+
   ctx.save();
   ctx.translate(o.x + face * lunge * 7 * s - face * hurt * 7 * s, o.y - bob);   // recoil back
   if (hurt > 0) ctx.rotate(-face * hurt * 0.18);            // flinch: lean away from the hit
@@ -86,7 +102,7 @@ export function drawFighter(ctx, o) {
     ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -38 * s, ar, 0, 7); ctx.fill();
   }
   ctx.scale(sx, sy);                                        // squash & stretch around the feet
-  const D = { s, face, t, walk, atk, god, moving, run, cast, gaitF, aWind, aStrike };
+  const D = { s, face, t, walk, atk, god, moving, run, cast, gaitF, aWind, aStrike, spine };
   if (view === 'back') fighterBack(ctx, D);
   else if (view === 'side') fighterSide(ctx, D);
   else fighterFront(ctx, D);
@@ -94,16 +110,9 @@ export function drawFighter(ctx, o) {
 }
 
 function fighterFront(ctx, D) {
-  const { s, face, t, walk, atk, god, moving, gaitF, cast, aWind, aStrike } = D, P = PAL;
+  const { s, face, t, walk, atk, god, moving, gaitF, cast, aWind, aStrike, spine } = D, P = PAL;
   const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * gaitF) * 2 * s : 0);
   const atkAmt = Math.max(aWind, aStrike), weight = aStrike - aWind;   // -1 back .. +1 forward
-  // ponytail behind (long, flows opposite facing)
-  ctx.fillStyle = P.HAIR;
-  ctx.beginPath();
-  ctx.moveTo(-face * 3 * s, -57 * s);
-  ctx.quadraticCurveTo(-face * 17 * s, -50 * s + sway, -face * 13 * s, -27 * s + sway);
-  ctx.quadraticCurveTo(-face * 11 * s, -40 * s, -face * 3 * s, -50 * s);
-  ctx.closePath(); ctx.fill();
   // legs — walk stride, or a braced fighting stance during an attack (front foot planted
   // forward, back foot back; weight shifts back on wind-up, forward on the strike)
   const stride = moving ? Math.sin(t * gaitF) : Math.sin(t * 2.2) * 0.06;
@@ -123,6 +132,15 @@ function fighterFront(ctx, D) {
   ctx.moveTo(-7 * s, -32 * s); ctx.lineTo(7 * s, -32 * s); ctx.lineTo(10 * s, -19 * s);
   ctx.lineTo(face * 2 * s, -17 * s); ctx.lineTo(-10 * s, -19 * s); ctx.closePath(); ctx.fill();
   ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-10 * s, -20.5 * s, 20 * s, 2.4 * s);
+  // ---- everything above the waist tilts with the spine (trunk leads the swing) ----
+  ctx.save(); ctx.translate(0, -31 * s); ctx.rotate(spine * face); ctx.translate(0, 31 * s);
+  // ponytail behind (long, flows opposite facing)
+  ctx.fillStyle = P.HAIR;
+  ctx.beginPath();
+  ctx.moveTo(-face * 3 * s, -57 * s);
+  ctx.quadraticCurveTo(-face * 17 * s, -50 * s + sway, -face * 13 * s, -27 * s + sway);
+  ctx.quadraticCurveTo(-face * 11 * s, -40 * s, -face * 3 * s, -50 * s);
+  ctx.closePath(); ctx.fill();
   // shield arm (LEFT hand = +x). On wind-up the shield punches FORWARD to guard;
   // on the down-swing it pulls BACK as the body rotates into the cut.
   const shB = moving ? Math.sin(t * gaitF + Math.PI) * 1.5 * s : 0;
@@ -192,6 +210,7 @@ function fighterFront(ctx, D) {
   ctx.restore();
   // sword arm (RIGHT hand = -x)
   drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god, cast);
+  ctx.restore();   // end spine tilt
 }
 
 function fighterBack(ctx, D) {
@@ -251,7 +270,7 @@ function fighterBack(ctx, D) {
 }
 
 function fighterSide(ctx, D) {
-  const { s, face, t, walk, atk, god, moving, gaitF, cast, aWind, aStrike } = D, P = PAL;
+  const { s, face, t, walk, atk, god, moving, gaitF, cast, aWind, aStrike, spine } = D, P = PAL;
   ctx.save(); ctx.scale(face, 1);                 // draw facing right; mirror for left
   const stride = moving ? Math.sin(t * gaitF) : Math.sin(t * 2.2) * 0.05;
   const shB = moving ? Math.sin(t * gaitF + Math.PI) * 1.5 * s : 0;
@@ -262,6 +281,14 @@ function fighterSide(ctx, D) {
     pFar = pFar * (1 - atkAmt) + (-0.75 - aWind * 0.35) * atkAmt;    // far (back) foot back
   }
   drawLeg(ctx, -1.5 * s, -26 * s, pFar, s, darken(P.LEG, 18), P.BOOT, 1);  // far leg
+  // skirt
+  ctx.fillStyle = P.SKIRT;
+  ctx.beginPath(); ctx.moveTo(-6 * s, -32 * s); ctx.lineTo(6 * s, -32 * s);
+  ctx.lineTo(7.5 * s, -18 * s); ctx.lineTo(-7 * s, -18 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-7 * s, -19.5 * s, 14.5 * s, 2.2 * s);
+  drawLeg(ctx, 2 * s, -26 * s, pNear, s, P.LEG2, P.BOOT, 1);                       // near leg
+  // ---- everything above the waist tilts with the spine (trunk leads the swing) ----
+  ctx.save(); ctx.translate(0, -31 * s); ctx.rotate(spine); ctx.translate(0, 31 * s);
   // ponytail trailing behind
   const sway = Math.sin(t * 3) * 2 * s + (moving ? Math.sin(t * gaitF) * 2 * s : 0);
   ctx.fillStyle = P.HAIR;
@@ -270,12 +297,6 @@ function fighterSide(ctx, D) {
   ctx.quadraticCurveTo(-18 * s, -50 * s + sway, -15 * s, -31 * s + sway);
   ctx.quadraticCurveTo(-10 * s, -44 * s, -3 * s, -52 * s);
   ctx.closePath(); ctx.fill();
-  // skirt
-  ctx.fillStyle = P.SKIRT;
-  ctx.beginPath(); ctx.moveTo(-6 * s, -32 * s); ctx.lineTo(6 * s, -32 * s);
-  ctx.lineTo(7.5 * s, -18 * s); ctx.lineTo(-7 * s, -18 * s); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-7 * s, -19.5 * s, 14.5 * s, 2.2 * s);
-  drawLeg(ctx, 2 * s, -26 * s, pNear, s, P.LEG2, P.BOOT, 1);                       // near leg
   // torso profile — fuller body so it reads as a person, not a chevron
   ctx.beginPath();
   ctx.moveTo(-5 * s, -47 * s);
@@ -312,6 +333,7 @@ function fighterSide(ctx, D) {
   ctx.restore();
   // sword arm forward
   drawSwordArm(ctx, 3 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god, cast);
+  ctx.restore();   // end spine tilt
   ctx.restore();
 }
 
