@@ -65,9 +65,12 @@ export class Game {
       atk: 15, atkSpeed: 1.25, defense: 4,
       baseEvasion: 0.05, moveSpeed: 3.4,
       skillPoints: 0, skills: { speed: 0, power: 0, hp: 0 },
-      opt: { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 },
+      statPoints: 0,                                      // allocated on level-up
+      opt: { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 },  // = sum of equipped gear option %s
       gear: { sword: null, shield: null, armor: null },   // equipped items (or null)
       bag: [],                                            // spare gear (unequipped)
+      bagOpt: [],                                         // loose options to attach to gear
+      potions: 0,                                         // HP recovery potions held
       atkTimer: 0, areaId: 'grassland',
     };
   }
@@ -79,6 +82,16 @@ export class Game {
         if (!this.p.skills || !('speed' in this.p.skills)) this.p.skills = { speed: 0, power: 0, hp: 0 };
         if (!this.p.gear || typeof this.p.gear.sword === 'string') this.p.gear = { sword: null, shield: null, armor: null };
         if (!Array.isArray(this.p.bag)) this.p.bag = [];
+        if (!Array.isArray(this.p.bagOpt)) this.p.bagOpt = [];
+        if (this.p.potions == null) this.p.potions = 0;
+        if (this.p.statPoints == null) this.p.statPoints = 0;
+        // options live ONLY on gear — recompute the percent bonuses from equipped gear
+        const sum = { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 };
+        for (const s of ['sword', 'shield', 'armor']) {
+          const it = this.p.gear[s];
+          if (it && it.options) for (const o of it.options) if (o.stat in sum) sum[o.stat] += o.value;
+        }
+        this.p.opt = sum;
         this.loops = this.p.loops || 0;
         if (!AREAS[this.p.areaId]) this.p.areaId = 'grassland';   // migrate old save areas
       }
@@ -221,6 +234,11 @@ export class Game {
     this.updateBuffs(dt);
     this.updateSkillHUD();
     if (this.hitFlash > 0) this.hitFlash -= dt;
+    // rest regen — HP recovers over time, faster out of combat
+    if (p.hp > 0 && p.hp < p.hpMax) {
+      const outOfCombat = (this._t - (this.lastHurt || -99)) > 3.5;
+      p.hp = Math.min(p.hpMax, p.hp + (outOfCombat ? 0.045 : 0.012) * p.hpMax * dt);
+    }
 
     // movement intent
     let mv = { x: 0, y: 0 };
@@ -411,8 +429,9 @@ export class Game {
     p.xp -= p.xpToNext;
     p.level++;
     p.xpToNext = Math.round(24 * Math.pow(p.level, 1.45));
-    p.hpMax += 12; p.atk += 3; p.defense += 1; p.atkSpeed += 0.05;
-    p.skillPoints += 1; p.hp = p.hpMax;
+    p.hpMax += 6; p.hp = p.hpMax;        // small base bump + full heal
+    p.statPoints += 3;                   // allocate these yourself (▦ panel)
+    p.skillPoints += 1;
     SFX.levelUp();
     const sp = this.toScreen(p.wx, p.wy);
     this.float(sp.x, sp.y - 70, 'LEVEL UP!', '#ffd24a', 20);
@@ -483,7 +502,7 @@ export class Game {
     this.float(ps.x + (rng() * 12 - 6), ps.y - 60, '-' + dmg, '#ff6b6b', 15);
     this.spark(ps.x, ps.y - 40, '#b01818', 5);
     SFX.playerHurt();
-    this.hitFlash = 0.32;
+    this.hitFlash = 0.32; this.lastHurt = this._t;
     if (rng() < 0.4) this.addBlood(p.wx, p.wy, 0.6 + rng() * 0.4);
     this.updateHUD();
     if (p.hp <= 0) this.onDeath();
@@ -546,11 +565,13 @@ export class Game {
   }
   pickup(it) {
     const p = this.p;
-    if (it.kind === 'gear') {                 // weapon/armor/shield — equipment
-      if (!p.gear[it.slot]) this.equipGear(it); // auto-equip an empty slot
-      else this.bagAdd(it);                     // else stash; swap in the panel
-    } else {                                   // single permanent option item (affix)
-      this.applyOption({ stat: it.stat, value: it.value });
+    if (it.kind === 'gear') {                  // weapon/armor/shield — equipment
+      if (!p.gear[it.slot]) this.equipGear(it);  // auto-equip an empty slot
+      else this.bagAdd(it);                      // else stash; swap in the panel
+    } else if (it.kind === 'option') {         // loose option — attach to a gear later
+      p.bagOpt.push(it); if (p.bagOpt.length > 16) p.bagOpt.shift();
+    } else if (it.kind === 'potion') {         // HP recovery potion — held, click to use
+      p.potions = (p.potions || 0) + 1;
     }
     SFX.pickup(it.rarity);
     const sp = this.toScreen(p.wx, p.wy);
@@ -558,6 +579,19 @@ export class Game {
     this.toast(it.text, it.color);
     this.updateHUD();
     this.save();
+  }
+
+  // attach a loose option (bagOpt[idx]) to an equipped gear, growing that gear
+  augmentGear(idx, slot) {
+    const p = this.p, opt = p.bagOpt[idx], g = p.gear[slot];
+    if (!opt || !g) return;
+    g.options.push({ stat: opt.stat, value: opt.value, suffix: opt.suffix, label: opt.label });
+    this.applyOption({ stat: opt.stat, value: opt.value });
+    p.bagOpt.splice(idx, 1);
+    SFX.pickup('rare'); this.updateHUD(); this.save();
+  }
+  discardOption(idx) {
+    if (idx >= 0 && idx < this.p.bagOpt.length) { this.p.bagOpt.splice(idx, 1); this.updateHUD(); this.save(); }
   }
 
   // add/remove a gear item's option contributions to live stats (sign +1/-1)
@@ -636,6 +670,17 @@ export class Game {
     const p = this.p;
     if (p.skillPoints <= 0 || !(sk in p.skills)) return;
     p.skillPoints--; p.skills[sk]++;
+    this.updateHUD(); this.save();
+  }
+  spendStat(st) {
+    const p = this.p;
+    if (p.statPoints <= 0) return;
+    if (st === 'atk') p.atk += 2;
+    else if (st === 'hpMax') { p.hpMax += 15; p.hp += 15; }
+    else if (st === 'defense') p.defense += 1;
+    else if (st === 'atkSpeed') p.atkSpeed += 0.03;
+    else return;
+    p.statPoints--;
     this.updateHUD(); this.save();
   }
 
@@ -1086,7 +1131,27 @@ export class Game {
       document.getElementById('act-' + k).disabled = p.skills[k] <= 0;
     }
     document.querySelectorAll('.plus').forEach(b => { b.disabled = !can; });
+    // stat-point allocation
+    $('s-stp').textContent = p.statPoints;
+    const canStat = p.statPoints > 0;
+    document.querySelectorAll('.splus').forEach(b => { b.disabled = !canStat; });
+    this.renderOpts();
     this.updateSkillHUD();
+  }
+
+  renderOpts() {
+    const el = document.getElementById('opts'); if (!el) return;
+    const list = this.p.bagOpt;
+    if (!list.length) { el.innerHTML = '<div class="invempty">（なし）</div>'; return; }
+    const slotIcon = { sword: '剣', shield: '盾', armor: '鎧' };
+    el.innerHTML = list.map((o, i) => {
+      const btns = ['sword', 'shield', 'armor'].map(sl =>
+        `<button class="optbtn" data-i="${i}" data-slot="${sl}"${this.p.gear[sl] ? '' : ' disabled'}>${slotIcon[sl]}</button>`).join('');
+      return `<div class="invrow" style="border-color:${o.color}55">
+        <div class="invinfo"><span style="color:${o.color}">${o.label}+${o.value}${o.suffix}</span><small>装備に付与→</small></div>
+        ${btns}<button class="invbtn dc" data-i="${i}">捨</button>
+      </div>`;
+    }).join('');
   }
 
   renderInventory() {
@@ -1105,16 +1170,32 @@ export class Game {
     }).join('');
   }
 
-  // per-frame skill-bar state (active glow + cooldown countdown)
+  // per-frame HUD: skill state (active duration / cooldown), HP bar, potions
   updateSkillHUD() {
+    const p = this.p, $ = id => document.getElementById(id);
     for (const k of ['speed', 'power', 'hp']) {
-      const btn = document.getElementById('act-' + k), b = this.buffs[k], cd = document.getElementById('cd-' + k);
+      const btn = $('act-' + k), b = this.buffs[k], cd = $('cd-' + k);
       if (!btn) continue;
       const active = b.rem > 0, cooling = !active && b.cd > 0;
       btn.classList.toggle('active', active);
       btn.classList.toggle('cooling', cooling);
-      cd.textContent = cooling ? Math.ceil(b.cd) : '';
+      cd.textContent = active ? Math.ceil(b.rem) + 's' : (cooling ? Math.ceil(b.cd) : '');
     }
+    // live HP bar (rest-regen / lifesteal happen continuously)
+    const hf = $('v-hpfill'); if (hf) { hf.style.width = (p.hp / p.hpMax * 100) + '%'; $('v-hptxt').textContent = Math.ceil(p.hp) + '/' + p.hpMax; }
+    const pot = $('btnPotion');
+    if (pot) { pot.querySelector('.cnt').textContent = p.potions || 0; pot.disabled = !(p.potions > 0 && p.hp < p.hpMax); }
+  }
+
+  usePotion() {
+    const p = this.p;
+    if (!(p.potions > 0) || p.hp >= p.hpMax) return;
+    p.potions--;
+    p.hp = Math.min(p.hpMax, p.hp + Math.round(p.hpMax * 0.35));
+    const sp = this.toScreen(p.wx, p.wy);
+    this.float(sp.x, sp.y - 64, '+HP', '#6bff8a', 16);
+    for (let i = 0; i < 8; i++) this.spark(sp.x, sp.y - 30, '#6bff8a', 1);
+    SFX.skill('hp'); this.updateHUD(); this.save();
   }
 
   // ---------------- input / UI ----------------
@@ -1156,14 +1237,22 @@ export class Game {
     document.getElementById('closeStatus').onclick = () => document.getElementById('status').classList.remove('open');
     document.getElementById('btnMute').onclick = (e) => { const m = SFX.toggle(); e.currentTarget.textContent = m ? '🔇' : '🔊'; };
     document.getElementById('btnQuit').onclick = () => this.quitToTitle();
+    document.getElementById('btnPotion').onclick = () => this.usePotion();
     document.getElementById('inv').addEventListener('click', e => {
       const b = e.target.closest('.invbtn'); if (!b) return;
       const idx = +b.dataset.idx;
       if (b.classList.contains('eq')) { const it = this.p.bag[idx]; if (it) this.equipGear(it); }
       else this.discardGear(idx);
     });
+    document.getElementById('opts').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const i = +b.dataset.i;
+      if (b.classList.contains('optbtn')) this.augmentGear(i, b.dataset.slot);
+      else if (b.classList.contains('dc')) this.discardOption(i);
+    });
     document.querySelectorAll('.actbtn').forEach(b => b.onclick = () => this.activateSkill(b.dataset.sk));
     document.querySelectorAll('.plus').forEach(b => b.onclick = () => this.spendSkill(b.dataset.sk));
+    document.querySelectorAll('.splus').forEach(b => b.onclick = () => this.spendStat(b.dataset.st));
   }
 
   moveJoy(e, center, knob) {

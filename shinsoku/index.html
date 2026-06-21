@@ -38,14 +38,23 @@
       <div class="gslot armorslot"><i>鎧</i><div class="gtxt"><span id="e-armor">なし</span><small id="eo-armor"></small></div></div>
       <div class="armorleech">鎧オプション：HP吸収 <b id="e-leech">0%</b></div>
     </div>
-    <div class="invhead">所持品 <small>(装備で付け替え)</small></div>
-    <div id="inv" class="inv"></div>
+    <div class="skills">
+      <div class="sp">STAT POINTS: <b id="s-stp">0</b></div>
+      <div class="skrow"><span>攻撃力</span><button class="splus" data-st="atk">＋</button></div>
+      <div class="skrow"><span>最大HP</span><button class="splus" data-st="hpMax">＋</button></div>
+      <div class="skrow"><span>防御力</span><button class="splus" data-st="defense">＋</button></div>
+      <div class="skrow"><span>攻撃速度</span><button class="splus" data-st="atkSpeed">＋</button></div>
+    </div>
     <div class="skills">
       <div class="sp">SKILL POINTS: <b id="s-sp">0</b></div>
       <div class="skrow"><span>神速 <small>攻撃速度</small></span><b id="al-speed">Lv0</b><button class="plus" data-sk="speed">＋</button></div>
       <div class="skrow"><span>剛力 <small>攻撃力</small></span><b id="al-power">Lv0</b><button class="plus" data-sk="power">＋</button></div>
       <div class="skrow"><span>活力 <small>最大HP</small></span><b id="al-hp">Lv0</b><button class="plus" data-sk="hp">＋</button></div>
     </div>
+    <div class="invhead">所持品 <small>(装備で付け替え)</small></div>
+    <div id="inv" class="inv"></div>
+    <div class="invhead">オプション <small>(装備に付与)</small></div>
+    <div id="opts" class="inv"></div>
   </div>
 
   <!-- Bottom skill bar — active timed-buff skills -->
@@ -66,6 +75,7 @@
 
   <!-- Bottom-right control buttons -->
   <div id="controls">
+    <button id="btnPotion" class="cbtn potion" title="HP回復薬">🧪<span class="cnt">0</span></button>
     <button id="btnStatus" class="cbtn">▦</button>
     <button id="btnMute" class="cbtn">🔊</button>
     <button id="btnQuit" class="cbtn" title="途中終了">⏻</button>

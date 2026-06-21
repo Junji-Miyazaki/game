@@ -628,94 +628,109 @@ function rollGear(tier, rng) {
 // ---------------------------------------------------------------------------
 // 5. rollDrop(tier, rng)
 //
-// Drop chance table (approximate):
-//   tier 1 → 25%
-//   tier 2 → 40%
-//   tier 3 → 58%
-//   tier 4 → 75%
-//   tier 5 → 90%
-//   tier 6 → 98%  (boss)
+// New loot economy — NO raw stat (affix) drops. Three possible results:
 //
-// Gear vs affix split by tier:
-//   tier 1: 10% gear, 90% affix
-//   tier 3: 30% gear, 70% affix
-//   tier 5: 60% gear, 40% affix
-//   tier 6: 85% gear, 15% affix  (almost always gear from bosses)
+//   null           — nothing dropped
+//   kind:"potion"  — HP recovery item the player clicks to use
+//   kind:"option"  — loose equipment option; player attaches it to gear
+//   kind:"gear"    — full equipment piece (unchanged rollGear shape)
 //
-// Affix selection bias by tier (unchanged from original):
-//   tier 1-2: uniform across the 6 base options
-//   tier 3:   atkspeed and hpabsorb each get 2× weight
-//   tier 4:   atkspeedRare and hpabsorbRare become available (added to pool)
-//   tier 5:   atkspeedRare/hpabsorbRare dominate (3× weight each)
+// DROP RATES by tier (absolute, not conditional):
+//   tier 1: potion 55%, option  6%, gear  4%, null 35%
+//   tier 2: potion 50%, option  9%, gear  7%, null 34%
+//   tier 3: potion 40%, option 14%, gear 14%, null 32%
+//   tier 4: potion 28%, option 18%, gear 24%, null 30%
+//   tier 5: potion 18%, option 22%, gear 35%, null 25%
+//   tier 6: potion  5%, option 30%, gear 55%, null 10%
 //
-// Value scaling: base roll value is scaled up by (1 + (tier - 1) * 0.15)
-// so tier 5 values are 60% higher than tier 1 base rolls.
+// Loose option value scaling (same pool / bias as old affix logic):
+//   base roll × (1 + (tier - 1) * 0.20)
+//   tier1 → ×1.0, tier2 → ×1.2, tier3 → ×1.4, tier4 → ×1.6,
+//   tier5 → ×1.8, tier6 → ×2.0
+//
+// Gear rarity bias inherited from rollGear (higher tier → more epic/legendary).
 // ---------------------------------------------------------------------------
 
-export function rollDrop(tier, rng) {
-  // --- 1. Drop chance --------------------------------------------------
-  // tier1=0.25, tier5=0.90, tier6=0.98 (boss)
-  const t = Math.min(tier, 6);
-  const dropChance = t <= 5
-    ? 0.25 + (t - 1) * 0.1625          // tier1=0.25 … tier5=0.90
-    : 0.98;                              // tier6 (boss) near-certain
-  if (rng() >= dropChance) return null;
-
-  // --- 2. Decide gear vs affix ----------------------------------------
-  // gearChance: tier1=0.10, tier5=0.60, tier6=0.85
-  const gearChance = t <= 5
-    ? 0.10 + (t - 1) * 0.125
-    : 0.85;
-
-  if (rng() < gearChance) {
-    return rollGear(tier, rng);
-  }
-
-  // --- 3. Build weighted affix pool (original logic, unchanged) --------
-  const pool = [];
-
-  pool.push(["atkspeed",  tier >= 3 ? 2 : 1]);
-  pool.push(["hpabsorb",  tier >= 3 ? 2 : 1]);
-  pool.push(["evasion",   1]);
-  pool.push(["flatAtk",   1]);
-  pool.push(["flatHp",    1]);
-  pool.push(["flatDef",   1]);
-
+/**
+ * _rollLooseOption(tier, rng) — build a kind:"option" object.
+ * Weighted pool identical to old affix logic; stat/label/color from ITEM_OPTIONS.
+ */
+function _rollLooseOption(tier, rng) {
+  // Weighted pool — mirrors old rollDrop affix selection bias.
+  const pool = [
+    ["atkspeed",      tier >= 3 ? 2 : 1],
+    ["hpabsorb",      tier >= 3 ? 2 : 1],
+    ["evasion",       1],
+    ["flatAtk",       1],
+    ["flatHp",        1],
+    ["flatDef",       1],
+  ];
   if (tier >= 4) {
     pool.push(["atkspeedRare", tier >= 5 ? 3 : 1]);
     pool.push(["hpabsorbRare", tier >= 5 ? 3 : 1]);
   }
 
-  // --- 4. Weighted pick -----------------------------------------------
+  // Weighted pick.
   const totalWeight = pool.reduce((sum, [, w]) => sum + w, 0);
   let pick = rng() * totalWeight;
-  let chosenId = pool[pool.length - 1][0]; // fallback
+  let chosenId = pool[pool.length - 1][0];
   for (const [id, w] of pool) {
     pick -= w;
     if (pick <= 0) { chosenId = id; break; }
   }
 
-  // --- 5. Retrieve option definition ----------------------------------
   const opt = ITEM_OPTIONS.find(o => o.id === chosenId);
 
-  // --- 6. Roll value with tier scaling --------------------------------
-  const scale = 1 + (tier - 1) * 0.15;
+  // Value scales with tier: ×1.0 at tier1, ×2.0 at tier6.
+  const scale = 1 + (Math.min(tier, 6) - 1) * 0.20;
   const rawMin = opt.rollMin * scale;
   const rawMax = opt.rollMax * scale;
   const value = Math.round(rawMin + rng() * (rawMax - rawMin));
 
-  // --- 7. Return affix object (with kind:"affix" tag) -----------------
   return {
-    kind:     "affix",
-    optionId: opt.id,
-    slot:     opt.slot,
-    stat:     opt.stat,
-    label:    opt.label,
-    value:    value,
-    color:    opt.color,
-    suffix:   opt.suffix,
-    text:     `${opt.label} +${value}${opt.suffix}`,
+    kind:   "option",
+    stat:   opt.stat,
+    value,
+    suffix: opt.suffix,
+    label:  opt.label,
+    color:  opt.color,
+    text:   `${opt.label}+${value}${opt.suffix}`,
   };
+}
+
+export function rollDrop(tier, rng) {
+  const t = Math.min(Math.max(tier, 1), 6);
+
+  // Absolute drop-rate table (potion, option, gear per tier).
+  // Remaining probability is null.
+  const RATES = [
+    //  [potion, option, gear]
+    [0.55, 0.06, 0.04],   // tier 1
+    [0.50, 0.09, 0.07],   // tier 2
+    [0.40, 0.14, 0.14],   // tier 3
+    [0.28, 0.18, 0.24],   // tier 4
+    [0.18, 0.22, 0.35],   // tier 5
+    [0.05, 0.30, 0.55],   // tier 6 (bosses)
+  ];
+
+  const [pPotion, pOption, pGear] = RATES[t - 1];
+
+  const roll = rng();
+
+  if (roll < pPotion) {
+    // HP potion — engine decides the heal amount.
+    return { kind: "potion", color: "#6bff8a", text: "HP回復薬" };
+  }
+
+  if (roll < pPotion + pOption) {
+    return _rollLooseOption(t, rng);
+  }
+
+  if (roll < pPotion + pOption + pGear) {
+    return rollGear(t, rng);
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
