@@ -342,12 +342,14 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   // IK with a fixed bend side, so the joint articulates the same natural way every frame
   // (it can never invert/hyperextend). The blade is a rigid, fixed-length segment.
   const Lu = 16, Lf = 15, L = 30;                       // upper-arm / forearm / blade lengths
+  // blade angles are CONTINUOUS (not wrapped) so the swing arcs forward, not back over the
+  // shoulder: wind(up-back) -> strike(up, open/obtuse to the arm) -> down(down-FORWARD).
   const KF = {
     //        hand           blade-angle (rad, face=1: 0=fwd, -PI/2=up, +PI/2=down)
     idle:   { h: [6, 28],    b:  1.30 },                // lowered, blade points down-forward
-    wind:   { h: [-8, -16],  b: -2.09 },               // cocked back, blade up & over the shoulder
-    strike: { h: [27, 9],    b: -1.62 },               // arm forward, blade up ~90° to the hand
-    down:   { h: [19, 23],   b:  1.75 },               // follow-through, blade sweeps low
+    wind:   { h: [-15, -24], b: -2.45 },               // cocked back, arm extended up over the shoulder
+    strike: { h: [27, 9],    b: -1.85 },               // arm forward, blade open (obtuse) to the arm
+    down:   { h: [19, 23],   b:  1.00 },               // follow-through, blade points down-forward
     raise:  { h: [-2, -20],  b: -1.57 },               // skill flourish, blade straight up
   };
   let A, B, f;
@@ -362,9 +364,10 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
   else                { A = KF.down;  B = KF.idle;  f = (atk - .70) / .30; }
   const hX = A.h[0] + (B.h[0] - A.h[0]) * f, hY = A.h[1] + (B.h[1] - A.h[1]) * f;
-  let dB = B.b - A.b;                                   // blade angle: shortest-path lerp
-  while (dB > Math.PI) dB -= 2 * Math.PI; while (dB < -Math.PI) dB += 2 * Math.PI;
-  const bAng = A.b + dB * f;
+  // Blade angle lerps linearly along the continuous values (a forward arc). During the
+  // strike->down cut, ease-in so the blade stays OPEN against the arm, then drops late.
+  const fb = (A === KF.strike && B === KF.down) ? f * f : f;
+  const bAng = A.b + (B.b - A.b) * fb;
   // --- 2-bone IK: shoulder(0,0) -> elbow -> hand, fixed bend side (elbow trails naturally) ---
   let d = Math.hypot(hX, hY); d = Math.max(Math.abs(Lu - Lf) + 0.01, Math.min(Lu + Lf - 0.01, d));
   const ux = hX / (d || 1), uy = hY / (d || 1);
