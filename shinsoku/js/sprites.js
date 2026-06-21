@@ -570,12 +570,15 @@ function dragon(ctx, o) {
   const ag = ctx.createRadialGradient(0, -30 * s, 0, 0, -30 * s, 60 * s);
   ag.addColorStop(0, 'rgba(130,12,12,0.30)'); ag.addColorStop(.6, 'rgba(50,0,0,0.12)'); ag.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -30 * s, 60 * s, 0, 7); ctx.fill();
-  // tail → bladed, spiked
+  // tail → long, serpentine, bladed & spiked
+  const tw = Math.sin(o.t * 1.4 + 1) * 3 * s;
   ctx.strokeStyle = DR.DK; ctx.lineCap = 'round'; ctx.lineWidth = 8 * s;
-  ctx.beginPath(); ctx.moveTo(-10 * s, -20 * s); ctx.quadraticCurveTo(-30 * s, -18 * s, -42 * s, -3 * s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-10 * s, -20 * s); ctx.quadraticCurveTo(-32 * s, -22 * s, -48 * s, -10 * s + tw); ctx.stroke();
+  ctx.lineWidth = 4.5 * s;
+  ctx.beginPath(); ctx.moveTo(-48 * s, -10 * s + tw); ctx.quadraticCurveTo(-62 * s, -2 * s + tw, -70 * s, -8 * s + tw); ctx.stroke();
   ctx.fillStyle = DR.BLK;
-  ctx.beginPath(); ctx.moveTo(-42 * s, -3 * s); ctx.lineTo(-54 * s, -6 * s); ctx.lineTo(-47 * s, 1 * s); ctx.lineTo(-52 * s, 5 * s); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = DR.SPIKE; for (const tx of [-16, -24, -32]) tri(ctx, tx * s, -19 * s, (tx - 2) * s, -27 * s, (tx + 3) * s, -17 * s);
+  ctx.beginPath(); ctx.moveTo(-70 * s, -8 * s + tw); ctx.lineTo(-82 * s, -12 * s + tw); ctx.lineTo(-74 * s, -4 * s + tw); ctx.lineTo(-79 * s, 1 * s + tw); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = DR.SPIKE; for (const tx of [-16, -24, -32, -40]) tri(ctx, tx * s, -20 * s, (tx - 2) * s, -28 * s, (tx + 3) * s, -18 * s);
   // far wing
   dragonWing(ctx, 2 * s, -36 * s, s, flap * 0.7, 0.62, true);
   // hind legs (clawed)
@@ -605,12 +608,14 @@ function dragon(ctx, o) {
   for (const p of [[12, -30], [6, -36], [-2, -38], [-10, -34], [-16, -26]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 3) * s, (p[1] - 10) * s, (p[0] + 3) * s, (p[1] - 2) * s);
   // near wing (big)
   dragonWing(ctx, 2 * s, -36 * s, s, flap, 1, false);
-  // neck (spiked) + head
+  // neck — long S-curve, spiked
   ctx.strokeStyle = DR.BASE; ctx.lineWidth = 8 * s; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(10 * s, -30 * s); ctx.quadraticCurveTo(20 * s, -42 * s, 22 * s + hsw, -50 * s); ctx.stroke();
-  ctx.fillStyle = DR.SPIKE; for (const p of [[13, -34], [18, -42]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 2) * s, (p[1] - 7) * s, (p[0] + 2) * s, (p[1] - 1) * s);
+  ctx.beginPath(); ctx.moveTo(9 * s, -28 * s);
+  ctx.quadraticCurveTo(19 * s, -34 * s, 23 * s, -45 * s);
+  ctx.quadraticCurveTo(27 * s + hsw, -55 * s, 33 * s + hsw, -59 * s); ctx.stroke();
+  ctx.fillStyle = DR.SPIKE; for (const p of [[13, -32], [19, -40], [25, -49]]) tri(ctx, p[0] * s, p[1] * s, (p[0] - 2) * s, (p[1] - 7) * s, (p[0] + 2.5) * s, (p[1] - 1) * s);
   // head — elongated reptilian skull with fanged maw
-  ctx.save(); ctx.translate(22 * s + hsw, -50 * s);
+  ctx.save(); ctx.translate(33 * s + hsw, -59 * s);
   ctx.fillStyle = DR.BASE;
   ctx.beginPath(); ctx.moveTo(-4 * s, -4 * s); ctx.quadraticCurveTo(7 * s, -6 * s, 15 * s, -1.5 * s);
   ctx.quadraticCurveTo(9 * s, 0.5 * s, 5 * s, 1.5 * s); ctx.quadraticCurveTo(-2 * s, 2.5 * s, -4 * s, -1 * s);

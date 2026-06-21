@@ -253,90 +253,193 @@ export const ITEM_OPTIONS = [
 // ---------------------------------------------------------------------------
 // 3. AREAS
 //
-// Four areas forming a loop:
-//   dungeon → grassland → forest → dragon_lair → dungeon
+// Six areas forming a loop (player STARTS at grassland):
+//   grassland → forest → cave → temple → dungeon → dragon_lair → grassland
 //
 // Each area has:
-//   id, name, theme, kind, radius, spawn (weighted table), boss, next, prev
+//   id, name, theme, kind, level, radius, spawn (weighted table), boss, next, prev
 //
 // kind:
-//   "field"  — no boss spawns; rooms are free-roam grinding zones
-//   "dragon" — activates the boss encounter (dragon_lair only)
+//   "field"  — standard room; engine places boss at far end of room
+//   "dragon" — activates the full dragon boss encounter (dragon_lair only)
+//
+// level (1-6): base difficulty; engine scales monster stats and drop
+//   quality by (level + loop count).
+//
+// radius: bigger rooms so the player must scroll across to reach the boss.
+//   field rooms ~16, dragon lair 18.
 //
 // Spawn weights use only the 7 valid sprite keys:
 //   kobold, lizardman, wraith, ogre, golem, skeleton, dragon
 //
-// Field-room "elite" monsters (ogre in grassland, golem in forest) use
-// weight 1 vs 4-6 for signature monsters — they appear rarely as roaming
-// threats with no boss bar, not a scripted encounter.
+// Every room has a boss object — the engine places it at the FAR end so
+// it is not immediately visible on entry.
 //
-// Dragon balance:
-//   hpMax 120 000 — intended to require extensive farming to chip down
-//   atk 95 raw   — painful per hit, but not one-shot; defense gear matters
-//   atkInterval 1.1 s — attacks fast; lifesteal gear makes the difference
+// Mid-boss xpReward scales with level (300 → 1 500) and HP climbs per room.
+//
+// Dragon balance (final room, level 6):
+//   hpMax 120 000 — requires extensive farming to chip down
+//   atk 95 raw    — painful per hit; defense gear matters
+//   atkInterval 1.1 s — fast cadence; lifesteal becomes load-bearing
 //   senseRange 9  — notices the player from across much of the lair
 // ---------------------------------------------------------------------------
 
 export const AREAS = {
-  dungeon: {
-    id:     "dungeon",
-    name:   "地下牢",
-    theme:  "dungeon",
-    kind:   "field",
-    radius: 12,
-    // Signature: undead jail — skeletons dominant, kobold packs, light lizardman
-    spawn: [
-      { sprite: "skeleton",  weight: 6 },
-      { sprite: "kobold",    weight: 5 },
-      { sprite: "lizardman", weight: 2 },
-    ],
-    boss: null,
-    next: "grassland",
-    prev: "dragon_lair",
-  },
-
   grassland: {
     id:     "grassland",
     name:   "草原",
     theme:  "grassland",
     kind:   "field",
-    radius: 14,
-    // Signature: reptile plains — lizardmen everywhere, kobold skirmishers,
-    // rare roaming ogre elite (weight 1) for danger without a boss encounter
+    level:  1,
+    radius: 16,
+    // Signature: reptile plains — lizardmen and kobold skirmishers
     spawn: [
       { sprite: "lizardman", weight: 6 },
-      { sprite: "kobold",    weight: 4 },
-      { sprite: "ogre",      weight: 1 },  // elite — rare bruiser, no boss bar
+      { sprite: "kobold",    weight: 5 },
     ],
-    boss: null,
+    // Mid-boss: giant ogre chieftain blocking the far end of the plain
+    boss: {
+      sprite:      "ogre",
+      name:        "草原の巨王",
+      hpMax:       900,
+      atk:         26,
+      defense:     4,
+      xpReward:    300,
+      scale:       2.4,
+      tint:        "#a05040",   // dull red-brown
+      senseRange:  6,
+      atkInterval: 1.0,
+    },
     next: "forest",
-    prev: "dungeon",
+    prev: "dragon_lair",
   },
 
   forest: {
     id:     "forest",
-    name:   "深森",
+    name:   "森林",
     theme:  "forest",
     kind:   "field",
-    radius: 13,
-    // Signature: haunted wood — wraiths and skeletons dominant,
-    // rare roaming golem elite (weight 1) as a dormant guardian
+    level:  2,
+    radius: 16,
+    // Signature: haunted wood — wraiths dominant, skeleton support, lizardman patrol
     spawn: [
       { sprite: "wraith",    weight: 5 },
-      { sprite: "skeleton",  weight: 5 },
-      { sprite: "golem",     weight: 1 },  // elite — dormant guardian, no boss bar
+      { sprite: "skeleton",  weight: 4 },
+      { sprite: "lizardman", weight: 2 },
     ],
-    boss: null,
-    next: "dragon_lair",
+    // Mid-boss: oversized wraith lord — glass-cannon but massive HP pool
+    boss: {
+      sprite:      "wraith",
+      name:        "森の死霊王",
+      hpMax:       1100,
+      atk:         30,
+      defense:     0,
+      xpReward:    600,
+      scale:       2.6,
+      tint:        "#c8b4e8",   // pale lavender, amplified
+      senseRange:  7,
+      atkInterval: 0.9,
+    },
+    next: "cave",
     prev: "grassland",
+  },
+
+  cave: {
+    id:     "cave",
+    name:   "洞窟",
+    theme:  "cave",
+    kind:   "field",
+    level:  3,
+    radius: 16,
+    // Signature: underground den — kobold miners, skeleton sentinels, rare elite golem
+    spawn: [
+      { sprite: "kobold",   weight: 5 },
+      { sprite: "skeleton", weight: 4 },
+      { sprite: "golem",    weight: 1 },  // rare roaming guardian
+    ],
+    // Mid-boss: ancient stone golem — high defense wall, needs good atk to crack
+    boss: {
+      sprite:      "golem",
+      name:        "洞窟の主",
+      hpMax:       2200,
+      atk:         34,
+      defense:     14,
+      xpReward:    900,
+      scale:       2.7,
+      tint:        "#888890",   // grey stone
+      senseRange:  5,
+      atkInterval: 1.1,
+    },
+    next: "temple",
+    prev: "forest",
+  },
+
+  temple: {
+    id:     "temple",
+    name:   "神殿",
+    theme:  "temple",
+    kind:   "field",
+    level:  4,
+    radius: 16,
+    // Signature: desecrated temple — skeleton and wraith guardians
+    spawn: [
+      { sprite: "skeleton", weight: 6 },
+      { sprite: "wraith",   weight: 5 },
+    ],
+    // Mid-boss: stone-gold ogre guardian — armored temple sentinel
+    boss: {
+      sprite:      "ogre",
+      name:        "神殿の守護者",
+      hpMax:       2600,
+      atk:         40,
+      defense:     10,
+      xpReward:    1100,
+      scale:       2.6,
+      tint:        "#9a8a5a",   // stone-gold
+      senseRange:  6,
+      atkInterval: 1.0,
+    },
+    next: "dungeon",
+    prev: "cave",
+  },
+
+  dungeon: {
+    id:     "dungeon",
+    name:   "地下牢",
+    theme:  "dungeon",
+    kind:   "field",
+    level:  5,
+    radius: 16,
+    // Signature: underground prison — skeleton wardens, rare ogre brute, kobold runts
+    spawn: [
+      { sprite: "skeleton", weight: 6 },
+      { sprite: "kobold",   weight: 3 },
+      { sprite: "ogre",     weight: 1 },  // rare heavy patrol
+    ],
+    // Mid-boss: iron golem jailer — highest defense of mid-bosses
+    boss: {
+      sprite:      "golem",
+      name:        "地下牢の獄長",
+      hpMax:       3400,
+      atk:         46,
+      defense:     18,
+      xpReward:    1500,
+      scale:       2.9,
+      tint:        "#6f6f78",   // dark iron-grey
+      senseRange:  5,
+      atkInterval: 1.1,
+    },
+    next: "dragon_lair",
+    prev: "temple",
   },
 
   dragon_lair: {
     id:     "dragon_lair",
     name:   "竜の巣",
-    theme:  "dungeon",
+    theme:  "cave",
     kind:   "dragon",
-    radius: 15,
+    level:  6,
+    radius: 18,
     // Light minion presence — mostly atmosphere; the dragon IS the content
     spawn: [
       { sprite: "wraith",   weight: 3 },
@@ -356,11 +459,11 @@ export const AREAS = {
       xpReward:    50000,
       scale:       3.6,
       tint:        "#a83232",   // deep crimson
-      senseRange:  9,           // notices the player from across the lair
-      atkInterval: 1.1,         // seconds between attacks
+      senseRange:  9,
+      atkInterval: 1.1,
     },
-    next: "dungeon",
-    prev: "forest",
+    next: "grassland",
+    prev: "dungeon",
   },
 };
 

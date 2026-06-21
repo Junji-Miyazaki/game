@@ -47,6 +47,7 @@ export class Game {
     // area / world state
     this.areaId = 'dungeon'; this.area = AREAS.dungeon; this.R = this.area.radius;
     this.maxMon = 8; this.exit = null; this.boss = null;
+    this.loops = 0; this.areaLevel = 1; this.bossRespawnAt = 0;
     this.pview = 'front';  // current player view (front/back/side)
     this.ambient = [];     // ambient environment motes (screen-space)
     this.initPlayer();
@@ -67,7 +68,7 @@ export class Game {
       opt: { atkSpeedPct: 0, hpAbsorbPct: 0, evasionPct: 0 },
       gear: { sword: null, shield: null, armor: null },   // equipped items (or null)
       bag: [],                                            // spare gear (unequipped)
-      atkTimer: 0, areaId: 'dungeon',
+      atkTimer: 0, areaId: 'grassland',
     };
   }
   load() {
@@ -78,6 +79,8 @@ export class Game {
         if (!this.p.skills || !('speed' in this.p.skills)) this.p.skills = { speed: 0, power: 0, hp: 0 };
         if (!this.p.gear || typeof this.p.gear.sword === 'string') this.p.gear = { sword: null, shield: null, armor: null };
         if (!Array.isArray(this.p.bag)) this.p.bag = [];
+        this.loops = this.p.loops || 0;
+        if (!AREAS[this.p.areaId]) this.p.areaId = 'grassland';   // migrate old save areas
       }
     } catch (e) {}
   }
@@ -103,10 +106,10 @@ export class Game {
 
   // ---------------- lifecycle ----------------
   start() {
-    SFX.init();   // unlock audio on the start-button gesture
+    try { SFX.init(); } catch (e) { console.warn('audio init failed', e); }   // never let audio block startup
     const mb = document.getElementById('btnMute'); if (mb) mb.textContent = SFX.isMuted() ? '🔇' : '🔊';
     this.load();
-    this.enterArea(this.p.areaId || 'dungeon');
+    this.enterArea(this.p.areaId || 'grassland');
     this.running = true;
     this.last = performance.now();
     this.updateHUD();
@@ -115,21 +118,26 @@ export class Game {
 
   // ---------------- areas / world ----------------
   enterArea(id) {
+    // count a full loop each time we return to the start room past the dragon
+    if (this.areaId === 'dragon_lair' && id === 'grassland') this.loops = (this.loops || 0) + 1;
     const area = AREAS[id] || AREAS.dungeon;
     this.areaId = id; this.area = area; this.p.areaId = id;
+    this.loops = this.loops || 0; this.p.loops = this.loops;
+    this.areaLevel = (area.level || 1) + this.loops * 6;   // room difficulty (climbs each loop)
     this.R = area.radius;
-    this.maxMon = Math.min(10, Math.max(6, Math.round(area.radius * 0.7)));
+    this.maxMon = Math.min(11, Math.max(6, Math.round(area.radius * 0.6)));
     this.monsters = []; this.loot = []; this.blood = []; this.target = null; this.moveTarget = null;
-    this.boss = null;
-    this.p.wx = 0; this.p.wy = 0;
-    // exit portal toward screen-north (world -,-)
-    const er = area.radius - 1.2;
-    this.exit = { wx: -er / Math.SQRT2, wy: -er / Math.SQRT2, next: area.next };
+    this.boss = null; this.bossRespawnAt = 0;
+    // enter near the SOUTH end (front); exit is just behind you; boss waits at the far NORTH end
+    const sp = (area.radius - 4) / Math.SQRT2;
+    this.p.wx = sp; this.p.wy = sp;
+    const er = (area.radius - 1.2) / Math.SQRT2;
+    this.exit = { wx: er, wy: er, next: area.next };
     this.refillSpawns(true);
     if (area.boss) this.spawnBoss(area.boss);
     this.initAmbient(area.theme);
     SFX.enterArea(area.theme); SFX.ambient(area.theme);
-    this.float(this.W / 2, this.H / 2 - 50, area.name, '#e8c870', 26);
+    this.float(this.W / 2, this.H / 2 - 50, area.name + '  Lv.' + this.areaLevel, '#e8c870', 26);
     this.updateHUD(); this.save();
   }
 
@@ -173,19 +181,28 @@ export class Game {
   }
 
   spawnBoss(b) {
-    const lvScale = 1 + (this.p.level - 1) * 0.05;
-    const br = this.R - 3, bx = br / Math.SQRT2, by = br / Math.SQRT2;   // south side
+    const L = this.areaLevel || 1, lvScale = 1 + (L - 1) * 0.12;
+    const br = this.R - 3, bx = -br / Math.SQRT2, by = -br / Math.SQRT2;  // FAR north end
     const m = {
       id: 'boss', name: b.name, sprite: b.sprite, isBoss: true, tier: 6,
       hpMax: Math.round(b.hpMax * lvScale), hp: Math.round(b.hpMax * lvScale),
-      atk: Math.round(b.atk * (1 + (this.p.level - 1) * 0.05)),
-      defense: b.defense, evade: 0.03, xpReward: b.xpReward,
+      atk: Math.round(b.atk * (1 + (L - 1) * 0.08)),
+      defense: b.defense + Math.floor((L - 1) * 0.5), evade: 0.03,
+      xpReward: Math.round(b.xpReward * lvScale),
       speed: 0.95, scale: b.scale, tint: b.tint,
       aggressive: true, senseRange: b.senseRange || 7, atkInterval: b.atkInterval || 0.9,
       wx: bx, wy: by, homeX: bx, homeY: by,
       t: 0, face: 1, walk: 0, hurt: 0, atkTimer: 0.5, deathT: 0, aggro: false,
     };
     this.monsters.push(m); this.boss = m;
+  }
+
+  quitToTitle() {
+    this.running = false;
+    try { SFX.stopAmbient(); } catch (e) {}
+    this.save();
+    document.getElementById('status').classList.remove('open');
+    document.getElementById('title').style.display = '';
   }
 
   loop(t) {
@@ -258,6 +275,10 @@ export class Game {
     for (const m of this.monsters) this.updateMonster(m, dt);
     this.monsters = this.monsters.filter(m => m.hp > 0 || m.deathT < 0.4);
     if (this.monsters.filter(m => m.hp > 0 && !m.isBoss).length < this.maxMon) this.refillSpawns();
+    // boss respawns a while after being slain
+    if (this.area.boss && !this.boss && this.bossRespawnAt && this._t >= this.bossRespawnAt) {
+      this.bossRespawnAt = 0; this.spawnBoss(this.area.boss);
+    }
 
     // loot pickup
     for (const it of this.loot) {
@@ -364,16 +385,19 @@ export class Game {
     for (let i = 0; i < 8; i++) this.spark(sp.x, sp.y - 20, m.tint, 1);
     for (let i = 0; i < 10; i++) this.spark(sp.x, sp.y - 18, '#7e1010', 1);   // death blood burst
     this.addBlood(m.wx, m.wy, 1.1 + rng() * 0.7);
-    // loot
-    const drop = rollDrop(m.tier, rng);
+    // loot — drop quality scales with room level
+    const dropTier = Math.min(6, (m.tier || 1) + Math.floor((this.areaLevel - 1) / 2));
+    const drop = rollDrop(dropTier, rng);
     if (drop) this.loot.push({ wx: m.wx, wy: m.wy, t: 0, ...drop });
     if (m.isBoss) {
       this.boss = null;
+      this.bossRespawnAt = this._t + 25;                  // boss returns after a while
       this.float(sp.x, sp.y - 72, m.name + ' 撃破！', '#ffd24a', 26);
       for (let i = 0; i < 24; i++) this.spark(sp.x, sp.y - 30, '#ffd24a', 2);
-      for (let i = 0; i < 2; i++) {                       // guaranteed bonus gear
+      const n = m.sprite === 'dragon' ? 4 : 2;
+      for (let i = 0; i < n; i++) {                       // guaranteed bonus gear
         const g = rollDrop(6, rng);
-        if (g) this.loot.push({ wx: m.wx + (rng() - .5) * 2, wy: m.wy + (rng() - .5) * 2, t: 0, ...g });
+        if (g) this.loot.push({ wx: m.wx + (rng() - .5) * 3, wy: m.wy + (rng() - .5) * 3, t: 0, ...g });
       }
     }
     // level up check
@@ -495,16 +519,17 @@ export class Game {
       ax = Math.cos(a) * r; ay = Math.sin(a) * r;
       if (hyp(ax - this.p.wx, ay - this.p.wy) >= 5) break;
     }
-    // level scaling so the grind keeps biting
-    const lvScale = 1 + (this.p.level - 1) * 0.11;
+    // room-level scaling — deeper/looped rooms have tougher, beefier monsters
+    const L = this.areaLevel || 1, lvScale = 1 + (L - 1) * 0.16;
     this.monsters.push({
       ...def,
       wx: ax, wy: ay, homeX: ax, homeY: ay,
       hpMax: Math.round(def.hpMax * lvScale),
       hp: Math.round(def.hpMax * lvScale),
-      atk: Math.round(def.atk * (1 + (this.p.level - 1) * 0.09)),
-      xpReward: Math.round(def.xpReward * (1 + (this.p.level - 1) * 0.08)),
-      atkInterval: 1.2,
+      atk: Math.round(def.atk * (1 + (L - 1) * 0.12)),
+      defense: (def.defense || 0) + Math.floor((L - 1) * 0.4),
+      xpReward: Math.round(def.xpReward * (1 + (L - 1) * 0.15)),
+      mlevel: L, atkInterval: 1.2,
       t: rng() * 3, face: 1, walk: 0, hurt: 0, atkTimer: rng(), deathT: 0, aggro: false,
     });
   }
@@ -749,6 +774,14 @@ export class Game {
       bg: '#070b05', tiles: ['#2c3a20', '#26331c', '#314026', '#222e18', '#2a371e'],
       crack: '#3a3320', rim: '#141d0e', grout: 'rgba(0,0,0,.3)', vig: 0.66,
     };
+    if (theme === 'cave') return {
+      bg: '#05070a', tiles: ['#2b2e34', '#24262b', '#2f3238', '#212329', '#282b31'],
+      crack: '#34302a', rim: '#13151a', grout: 'rgba(0,0,0,.45)', vig: 0.74,
+    };
+    if (theme === 'temple') return {
+      bg: '#0a0905', tiles: ['#4a463a', '#413d31', '#524d40', '#3a362c', '#454036'],
+      crack: '#5a5040', rim: '#26221a', grout: 'rgba(0,0,0,.32)', vig: 0.56,
+    };
     return { // dungeon
       bg: '#070605', tiles: ['#39332b', '#2c2720', '#332d26', '#2a251f', '#302a23'],
       crack: '#3d342b', rim: '#1d1a15', grout: 'rgba(0,0,0,.42)', vig: 0.72,
@@ -783,7 +816,7 @@ export class Game {
       }
     }
 
-    if (theme === 'dungeon') this.drawSeal();
+    if (theme === 'dungeon' || theme === 'temple') this.drawSeal();
     this.drawArenaRing(theme);
     this.drawExit();
 
@@ -880,9 +913,9 @@ export class Game {
   // Border decor around the arena edge — varies by theme.
   drawArenaRing(theme) {
     const ctx = this.ctx, c = this.toScreen(0, 0), U = ISO_U;
-    if (theme === 'dungeon') {
+    if (theme === 'dungeon' || theme === 'cave' || theme === 'temple') {
       ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
-      ctx.lineWidth = 22; ctx.strokeStyle = '#100d0a';
+      ctx.lineWidth = 22; ctx.strokeStyle = theme === 'temple' ? '#1a160f' : '#100d0a';
       ctx.beginPath(); ctx.arc(0, 0, (this.R + 0.9) * U, 0, 7); ctx.stroke();
       ctx.lineWidth = 5; ctx.strokeStyle = '#2b251d';
       ctx.beginPath(); ctx.arc(0, 0, (this.R + 0.25) * U, 0, 7); ctx.stroke();
@@ -1122,6 +1155,7 @@ export class Game {
     document.getElementById('btnStatus').onclick = () => document.getElementById('status').classList.toggle('open');
     document.getElementById('closeStatus').onclick = () => document.getElementById('status').classList.remove('open');
     document.getElementById('btnMute').onclick = (e) => { const m = SFX.toggle(); e.currentTarget.textContent = m ? '🔇' : '🔊'; };
+    document.getElementById('btnQuit').onclick = () => this.quitToTitle();
     document.getElementById('inv').addEventListener('click', e => {
       const b = e.target.closest('.invbtn'); if (!b) return;
       const idx = +b.dataset.idx;
