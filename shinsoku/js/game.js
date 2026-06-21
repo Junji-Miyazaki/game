@@ -1365,16 +1365,28 @@ export class Game {
     }).join('');
   }
 
+  gearStatSum(it) { const m = {}; if (it && it.options) for (const o of it.options) m[o.stat] = (m[o.stat] || 0) + o.value; return m; }
+
   renderInventory() {
     const el = document.getElementById('inv'); if (!el) return;
-    const bag = this.p.bag;
+    const p = this.p, bag = p.bag;
     if (!bag.length) { el.innerHTML = '<div class="invempty">（空）</div>'; return; }
     const slotIcon = { sword: '剣', shield: '盾', armor: '鎧' };
+    const SL = { atkSpeedPct: ['攻速', '%'], hpAbsorbPct: ['吸収', '%'], evasionPct: ['回避', '%'], atk: ['攻', ''], hpMax: ['HP', ''], defense: ['防', ''] };
     el.innerHTML = bag.map((it, i) => {
       const opts = it.options.map(o => o.label + '+' + o.value + o.suffix).join(' / ');
+      // comparison vs the currently-equipped item in this slot
+      const cur = this.gearStatSum(p.gear[it.slot]), nw = this.gearStatSum(it);
+      const keys = [...new Set([...Object.keys(cur), ...Object.keys(nw)])];
+      const cmp = keys.map(k => {
+        const d = (nw[k] || 0) - (cur[k] || 0); if (!d) return '';
+        const L = SL[k] || [k, ''], col = d > 0 ? '#7be07b' : '#ff7a7a';
+        return `<span style="color:${col}">${L[0]}${d > 0 ? '+' : ''}${d}${L[1]}${d > 0 ? '▲' : '▼'}</span>`;
+      }).filter(Boolean).join(' ');
+      const cmpLine = p.gear[it.slot] ? (cmp || '<span style="color:#9a937f">同等</span>') : '<span style="color:#7be07b">新規</span>';
       return `<div class="invrow" style="border-color:${it.color}55">
         <i>${slotIcon[it.slot] || '?'}</i>
-        <div class="invinfo"><span style="color:${it.color}">${it.name}</span><small>${opts}</small></div>
+        <div class="invinfo"><span style="color:${it.color}">${it.name}</span><small>${opts}</small><small class="cmp">${cmpLine}</small></div>
         <button class="invbtn eq" data-idx="${i}">装備</button>
         <button class="invbtn dc" data-idx="${i}">捨</button>
       </div>`;

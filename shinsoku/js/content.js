@@ -3,9 +3,9 @@
  * Browser hack-and-slash MMORPG, 2015-era isometric feel.
  *
  * Exports:
- *   MONSTERS        — dictionary of 6 enemy definitions (kobold/lizardman/wraith/ogre/golem/skeleton)
+ *   MONSTERS        — dictionary of 9 enemy definitions (kobold/lizardman/wraith/ogre/golem/skeleton/bat/spider/guardian)
  *   ITEM_OPTIONS    — array of droppable affix definitions
- *   AREAS           — dictionary of 4 area definitions forming a loop (dungeon/grassland/forest/dragon_lair)
+ *   AREAS           — dictionary of 6 area definitions forming a loop (grassland/forest/cave/temple/dungeon/dragon_lair)
  *   rollDrop(tier, rng)         — returns null | affix-object | gear-object
  *   spawnTableFor(playerLevel)  — returns weighted spawn array (fallback)
  *
@@ -16,12 +16,15 @@
 // 1. MONSTERS
 //
 // HP / ATK balance per tier (approximate):
-//   tier 1 kobold:    50 HP,  6 atk  — trivial, packs of 2-4
-//   tier 2 lizardman: 90 HP, 10 atk  — routine solo threat
-//   tier 2 skeleton:  70 HP,  8 atk  — undead swordsman, sometimes paired
-//   tier 3 wraith:    55 HP,  9 atk  — fast & dodgy, punishes slow players
-//   tier 4 ogre:     220 HP, 22 atk  — beefy bruiser, punishes low HP
-//   tier 5 golem:    480 HP, 32 atk  — boss-tier, high defense wall
+//   tier 1 kobold:      50 HP,  6 atk  — trivial, packs of 2-4
+//   tier 2 lizardman:   90 HP, 10 atk  — routine solo threat
+//   tier 2 skeleton:    70 HP,  8 atk  — undead swordsman, sometimes paired
+//   tier 2 bat:         40 HP,  7 atk  — fast flying pest, cave signature, packs of 2-4
+//   tier 3 wraith:      55 HP,  9 atk  — fast & dodgy, punishes slow players
+//   tier 3 spider:     110 HP, 13 atk  — forest ambusher, solo-or-pairs
+//   tier 4 ogre:       220 HP, 22 atk  — beefy bruiser, punishes low HP
+//   tier 4 guardian:   280 HP, 24 atk  — stone sentinel, temple signature, solo
+//   tier 5 golem:      480 HP, 32 atk  — boss-tier, high defense wall
 //
 // Defense is flat damage reduction applied before player damage.
 // Evade is the probability this monster dodges the PLAYER's hit.
@@ -140,6 +143,65 @@ export const MONSTERS = {
     packMin:    1,
     packMax:    1,
     aggressive: false,         // dormant guardian — wakes only when attacked
+    senseRange: 0,
+  },
+
+  // --- New signature creatures -------------------------------------------
+
+  bat: {
+    id:         "bat",
+    name:       "コウモリ",
+    sprite:     "bat",
+    tier:       2,
+    hpMax:      40,
+    atk:        7,
+    defense:    0,
+    evade:      0.14,          // erratic flight makes it hard to hit
+    xpReward:   14,
+    speed:      2.2,           // fast — darts around the player
+    scale:      0.7,           // tiny
+    tint:       "#5a4a6a",     // dark purple-grey
+    packMin:    2,
+    packMax:    4,
+    aggressive: true,          // swarms toward the player on detection
+    senseRange: 5,
+  },
+
+  spider: {
+    id:         "spider",
+    name:       "大蜘蛛",
+    sprite:     "spider",
+    tier:       3,
+    hpMax:      110,
+    atk:        13,
+    defense:    2,
+    evade:      0.06,
+    xpReward:   34,
+    speed:      1.7,
+    scale:      1.0,
+    tint:       "#3a2e44",     // dark purple-brown
+    packMin:    1,
+    packMax:    2,
+    aggressive: false,         // ambusher — stays still, retaliates when provoked
+    senseRange: 0,
+  },
+
+  guardian: {
+    id:         "guardian",
+    name:       "ストーンガーディアン",
+    sprite:     "guardian",
+    tier:       4,
+    hpMax:      280,
+    atk:        24,
+    defense:    10,
+    evade:      0.02,
+    xpReward:   70,
+    speed:      0.85,          // slow heavy stone sentinel
+    scale:      1.4,           // visibly larger than standard foes
+    tint:       "#8a8270",     // sandstone
+    packMin:    1,
+    packMax:    1,
+    aggressive: false,         // dormant until provoked
     senseRange: 0,
   },
 };
@@ -321,11 +383,12 @@ export const AREAS = {
     kind:   "field",
     level:  2,
     radius: 16,
-    // Signature: haunted wood — wraiths dominant, skeleton support, lizardman patrol
+    // Signature: haunted wood — wraiths dominant, skeleton support, lizardman patrol, spider ambushers
     spawn: [
       { sprite: "wraith",    weight: 5 },
       { sprite: "skeleton",  weight: 4 },
       { sprite: "lizardman", weight: 2 },
+      { sprite: "spider",    weight: 3 },  // forest signature
     ],
     // Mid-boss: oversized wraith lord — glass-cannon but massive HP pool
     boss: {
@@ -351,11 +414,12 @@ export const AREAS = {
     kind:   "field",
     level:  3,
     radius: 16,
-    // Signature: underground den — kobold miners, skeleton sentinels, rare elite golem
+    // Signature: underground den — bat swarms, kobold miners, skeleton sentinels, rare elite golem
     spawn: [
       { sprite: "kobold",   weight: 5 },
       { sprite: "skeleton", weight: 4 },
       { sprite: "golem",    weight: 1 },  // rare roaming guardian
+      { sprite: "bat",      weight: 4 },  // cave signature
     ],
     // Mid-boss: ancient stone golem — high defense wall, needs good atk to crack
     boss: {
@@ -381,10 +445,11 @@ export const AREAS = {
     kind:   "field",
     level:  4,
     radius: 16,
-    // Signature: desecrated temple — skeleton and wraith guardians
+    // Signature: desecrated temple — skeleton and wraith guardians, stone sentinels
     spawn: [
-      { sprite: "skeleton", weight: 6 },
-      { sprite: "wraith",   weight: 5 },
+      { sprite: "skeleton",  weight: 6 },
+      { sprite: "wraith",    weight: 5 },
+      { sprite: "guardian",  weight: 2 },  // temple signature
     ],
     // Mid-boss: stone-gold ogre guardian — armored temple sentinel
     boss: {

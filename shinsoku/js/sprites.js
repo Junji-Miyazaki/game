@@ -358,6 +358,9 @@ export function drawMonster(ctx, sprite, o) {
     case 'golem': golem(ctx, o); break;
     case 'skeleton': skeleton(ctx, o); break;
     case 'dragon': dragon(ctx, o); break;
+    case 'bat': bat(ctx, o); break;
+    case 'spider': spider(ctx, o); break;
+    case 'guardian': guardian(ctx, o); break;
     default: lizardman(ctx, o);
   }
   ctx.restore();
@@ -541,6 +544,80 @@ function skeleton(ctx, o) {
   ctx.fillStyle = '#ff5a3a';
   ctx.beginPath(); ctx.arc(-2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(2.2 * s, -47 * s, 1.4 * s, 0, 7); ctx.fill();
+}
+
+// ---------- NEW MONSTERS: bat / spider / guardian ----------
+function bat(ctx, o) {
+  const s = o.scale, t = o.tint, flap = Math.sin(o.t * 16 + o.x) * 0.9;
+  const D = darken(t, 30), L = lighten(t, 40);
+  // wings (fast flap)
+  for (const dir of [-1, 1]) {
+    ctx.save(); ctx.translate(dir * 5 * s, -26 * s); ctx.rotate(dir * (0.2 + flap));
+    ctx.fillStyle = D;
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(dir * 18 * s, -10 * s, dir * 24 * s, 2 * s);
+    ctx.quadraticCurveTo(dir * 17 * s, 0, dir * 14 * s, 6 * s);
+    ctx.quadraticCurveTo(dir * 12 * s, 1 * s, dir * 6 * s, 7 * s);
+    ctx.quadraticCurveTo(dir * 6 * s, 1 * s, 0, 5 * s);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // body
+  ctx.fillStyle = t; ctx.beginPath(); ctx.ellipse(0, -24 * s, 6 * s, 8 * s, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = L; ctx.beginPath(); ctx.ellipse(0, -22 * s, 3.5 * s, 4 * s, 0, 0, 7); ctx.fill();
+  // ears
+  ctx.fillStyle = D; tri(ctx, -3 * s, -31 * s, -5 * s, -38 * s, -1 * s, -31 * s);
+  tri(ctx, 3 * s, -31 * s, 5 * s, -38 * s, 1 * s, -31 * s);
+  // glowing eyes + fangs
+  eye(ctx, -2.4 * s, -27 * s, 1.4 * s, '#ff5a4a'); eye(ctx, 2.4 * s, -27 * s, 1.4 * s, '#ff5a4a');
+  ctx.fillStyle = '#fff'; tri(ctx, -2 * s, -19 * s, -3 * s, -16 * s, -1 * s, -19 * s);
+  tri(ctx, 2 * s, -19 * s, 3 * s, -16 * s, 1 * s, -19 * s);
+}
+function spider(ctx, o) {
+  const s = o.scale, t = o.tint, leg = Math.sin(o.t * 9 + o.x) * 0.25;
+  const D = darken(t, 25), L = lighten(t, 30);
+  // 8 legs (4 each side), bent, animated
+  ctx.strokeStyle = D; ctx.lineWidth = 2 * s; ctx.lineCap = 'round';
+  for (const dir of [-1, 1]) for (let i = 0; i < 4; i++) {
+    const a = (-0.5 + i * 0.42) + dir * 0.0, ph = leg * (i % 2 ? 1 : -1);
+    const kx = dir * (7 + i * 1.5) * s, ky = (-14 + i * 1.2) * s;
+    const ex = dir * (16 + i * 2) * s, ey = (-6 + i * 2 + ph * 6) * s;
+    ctx.beginPath(); ctx.moveTo(dir * 4 * s, -14 * s); ctx.lineTo(kx, ky - 4 * s); ctx.lineTo(ex, ey); ctx.stroke();
+  }
+  // abdomen (big rear) + cephalothorax (front)
+  body(ctx, t, -10 * s, -22 * s, 20 * s, 16 * s);
+  ctx.fillStyle = L; for (const m of [[-3, -16], [3, -16], [0, -12]]) { ctx.beginPath(); ctx.arc(m[0] * s, m[1] * s, 1.6 * s, 0, 7); ctx.fill(); }  // markings
+  body(ctx, D, -5 * s, -20 * s, 10 * s, 9 * s);
+  // eyes cluster + fangs
+  ctx.fillStyle = '#ffd23a';
+  for (const e of [[-2.5, -18], [-1, -19], [1, -19], [2.5, -18]]) { ctx.beginPath(); ctx.arc(e[0] * s, e[1] * s, 0.9 * s, 0, 7); ctx.fill(); }
+  ctx.strokeStyle = '#1a1018'; ctx.lineWidth = 1.6 * s;
+  ctx.beginPath(); ctx.moveTo(-2 * s, -13 * s); ctx.lineTo(-2.5 * s, -10 * s); ctx.moveTo(2 * s, -13 * s); ctx.lineTo(2.5 * s, -10 * s); ctx.stroke();
+}
+function guardian(ctx, o) {
+  const s = o.scale, t = o.tint, sway = Math.sin(o.t * 2 + o.x) * 1.5 * o.walk;
+  const blk = (x, y, w, h, sh) => {
+    ctx.save(); ctx.translate(sh || 0, 0); roundRect(ctx, x, y, w, h, 2 * s);
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, lighten(t, 28)); g.addColorStop(.5, t); g.addColorStop(1, darken(t, 40));
+    ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = darken(t, 60); ctx.lineWidth = 1.2 * s; ctx.stroke(); ctx.restore();
+  };
+  // legs
+  blk(-9 * s, -20 * s, 8 * s, 22 * s, sway); blk(2 * s, -20 * s, 8 * s, 22 * s, -sway);
+  // torso (broad)
+  blk(-13 * s, -50 * s, 26 * s, 32 * s);
+  // shoulders + arms
+  blk(-20 * s, -48 * s, 9 * s, 26 * s); blk(13 * s, -48 * s, 9 * s, 26 * s);
+  // glowing rune carvings
+  ctx.strokeStyle = '#7fd4ff'; ctx.lineWidth = 1.4 * s; ctx.shadowColor = '#7fd4ff'; ctx.shadowBlur = 6 * s;
+  ctx.beginPath(); ctx.moveTo(-5 * s, -44 * s); ctx.lineTo(0, -38 * s); ctx.lineTo(5 * s, -44 * s); ctx.moveTo(0, -38 * s); ctx.lineTo(0, -28 * s); ctx.stroke();
+  ctx.shadowBlur = 0;
+  // head (blocky) + glowing eyes
+  blk(-8 * s, -64 * s, 16 * s, 16 * s);
+  eye(ctx, -3.5 * s, -56 * s, 2 * s, '#7fd4ff'); eye(ctx, 3.5 * s, -56 * s, 2 * s, '#7fd4ff');
+  // cracks
+  ctx.strokeStyle = darken(t, 55); ctx.lineWidth = 1 * s;
+  ctx.beginPath(); ctx.moveTo(-8 * s, -40 * s); ctx.lineTo(-3 * s, -34 * s); ctx.lineTo(-7 * s, -26 * s); ctx.stroke();
 }
 
 // ---------- DRAGON (apex boss) — sinister 古龍 ----------
