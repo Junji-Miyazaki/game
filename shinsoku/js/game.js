@@ -46,6 +46,7 @@ export class Game {
     this.visualSwing = 0;
     // area / world state
     this.areaId = 'dungeon'; this.area = AREAS.dungeon; this.R = this.area.radius;
+    this.buildLayout(this.area);   // 2部屋＋通路レイアウトを早期に用意（enterArea前のupdateでも安全に）
     this.maxMon = 8; this.exit = null; this.boss = null;
     this.loops = 0; this.areaLevel = 1; this.bossRespawnAt = 0;
     this.pview = 'front';  // current player view (front/back/side)
@@ -129,6 +130,32 @@ export class Game {
     requestAnimationFrame(t => this.loop(t));
   }
 
+  // ---------------- dumbbell layout (two rooms + corridor) ----------------
+  // The iso diagonal wx=wy is the south(front)↔north(far) axis.
+  uvFromXY(wx, wy) { return { u: (wx + wy) / Math.SQRT2, v: (wy - wx) / Math.SQRT2 }; }   // u: south(+)/north(−), v: perpendicular
+  xyFromUV(u, v) { return { wx: (u - v) / Math.SQRT2, wy: (u + v) / Math.SQRT2 }; }        // inverse
+
+  // build the layout for an area: two room circles joined by a corridor band
+  buildLayout(area) {
+    const rr = Math.max(9, (area.radius || 16) * 0.72);   // per-room radius
+    const Du = rr + 6;                                    // each room center offset along the diagonal
+    const wc = 3.4;                                        // corridor half-width (perpendicular)
+    const c1 = this.xyFromUV(Du, 0);    // SOUTH room (entry / player / exit / normals)
+    const c2 = this.xyFromUV(-Du, 0);   // NORTH room (elites / boss)
+    this.layout = { rr, Du, wc, c1, c2 };
+    this.R = Du + rr;                   // overall extent (minimap scale + ground loop range)
+  }
+
+  // walkable test for the dumbbell: inside either room circle OR within the corridor band.
+  // m > 0 shrinks the region (collision clamp); m < 0 grows it (ground-fill rim inclusion).
+  walkable(wx, wy, m = 0) {
+    const L = this.layout; if (!L) return hyp(wx, wy) <= this.R - m;
+    if (hyp(wx - L.c1.wx, wy - L.c1.wy) <= L.rr - m) return true;
+    if (hyp(wx - L.c2.wx, wy - L.c2.wy) <= L.rr - m) return true;
+    const { u, v } = this.uvFromXY(wx, wy);
+    return Math.abs(v) <= L.wc - m && u >= -L.Du && u <= L.Du;
+  }
+
   // ---------------- areas / world ----------------
   enterArea(id) {
     // count a full loop each time we return to the start room past the dragon
@@ -137,15 +164,16 @@ export class Game {
     this.areaId = id; this.area = area; this.p.areaId = id;
     this.loops = this.loops || 0; this.p.loops = this.loops;
     this.areaLevel = (area.level || 1) + this.loops * 6;   // room difficulty (climbs each loop)
-    this.R = area.radius;
+    this.buildLayout(area);                                // sets this.layout + this.R (dumbbell)
     this.maxMon = Math.min(11, Math.max(6, Math.round(area.radius * 0.6)));
     this.monsters = []; this.loot = []; this.blood = []; this.target = null; this.moveTarget = null;
     this.boss = null; this.bossRespawnAt = 0;
-    // enter near the SOUTH end (front); exit is just behind you; boss waits at the far NORTH end
-    const sp = (area.radius - 4) / Math.SQRT2;
-    this.p.wx = sp; this.p.wy = sp;
-    const er = (area.radius - 1.2) / Math.SQRT2;
-    this.exit = { wx: er, wy: er, next: area.next };
+    // enter in ROOM1 near its south edge; exit gate sits just behind, at the far south rim
+    const { rr, Du } = this.layout;
+    const sp = this.xyFromUV(Du + rr - 4, 0);
+    this.p.wx = sp.wx; this.p.wy = sp.wy;
+    const er = this.xyFromUV(Du + rr - 1.5, 0);
+    this.exit = { wx: er.wx, wy: er.wy, next: area.next };
     this.refillSpawns(true);
     if (area.boss) this.spawnBoss(area.boss);
     this.initAmbient(area.theme);
@@ -195,7 +223,8 @@ export class Game {
 
   spawnBoss(b) {
     const L = this.areaLevel || 1, lvScale = 1 + (L - 1) * 0.12;
-    const br = this.R - 3, bx = -br / Math.SQRT2, by = -br / Math.SQRT2;  // FAR north end
+    const lay = this.layout, bp = this.xyFromUV(-(lay.Du + lay.rr - 3), 0);  // ROOM2 north edge
+    const bx = bp.wx, by = bp.wy;
     const m = {
       id: 'boss', name: b.name, sprite: b.sprite, isBoss: true, tier: 6,
       hpMax: Math.round(b.hpMax * lvScale), hp: Math.round(b.hpMax * lvScale),
@@ -347,8 +376,28 @@ export class Game {
   }
 
   clampArena(o) {
-    const d = hyp(o.wx, o.wy);
-    if (d > this.R - 0.6) { const k = (this.R - 0.6) / d; o.wx *= k; o.wy *= k; }
+    if (this.walkable(o.wx, o.wy, 0.6)) return;
+    const L = this.layout;
+    if (!L) { const d = hyp(o.wx, o.wy); if (d > this.R - 0.6) { const k = (this.R - 0.6) / d; o.wx *= k; o.wy *= k; } return; }
+    // snap to the nearest of: clamped-into-C1, clamped-into-C2, clamped-into-corridor
+    const cands = [];
+    const intoCircle = (cx, cy, rad) => {
+      const dx = o.wx - cx, dy = o.wy - cy, d = hyp(dx, dy) || 1e-6;
+      const k = Math.min(1, rad / d);
+      return { wx: cx + dx * k, wy: cy + dy * k };
+    };
+    cands.push(intoCircle(L.c1.wx, L.c1.wy, L.rr - 0.6));
+    cands.push(intoCircle(L.c2.wx, L.c2.wy, L.rr - 0.6));
+    let { u, v } = this.uvFromXY(o.wx, o.wy);     // corridor clamp
+    const vw = Math.max(0, L.wc - 0.6);
+    u = clamp(u, -L.Du, L.Du); v = clamp(v, -vw, vw);
+    cands.push(this.xyFromUV(u, v));
+    let best = cands[0], bd = Infinity;
+    for (const c of cands) {
+      const dd = hyp(c.wx - o.wx, c.wy - o.wy);
+      if (dd < bd) { bd = dd; best = c; }
+    }
+    o.wx = best.wx; o.wy = best.wy;
   }
 
   // brief heal/hurt glow on the HP bar (throttled so godspeed doesn't flicker)
@@ -524,39 +573,52 @@ export class Game {
   }
 
   // ---------------- spawns ----------------
+  // ROOM1 holds the normal wave (~maxMon); ROOM2 keeps a couple of elites alive.
   refillSpawns(initial) {
     const table = (this.area && this.area.spawn) || spawnTableFor(this.p.level);
     const total = table.reduce((s, e) => s + e.weight, 0);
-    const alive = this.monsters.filter(m => m.hp > 0 && !m.isBoss).length;
-    const want = this.maxMon - alive;
-    const n = initial ? this.maxMon : Math.min(want, 2);
-    for (let i = 0; i < n; i++) {
-      let r = rng() * total, key = table[0].sprite;
-      for (const e of table) { r -= e.weight; if (r <= 0) { key = e.sprite; break; } }
-      this.spawnMonster(key);
+    const pick = () => { let r = rng() * total, key = table[0].sprite; for (const e of table) { r -= e.weight; if (r <= 0) { key = e.sprite; break; } } return key; };
+    const ELITE_TARGET = 3;
+    const room1Alive = this.monsters.filter(m => m.hp > 0 && !m.isBoss && !m.elite).length;
+    const room2Alive = this.monsters.filter(m => m.hp > 0 && !m.isBoss && m.elite).length;
+    if (initial) {
+      for (let i = 0; i < this.maxMon; i++) this.spawnMonster(pick(), { room: 'room1' });
+      for (let i = 0; i < ELITE_TARGET; i++) this.spawnMonster(pick(), { room: 'room2', elite: true });
+    } else {
+      const n1 = Math.min(this.maxMon - room1Alive, 2);
+      for (let i = 0; i < n1; i++) this.spawnMonster(pick(), { room: 'room1' });
+      const n2 = Math.min(ELITE_TARGET - room2Alive, 1);
+      for (let i = 0; i < n2; i++) this.spawnMonster(pick(), { room: 'room2', elite: true });
     }
   }
 
-  spawnMonster(key) {
+  spawnMonster(key, opts = {}) {
     const def = MONSTERS[key];
     if (!def) return;
-    // place somewhere inside the arena, at least ~5 tiles from the player
-    let ax = 0, ay = 0;
+    const L0 = this.layout, room = opts.room === 'room2' ? 'room2' : 'room1';
+    const c = room === 'room2' ? L0.c2 : L0.c1, rad = Math.max(1, L0.rr - 2);
+    // random point within the chosen room circle, at least ~5 tiles from the player
+    let ax = c.wx, ay = c.wy;
     for (let tries = 0; tries < 14; tries++) {
-      const a = rng() * Math.PI * 2, r = 2 + rng() * (this.R - 2.5);
-      ax = Math.cos(a) * r; ay = Math.sin(a) * r;
+      const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * rad;
+      ax = c.wx + Math.cos(a) * r; ay = c.wy + Math.sin(a) * r;
       if (hyp(ax - this.p.wx, ay - this.p.wy) >= 5) break;
     }
     // room-level scaling — deeper/looped rooms have tougher, beefier monsters
-    const L = this.areaLevel || 1, lvScale = 1 + (L - 1) * 0.16;
+    const elite = !!opts.elite;
+    const L = (this.areaLevel || 1) + (elite ? 2 : 0), lvScale = 1 + (L - 1) * 0.16;
+    const eHp = elite ? 1.6 : 1, eAtk = elite ? 1.4 : 1;
     this.monsters.push({
       ...def,
+      elite,
       wx: ax, wy: ay, homeX: ax, homeY: ay,
-      hpMax: Math.round(def.hpMax * lvScale),
-      hp: Math.round(def.hpMax * lvScale),
-      atk: Math.round(def.atk * (1 + (L - 1) * 0.12)),
+      scale: (def.scale || 1) * (elite ? 1.15 : 1),
+      tint: elite ? '#c878ff' : def.tint,
+      hpMax: Math.round(def.hpMax * lvScale * eHp),
+      hp: Math.round(def.hpMax * lvScale * eHp),
+      atk: Math.round(def.atk * (1 + (L - 1) * 0.12) * eAtk),
       defense: (def.defense || 0) + Math.floor((L - 1) * 0.4),
-      xpReward: Math.round(def.xpReward * (1 + (L - 1) * 0.15)),
+      xpReward: Math.round(def.xpReward * (1 + (L - 1) * 0.15) * (elite ? 1.4 : 1)),
       mlevel: L, atkInterval: 1.2,
       t: rng() * 3, face: 1, walk: 0, hurt: 0, atkTimer: rng(), deathT: 0, aggro: false,
     });
@@ -782,6 +844,14 @@ export class Game {
     ctx.fillStyle = tint; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
     const px = this.p.wx, py = this.p.wy;
     const mp = (wx, wy) => ({ x: cx + (wx - px) * sc, y: cy + (wy - py) * sc }); // player-centered
+    // faint layout outline: two rooms + corridor line
+    if (this.layout) {
+      const L = this.layout, a1 = mp(L.c1.wx, L.c1.wy), a2 = mp(L.c2.wx, L.c2.wy);
+      ctx.strokeStyle = 'rgba(200,180,120,.28)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y); ctx.stroke();
+      ctx.beginPath(); ctx.arc(a1.x, a1.y, L.rr * sc, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(a2.x, a2.y, L.rr * sc, 0, 7); ctx.stroke();
+    }
     // exit
     if (this.exit) { const e = mp(this.exit.wx, this.exit.wy); ctx.fillStyle = '#7ce0ff'; ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, 7); ctx.fill(); }
     // monsters
@@ -847,18 +917,17 @@ export class Game {
     ctx.fillStyle = T.bg; ctx.fillRect(0, 0, this.W, this.H);
 
     const c = this.toWorld(this.W / 2, this.H / 2);
-    const R = 18;
+    const R = 24;
     for (let i = -R; i <= R; i++) {
       for (let j = -R; j <= R; j++) {
         const wx = Math.round(c.wx) + i, wy = Math.round(c.wy) + j;
-        const dist = hyp(wx, wy);
-        if (dist > this.R + 0.6) continue;          // void beyond the arena
+        if (!this.walkable(wx, wy, -0.6)) continue;          // void outside the dumbbell
         const s = this.toScreen(wx, wy);
         if (s.x < -TW || s.x > this.W + TW || s.y < -TH || s.y > this.H + TH) continue;
         const h = ((wx * 73856093) ^ (wy * 19349663)) >>> 0;
         let col = T.tiles[h % T.tiles.length];
         if (h % 23 === 0) col = T.crack;
-        if (dist > this.R - 0.6) col = T.rim;
+        if (!this.walkable(wx, wy, 0.6)) col = T.rim;        // edge tiles
         ctx.fillStyle = col;
         ctx.beginPath();
         ctx.moveTo(s.x, s.y - TH / 2);
@@ -900,9 +969,11 @@ export class Game {
     ctx.fillText('▲ ' + (AREAS[this.exit.next] ? AREAS[this.exit.next].name : '出口'), s.x, s.y - 56);
   }
 
-  // Glowing magic seal engraved on the floor (anchored at world origin).
+  // Glowing magic seal engraved on the floor (anchored under the boss in ROOM2).
   drawSeal() {
-    const ctx = this.ctx, c = this.toScreen(0, 0), U = ISO_U;
+    const ctx = this.ctx, U = ISO_U;
+    const c2 = this.layout ? this.layout.c2 : { wx: 0, wy: 0 };
+    const c = this.toScreen(c2.wx, c2.wy);
     const pulse = 0.78 + Math.sin(this._t * 1.6) * 0.22;
     ctx.save();
     ctx.translate(c.x, c.y);
@@ -964,22 +1035,51 @@ export class Game {
     ctx.restore();
   }
 
-  // Border decor around the arena edge — varies by theme.
+  // Border decor framing BOTH rooms + the corridor walls — varies by theme.
   drawArenaRing(theme) {
-    const ctx = this.ctx, c = this.toScreen(0, 0), U = ISO_U;
+    const ctx = this.ctx, U = ISO_U;
+    const L = this.layout || { rr: this.R, Du: 0, wc: 3.4, c1: { wx: 0, wy: 0 }, c2: { wx: 0, wy: 0 } };
+    const rr = L.rr;
     if (theme === 'dungeon' || theme === 'cave' || theme === 'temple') {
-      ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
-      ctx.lineWidth = 22; ctx.strokeStyle = theme === 'temple' ? '#1a160f' : '#100d0a';
-      ctx.beginPath(); ctx.arc(0, 0, (this.R + 0.9) * U, 0, 7); ctx.stroke();
-      ctx.lineWidth = 5; ctx.strokeStyle = '#2b251d';
-      ctx.beginPath(); ctx.arc(0, 0, (this.R + 0.25) * U, 0, 7); ctx.stroke();
-      ctx.restore();
+      // dark stroke arc around each room center
+      for (const cc of [L.c1, L.c2]) {
+        const c = this.toScreen(cc.wx, cc.wy);
+        ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, 0.5);
+        ctx.lineWidth = 22; ctx.strokeStyle = theme === 'temple' ? '#1a160f' : '#100d0a';
+        ctx.beginPath(); ctx.arc(0, 0, (rr + 0.9) * U, 0, 7); ctx.stroke();
+        ctx.lineWidth = 5; ctx.strokeStyle = '#2b251d';
+        ctx.beginPath(); ctx.arc(0, 0, (rr + 0.25) * U, 0, 7); ctx.stroke();
+        ctx.restore();
+      }
+      // corridor walls: two iso polylines running along v=±wc from u=−Du..+Du
+      ctx.lineWidth = 10; ctx.strokeStyle = theme === 'temple' ? '#1a160f' : '#100d0a';
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      for (const vSide of [L.wc, -L.wc]) {
+        ctx.beginPath();
+        for (let s = 0; s <= 12; s++) {
+          const u = -L.Du + (2 * L.Du) * (s / 12);
+          const p = this.xyFromUV(u, vSide), sc = this.toScreen(p.wx, p.wy);
+          if (s === 0) ctx.moveTo(sc.x, sc.y); else ctx.lineTo(sc.x, sc.y);
+        }
+        ctx.stroke();
+      }
     }
     const N = theme === 'forest' ? 14 : (theme === 'grassland' ? 12 : 10);
     const posts = [];
-    for (let k = 0; k < N; k++) {
-      const a = k / N * 6.283;
-      posts.push({ s: this.toScreen(Math.cos(a) * (this.R + 0.7), Math.sin(a) * (this.R + 0.7)), k });
+    // posts around BOTH room rims
+    for (const cc of [L.c1, L.c2]) {
+      for (let k = 0; k < N; k++) {
+        const a = k / N * 6.283;
+        posts.push({ s: this.toScreen(cc.wx + Math.cos(a) * (rr + 0.7), cc.wy + Math.sin(a) * (rr + 0.7)), k });
+      }
+    }
+    // a few posts along each corridor edge
+    for (const vSide of [L.wc + 0.7, -(L.wc + 0.7)]) {
+      for (let s = 1; s <= 3; s++) {
+        const u = -L.Du + (2 * L.Du) * (s / 4);
+        const p = this.xyFromUV(u, vSide);
+        posts.push({ s: this.toScreen(p.wx, p.wy), k: s + 7 });
+      }
     }
     posts.sort((a, b) => a.s.y - b.s.y);   // far decor first
     for (const pp of posts) {
