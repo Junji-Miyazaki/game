@@ -343,7 +343,7 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   // Each pose is a HAND target + an absolute BLADE angle. The elbow is SOLVED by 2-bone
   // IK with a fixed bend side, so the joint articulates the same natural way every frame
   // (it can never invert/hyperextend). The blade is a rigid, fixed-length segment.
-  const Lu = 16, Lf = 15, L = 30;                       // upper-arm / forearm / blade lengths
+  const Lu = 14, Lf = 16, L = 30;                       // upper-arm / forearm / blade lengths
   // The blade is RIGID and its angle is measured RELATIVE TO THE FOREARM (wrist offset w),
   // not as an absolute angle — so the hand→blade angle the player reads stays controlled in
   // every frame (it tracks the arm instead of looking detached/reversed mid-swing).
