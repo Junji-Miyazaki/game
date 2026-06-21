@@ -1400,6 +1400,7 @@ export class Game {
     $('s-atk').textContent = p.atk;
     $('s-spd').textContent = aps.toFixed(1);
     $('s-def').textContent = p.defense;
+    $('s-hpm').textContent = p.hpMax;
     $('s-eva').textContent = Math.round(this.effEvasion() * 100) + '%';
     $('s-move').textContent = p.moveSpeed.toFixed(1);
     // equipped gear (name + options); HP吸収 shown as an armor property

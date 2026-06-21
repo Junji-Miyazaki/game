@@ -24,13 +24,14 @@
 
   <!-- Right status / equipment / skill-allocation panel -->
   <div id="status" class="panel">
-    <div class="phead">STATUS <button id="closeStatus">×</button></div>
+    <div class="phead">STATUS <span class="stp">STAT P: <b id="s-stp">0</b></span><button id="closeStatus">×</button></div>
     <div class="stats">
-      <div><label>攻撃力 ATK</label><b id="s-atk">0</b></div>
-      <div><label>攻撃速度 SPD</label><b id="s-spd">0</b></div>
-      <div><label>防御力 DEF</label><b id="s-def">0</b></div>
-      <div><label>回避 EVA</label><b id="s-eva">0%</b></div>
-      <div><label>移動 MOVE</label><b id="s-move">0</b></div>
+      <div><label>攻撃力</label><span class="v"><b id="s-atk">0</b><button class="splus" data-st="atk">＋</button></span></div>
+      <div><label>攻撃速度</label><span class="v"><b id="s-spd">0</b><button class="splus" data-st="atkSpeed">＋</button></span></div>
+      <div><label>防御力</label><span class="v"><b id="s-def">0</b><button class="splus" data-st="defense">＋</button></span></div>
+      <div><label>最大HP</label><span class="v"><b id="s-hpm">0</b><button class="splus" data-st="hpMax">＋</button></span></div>
+      <div><label>回避</label><span class="v"><b id="s-eva">0%</b></span></div>
+      <div><label>移動</label><span class="v"><b id="s-move">0</b></span></div>
     </div>
     <div class="equip">
       <div class="gslot"><i>剣</i><div class="gtxt"><span id="e-sword">なし</span><small id="eo-sword"></small></div></div>
@@ -39,17 +40,10 @@
       <div class="armorleech">鎧オプション：HP吸収 <b id="e-leech">0%</b></div>
     </div>
     <div class="skills">
-      <div class="sp">STAT POINTS: <b id="s-stp">0</b></div>
-      <div class="skrow"><span>攻撃力</span><button class="splus" data-st="atk">＋</button></div>
-      <div class="skrow"><span>最大HP</span><button class="splus" data-st="hpMax">＋</button></div>
-      <div class="skrow"><span>防御力</span><button class="splus" data-st="defense">＋</button></div>
-      <div class="skrow"><span>攻撃速度</span><button class="splus" data-st="atkSpeed">＋</button></div>
-    </div>
-    <div class="skills">
       <div class="sp">SKILL POINTS: <b id="s-sp">0</b></div>
-      <div class="skrow"><span>神速 <small>攻撃速度</small></span><b id="al-speed">Lv0</b><button class="plus" data-sk="speed">＋</button></div>
-      <div class="skrow"><span>剛力 <small>攻撃力</small></span><b id="al-power">Lv0</b><button class="plus" data-sk="power">＋</button></div>
-      <div class="skrow"><span>活力 <small>最大HP</small></span><b id="al-hp">Lv0</b><button class="plus" data-sk="hp">＋</button></div>
+      <div class="skrow"><span>神速</span><b id="al-speed">Lv0</b><button class="plus" data-sk="speed">＋</button></div>
+      <div class="skrow"><span>剛力</span><b id="al-power">Lv0</b><button class="plus" data-sk="power">＋</button></div>
+      <div class="skrow"><span>活力</span><b id="al-hp">Lv0</b><button class="plus" data-sk="hp">＋</button></div>
     </div>
     <div class="invhead">所持品 <small>(装備で付け替え)</small></div>
     <div id="inv" class="inv"></div>
