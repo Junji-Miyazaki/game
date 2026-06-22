@@ -381,7 +381,7 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restO
   // 5 o'clock). The side/profile view keeps the blade angled down-forward toward the enemy.
   const KF = {
     //        hand                          wrist   elbow side
-    idle:   { h: restOut ? [-9, 26] : [6, 28], w: 0.00, bd: 1 },  // lowered, blade in line with the arm
+    idle:   restOut ? { h: [-13, 24], w: 0.00, bd: -1 } : { h: [6, 28], w: 0.00, bd: 1 },  // rest: arm to 7 o'clock (front) / 5 (back mirror)
     wind:   { h: [-15, -24], w:  0.00, bd: -1 },        // raised back, blade straight in line with the arm
     strike: { h: [27, 9],    w: -1.45, bd:  1 },        // arm forward, blade cocked OPEN (~100°)
     down:   { h: [19, 23],   w:  0.00, bd:  1 },        // follow-through, blade straight in line with the arm
