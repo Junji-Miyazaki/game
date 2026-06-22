@@ -396,7 +396,7 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restO
     // the camera (blade points down/at us), follow through to the far hip — not the side reach.
     wind:   front ? { h: [-15, -23], w: 0.00, bd: -1 } : { h: [-15, -24], w: 0.00, bd: -1 },
     strike: front ? { h: [1, 11],   w: 0.00, bd:  1 } : { h: [27, 9],    w: -1.45, bd:  1 },
-    down:   front ? { h: [14, 27],  w: 0.00, bd:  1 } : { h: [19, 23],   w:  0.00, bd:  1 },
+    down:   front ? { h: [25, 15],  w: 0.00, bd:  1 } : { h: [19, 23],   w:  0.00, bd:  1 },  // follow-through: arm EXTENDED to ~4 o'clock
     raise:  { h: [-2, -20],  w:  0.00, bd: -1 },        // skill flourish, blade straight up the arm
   };
   let A, B, f;
