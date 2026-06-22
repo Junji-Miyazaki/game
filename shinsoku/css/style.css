@@ -848,6 +848,20 @@ body.touch #stick { display: block; }
 .equip .gslot .gtxt span { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .equip .gslot .gtxt small { font-size: 9px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .armorleech { font-size: 10px; color: var(--dim); margin-top: 4px; text-align: right; }
+.enchant {
+  font-size: 10px; color: var(--dim); margin-top: 5px; text-align: center;
+  padding: 3px 4px; border-radius: 3px; border: 1px solid var(--gold3); letter-spacing: .5px;
+}
+.enchant.t1 {
+  color: #cfe4ff; font-weight: 700; border-color: #5fa5ff;
+  background: rgba(95,165,255,0.12); text-shadow: 0 0 8px rgba(95,165,255,0.7);
+}
+.enchant.t2 {
+  color: #ffd0cc; font-weight: 800; border-color: #ff5046;
+  background: rgba(255,80,70,0.14); text-shadow: 0 0 8px rgba(255,80,70,0.8);
+  animation: enchantPulse .9s infinite alternate;
+}
+@keyframes enchantPulse { from { box-shadow: 0 0 2px rgba(255,80,70,.4); } to { box-shadow: 0 0 12px rgba(255,80,70,.7); } }
 .armorleech b { color: #ff8a7a; font-size: 12px; }
 
 .invhead { font-size: 10px; letter-spacing: 2px; color: var(--gold); font-weight: 700;
