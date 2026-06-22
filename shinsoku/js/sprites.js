@@ -266,7 +266,8 @@ function fighterBack(ctx, D) {
   ctx.fillStyle = '#6f7a8c'; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
   ctx.strokeStyle = P.ARM_D; ctx.lineWidth = 2 * s; ctx.stroke();
   ctx.restore();
-  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god, cast);
+  // back view: dedicated frontal-plane kesa keyframes (rest RIGHT, take-back up-RIGHT, cut down-LEFT)
+  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god, cast, true);
 }
 
 function fighterSide(ctx, D) {
@@ -356,7 +357,7 @@ function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
 // Sword arm with raise→strike→recover. Joints given as forehand keyframes (dx,dy
 // from shoulder); x is multiplied by `face` so the blade leads toward facing while
 // the shoulder stays on screen-right (= the right hand, always).
-function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
+function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, back) {
   // Articulated arm: explicit ELBOW + HAND keyframes (elbow always bends the natural,
   // anatomical way — point trailing down/back, never hyperextended up). The blade is a
   // RIGID segment: its direction is the forearm angle plus a controlled wrist offset (w),
@@ -374,7 +375,18 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   // bd = elbow bend SIDE (+1 forward reaches / -1 the raised wind-up). It interpolates, so the
   // arm straightens at the apex of the swing and re-bends the other way (what a real elbow does)
   // instead of the joint hyperextending/reversing when the hand crosses overhead.
-  const KF = {
+  // The back view sees a frontal-plane kesa-giri: sword rests on the RIGHT, the take-back
+  // raises it up over the RIGHT shoulder, then it cuts diagonally down to the LEFT. That's a
+  // different topology from the side swing (rest & take-back end up on the same side), so it
+  // needs its own keyframes rather than a mirror.
+  const KF = back ? {
+    //        hand           wrist   elbow side
+    idle:   { h: [9, 25],   w:  0.00, bd:  1 },        // rest: sword lowered on the RIGHT
+    wind:   { h: [12, -23], w:  0.00, bd:  1 },        // take-back: up over the RIGHT shoulder
+    strike: { h: [-1, -13], w: -1.30, bd:  1 },        // cut sweeps across the top, blade open
+    down:   { h: [-18, 17], w:  0.00, bd:  1 },        // follow-through: down to the LEFT (kesa)
+    raise:  { h: [0, -23],  w:  0.00, bd:  1 },        // flourish: straight up
+  } : {
     //        hand           wrist (rad, rel. forearm; -=cock up)   elbow side
     idle:   { h: [6, 28],    w:  0.00, bd:  1 },        // lowered, blade straight in line with the arm
     wind:   { h: [-15, -24], w:  0.00, bd: -1 },        // raised back, blade straight in line with the arm
