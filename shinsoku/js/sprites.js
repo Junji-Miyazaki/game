@@ -84,7 +84,7 @@ export function drawFighter(ctx, o) {
   if (atk >= 0) {
     const eOut = x => 1 - (1 - x) * (1 - x), eIn = x => x * x;
     let deg;
-    if (atk < 0.25)      deg = -13 * eOut(atk / 0.25);                  // take-back: arch back
+    if (atk < 0.25)      deg = -13 * eOut(Math.min(1, atk / 0.10));     // take-back: SNAP back fast, then HOLD (tame)
     else if (atk < 0.5)  deg = -13 + 25 * eIn((atk - 0.25) / 0.25);     // impact: snap forward
     else if (atk < 0.7)  deg = 12 + 12 * eOut((atk - 0.5) / 0.2);       // follow-through: deep lean
     else                 deg = 24 * (1 - eOut((atk - 0.7) / 0.3));      // residual: settle to neutral
@@ -389,7 +389,7 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
     else                 { A = KF.raise; B = KF.idle;  f = (cast - .7) / .3; }
   }
   else if (atk < 0)   { A = KF.idle;  B = KF.idle;  f = 0; }
-  else if (atk < .25) { A = KF.idle;  B = KF.wind;  f = atk / .25; }
+  else if (atk < .25) { A = KF.idle;  B = KF.wind;  const x = Math.min(1, atk / .10); f = 1 - (1 - x) * (1 - x); }  // SNAP back, then hold
   else if (atk < .50) { A = KF.wind;  B = KF.strike; f = (atk - .25) / .25; }
   else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
   else                { A = KF.down;  B = KF.idle;  f = (atk - .70) / .30; }
