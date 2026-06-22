@@ -148,12 +148,8 @@ function fighterFront(ctx, D) {
   ctx.quadraticCurveTo(-face * 17 * s, -50 * s + sway, -face * 13 * s, -27 * s + sway);
   ctx.quadraticCurveTo(-face * 11 * s, -40 * s, -face * 3 * s, -50 * s);
   ctx.closePath(); ctx.fill();
-  // shield arm (LEFT hand = +x). On wind-up the shield punches FORWARD to guard;
-  // on the down-swing it pulls BACK as the body rotates into the cut.
+  // shield arm (LEFT hand = +x) is articulated (drawShieldArm) and drawn IN FRONT, after the head
   const shB = moving ? Math.sin(t * gaitF + Math.PI) * 1.5 * s : 0;
-  const shDX = (aWind * 9 - aStrike * 8) * face * s;
-  const shDY = (-aWind * 6 + aStrike * 4) * s;
-  segL(ctx, 5.5 * s, -46 * s, 11 * s + shDX, -33 * s + shB + shDY, 4.5 * s, P.SKIN);
   // torso (slim hourglass)
   ctx.beginPath();
   ctx.moveTo(-6.5 * s, -47 * s);
@@ -207,14 +203,8 @@ function fighterFront(ctx, D) {
   ctx.beginPath(); ctx.arc(face * 4 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
   ctx.strokeStyle = '#a85a4a'; ctx.lineWidth = 0.8 * s;
   ctx.beginPath(); ctx.moveTo(face * 2.4 * s, -52.8 * s); ctx.lineTo(face * 3.8 * s, -52.8 * s); ctx.stroke();
-  // shield (LEFT hand, front, +x) — moves with the shield arm
-  ctx.save(); ctx.translate(12 * s + shDX, -30 * s + shB + shDY);
-  const sg = ctx.createRadialGradient(-2 * s, -2 * s, 1, 0, 0, 11 * s);
-  sg.addColorStop(0, '#cfd7e3'); sg.addColorStop(1, '#7d889d');
-  ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
-  ctx.strokeStyle = P.GOLD; ctx.lineWidth = 2 * s; ctx.stroke();
-  ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.6 * s, 0, 7); ctx.fill();
-  ctx.restore();
+  // shield arm (LEFT hand = +x) — articulated guard that punches/retracts with the swing
+  drawShieldArm(ctx, 5.5 * s, -46 * s, atk, t, face, s, shB);
   // sword arm (RIGHT hand = -x)
   drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god, cast, true, true);  // rest outward + FRONT swing
   ctx.restore();   // end spine tilt
@@ -489,6 +479,42 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restO
     }
   }
   ctx.lineCap = 'butt';
+}
+
+// Articulated SHIELD arm (left hand) — moves in concert with the sword swing: holds a guard,
+// PUNCHES forward on the wind-up, RETRACTS as the body rotates into the cut, then returns.
+// Same phase timing as the sword so the two arms read as one coordinated motion.
+function drawShieldArm(ctx, sx, sy, atk, t, face, s, shB) {
+  const P = PAL, Lu = 12, Lf = 12;
+  const KF = {
+    idle:   [5, 17],     // guard: shield up in front at the chest
+    wind:   [9, 11],     // wind-up: punch the shield FORWARD / up to guard
+    strike: [-1, 17],    // strike: pull the shield BACK toward the body as the trunk rotates in
+    down:   [0, 19],     // follow-through: shield stays tucked
+  };
+  let A, B, f;
+  if (atk < 0)        { A = KF.idle; B = KF.idle; f = 0; }
+  else if (atk < .25) { A = KF.idle; B = KF.wind; const x = Math.min(1, atk / .10); f = 1 - (1 - x) * (1 - x); }  // snap forward, hold
+  else if (atk < .50) { A = KF.wind; B = KF.strike; const p = (atk - .25) / .25; f = p * p; }                    // retract with the cut
+  else if (atk < .70) { A = KF.strike; B = KF.down; const p = (atk - .50) / .20; f = p * p; }
+  else                { A = KF.down; B = KF.idle; const p = (atk - .70) / .30; f = p * p; }
+  const hX = A[0] + (B[0] - A[0]) * f, hY = A[1] + (B[1] - A[1]) * f + shB / s;
+  let d = Math.hypot(hX, hY); d = Math.max(0.01, Math.min(Lu + Lf - 0.01, d));
+  const ca = (Lu * Lu - Lf * Lf + d * d) / (2 * d), alpha = Math.acos(Math.max(-1, Math.min(1, ca / Lu)));
+  const beta = Math.atan2(hY, hX) + alpha;             // elbow bends down/out (natural guard arm)
+  const ex = sx + Lu * Math.cos(beta) * face * s, ey = sy + Lu * Math.sin(beta) * s;
+  const hx = sx + hX * face * s, hy = sy + hY * s;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#e6bd97'; ctx.lineWidth = 5 * s; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.strokeStyle = P.SKIN; ctx.lineWidth = 4 * s; ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke();
+  // shield disc (front face) carried on the hand/forearm
+  ctx.save(); ctx.translate(hx, hy);
+  const sg = ctx.createRadialGradient(-2 * s, -2 * s, 1, 0, 0, 11 * s);
+  sg.addColorStop(0, '#cfd7e3'); sg.addColorStop(1, '#7d889d');
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
+  ctx.strokeStyle = P.GOLD; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.6 * s, 0, 7); ctx.fill();
+  ctx.restore(); ctx.lineCap = 'butt';
 }
 
 // ---------- MONSTERS ----------
