@@ -261,11 +261,15 @@ function fighterBack(ctx, D) {
   ctx.closePath(); ctx.fill();
   ctx.strokeStyle = P.HAIR_HL; ctx.lineWidth = 0.9 * s; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(-0.5 * s, -52 * s); ctx.quadraticCurveTo(0.5 * s + psw, -38 * s, 0 + psw, -26 * s); ctx.stroke();
-  // shield back (-x)
-  ctx.save(); ctx.translate(-12 * s, -30 * s + shB);
-  ctx.fillStyle = '#6f7a8c'; ctx.beginPath(); ctx.arc(0, 0, 9 * s, 0, 7); ctx.fill();
-  ctx.strokeStyle = P.ARM_D; ctx.lineWidth = 2 * s; ctx.stroke();
+  // shield held EDGE-ON (sideways) at the left hand, with the gripping hand visible
+  const bhx = -11 * s, bhy = -33 * s + shB;
+  ctx.save(); ctx.translate(bhx - 1.5 * s, bhy);
+  const bsg = ctx.createLinearGradient(-3 * s, 0, 3 * s, 0);
+  bsg.addColorStop(0, '#6f7a8c'); bsg.addColorStop(.5, '#aeb8c6'); bsg.addColorStop(1, '#6f7a8c');
+  ctx.fillStyle = bsg; ctx.beginPath(); ctx.ellipse(0, 0, 3 * s, 10 * s, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.4 * s; ctx.stroke();
   ctx.restore();
+  ctx.fillStyle = '#3a2f1f'; ctx.beginPath(); ctx.arc(bhx, bhy, 2.4 * s, 0, 7); ctx.fill();   // gripping hand
   // back view: mirror of the front swing (face=-1) so front & back hands read as opposites —
   // take-back winds up to the RIGHT (2 o'clock), the kesa cut comes down to the LEFT.
   drawSwordArm(ctx, 5 * s, -46 * s, atk, t, -1, s, P.SKIN, P.GOLD, god, cast, true);  // rest hangs outward (mirror of front)
@@ -299,6 +303,20 @@ function fighterSide(ctx, D) {
   ctx.quadraticCurveTo(-18 * s, -50 * s + sway, -15 * s, -31 * s + sway);
   ctx.quadraticCurveTo(-10 * s, -44 * s, -3 * s, -52 * s);
   ctx.closePath(); ctx.fill();
+  // shield (LEFT hand). Punches forward on the wind-up, pulls back on the strike. Depth depends
+  // on facing: when facing RIGHT it is the FAR arm (drawn behind the torso); facing LEFT it is
+  // the NEAR arm (drawn in front). The sword arm is always drawn last (nearest).
+  const shDX = (aWind * 9 - aStrike * 9) * s, shDY = (-aWind * 2 + aStrike * 1) * s;
+  const drawShield = (far) => {
+    ctx.save(); ctx.translate(2.5 * s + shDX, -29 * s + shB + shDY);
+    ctx.globalAlpha = far ? 0.82 : 1;                       // far shield reads slightly recessed
+    ctx.fillStyle = far ? '#7f8a9c' : '#9aa6ba';
+    ctx.beginPath(); ctx.ellipse(0, 0, 5 * s, 9 * s, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.6 * s; ctx.stroke();
+    ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2 * s, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1; ctx.restore();
+  };
+  if (face >= 0) drawShield(true);   // facing right → shield is the FAR arm, behind the torso
   // torso profile — fuller body so it reads as a person, not a chevron
   ctx.beginPath();
   ctx.moveTo(-5 * s, -47 * s);
@@ -325,15 +343,8 @@ function fighterSide(ctx, D) {
   ctx.fillStyle = '#3a2a22'; ctx.beginPath(); ctx.arc(3.6 * s, -56 * s, 1 * s, 0, 7); ctx.fill();
   ctx.strokeStyle = '#4a3326'; ctx.lineWidth = 0.9 * s;
   ctx.beginPath(); ctx.moveTo(2.6 * s, -58 * s); ctx.lineTo(4.8 * s, -57.6 * s); ctx.stroke();
-  // shield on near arm (front) — punches FORWARD to guard on the wind-up, pulls BACK on the strike
-  const shDX = (aWind * 9 - aStrike * 9) * s;
-  const shDY = (-aWind * 2 + aStrike * 1) * s;
-  ctx.save(); ctx.translate(2.5 * s + shDX, -29 * s + shB + shDY);
-  ctx.fillStyle = '#9aa6ba'; ctx.beginPath(); ctx.ellipse(0, 0, 5 * s, 9 * s, 0, 0, 7); ctx.fill();
-  ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.6 * s; ctx.stroke();
-  ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2 * s, 0, 7); ctx.fill();
-  ctx.restore();
-  // sword arm forward
+  if (face < 0) drawShield(false);   // facing left → shield is the NEAR arm, in front of the torso
+  // sword arm forward (always nearest)
   drawSwordArm(ctx, 3 * s, -46 * s, atk, t, 1, s, P.SKIN, P.GOLD, god, cast);
   ctx.restore();   // end spine tilt
   ctx.restore();
