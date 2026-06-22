@@ -225,6 +225,11 @@ function fighterBack(ctx, D) {
   // shield arm LEFT (-x from behind), sword arm RIGHT (+x)
   const shB = moving ? Math.sin(t * 9 + Math.PI) * 1.5 * s : 0;
   segL(ctx, -5.5 * s, -46 * s, -11 * s, -33 * s + shB, 4.5 * s, P.SKIN);
+  // sword arm is BEHIND the torso here: from this back view the blade lives in the character's
+  // FRONT (away from us), so a forward cut is occluded by the body and only the over-shoulder
+  // take-back / wide arcs poke past the silhouette. (mirror of the front swing → take-back to
+  // the RIGHT, kesa cut down to the LEFT)
+  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, -1, s, P.SKIN, P.GOLD, god, cast, true);
   // torso back
   ctx.beginPath();
   ctx.moveTo(-6.5 * s, -47 * s);
@@ -270,9 +275,6 @@ function fighterBack(ctx, D) {
   ctx.strokeStyle = P.GOLD; ctx.lineWidth = 1.4 * s; ctx.stroke();
   ctx.restore();
   ctx.fillStyle = '#3a2f1f'; ctx.beginPath(); ctx.arc(bhx, bhy, 2.4 * s, 0, 7); ctx.fill();   // gripping hand
-  // back view: mirror of the front swing (face=-1) so front & back hands read as opposites —
-  // take-back winds up to the RIGHT (2 o'clock), the kesa cut comes down to the LEFT.
-  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, -1, s, P.SKIN, P.GOLD, god, cast, true);  // rest hangs outward (mirror of front)
 }
 
 function fighterSide(ctx, D) {
