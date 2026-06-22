@@ -132,8 +132,15 @@ function fighterFront(ctx, D) {
   ctx.moveTo(-7 * s, -32 * s); ctx.lineTo(7 * s, -32 * s); ctx.lineTo(10 * s, -19 * s);
   ctx.lineTo(face * 2 * s, -17 * s); ctx.lineTo(-10 * s, -19 * s); ctx.closePath(); ctx.fill();
   ctx.fillStyle = P.SKIRT_D; ctx.fillRect(-10 * s, -20.5 * s, 20 * s, 2.4 * s);
-  // ---- everything above the waist tilts with the spine (trunk leads the swing) ----
-  ctx.save(); ctx.translate(0, -31 * s); ctx.rotate(spine * face); ctx.translate(0, 31 * s);
+  // ---- FRONT view: the trunk leans toward/away the CAMERA (depth), faked with a vertical
+  // drop + slight scale rather than a sideways tilt. Forward (spine>0) hunches down/bigger
+  // into the cut; the take-back (spine<0) lifts the chest up/smaller. A little face-side tilt
+  // keeps it from feeling flat. ----
+  ctx.save();
+  ctx.translate(0, -31 * s);
+  ctx.rotate(spine * face * 0.35);                    // subtle lateral tilt for life
+  ctx.scale(1 + spine * 0.14, 1 + spine * 0.08);      // forward lean bulges toward camera
+  ctx.translate(0, 31 * s + spine * 11 * s);          // ...and drops the upper body down
   // ponytail behind (long, flows opposite facing)
   ctx.fillStyle = P.HAIR;
   ctx.beginPath();
@@ -209,7 +216,7 @@ function fighterFront(ctx, D) {
   ctx.fillStyle = P.GOLD; ctx.beginPath(); ctx.arc(0, 0, 2.6 * s, 0, 7); ctx.fill();
   ctx.restore();
   // sword arm (RIGHT hand = -x)
-  drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god, cast, true);  // rest hangs outward
+  drawSwordArm(ctx, -5 * s, -46 * s, atk, t, face, s, P.SKIN, P.GOLD, god, cast, true, true);  // rest outward + FRONT swing
   ctx.restore();   // end spine tilt
 }
 
@@ -371,7 +378,7 @@ function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
 // Sword arm with raise→strike→recover. Joints given as forehand keyframes (dx,dy
 // from shoulder); x is multiplied by `face` so the blade leads toward facing while
 // the shoulder stays on screen-right (= the right hand, always).
-function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restOut) {
+function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restOut, front) {
   // Articulated arm: explicit ELBOW + HAND keyframes (elbow always bends the natural,
   // anatomical way — point trailing down/back, never hyperextended up). The blade is a
   // RIGID segment: its direction is the forearm angle plus a controlled wrist offset (w),
@@ -395,9 +402,11 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restO
   const KF = {
     //        hand                          wrist   elbow side
     idle:   restOut ? { h: [-13, 24], w: 0.00, bd: -1 } : { h: [6, 28], w: 0.00, bd: 1 },  // rest: arm to 7 o'clock (front) / 5 (back mirror)
-    wind:   { h: [-15, -24], w:  0.00, bd: -1 },        // raised back, blade straight in line with the arm
-    strike: { h: [27, 9],    w: -1.45, bd:  1 },        // arm forward, blade cocked OPEN (~100°)
-    down:   { h: [19, 23],   w:  0.00, bd:  1 },        // follow-through, blade straight in line with the arm
+    // FRONT view gets its own swing: raise over the shoulder, then chop down the CENTRE toward
+    // the camera (blade points down/at us), follow through to the far hip — not the side reach.
+    wind:   front ? { h: [-15, -23], w: 0.00, bd: -1 } : { h: [-15, -24], w: 0.00, bd: -1 },
+    strike: front ? { h: [1, 11],   w: 0.00, bd:  1 } : { h: [27, 9],    w: -1.45, bd:  1 },
+    down:   front ? { h: [14, 27],  w: 0.00, bd:  1 } : { h: [19, 23],   w:  0.00, bd:  1 },
     raise:  { h: [-2, -20],  w:  0.00, bd: -1 },        // skill flourish, blade straight up the arm
   };
   let A, B, f;
