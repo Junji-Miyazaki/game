@@ -57,39 +57,25 @@ export function drawFighter(ctx, o) {
   // ---- squash & stretch (volume-preserving) + strike lunge ----
   let sy = 1 + Math.sin(t * 2.2) * 0.012;                   // breathe
   if (moving) sy -= footfall * (0.04 + run * 0.05);         // dip on each footfall
-  let lunge = 0;
+  // ---- CONTINUOUS swing decomposition (chaining; no neutral return between rapid swings) ----
+  // Three weights over the cycle: wind(cocked) → strike → down(follow) → RE-COCK to wind. The
+  // weights are continuous at the wrap (wWind=1 at both atk 0 and 1) so consecutive swings flow
+  // straight into each other instead of dropping back to the rest pose every time.
+  let wWind = 0, wStrike = 0, wDown = 0;
   if (atk >= 0) {
-    if (atk < 0.25) sy -= (atk / 0.25) * 0.09;              // wind-up crouch (anticipation)
-    else if (atk < 0.5) { const k = (atk - 0.25) / 0.25; sy += k * 0.13; lunge = k; }  // strike: stretch + lunge
-    else if (atk < 0.7) lunge = 1 - (atk - 0.5) / 0.2;      // hold then recover
+    if (atk < 0.35)      { const p = atk / 0.35;          wWind = 1 - p; wStrike = p; }   // cock → strike
+    else if (atk < 0.60) { const q = (atk - 0.35) / 0.25; wStrike = 1 - q; wDown = q; }   // the cut
+    else                 { const r = (atk - 0.60) / 0.40; wDown = 1 - r; wWind = r; }     // re-cock to wind
   }
-  if (cast >= 0) sy += Math.sin(cast * Math.PI) * 0.16;     // cast: rise up on toes
-  sy -= hurt * 0.06;                                        // flinch compresses on impact
-  const sx = 1 - (sy - 1) * 0.6;                            // widen when squashed, narrow when stretched
-  // decompose the swing for whole-body coordination (shield counter-motion, leg brace)
-  let aWind = 0, aStrike = 0;
-  if (atk >= 0) {
-    if (atk < 0.3) aWind = atk / 0.3;                       // cock back
-    else if (atk < 0.5) { aWind = 1 - (atk - 0.3) / 0.2; aStrike = (atk - 0.3) / 0.2; }
-    else if (atk < 0.7) aStrike = 1;                        // follow-through
-    else aStrike = 1 - (atk - 0.7) / 0.3;                   // recover
-  }
-
-  // ---- SPINE / TRUNK tilt — the parent bone that drives the whole swing (baseball-pitch
-  // trunk rotation). The upper body arches BACK on the take-back, then snaps FORWARD through
-  // impact and the follow-through, so the torso leads and the sword arm trails — instead of
-  // the shoulder just spinning a circle in place. Take-back eases out (jiwatto), the down-cut
-  // eases in (snap). +deg = lean forward (toward the facing direction).
-  let spine = 0;
-  if (atk >= 0) {
-    const eOut = x => 1 - (1 - x) * (1 - x), eIn = x => x * x;
-    let deg;
-    if (atk < 0.25)      deg = -13 * eOut(Math.min(1, atk / 0.10));     // take-back: SNAP back fast, then HOLD (tame)
-    else if (atk < 0.5)  deg = -13 + 25 * eIn((atk - 0.25) / 0.25);     // impact: snap forward
-    else if (atk < 0.7)  deg = 12 + 12 * eOut((atk - 0.5) / 0.2);       // follow-through: deep lean
-    else                 deg = 24 * (1 - eIn((atk - 0.7) / 0.3));       // 残心: hold the lean, then return to neutral
-    spine = deg * Math.PI / 180;
-  }
+  const lunge = wStrike;
+  sy += -0.09 * wWind + 0.13 * wStrike;                    // crouch when cocked, stretch on the strike
+  if (cast >= 0) sy += Math.sin(cast * Math.PI) * 0.16;    // cast: rise up on toes
+  sy -= hurt * 0.06;                                       // flinch compresses on impact
+  const sx = 1 - (sy - 1) * 0.6;                           // widen when squashed, narrow when stretched
+  const aWind = wWind, aStrike = wDown;                    // shield counter-motion / leg brace
+  // SPINE / TRUNK: arch BACK when cocked, snap FORWARD through the strike, deepest at the
+  // follow-through — the trunk drives the whole swing (baseball-pitch rotation).
+  const spine = (-13 * wWind + 12 * wStrike + 24 * wDown) * Math.PI / 180;
 
   ctx.save();
   ctx.translate(o.x + face * lunge * 7 * s - face * hurt * 7 * s, o.y - bob);   // recoil back
@@ -403,11 +389,10 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restO
     else if (cast < .7)  { A = KF.raise; B = KF.raise; f = 0; }
     else                 { A = KF.raise; B = KF.idle;  f = (cast - .7) / .3; }
   }
-  else if (atk < 0)   { A = KF.idle;  B = KF.idle;  f = 0; }
-  else if (atk < .25) { A = KF.idle;  B = KF.wind;  const x = Math.min(1, atk / .10); f = 1 - (1 - x) * (1 - x); }  // SNAP back, then hold
-  else if (atk < .50) { A = KF.wind;  B = KF.strike; const p = (atk - .25) / .25; f = p * p; }   // accelerate into the cut
-  else if (atk < .70) { A = KF.strike; B = KF.down;  const p = (atk - .50) / .20; f = p * p; }   // whip down — fastest here
-  else                { A = KF.down;  B = KF.idle;   const p = (atk - .70) / .30; f = p * p; }   // 残心: hold at the bottom, then return
+  else if (atk < 0)   { A = KF.idle;  B = KF.idle;   f = 0; }                                       // rest (not attacking)
+  else if (atk < .35) { A = KF.wind;  B = KF.strike; const p = atk / .35; f = p * p; }              // cock → cut (accelerate)
+  else if (atk < .60) { A = KF.strike; B = KF.down;  const p = (atk - .35) / .25; f = p * p; }      // whip down — the cut
+  else                { A = KF.down;  B = KF.wind;   f = (atk - .60) / .40; }                       // RE-COCK (down→wind), no neutral
   // Interpolate the hand in POLAR around the shoulder so the arm swings on an ARC at roughly
   // constant reach. (A linear position-lerp cuts a chord through the shoulder and crumples the
   // arm mid-swing, which made the wind-up blade look reversed/180°-off.)
@@ -491,11 +476,10 @@ function drawShieldArm(ctx, sx, sy, atk, t, face, s, shB) {
     down:   [0, 19],     // follow-through: shield stays tucked
   };
   let A, B, f;
-  if (atk < 0)        { A = KF.idle; B = KF.idle; f = 0; }
-  else if (atk < .25) { A = KF.idle; B = KF.wind; const x = Math.min(1, atk / .10); f = 1 - (1 - x) * (1 - x); }  // snap forward, hold
-  else if (atk < .50) { A = KF.wind; B = KF.strike; const p = (atk - .25) / .25; f = p * p; }                    // retract with the cut
-  else if (atk < .70) { A = KF.strike; B = KF.down; const p = (atk - .50) / .20; f = p * p; }
-  else                { A = KF.down; B = KF.idle; const p = (atk - .70) / .30; f = p * p; }
+  if (atk < 0)        { A = KF.idle; B = KF.idle; f = 0; }                                  // rest (not attacking)
+  else if (atk < .35) { A = KF.wind; B = KF.strike; const p = atk / .35; f = p * p; }       // guard → retract with the cut
+  else if (atk < .60) { A = KF.strike; B = KF.down; const p = (atk - .35) / .25; f = p * p; }
+  else                { A = KF.down; B = KF.wind; f = (atk - .60) / .40; }                  // re-punch the guard forward (no neutral)
   const hX = A[0] + (B[0] - A[0]) * f, hY = A[1] + (B[1] - A[1]) * f + shB / s;
   let d = Math.hypot(hX, hY); d = Math.max(0.01, Math.min(Lu + Lf - 0.01, d));
   const ca = (Lu * Lu - Lf * Lf + d * d) / (2 * d), alpha = Math.acos(Math.max(-1, Math.min(1, ca / Lu)));

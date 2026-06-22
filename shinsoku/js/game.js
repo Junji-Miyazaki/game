@@ -347,6 +347,7 @@ export class Game {
       }
     }
     if (!attacking) p.atkTimer = Math.min(p.atkTimer, 0.999);
+    if (attacking && !this.attacking) this.visualSwing = 0;   // start a fresh swing at the cocked pose
     this.attacking = attacking;
     if (attacking) this.visualSwing += dt * Math.min(this.effectiveAPS(), 6);
 
