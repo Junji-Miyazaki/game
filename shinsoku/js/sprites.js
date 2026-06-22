@@ -87,7 +87,7 @@ export function drawFighter(ctx, o) {
     if (atk < 0.25)      deg = -13 * eOut(Math.min(1, atk / 0.10));     // take-back: SNAP back fast, then HOLD (tame)
     else if (atk < 0.5)  deg = -13 + 25 * eIn((atk - 0.25) / 0.25);     // impact: snap forward
     else if (atk < 0.7)  deg = 12 + 12 * eOut((atk - 0.5) / 0.2);       // follow-through: deep lean
-    else                 deg = 24 * (1 - eOut((atk - 0.7) / 0.3));      // residual: settle to neutral
+    else                 deg = 24 * (1 - eIn((atk - 0.7) / 0.3));       // 残心: hold the lean, then return to neutral
     spine = deg * Math.PI / 180;
   }
 
@@ -390,9 +390,9 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast) {
   }
   else if (atk < 0)   { A = KF.idle;  B = KF.idle;  f = 0; }
   else if (atk < .25) { A = KF.idle;  B = KF.wind;  const x = Math.min(1, atk / .10); f = 1 - (1 - x) * (1 - x); }  // SNAP back, then hold
-  else if (atk < .50) { A = KF.wind;  B = KF.strike; f = (atk - .25) / .25; }
-  else if (atk < .70) { A = KF.strike; B = KF.down; f = (atk - .50) / .20; }
-  else                { A = KF.down;  B = KF.idle;  f = (atk - .70) / .30; }
+  else if (atk < .50) { A = KF.wind;  B = KF.strike; const p = (atk - .25) / .25; f = p * p; }   // accelerate into the cut
+  else if (atk < .70) { A = KF.strike; B = KF.down;  const p = (atk - .50) / .20; f = p * p; }   // whip down — fastest here
+  else                { A = KF.down;  B = KF.idle;   const p = (atk - .70) / .30; f = p * p; }   // 残心: hold at the bottom, then return
   // Interpolate the hand in POLAR around the shoulder so the arm swings on an ARC at roughly
   // constant reach. (A linear position-lerp cuts a chord through the shoulder and crumples the
   // arm mid-swing, which made the wind-up blade look reversed/180°-off.)
