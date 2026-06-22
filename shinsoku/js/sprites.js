@@ -254,8 +254,8 @@ function fighterBack(ctx, D) {
   ctx.restore();
   ctx.fillStyle = '#3a2f1f'; ctx.beginPath(); ctx.arc(bhx, bhy, 2.4 * s, 0, 7); ctx.fill();   // gripping hand
   // sword arm drawn IN FRONT (visible) so the down-cut reads, not hidden behind the body —
-  // mirror of the front swing: take-back up to the RIGHT, kesa cut down to the LEFT
-  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, -1, s, P.SKIN, P.GOLD, god, cast, true);
+  // mirror of the front swing: take-back up to the RIGHT, kesa cut down to the LEFT (capped at ~8 o'clock)
+  drawSwordArm(ctx, 5 * s, -46 * s, atk, t, -1, s, P.SKIN, P.GOLD, god, cast, true, false, true);
 }
 
 function fighterSide(ctx, D) {
@@ -352,7 +352,7 @@ function drawLeg(ctx, hipX, hipY, phase, s, col, boot, face) {
 // Sword arm with raise→strike→recover. Joints given as forehand keyframes (dx,dy
 // from shoulder); x is multiplied by `face` so the blade leads toward facing while
 // the shoulder stays on screen-right (= the right hand, always).
-function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restOut, front) {
+function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restOut, front, back) {
   // Articulated arm: explicit ELBOW + HAND keyframes (elbow always bends the natural,
   // anatomical way — point trailing down/back, never hyperextended up). The blade is a
   // RIGID segment: its direction is the forearm angle plus a controlled wrist offset (w),
@@ -380,7 +380,9 @@ function drawSwordArm(ctx, sx, sy, atk, t, face, s, skin, gold, god, cast, restO
     // the camera (blade points down/at us), follow through to the far hip — not the side reach.
     wind:   front ? { h: [-15, -23], w: 0.00, bd: -1 } : { h: [-15, -24], w: 0.00, bd: -1 },
     strike: front ? { h: [1, 11],   w: 0.00, bd:  1 } : { h: [27, 9],    w: -1.45, bd:  1 },
-    down:   front ? { h: [25, 15],  w: 0.00, bd:  1 } : { h: [19, 23],   w:  0.00, bd:  1 },  // follow-through: arm EXTENDED to ~4 o'clock
+    // back view: cap the kesa so the blade tip ENDS at ~8 o'clock (down-left), not swinging on
+    // toward 6 o'clock (straight down). Shallower/more-lateral down keyframe than the side.
+    down:   front ? { h: [25, 15],  w: 0.00, bd:  1 } : back ? { h: [23, 16], w: 0.00, bd: 1 } : { h: [19, 23], w: 0.00, bd: 1 },
     raise:  { h: [-2, -20],  w:  0.00, bd: -1 },        // skill flourish, blade straight up the arm
   };
   let A, B, f;
