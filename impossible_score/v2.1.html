@@ -180,6 +180,10 @@ function assignMotion(ev){
   ev.mW = 0.5 + (q % 9) * 0.22 + ev.depth * 0.15;
   ev.mPh = ((ev.on || 0) / q) * Math.PI * 2;
   ev.mW2 = ev.mW * 1.4142;
+  // 斜めの進行成分（これも数理的同一性から）: 向き=偶奇、大きさ=pc mod 5。
+  // 純粋な左向きだと軌道が平行で永遠に出会わない — 斜めが衝突（偶然）を生む
+  const dir = (((ev.pc || 0) + q) % 2) ? 1 : -1;
+  ev.vyDrift = speedOf(ev.z) * (0.3 + ((ev.pc || 0) % 5) * 0.12) * dir;
 }
 // 意思の速度場（固有軌道の微分）: 衝突がなければこの揺れに沿って浮遊する
 function vyWill(ev, tau){
@@ -204,14 +208,15 @@ function updatePhysics(dt, now){
     if (now < ev.t) continue;
     if (ev.px === undefined){
       ev.px = spawnX(); ev.py = stepY(ev.steps);
-      ev.vx = -speedOf(ev.z); ev.vy = 0;
+      ev.vx = -speedOf(ev.z); ev.vy = ev.vyDrift;   // 初速から斜め
     }
     const tau = now - ev.t;
     ev.vx += (-speedOf(ev.z) - ev.vx) * Math.min(dt / 5, 1);          // 運命への緩和
-    ev.vy += (vyWill(ev, tau) * 0.5 - ev.vy) * Math.min(dt / 2.5, 1); // 意思への緩和
+    // 意思への緩和: 持続的な斜め成分 + 固有軌道の揺れ（平行に戻らない）
+    ev.vy += ((ev.vyDrift * 0.6 + vyWill(ev, tau) * 0.5) - ev.vy) * Math.min(dt / 4, 1);
     ev.px += ev.vx * dt; ev.py += ev.vy * dt;
-    if (ev.py < H * 0.03){ ev.py = H * 0.03; ev.vy = Math.abs(ev.vy); }
-    if (ev.py > H * 0.97){ ev.py = H * 0.97; ev.vy = -Math.abs(ev.vy); }
+    if (ev.py < H * 0.03){ ev.py = H * 0.03; ev.vy = Math.abs(ev.vy); ev.vyDrift = Math.abs(ev.vyDrift); }
+    if (ev.py > H * 0.97){ ev.py = H * 0.97; ev.vy = -Math.abs(ev.vy); ev.vyDrift = -Math.abs(ev.vyDrift); }
     if (ev.px > W * 0.995){ ev.px = W * 0.995; ev.vx = -Math.abs(ev.vx); }
     alive.push(ev);
   }
