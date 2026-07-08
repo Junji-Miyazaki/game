@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SCORE FOR THE IMPOSSIBLE II.1 — 相対速度の観測</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#050505; touch-action:none;
+              font-family:"Hiragino Mincho ProN","Yu Mincho",serif; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #cam { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
+  #btns { position:fixed; top:10px; right:10px; display:flex; gap:8px; z-index:20; }
+  .btn { color:#666; border:1px solid #333; padding:6px 12px; font-size:11px;
+         letter-spacing:.1em; cursor:pointer; user-select:none; -webkit-user-select:none;
+         background:rgba(5,5,5,.7); }
+  .btn.on { color:#ddd; border-color:#777; }
+  #overlay { position:fixed; inset:0; z-index:30; background:#050505;
+             display:flex; flex-direction:column; align-items:center; justify-content:center;
+             color:#ddd; text-align:center; padding:24px; }
+  #overlay h1 { font-size:clamp(16px,3.4vw,28px); letter-spacing:.4em; font-weight:normal; margin-bottom:8px; }
+  #overlay h2 { font-size:clamp(11px,2vw,15px); letter-spacing:.55em; color:#777; font-weight:normal; margin-bottom:40px; }
+  #overlay p  { font-size:clamp(11px,1.5vw,13px); line-height:2.2; color:#999; max-width:36em; margin-bottom:8px; }
+  #startBtn { margin-top:44px; border:1px solid #777; padding:14px 50px; letter-spacing:.5em;
+              font-size:13px; cursor:pointer; color:#ddd; }
+  #startBtn:active { background:#ddd; color:#050505; }
+  #permNote { margin-top:18px; font-size:10px; color:#555; letter-spacing:.15em; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<video id="cam" playsinline muted autoplay></video>
+<div id="btns" style="display:none">
+  <div class="btn on" id="bMath">数理</div>
+  <div class="btn on" id="bGrain">具体音</div>
+  <div class="btn" id="bFull">全画面</div>
+  <div class="btn on" id="bSound">音</div>
+</div>
+
+<div id="overlay">
+  <h1>SCORE FOR THE IMPOSSIBLE</h1>
+  <h2>II.1 相対速度の観測</h2>
+  <p>粒子は奥行きに応じた速さで、右から左へ流れ続ける。<br>手前は速く、遠くは遅い。</p>
+  <p>観測線はゆっくりと往復する。粒子と線が出会った瞬間 — 観測 —<br>音の運命が確定する。出会いの時刻は、それぞれの相対速度が決める。</p>
+  <div id="startBtn">観 測 を 開 始</div>
+  <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても内部シードで動作します）</div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   SCORE FOR THE IMPOSSIBLE — II.1 相対速度の観測  (v2.1)
+   v2の時間駆動をベースに:
+   - 粒子は右→左へ流れる。速度は奥行き z に比例（奥=遅い、手前=速い）
+   - 観測線は左→右→左…と等速で往復（粒子より遅い）
+   - 発音 = 粒子と線の出会い。タイミングは相対速度から生じる
+   - z はフレーズ単位 → 反復セルは繰り返しごとに違う深度・違う速さで流れ、
+     同じ素材の多重テンポ（彫刻的カノン）が生まれる
+   ================================================================ */
+
+// ---------- utils ----------
+const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const rng   = Math.random;
+const rngi  = n=>Math.floor(rng()*n);
+function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function shuffled(arr){ const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=rngi(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+// ---------- global state ----------
+let ctx=null, master=null, limiter=null, analyser=null;
+let micReady=false, camReady=false, running=false;
+let soundOn=true, grainOn=true;
+
+const st = {
+  complexity: 0.2, conc: 1.0, fatigue: 0,
+  micRms: 0, micCent: 0, motion: 0,
+  tempoMul: 1, microGrid: 2,
+  fermata: false, errRecent: 0,
+  gVal: 0.2, drain: 0, recover: 0, dCdt: 0,
+};
+
+// ---------- series engine ----------
+const DYN_GAIN  = [0.030,0.050,0.080,0.130,0.200,0.300,0.430,0.620];
+const RATIOS    = [[3,2],[5,4],[4,3],[7,6],[5,3],[7,4],[9,8],[11,8]];
+
+const serial = {
+  row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
+  infl: shuffled([-2,-1,-1,0,0,0,1,1,2]),
+  dyn: shuffled([0,1,2,3,4,5,6,7]),
+  atk: shuffled([0.002,0.004,0.008,0.015,0.03,0.06]),   // 音長セリー
+  rat: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
+  i:0, ri:0, form:0, t:0, last:null,
+  next(octPool){
+    const k = this.i++;
+    const idx = (this.form >= 2) ? 11 - (k % 12) : k % 12;
+    let pc = this.row[idx];
+    if (this.form === 1 || this.form === 3) pc = (12 - pc) % 12;
+    pc = (pc + this.t) % 12;
+    const infl = clamp(this.infl[k % this.infl.length], -st.microGrid, st.microGrid);
+    const oct = octPool[k % octPool.length];
+    const dyn = this.dyn[k % this.dyn.length];
+    this.last = { k: idx, pc, oct, infl, dyn, form: this.form, t: this.t,
+                  steps: (pc - 9) * 4 + oct * 48 + infl };
+    return { steps: this.last.steps, infl, dyn, atk: this.atk[k % this.atk.length],
+             pc, oct, k: idx, form: this.form, tt: this.t };
+  },
+  nextRatio(poolLen){ return this.rat[this.ri++ % this.rat.length] % poolLen; },
+  advancePhrase(){ this.form = rngi(4); this.t = rngi(12); },
+  reseed(){ this.row = shuffled(this.row); this.infl = shuffled(this.infl);
+            this.dyn = shuffled(this.dyn); this.rat = shuffled(this.rat); },
+};
+const stepFreq = s => 220 * Math.pow(2, s/48);
+const beatLen = () => 60 / (54 * st.tempoMul);
+
+// ---------- register streams ----------
+const STREAMS = [
+  { id:0, name:'L', octPool:[-2,-2,-1,-1],  act: cx => 0.72,             nextT:0, cell:null },
+  { id:1, name:'M', octPool:[-1,0,0,0,1],   act: cx => 0.95,             nextT:0, cell:null },
+  { id:2, name:'H', octPool:[1,1,2,2],      act: cx => 0.22 + cx * 0.7,  nextT:0, cell:null },
+];
+
+// ---------- 幾何: 奥行きと運動 ----------
+const PX_PER_SEC = 90;
+const VL = 22;                                       // 観測線の速度（最遅粒子=54px/sより遅い）
+const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);   // 奥=0.6x, 手前=1.4x
+const line = { x: -10, dir: 1, bornAt: 0 };
+let W = 0, H = 0, DPR = 1;
+const spawnX = () => W * 0.99;
+const xAt = (ev, now) => spawnX() - (now - ev.t) * speedOf(ev.z);
+const stepY = s => H * 0.5 - s * (H * 0.42 / 150);
+
+// ---------- rational tuplet tree ----------
+function buildNode(t0, dur, depth, cx, out, on, den, chain, beat){
+  const maxDepth = 1 + Math.round(cx * 3);
+  if (depth < maxDepth && out.events.length < 120 &&
+      (depth === 0 || rng() < 0.35 + cx * 0.5)){
+    const pool = depth >= 2 ? RATIOS.slice(0, 3) : RATIOS.slice(0, 3 + Math.round(cx * 5));
+    const [n] = pool[serial.nextRatio(pool.length)];
+    const sub = dur / n;
+    for (let i = 0; i < n; i++)
+      buildNode(t0 + i * sub, sub, depth + 1, cx * 0.92, out,
+                on * n + i, den * n, chain.concat(n), beat);
+  } else {
+    if (rng() >= 0.2) out.events.push({ t: t0, dur, depth, on, den, chain, beat });
+  }
+}
+
+// ---------- virtual performer（観測の瞬間に呼ばれる） ----------
+function perform(ev){
+  const depthN = clamp(ev.depth / 4, 0, 1);
+  const err = (1 - st.conc) * (0.35 + 0.65 * depthN);
+  ev.err = err;
+  ev.sigma   = err * 0.09;
+  ev.offset  = gauss() * ev.sigma;
+  ev.dropped = rng() < err * 0.42;
+  ev.slip    = (rng() < err * 0.5) ? (rngi(2)+1) * (rng()<.5?-1:1) : 0;
+  ev.gainMul = clamp(1 + gauss() * err * 0.6, 0.15, 1.8);
+  ev.dx = gauss() * 1.5; ev.dy = gauss() * 1.5;
+}
+
+// ---------- score data ----------
+let renderEvents = [], cellMarks = [], floatEqs = [], flashes = [], pulseMarks = [];
+let lastPitchSteps = 0, pulseGenT = 0;
+let mathEv = null, mathOn = true;
+
+// ---------- 粒子の意思（浮遊運動）: 各粒子の運動法則をセリー的同一性から導出 ----------
+//   法則   = (pc + q) mod 4       … 音高類と有理分母が決める
+//   角振動数ω = 有理分母 q と入れ子深度から（リズムの複雑さ→揺れの速さ）
+//   位相 φ  = 拍内位置 a/q · 2π   （楽譜上の座標→揺れの位相）
+//   振幅 A  = 強弱セリー × 奥行き
+//   閉形式 y(τ) なので音声クロックと常に同期。同じ反復セルは同じ軌道で浮遊する
+function assignMotion(ev){
+  const q = ev.den || 1;
+  ev.mLaw = ((ev.pc || 0) + q) % 4;
+  ev.mA = (3 + ev.dyn * 1.3) * (0.5 + ev.z * 0.9);
+  ev.mW = 0.5 + (q % 9) * 0.22 + ev.depth * 0.15;
+  ev.mPh = ((ev.on || 0) / q) * Math.PI * 2;
+  ev.mW2 = ev.mW * 1.4142;
+}
+function yFloat(ev, tau){
+  if (tau < 0) tau = 0;
+  switch (ev.mLaw){
+    case 0: return ev.mA * Math.sin(ev.mW * tau + ev.mPh);                                // 単振動
+    case 1: return ev.mA * 0.6 * (Math.sin(ev.mW * tau + ev.mPh) + Math.sin(ev.mW2 * tau)); // 干渉(うなり)
+    case 2: return ev.mA * Math.sin(ev.mW * tau + ev.mPh) * (1 - Math.exp(-tau / 2.5));   // 目覚める振り子
+    case 3: return ev.mA * Math.sin(ev.mW * tau + ev.mPh + 2 * Math.sin(0.37 * ev.mW * tau)); // FM揺らぎ
+  }
+  return 0;
+}
+
+// 定量反復セル: 繰り返しごとに新しい z ＝ 違う深度・違う速さで流れる
+function emitCell(str, t0){
+  const c = str.cell;
+  const rep = c.total - c.repsLeft + 1;
+  const z = clamp(0.1 + rng() * 0.85, 0.05, 1);
+  for (const e of c.events){
+    const ev = { ...e, t: t0 + e.rel, stream: str.id, rep, z, crossed: false };
+    assignMotion(ev);   // セルの同一性→同じ軌道（振幅だけ z で変わる）
+    renderEvents.push(ev);
+  }
+  cellMarks.push({ t0, t1: t0 + c.dur, rep, total: c.total, stream: str.id, z });
+  c.repsLeft--;
+  if (c.repsLeft <= 0) str.cell = null;
+  return t0 + c.dur + 0.02;
+}
+
+function generateStreamPhrase(str, t0){
+  if (str.cell) return emitCell(str, t0);
+  const bl = beatLen();
+  if (rng() > str.act(st.complexity)) return t0 + (2 + rngi(3)) * bl;
+
+  serial.advancePhrase();
+  const beats = 2 + rngi(3);
+  const z = clamp(0.1 + rng() * 0.85, 0.05, 1);   // 奥行きはフレーズ単位
+  const out = { events: [] };
+  for (let b = 0; b < beats; b++)
+    buildNode(t0 + b * bl, bl, 0, st.complexity, out, 0, 1, [], b);
+  out.events.sort((a,b)=>a.t-b.t);
+  const sounding = [];
+  for (const ev of out.events){
+    Object.assign(ev, serial.next(str.octPool));
+    ev.stream = str.id; ev.z = z; ev.crossed = false;
+    assignMotion(ev);
+    renderEvents.push(ev);
+    sounding.push(ev);
+  }
+  if (!str.cell && sounding.length >= 3 && rng() < 0.3){
+    const n = Math.min(3 + rngi(4), sounding.length);
+    const cellEvs = sounding.slice(0, n).map(e => ({
+      rel: e.t - t0, dur: e.dur, depth: e.depth, on: e.on, den: e.den,
+      chain: e.chain, beat: e.beat, steps: e.steps, infl: e.infl,
+      dyn: e.dyn, atk: e.atk, pc: e.pc, oct: e.oct, k: e.k, form: e.form, tt: e.tt,
+    }));
+    const span = cellEvs[cellEvs.length-1].rel + cellEvs[cellEvs.length-1].dur;
+    str.cell = { events: cellEvs, dur: Math.max(span, bl * 0.8),
+                 repsLeft: 2 + rngi(3), total: 0 };
+    str.cell.total = str.cell.repsLeft;
+  }
+  return t0 + beats * bl + lerp(0.3, 0.04, st.complexity);
+}
+
+// ---------- 観測: 粒子と線の出会い ----------
+function observe(ev, at){
+  ev.crossed = true;
+  ev.obsAt = at;
+  perform(ev);
+  lastPitchSteps = ev.steps;
+  mathEv = ev;
+  if (!ev.dropped) scheduleAudio(ev, at + Math.max(0, ev.offset));
+  const big = ev.dropped || Math.abs(ev.offset) > 0.04 || ev.slip;
+  if (big) st.errRecent = clamp(st.errRecent + 0.3, 0, 2);
+  if (rng() < (big ? 0.5 : 0.08)){
+    const opts = [
+      `Δt=${(ev.offset*1000).toFixed(0)}ms`, `s=${ev.steps}`,
+      `${ev.on}/${ev.den}`, `σ=${(ev.sigma*1000).toFixed(0)}ms`,
+      `pc=${ev.pc.toString(2).padStart(4,'0')}₂`,
+      `f=${stepFreq(ev.steps).toFixed(1)}Hz`,
+      `v=${speedOf(ev.z).toFixed(0)}px/s`, `z=${ev.z.toFixed(2)}`,
+      `y=A·sin(${ev.mW.toFixed(2)}τ+${ev.mPh.toFixed(2)})`,
+      `ω=${ev.mW.toFixed(2)}  A=${ev.mA.toFixed(1)}`,
+      `⟨${ev.chain && ev.chain.length ? ev.chain.join('·') : '1'}⟩`,
+    ];
+    floatEqs.push({ x: xAt(ev, at), y: stepY(ev.steps), text: opts[rngi(opts.length)], at });
+  }
+}
+
+// 線の運動と衝突判定（相対速度で出会いの時刻を予測、先読みでサンプル精度）
+function updateLine(dt, now){
+  if (!st.fermata){
+    line.x += line.dir * VL * dt;
+    if (line.x > W * 0.97){ line.x = W * 0.97; line.dir = -1; }
+    if (line.x < W * 0.03){ line.x = W * 0.03; line.dir = 1; }
+  }
+  const check = (ev) => {
+    if (ev.crossed || now < ev.t) return;
+    const x = xAt(ev, now);
+    if (x > spawnX()) return;
+    // 相対接近速度: 粒子は左向き speedOf、線の速度は dir·VL（右向き正）
+    const closing = speedOf(ev.z) + (st.fermata ? 0 : line.dir * VL);
+    if (closing <= 0) return;
+    const dx = x - line.x;
+    if (dx <= closing * 0.12){
+      const tCross = now + Math.max(dx, 0) / closing;
+      if (ev.isPulse){
+        ev.crossed = true;
+        schedulePulse(tCross);
+        flashes.push({ at: tCross });
+      } else observe(ev, tCross);
+    }
+  };
+  for (const ev of renderEvents) check(ev);
+  for (const p of pulseMarks) check(p);
+}
+
+// ---------- audio ----------
+let activeVoices = 0;
+const MAX_VOICES = 64;
+function scheduleAudio(ev, at){
+  if (!soundOn || activeVoices >= MAX_VOICES) return;
+  activeVoices++;
+  const f = clamp(stepFreq(ev.steps + ev.slip), 40, 4300);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  o.onended = () => { activeVoices--; };
+  const g = ctx.createGain();
+  const peak = DYN_GAIN[ev.dyn] * ev.gainMul * lerp(0.5, 1.15, ev.z);  // 奥行き→音量
+  const t = Math.max(at, ctx.currentTime + 0.01);
+  const len = clamp(Math.min(ev.dur * 0.85, 0.03 + ev.atk * 2), 0.02, 0.16);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.002);
+  g.gain.setValueAtTime(peak, t + len);
+  g.gain.linearRampToValueAtTime(0, t + len + 0.004);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + len + 0.02);
+  if (grainOn && micReady && ev.dyn >= 6 && rng() < 0.6) playGrain(t, peak);
+}
+function schedulePulse(at){
+  if (!soundOn) return;
+  const t = Math.max(at, ctx.currentTime + 0.005);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1320;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.013, t + 0.001);
+  g.gain.setValueAtTime(0.013, t + 0.008);
+  g.gain.linearRampToValueAtTime(0, t + 0.011);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + 0.03);
+}
+function startNoiseFloor(){
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = rng() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300;
+  const g = ctx.createGain(); g.gain.value = 0.006;
+  src.connect(lp).connect(g).connect(master);
+  src.start();
+}
+
+// mic ring buffer → granular
+const RING_SEC = 4;
+let ring = null, ringPos = 0, ringLen = 0, grainGain = null;
+function setupRing(micSrc){
+  ringLen = Math.floor(ctx.sampleRate * RING_SEC);
+  ring = new Float32Array(ringLen);
+  const sp = ctx.createScriptProcessor(2048, 1, 1);
+  sp.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++){
+      ring[ringPos] = inp[i];
+      ringPos = (ringPos + 1) % ringLen;
+    }
+  };
+  micSrc.connect(sp);
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  sp.connect(mute).connect(ctx.destination);
+  grainGain = ctx.createGain(); grainGain.gain.value = 0.5;
+  grainGain.connect(master);
+}
+function playGrain(when, peak){
+  if (!ring) return;
+  const len = Math.floor(ctx.sampleRate * (0.03 + rng() * 0.12));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  const start = (ringPos - len - rngi(ctx.sampleRate * 2) + ringLen * 2) % ringLen;
+  for (let i = 0; i < len; i++){
+    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / len);
+    d[i] = ring[(start + i) % ringLen] * w;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  src.playbackRate.value = Math.pow(2, (rng() * 2 - 1) * 0.6);
+  const g = ctx.createGain(); g.gain.value = clamp(peak * 0.5, 0.02, 0.3);
+  src.connect(g).connect(grainGain);
+  src.start(Math.max(when, ctx.currentTime + 0.01));
+}
+
+// fermata drone
+let droneOsc = null, droneGain = null;
+function droneOn(){
+  droneOff();
+  droneOsc = ctx.createOscillator(); droneOsc.type = 'sine';
+  droneOsc.frequency.value = clamp(stepFreq(lastPitchSteps), 40, 2000);
+  droneGain = ctx.createGain();
+  droneGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  droneGain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.8);
+  droneOsc.connect(droneGain).connect(master);
+  droneOsc.start();
+}
+function droneOff(){
+  if (!droneOsc) return;
+  const o = droneOsc, g = droneGain;
+  g.gain.cancelScheduledValues(ctx.currentTime);
+  g.gain.setValueAtTime(g.gain.value, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+  o.stop(ctx.currentTime + 0.7);
+  droneOsc = droneGain = null;
+}
+
+// ---------- scheduler ----------
+function schedulerTick(){
+  if (!running) return;
+  const now = ctx.currentTime;
+  if (!st.fermata){
+    for (const str of STREAMS){
+      if (str.nextT < now) str.nextT = now + 0.2 + str.id * 0.07;
+      while (str.nextT < now + 3) str.nextT = generateStreamPhrase(str, str.nextT);
+    }
+    // 潜在パルス: 拍マーカー（z=0.55の速度で流れ、線と出会うと刻む）
+    if (pulseGenT < now) pulseGenT = now + 0.2;
+    while (pulseGenT < now + 3){
+      pulseMarks.push({ t: pulseGenT, z: 0.55, crossed: false, isPulse: true });
+      pulseGenT += beatLen();
+    }
+  }
+  renderEvents = renderEvents.filter(ev =>
+    (now - ev.t) < 60 &&
+    (!ev.crossed || now - ev.obsAt < 13) &&
+    xAt(ev, now) > -80);
+  pulseMarks = pulseMarks.filter(p => !p.crossed && xAt(p, now) > -20);
+  cellMarks = cellMarks.filter(c => (now - c.t1) < 40 && spawnX() - (now - c.t1) * speedOf(c.z) > -60);
+  flashes = flashes.filter(f => now - f.at < 0.6);
+  floatEqs = floatEqs.filter(f => now - f.at < 4);
+}
+
+// ---------- inputs ----------
+const freqData = new Uint8Array(512);
+let timeData = null;
+function analyzeMic(){
+  if (!analyser) return;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  st.micRms = lerp(st.micRms, Math.sqrt(sum / timeData.length), 0.25);
+  analyser.getByteFrequencyData(freqData);
+  let e = 0, ei = 0;
+  for (let i = 0; i < freqData.length; i++){ e += freqData[i]; ei += freqData[i] * i; }
+  if (e > 500) st.micCent = lerp(st.micCent, (ei / e) / freqData.length * 2, 0.15);
+}
+
+const camV = document.getElementById('cam');
+const camCv = document.createElement('canvas'); camCv.width = 64; camCv.height = 48;
+const camCtx = camCv.getContext('2d', { willReadFrequently: true });
+let prevFrame = null;
+setInterval(()=>{
+  if (!camReady || camV.videoWidth === 0) return;
+  camCtx.drawImage(camV, 0, 0, 64, 48);
+  const img = camCtx.getImageData(0, 0, 64, 48).data;
+  if (prevFrame){
+    let d = 0;
+    for (let i = 0; i < img.length; i += 4){
+      const l = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+      d += Math.abs(l - prevFrame[i >> 2]);
+    }
+    st.motion = lerp(st.motion, clamp(d / (64 * 48) / 18, 0, 1), 0.3);
+  }
+  if (!prevFrame) prevFrame = new Float32Array(64 * 48);
+  for (let i = 0; i < img.length; i += 4)
+    prevFrame[i >> 2] = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+}, 100);
+
+// ---------- Fluxus text（文面は今後検討） ----------
+const FLUX_POOL = [
+  'GOD PLAYS DICE.', 'THIS IS NOT RANDOM.', 'OBSERVE.', 'DO NOTHING.',
+  'COUNT THE SEVENS.', 'WAIT.', '静 止 せ よ', '偶 然 は 厳 密 で あ る',
+  'LISTEN TO THE ROOM.', 'EVERY ERROR IS EXACT.',
+];
+let fluxMsg = null, fluxLastAt = -999, fluxTimer = 0;
+function fluxShow(text, now){
+  if (now - fluxLastAt < 20) return;
+  fluxMsg = { text, at: now }; fluxLastAt = now;
+}
+
+// ---------- state update ----------
+let walkPhase = rng() * 100;
+let brokeShown = false;
+function updateState(dt, now){
+  analyzeMic();
+  let target;
+  if (micReady){
+    target = 0.12 + st.micRms * 3.5 + st.micCent * 0.35 + st.motion * 0.7;
+  } else {
+    walkPhase += dt * 0.05;
+    target = 0.3 + 0.22 * Math.sin(walkPhase) + 0.12 * Math.sin(walkPhase * 3.7) + st.motion * 0.7;
+  }
+  st.gVal = clamp(target, 0.05, 1);
+  st.complexity = lerp(st.complexity, st.gVal, 1 - Math.exp(-dt / 1.6));
+
+  const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
+  const recover = st.fermata ? 0.38 : 0.065;
+  st.drain = drain; st.recover = recover; st.dCdt = recover - drain;
+  st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
+  st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
+
+  st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
+
+  if (rng() < dt / 50){ serial.reseed(); fluxShow('DICE ARE THROWN.', now); }
+  if (st.conc < 0.18 && !brokeShown){ fluxShow('THE PERFORMER IS BREAKING.', now); brokeShown = true; }
+  if (st.conc > 0.5) brokeShown = false;
+  fluxTimer += dt;
+  if (fluxTimer > 90){ fluxTimer = 0; fluxShow(FLUX_POOL[rngi(FLUX_POOL.length)], now); }
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('cv');
+const g2 = cv.getContext('2d');
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  g2.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+const RED = '#c8402a';
+// 塵: 3層の視差（粒子と同じく右→左、奥は遅く手前は速い）
+const dust = Array.from({length: 90}, (_, i) => {
+  const z = [0.2, 0.55, 0.9][i % 3];
+  return { x: rng(), y: rng(), p: rng() * 100, z };
+});
+
+function draw(now, tSec){
+  g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
+
+  // 塵の視差（右→左）
+  for (const d of dust){
+    const dx = ((d.x * W - tSec * speedOf(d.z) * 0.12) % W + W) % W;
+    const dy = (d.y * H + Math.sin(tSec * (0.03 + d.z * 0.05) + d.p) * (6 + d.z * 10)) % H;
+    g2.fillStyle = `rgba(220,220,220,${0.028 + d.z * 0.05})`;
+    const s = 0.4 + d.z * 1.1;
+    g2.fillRect(dx, dy, s, s);
+  }
+
+  // 拍マーカー（流れる幽霊グリッド、極めて薄い縦線）
+  for (const p of pulseMarks){
+    if (now < p.t) continue;
+    const x = xAt(p, now);
+    if (x < -5 || x > W) continue;
+    g2.strokeStyle = 'rgba(220,220,220,0.045)'; g2.lineWidth = 1;
+    g2.beginPath(); g2.moveTo(x, H * 0.1); g2.lineTo(x, H * 0.9); g2.stroke();
+  }
+
+  // 反復セル括弧（セルの z 速度で流れる）
+  g2.font = '9px monospace'; g2.textAlign = 'center';
+  for (const c of cellMarks){
+    const x0 = spawnX() - (now - c.t0) * speedOf(c.z);
+    const x1 = spawnX() - (now - c.t1) * speedOf(c.z);
+    if (Math.max(x0, x1) < -20 || Math.min(x0, x1) > W + 20) continue;
+    const cSteps = STREAMS[c.stream].octPool.reduce((a,b)=>a+b,0) / STREAMS[c.stream].octPool.length * 48;
+    const y = stepY(cSteps) + 46;
+    const a = 0.35 * lerp(0.5, 1, c.z);
+    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 1;
+    g2.beginPath();
+    g2.moveTo(x0, y - 3); g2.lineTo(x0, y); g2.lineTo(x1, y); g2.lineTo(x1, y - 3);
+    g2.stroke();
+    g2.fillStyle = `rgba(220,220,220,${a + 0.12})`;
+    g2.fillText(`×${c.rep}/${c.total}`, (x0 + x1) / 2, y + 10);
+  }
+
+  // ---- 粒子 ----
+  for (const ev of renderEvents){
+    if (now < ev.t) continue;
+    const x = xAt(ev, now);
+    if (x < -60 || x > W + 10) continue;
+    const fl = yFloat(ev, now - ev.t);           // 粒子の意思（固有の浮遊軌道）
+    const y = stepY(ev.steps) + fl;
+    const sizeBase = lerp(0.9, 2.6, ev.z) + ev.dyn * 0.14;
+
+    if (!ev.crossed || now < ev.obsAt){
+      // 未観測: 重ね合わせの雲（生まれた直後はフェードイン）
+      const sa = clamp((now - ev.t) / 0.5, 0, 1);
+      const cloudErr = (1 - st.conc) * (0.35 + 0.65 * ev.depth / 4);
+      const r = (2 + cloudErr * 20) * (0.5 + ev.z * 0.8);
+      const spd = 0.4 + ev.z * 1.6;
+      const baseA = lerp(0.10, 0.30, ev.z) * sa;
+      for (let i = 0; i < 4; i++){
+        const jx = Math.sin(tSec * spd * (1.3 + i * 0.31) + ev.t * 7 + i * 2.4) * r;
+        const jy = Math.cos(tSec * spd * (1.1 + i * 0.27) + ev.t * 5 + i * 1.9) * r;
+        g2.fillStyle = `rgba(220,220,220,${baseA + 0.04 * i})`;
+        g2.beginPath(); g2.arc(x + jx, y + jy, 0.6 + ev.z * 0.9, 0, 7); g2.fill();
+      }
+      g2.fillStyle = `rgba(220,220,220,${lerp(0.2, 0.5, ev.z) * sa})`;
+      g2.beginPath(); g2.arc(x, y, 0.7 + ev.z * 0.9, 0, 7); g2.fill();
+    } else {
+      const age = now - ev.obsAt;
+      // 観測の環（収斂）
+      if (age < 0.35){
+        const rr = 3 + age * 52;
+        g2.strokeStyle = `rgba(220,220,220,${(1 - age / 0.35) * (0.25 + ev.z * 0.35)})`;
+        g2.lineWidth = 1;
+        g2.beginPath(); g2.arc(x, stepY(ev.steps + ev.slip) + fl, rr, 0, 7); g2.stroke();
+      }
+      if (ev.dropped){
+        const a = clamp(0.55 - age * 0.2, 0, 0.55) * lerp(0.5, 1, ev.z);
+        if (a > 0.01){
+          g2.strokeStyle = `rgba(200,64,42,${a})`; g2.lineWidth = 1;
+          g2.beginPath(); g2.arc(x, y, sizeBase + 1.6, 0, 7); g2.stroke();
+        }
+      } else {
+        // 確定した点: 固有の軌道で浮遊し続けながら漂流し消える
+        const drift = (0.5 + ev.z * 1.8) * age;
+        const rx = x + ev.dx * drift, ry = stepY(ev.steps + ev.slip) + fl + ev.dy * drift;
+        const a = clamp(1 - age / 12, 0, 1) * lerp(0.4, 0.95, ev.z);
+        g2.fillStyle = `rgba(232,230,224,${a})`;
+        g2.beginPath(); g2.arc(rx, ry, sizeBase, 0, 7); g2.fill();
+        if (Math.abs(ev.offset) > 0.02 || ev.slip){
+          g2.strokeStyle = `rgba(200,64,42,${a * 0.4})`; g2.lineWidth = 0.7;
+          g2.beginPath(); g2.arc(x, y, sizeBase + 1, 0, 7); g2.stroke();
+          g2.beginPath(); g2.moveTo(x, y); g2.lineTo(rx, ry); g2.stroke();
+        }
+      }
+    }
+  }
+
+  // 浮上する数式
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  for (const f of floatEqs){
+    const age = now - f.at;
+    const a = clamp((1 - age / 4) * 0.55, 0, 0.55);
+    g2.fillStyle = `rgba(220,220,220,${a})`;
+    g2.fillText(f.text, f.x + 8, f.y - 6 - age * 7);
+  }
+
+  // ---- 観測線（往復） ----
+  const bornA = clamp((now - line.bornAt) / 1.5, 0, 1);
+  let lineA = (0.35 + st.errRecent * 0.12) * bornA;
+  for (const f of flashes) lineA += clamp(0.3 - (now - f.at) * 0.6, 0, 0.3);
+  const trembleX = st.fermata ? Math.sin(tSec * 40) * 0.9 : 0;
+  const lx = line.x + trembleX;
+  g2.strokeStyle = `rgba(220,220,220,${clamp(lineA, 0, 0.85)})`;
+  g2.lineWidth = 1;
+  g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, H); g2.stroke();
+  g2.strokeStyle = `rgba(220,220,220,${0.06 * bornA})`;
+  g2.lineWidth = 5;
+  g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, H); g2.stroke();
+  // 進行方向（足元の小さな三角）
+  g2.fillStyle = `rgba(220,220,220,${0.3 * bornA})`;
+  g2.beginPath();
+  g2.moveTo(lx + line.dir * 8, H * 0.965);
+  g2.lineTo(lx, H * 0.96); g2.lineTo(lx, H * 0.97);
+  g2.closePath(); g2.fill();
+
+  // フェルマータ
+  if (st.fermata){
+    g2.strokeStyle = 'rgba(220,220,220,0.8)'; g2.lineWidth = 1.5;
+    g2.beginPath(); g2.arc(lx, H * 0.08, 14, Math.PI, 0); g2.stroke();
+    g2.fillStyle = 'rgba(220,220,220,0.8)';
+    g2.beginPath(); g2.arc(lx, H * 0.08 - 3, 2.5, 0, 7); g2.fill();
+  }
+
+  // Fluxus 指示テキスト
+  if (fluxMsg){
+    const age = now - fluxMsg.at;
+    if (age > 7) fluxMsg = null;
+    else {
+      const a = age < 1 ? age : age > 5 ? (7 - age) / 2 : 1;
+      g2.fillStyle = `rgba(220,220,220,${a * 0.7})`;
+      g2.font = '11px monospace'; g2.textAlign = 'center';
+      g2.fillText(fluxMsg.text.split('').join(' '), W / 2, H * 0.8);
+    }
+  }
+
+  if (mathOn) drawMath(now);
+  drawHUD();
+}
+
+// ---------- math panel ----------
+function drawMath(now){
+  const cell = 11, mw = cell * 12;
+  const x0 = W - mw - 18, y0 = H - mw - 64;
+  const M = mathEv;
+  const form = M ? M.form : serial.form;
+  const tt   = M ? M.tt   : serial.t;
+  const kk   = M ? M.k    : -1;
+  const r = serial.row;
+  const hlRow = (form === 0 || form === 2) ? r.indexOf((12 - tt) % 12) : -1;
+  const hlCol = (form === 1 || form === 3) ? r.indexOf(tt % 12) : -1;
+  for (let i = 0; i < 12; i++){
+    for (let j = 0; j < 12; j++){
+      const v = (r[j] - r[i] + 12) % 12;
+      const cur = (i === hlRow && j === kk) || (j === hlCol && i === kk);
+      const a = (i === hlRow || j === hlCol) ? 0.7 : 0.18;
+      g2.fillStyle = cur ? RED : `rgba(220,220,220,${a})`;
+      g2.beginPath();
+      g2.arc(x0 + j * cell + cell / 2, y0 + i * cell + cell / 2, 0.6 + v / 12 * 2.4, 0, 7);
+      g2.fill();
+    }
+  }
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.5)';
+  const eps = (form === 1 || form === 3) ? '−x' : 'x';
+  g2.fillText(`${['P','I','R','RI'][form]}${tt}: x↦(${eps}+${tt}) mod 12`, x0, y0 + mw + 14);
+  g2.fillText(`Ċ=${st.recover.toFixed(2)}−${st.drain.toFixed(2)}  X=${st.complexity.toFixed(2)}  Φ=${st.fatigue.toFixed(2)}`, x0, y0 + mw + 27);
+  if (M) g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  z=${M.z.toFixed(2)}  v=${speedOf(M.z).toFixed(0)}px/s`, x0, y0 + mw + 40);
+}
+
+function drawHUD(){
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.4)';
+  g2.fillText(
+    `LINE ${line.dir > 0 ? '→' : '←'}   X ${st.complexity.toFixed(2)}   C ${st.conc.toFixed(2)}   Φ ${st.fatigue.toFixed(2)}   ` +
+    `MIC ${micReady ? (st.micRms * 100).toFixed(0) : '--'}   CAM ${camReady ? (st.motion * 100).toFixed(0) : '--'}   ` +
+    `×${st.tempoMul.toFixed(2)}   ±${st.microGrid}/8`, 14, 24);
+}
+
+// ---------- main loop ----------
+// dt は音声クロック基準（rAFが間引かれても粒子=閉形式と線=積分がズレない）
+let lastNow = 0;
+function frame(ts){
+  if (!running) return;
+  const now = ctx.currentTime;
+  const dt = clamp(now - lastNow, 0.001, 0.5);
+  lastNow = now;
+  updateState(dt, now);
+  updateLine(dt, now);
+  draw(now, ts / 1000);
+  requestAnimationFrame(frame);
+}
+
+// ---------- interaction ----------
+cv.addEventListener('pointerdown', e => {
+  if (!running) return;
+  st.fermata = true;                                      // 線は静止し、震える
+  renderEvents = renderEvents.filter(ev => ev.crossed);   // 未観測の粒子は霧散する
+  pulseMarks = [];
+  const now = ctx.currentTime;
+  cellMarks = cellMarks.filter(c => c.t1 < now);
+  droneOn();
+  if (rng() < 0.4) fluxShow('BREATHE.', now);
+  applyPointer(e);
+});
+cv.addEventListener('pointermove', e => { if (st.fermata) applyPointer(e); });
+window.addEventListener('pointerup', () => {
+  if (!st.fermata) return;
+  st.fermata = false;
+  droneOff();
+  const t = ctx.currentTime + 0.5;
+  for (const str of STREAMS) str.nextT = t + str.id * 0.07;
+  pulseGenT = t;
+});
+function applyPointer(e){
+  st.tempoMul = lerp(0.4, 1.8, clamp(e.clientX / W, 0, 1));
+  st.microGrid = clamp(Math.round(lerp(0, 2, 1 - e.clientY / H)), 0, 2);
+}
+
+// ---------- buttons ----------
+const bGrain = document.getElementById('bGrain');
+const bSound = document.getElementById('bSound');
+const bFull  = document.getElementById('bFull');
+const bMath  = document.getElementById('bMath');
+bMath.onclick  = () => { mathOn = !mathOn; bMath.classList.toggle('on', mathOn); };
+bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
+bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
+const docEl = document.documentElement;
+if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen)
+  bFull.style.display = 'none';
+bFull.onclick  = () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement)
+    (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  else
+    (docEl.requestFullscreen || docEl.webkitRequestFullscreen)?.call(docEl);
+};
+
+// ---------- init ----------
+document.getElementById('startBtn').addEventListener('click', async () => {
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('btns').style.display = 'flex';
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC();
+  await ctx.resume();
+  master = ctx.createGain(); master.gain.value = 0.85;
+  limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -14; limiter.knee.value = 4;
+  limiter.ratio.value = 14; limiter.attack.value = 0.002; limiter.release.value = 0.2;
+  master.connect(limiter).connect(ctx.destination);
+  startNoiseFloor();
+
+  const AUDIO_C = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  const VIDEO_C = { width: 320, height: 240, facingMode: 'user' };
+  let micStream = null, camStream = null;
+  try {
+    micStream = camStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C, video: VIDEO_C });
+  } catch (err) {
+    try { micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C }); }
+    catch (e) { console.warn('mic unavailable:', e.message); }
+    try { camStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_C }); }
+    catch (e) { console.warn('camera unavailable:', e.message); }
+  }
+  if (micStream && micStream.getAudioTracks().length){
+    const src = ctx.createMediaStreamSource(micStream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+    timeData = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    setupRing(src);
+    micReady = true;
+  }
+  if (camStream && camStream.getVideoTracks().length){
+    camV.srcObject = camStream;
+    await camV.play().catch(()=>{});
+    camReady = true;
+  }
+
+  running = true;
+  const t0 = ctx.currentTime + 0.3;
+  for (const str of STREAMS) str.nextT = t0 + str.id * 0.07;
+  pulseGenT = t0;
+  line.x = W * 0.03; line.dir = 1; line.bornAt = ctx.currentTime;
+  setInterval(schedulerTick, 90);
+  lastNow = ctx.currentTime;
+  requestAnimationFrame(frame);
+}, { once: true });
+</script>
+</body>
+</html>
