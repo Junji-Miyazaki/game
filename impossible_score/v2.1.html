@@ -85,6 +85,7 @@ const st = {
 
 // ---------- series engine ----------
 const DYN_GAIN  = [0.030,0.050,0.080,0.130,0.200,0.300,0.430,0.620];
+const DYN_NAMES = ['pppp','ppp','pp','p','mf','f','ff','ffff'];
 const RATIOS    = [[3,2],[5,4],[4,3],[7,6],[5,3],[7,4],[9,8],[11,8]];
 
 const serial = {
@@ -124,7 +125,7 @@ const STREAMS = [
 ];
 
 // ---------- 幾何: 奥行きと運動 ----------
-const PX_PER_SEC = 90;
+const PX_PER_SEC = 62;
 const VL = 22;                                       // 観測線の速度（最遅粒子=54px/sより遅い）
 const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);   // 奥=0.6x, 手前=1.4x
 const line = { x: -10, dir: 1, bornAt: 0 };
@@ -164,6 +165,7 @@ function perform(ev){
 
 // ---------- score data ----------
 let renderEvents = [], cellMarks = [], floatEqs = [], flashes = [], pulseMarks = [];
+let scoreMarks = [];   // 楽譜の破片: 観測の記録として結晶するv1様式の記譜
 let lastPitchSteps = 0, pulseGenT = 0;
 let mathEv = null, mathOn = true;
 
@@ -211,7 +213,7 @@ function updatePhysics(dt, now){
       ev.vx = -speedOf(ev.z); ev.vy = ev.vyDrift;   // 初速から斜め
     }
     const tau = now - ev.t;
-    ev.vx += (-speedOf(ev.z) - ev.vx) * Math.min(dt / 5, 1);          // 運命への緩和
+    ev.vx += (-speedOf(ev.z) - ev.vx) * Math.min(dt / 8, 1);          // 運命への緩和（遅め: 衝突の加減速が残る）
     // 意思への緩和: 持続的な斜め成分 + 固有軌道の揺れ（平行に戻らない）
     ev.vy += ((ev.vyDrift * 0.6 + vyWill(ev, tau) * 0.5) - ev.vy) * Math.min(dt / 4, 1);
     ev.px += ev.vx * dt; ev.py += ev.vy * dt;
@@ -246,9 +248,12 @@ function updatePhysics(dt, now){
           if (d2 >= rr * rr || d2 === 0) continue;
           const d = Math.sqrt(d2), nx = ddx / d, ny = ddy / d;
           const rvn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-          if (rvn > 0){                                // 等質量の弾性衝突: 法線成分を交換
-            a.vx -= rvn * nx; a.vy -= rvn * ny;
-            b.vx += rvn * nx; b.vy += rvn * ny;
+          if (rvn > 0){
+            // 質量は奥行きに比例（手前=重い）。軽い方は弾かれて加速し、重い方は減速する
+            const ma = 0.6 + a.z * 1.4, mb = 0.6 + b.z * 1.4;
+            const ja = 2 * mb / (ma + mb) * rvn, jb = 2 * ma / (ma + mb) * rvn;
+            a.vx -= ja * nx; a.vy -= ja * ny;
+            b.vx += jb * nx; b.vy += jb * ny;
           }
           const push = (rr - d) / 2;                   // 重なり解消
           a.px -= nx * push; a.py -= ny * push;
@@ -323,6 +328,10 @@ function observe(ev, at){
   lastPitchSteps = ev.steps;
   mathEv = ev;
   if (!ev.dropped) scheduleAudio(ev, at + Math.max(0, ev.offset));
+  // 観測の記録: その場に楽譜の破片が結晶する
+  scoreMarks.push({ x: ev.px, y: ev.py, z: ev.z, slip: ev.slip, infl: ev.infl,
+                    dyn: ev.dyn, chain: ev.chain, dropped: ev.dropped, at });
+  if (scoreMarks.length > 90) scoreMarks.shift();
   const big = ev.dropped || Math.abs(ev.offset) > 0.04 || ev.slip;
   if (big) st.errRecent = clamp(st.errRecent + 0.3, 0, 2);
   if (rng() < (big ? 0.5 : 0.08)){
@@ -499,6 +508,7 @@ function schedulerTick(){
   cellMarks = cellMarks.filter(c => (now - c.t1) < 60);
   flashes = flashes.filter(f => now - f.at < 0.6);
   floatEqs = floatEqs.filter(f => now - f.at < 4);
+  scoreMarks = scoreMarks.filter(s => now - s.at < 15);
 }
 
 // ---------- inputs ----------
@@ -617,6 +627,9 @@ function draw(now, tSec){
     g2.strokeStyle = 'rgba(220,220,220,0.045)'; g2.lineWidth = 1;
     g2.beginPath(); g2.moveTo(x, H * 0.1); g2.lineTo(x, H * 0.9); g2.stroke();
   }
+
+  // 楽譜の破片（観測線が書き残した記録）— 粒子より奥に描く
+  drawShards(now);
 
   // 反復セル: 構成粒子を細線で結ぶ星座として表示（衝突で散っても繋がりは残る）
   g2.font = '9px monospace'; g2.textAlign = 'center';
@@ -743,6 +756,70 @@ function draw(now, tSec){
 
   if (mathOn) drawMath(now);
   drawHUD();
+}
+
+// ---------- 楽譜の破片（シャード）: v1の記譜様式が観測の痕跡として現れる ----------
+// グローバルな五線ではなく、観測ごとに小さな五線断片＋符頭＋微分音矢印＋強弱記号が
+// その場に結晶し、世界の流れに緩やかに乗って15秒で溶ける。脱落=赤×、スリップ=赤矢線
+function drawShards(now){
+  g2.textAlign = 'center';
+  for (const s of scoreMarks){
+    const age = now - s.at;
+    const life = clamp(1 - age / 15, 0, 1);
+    if (life <= 0) continue;
+    const x = s.x - age * 4;              // 世界の流れにゆっくり乗る
+    const y = s.y;
+    if (x < -40) continue;
+    const S = 5 + s.z * 3;                // 線間隔は奥行きでスケール
+    const A = life * (0.2 + s.z * 0.3);
+    const ink = a => `rgba(232,224,204,${a})`;
+    // 五線の断片
+    g2.lineWidth = 0.6;
+    g2.strokeStyle = ink(A * 0.6);
+    for (let i = -2; i <= 2; i++){
+      g2.beginPath(); g2.moveTo(x - 4.5 * S, y + i * S); g2.lineTo(x + 4.5 * S, y + i * S); g2.stroke();
+    }
+    if (s.dropped){
+      g2.strokeStyle = `rgba(200,64,42,${Math.min(A * 1.4, 0.8)})`; g2.lineWidth = 1.2;
+      g2.beginPath();
+      g2.moveTo(x - S * 0.7, y - S * 0.7); g2.lineTo(x + S * 0.7, y + S * 0.7);
+      g2.moveTo(x + S * 0.7, y - S * 0.7); g2.lineTo(x - S * 0.7, y + S * 0.7);
+      g2.stroke();
+    } else {
+      // 符頭・符幹
+      g2.fillStyle = ink(Math.min(A * 1.5, 0.85));
+      g2.beginPath(); g2.ellipse(x, y, S * 0.62, S * 0.45, -0.3, 0, 7); g2.fill();
+      g2.strokeStyle = ink(Math.min(A * 1.2, 0.7)); g2.lineWidth = 0.9;
+      g2.beginPath(); g2.moveTo(x + S * 0.6, y); g2.lineTo(x + S * 0.6, y - 3 * S); g2.stroke();
+      // 音高スリップ: 赤の矢線
+      if (s.slip){
+        g2.strokeStyle = `rgba(200,64,42,${Math.min(A * 1.2, 0.7)})`; g2.lineWidth = 0.8;
+        g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x, y - s.slip * S * 0.5); g2.stroke();
+      }
+    }
+    // 微分音矢印
+    if (s.infl){
+      g2.fillStyle = ink(Math.min(A * 1.4, 0.8));
+      const n = Math.abs(s.infl), dir = s.infl > 0 ? -1 : 1;
+      for (let k = 0; k < n; k++){
+        const ay = y + dir * (S * 1.1 + k * 4);
+        g2.beginPath();
+        g2.moveTo(x - S * 1.3, ay);
+        g2.lineTo(x - S * 1.3 - 3, ay - dir * 4);
+        g2.lineTo(x - S * 1.3 + 3, ay - dir * 4);
+        g2.closePath(); g2.fill();
+      }
+    }
+    // 強弱記号・連符比
+    g2.font = `italic ${Math.round(7 + s.z * 3)}px serif`;
+    g2.fillStyle = `rgba(200,180,140,${Math.min(A * 1.3, 0.75)})`;
+    g2.fillText(DYN_NAMES[s.dyn], x, y + 3.2 * S);
+    if (s.chain && s.chain.length){
+      g2.font = '8px serif';
+      g2.fillStyle = ink(A * 0.9);
+      g2.fillText(s.chain.join(':'), x, y - 3.6 * S);
+    }
+  }
 }
 
 // ---------- math panel ----------
