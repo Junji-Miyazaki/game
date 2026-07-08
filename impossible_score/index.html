@@ -31,6 +31,7 @@
 <canvas id="cv"></canvas>
 <video id="cam" playsinline muted autoplay></video>
 <div id="btns" style="display:none">
+  <div class="btn on" id="bMath">数理</div>
   <div class="btn on" id="bGrain">具体音</div>
   <div class="btn" id="bFull">全画面</div>
   <div class="btn on" id="bSound">音</div>
@@ -77,6 +78,7 @@ const st = {
   tempoMul: 1, microGrid: 2,   // microGrid: 許容微分音幅（48EDOステップ, ±2=八分音まで）
   fermata: false,
   errRecent: 0,        // 直近エラー量（描画用）
+  gVal: 0.2, drain: 0, recover: 0, dCdt: 0,   // 数理パネル表示用の実測値
 };
 
 // ---------- series engine (セリー) ----------
@@ -84,51 +86,57 @@ const DYN_NAMES = ['pppp','ppp','pp','p','mf','f','ff','ffff'];
 const DYN_GAIN  = [0.030,0.050,0.080,0.130,0.200,0.300,0.430,0.620];
 const RATIOS    = [[3,2],[5,4],[4,3],[7,6],[5,3],[7,4],[9,8],[11,8]];
 
+// セリーの数理:
+//   音高類   pc ∈ ℤ12,  変形は affine写像 x ↦ (εx + t) mod 12 (ε=±1) = 二面体群 D12 の作用
+//   音高格子 s ∈ ℤ48 (48EDO),  s = 4((εr_k + t) mod 12 − 9) + 48·o_k + ι_k,  f(s) = 220·2^(s/48)
+//   リズム   連符比の選択列 rat も音列（第6のセリー）。onset は ℚ 上: t = Σ aᵢ/Πnⱼ
 const serial = {
   row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
   oct: shuffled([-1,-1,0,0,0,1,1,2]),
   infl: shuffled([-2,-1,-1,0,0,0,1,1,2]),   // 48EDOステップ（八分音）単位
   dyn: shuffled([0,1,2,3,4,5,6,7]),
   atk: shuffled([0.002,0.004,0.008,0.015,0.03,0.06]),
-  i:0, form:0, t:0,
+  rat: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]), // 連符比セリー
+  i:0, ri:0, form:0, t:0, last:null,
   next(){
     const k = this.i++;
-    let pc = this.row[k % 12];
-    // 音列変形: P / I / R / RI をフレーズごとに巡回
-    if (this.form===1) pc = (12 - pc) % 12;                       // I
-    if (this.form===2) pc = this.row[11 - (k % 12)];              // R
-    if (this.form===3) pc = (12 - this.row[11 - (k % 12)]) % 12;  // RI
+    const idx = (this.form >= 2) ? 11 - (k % 12) : k % 12;        // R/RI は逆行
+    let pc = this.row[idx];
+    if (this.form === 1 || this.form === 3) pc = (12 - pc) % 12;  // I/RI は反行 (ε=−1)
     pc = (pc + this.t) % 12;
     const infl = clamp(this.infl[k % this.infl.length], -st.microGrid, st.microGrid);
-    return {
-      steps: (pc - 9) * 4 + this.oct[k % this.oct.length] * 48 + infl, // A=0中心, 48EDO
-      infl,
-      dyn:  this.dyn[k % this.dyn.length],
-      atk:  this.atk[k % this.atk.length],
-    };
+    const oct = this.oct[k % this.oct.length];
+    const dyn = this.dyn[k % this.dyn.length];
+    this.last = { k: idx, pc, oct, infl, dyn, form: this.form, t: this.t,
+                  steps: (pc - 9) * 4 + oct * 48 + infl };
+    return { steps: this.last.steps, infl, dyn, atk: this.atk[k % this.atk.length] };
   },
+  nextRatio(poolLen){ return this.rat[this.ri++ % this.rat.length] % poolLen; },
   advancePhrase(){ this.form = rngi(4); this.t = rngi(12); },
   reseed(){ this.row = shuffled(this.row); this.oct = shuffled(this.oct);
-            this.infl = shuffled(this.infl); this.dyn = shuffled(this.dyn); },
+            this.infl = shuffled(this.infl); this.dyn = shuffled(this.dyn);
+            this.rat = shuffled(this.rat); },
 };
 const stepFreq = s => 220 * Math.pow(2, s/48);
 
 // ---------- rational-time tuplet tree (入れ子連符) ----------
 const MAX_PHRASE_EVENTS = 200;
-function buildNode(t0, dur, depth, cx, out){
+// on/den: 拍内オフセットの厳密な有理数表現 (onset = on/den 拍)。chain: 分割比の列。
+function buildNode(t0, dur, depth, cx, out, on, den, chain, beat){
   const maxDepth = 1 + Math.round(cx * 3);
   if (depth < maxDepth && out.events.length < MAX_PHRASE_EVENTS &&
       (depth === 0 || rng() < 0.35 + cx * 0.5)){
-    // 複雑度が高いほど大きい分割比を選ぶ（深い階層では小さい比に制限）
+    // 分割比はセリー（rat列）から消費。深い階層では小さい比に制限
     const pool = depth >= 2 ? RATIOS.slice(0, 3) : RATIOS.slice(0, 3 + Math.round(cx * 5));
-    const [n] = pool[rngi(pool.length)];
-    const label = n + ':' + (depth === 0 ? [2,4,3][rngi(3)] : pool[rngi(pool.length)][1]);
-    out.brackets.push({ t0, t1: t0 + dur, label, depth });
+    const [n, m] = pool[serial.nextRatio(pool.length)];
+    out.brackets.push({ t0, t1: t0 + dur, label: n + ':' + m, depth });
     const sub = dur / n;
-    for (let i = 0; i < n; i++) buildNode(t0 + i * sub, sub, depth + 1, cx * 0.92, out);
+    for (let i = 0; i < n; i++)
+      buildNode(t0 + i * sub, sub, depth + 1, cx * 0.92, out,
+                on * n + i, den * n, chain.concat(n), beat);
   } else {
     if (rng() < 0.14) out.events.push({ t: t0, dur, rest: true, depth });
-    else out.events.push({ t: t0, dur, depth });
+    else out.events.push({ t: t0, dur, depth, on, den, chain, beat });
   }
 }
 
@@ -137,7 +145,8 @@ function perform(ev){
   const depthN = clamp(ev.depth / 4, 0, 1);
   const err = (1 - st.conc) * (0.35 + 0.65 * depthN);   // 誤差係数
   ev.err = err;
-  ev.offset  = gauss() * err * 0.09;                    // タイミングの揺れ
+  ev.sigma   = err * 0.09;                              // Δt ~ N(0, σ²)
+  ev.offset  = gauss() * ev.sigma;                      // タイミングの揺れ
   ev.dropped = rng() < err * 0.42;                      // 脱落
   ev.slip    = (rng() < err * 0.5) ? (rngi(2)+1) * (rng()<.5?-1:1) : 0; // 音高の滑り(八分音)
   ev.gainMul = clamp(1 + gauss() * err * 0.6, 0.15, 1.8);
@@ -159,11 +168,13 @@ function generatePhrase(t0){
   const beats = 3 + rngi(3);
   const out = { events: [], brackets: [] };
   for (let b = 0; b < beats; b++)
-    buildNode(t0 + b * beatLen, beatLen, 0, st.complexity, out);
+    buildNode(t0 + b * beatLen, beatLen, 0, st.complexity, out, 0, 1, [], b);
   out.events.sort((a,b)=>a.t-b.t);
   for (const ev of out.events){
     if (!ev.rest){
       Object.assign(ev, serial.next());
+      Object.assign(ev, { pc: serial.last.pc, oct: serial.last.oct, k: serial.last.k,
+                          form: serial.last.form, tt: serial.last.t });
       perform(ev);
       lastPitchSteps = ev.steps;
       if (!ev.dropped) pending.push(ev);
@@ -320,11 +331,13 @@ function updateState(dt, tSec){
     walkPhase += dt * 0.05;
     target = 0.3 + 0.22 * Math.sin(walkPhase) + 0.12 * Math.sin(walkPhase * 3.7) + st.motion * 0.7;
   }
-  st.complexity = lerp(st.complexity, clamp(target, 0.05, 1), 1 - Math.exp(-dt / 1.6));
+  st.gVal = clamp(target, 0.05, 1);
+  st.complexity = lerp(st.complexity, st.gVal, 1 - Math.exp(-dt / 1.6));
 
   // 集中力: 複雑さと会場の動きに削られ、フェルマータで回復する
   const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
   const recover = st.fermata ? 0.38 : 0.065;
+  st.drain = drain; st.recover = recover; st.dCdt = recover - drain;
   st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
   st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
 
@@ -424,6 +437,7 @@ function draw(now){
 
     const y = stepY(ev.steps);
     const ideal = past ? 0.3 : 0.95;
+    if (past && (!mathEv || ev.t > mathEv.t)) mathEv = ev;   // 数理パネル: 直近の発音イベント
 
     // 加線
     g2.strokeStyle = `rgba(232,224,204,${ideal * 0.5})`; g2.lineWidth = 1;
@@ -503,8 +517,73 @@ function draw(now){
     g2.beginPath(); g2.arc(playX, cY - 6 * S - 3, 3, 0, 7); g2.fill();
   }
 
-  // HUD
+  // 数理パネル / HUD
+  if (mathOn) drawMath(now);
   drawHUD();
+}
+
+// ---------- math panel (数理パネル) ----------
+// 生成の数理そのものを常時表示する: 12×12音列行列、affine写像、48EDO格子、
+// ℚ上のリズム、演奏者のODE、誤差モデル。値はすべて実測がライブで代入される。
+let mathEv = null, mathOn = true;
+const DUO = '0123456789AB';   // 十二進表記
+function drawMath(now){
+  const small = W < 720;
+  const pw = 278, ph = 300, cell = 12;
+  const x0 = small ? 8 : W - pw - 12;
+  const y0 = small ? Math.max(8, H - ph - 8) : 62;
+  g2.fillStyle = 'rgba(12,10,7,0.72)';
+  g2.fillRect(x0 - 4, y0 - 4, pw + 8, ph + 8);
+
+  // 直近の発音イベント（なければ生成カーソル）を数理の「現在」とする
+  const M = mathEv;
+  const form = M ? M.form : serial.form;
+  const tt   = M ? M.tt   : serial.t;
+  const kk   = M ? M.k    : -1;
+  const r = serial.row;
+
+  // --- 12×12 音列行列: M[i][j] = (r_j − r_i) mod 12。行=P, 列=I, 逆読みで R/RI ---
+  const hlRow = (form === 0 || form === 2) ? r.indexOf((12 - tt) % 12) : -1;
+  const hlCol = (form === 1 || form === 3) ? r.indexOf(tt % 12) : -1;
+  g2.font = '9px monospace'; g2.textAlign = 'center';
+  const mx = x0 + 60;
+  for (let i = 0; i < 12; i++){
+    for (let j = 0; j < 12; j++){
+      const v = (r[j] - r[i] + 12) % 12;
+      const cur = (i === hlRow && j === kk) || (j === hlCol && i === kk);
+      const a = (i === hlRow || j === hlCol) ? 0.9 : 0.3;
+      g2.fillStyle = cur ? RED : `rgba(232,224,204,${a})`;
+      g2.fillText(DUO[v], mx + j * cell + cell / 2, y0 + 10 + i * cell);
+    }
+  }
+  g2.fillStyle = 'rgba(232,224,204,0.5)'; g2.textAlign = 'left';
+  g2.fillText('音列行列', x0, y0 + 10);
+  g2.fillText('ℤ12', x0, y0 + 22);
+  g2.fillText(['P→','←R','I↓','RI↑'][form] + ' ' + ['P','I','R','RI'][form] + tt, x0, y0 + 40);
+
+  // --- 数式（ライブ値を代入） ---
+  const L = M || serial.last || { pc: 0, oct: 0, infl: 0, steps: 0 };
+  const eps = (form === 1 || form === 3) ? '−x' : 'x';
+  const lines = [
+    `𝒫 = ℤ48   f(s) = 220·2^(s/48)`,
+    `${(form === 1 || form === 3) ? 'T' + tt + '∘I' : 'T' + tt}: x ↦ (${eps} + ${tt}) mod 12  ∈ D12`,
+    `pc = ${L.pc} = ${L.pc.toString(2).padStart(4,'0')}₂`,
+    `s = 4(pc−9)+48o+ι = 4·${L.pc - 9}+48·${L.oct}${L.infl < 0 ? '−' : '+'}${Math.abs(L.infl)} = ${L.steps}`,
+  ];
+  if (M){
+    const ch = (M.chain && M.chain.length) ? M.chain.join('·') : '1';
+    lines.push(`t = b + a/q ∈ ℚ = ${M.beat + 1}拍 + ${M.on}/${M.den}   ⟨${ch}⟩`);
+    lines.push(`f = ${stepFreq(M.steps + (M.slip || 0)).toFixed(1)} Hz   Δt~N(0,σ²) = ${(M.offset * 1000).toFixed(1)}ms`);
+    lines.push(`σ = (1−C)(0.35+0.65d/4)·90ms = ${((M.sigma || 0) * 1000).toFixed(1)}ms`);
+  }
+  lines.push(`Ċ = ρ − δ(X,M) = ${st.recover.toFixed(3)} − ${st.drain.toFixed(3)} = ${st.dCdt >= 0 ? '+' : ''}${st.dCdt.toFixed(3)}`);
+  lines.push(`τẊ = −X + g(u)   g=${st.gVal.toFixed(2)}  X=${st.complexity.toFixed(2)}`);
+  lines.push(`Φ̇ = 0.0035X − λ𝟙ferm   Φ=${st.fatigue.toFixed(2)}  C=${st.conc.toFixed(2)}`);
+  g2.font = '9.5px monospace';
+  for (let i = 0; i < lines.length; i++){
+    g2.fillStyle = `rgba(232,224,204,${i < 4 ? 0.75 : 0.6})`;
+    g2.fillText(lines[i], x0, y0 + 160 + i * 14);
+  }
 }
 
 function bar(x, y, w, v, label, color){
@@ -561,6 +640,8 @@ function applyPointer(e){
 const bGrain = document.getElementById('bGrain');
 const bSound = document.getElementById('bSound');
 const bFull  = document.getElementById('bFull');
+const bMath  = document.getElementById('bMath');
+bMath.onclick  = () => { mathOn = !mathOn; bMath.classList.toggle('on', mathOn); };
 bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
 bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
 const docEl = document.documentElement;
