@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SCORE FOR THE IMPOSSIBLE — 不完全な演奏機械</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0c0a07; touch-action:none;
+              font-family:"Hiragino Mincho ProN","Yu Mincho",serif; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #cam { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
+  #btns { position:fixed; top:10px; right:10px; display:flex; gap:8px; z-index:20; }
+  .btn { color:#8a7f66; border:1px solid #4a4235; padding:6px 12px; font-size:11px;
+         letter-spacing:.1em; cursor:pointer; user-select:none; -webkit-user-select:none;
+         background:rgba(12,10,7,.7); }
+  .btn.on { color:#e8e0cc; border-color:#8a7f66; }
+  #overlay { position:fixed; inset:0; z-index:30; background:#0c0a07;
+             display:flex; flex-direction:column; align-items:center; justify-content:center;
+             color:#e8e0cc; text-align:center; padding:24px; }
+  #overlay h1 { font-size:clamp(18px,4vw,34px); letter-spacing:.35em; font-weight:normal; margin-bottom:6px; }
+  #overlay h2 { font-size:clamp(11px,2vw,15px); letter-spacing:.5em; color:#8a7f66; font-weight:normal; margin-bottom:36px; }
+  #overlay p  { font-size:clamp(11px,1.6vw,13px); line-height:2.1; color:#a89c82; max-width:34em; margin-bottom:8px; }
+  #startBtn { margin-top:40px; border:1px solid #8a7f66; padding:14px 46px; letter-spacing:.4em;
+              font-size:14px; cursor:pointer; color:#e8e0cc; }
+  #startBtn:active { background:#e8e0cc; color:#0c0a07; }
+  #permNote { margin-top:18px; font-size:10px; color:#5c5343; letter-spacing:.15em; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<video id="cam" playsinline muted autoplay></video>
+<div id="btns" style="display:none">
+  <div class="btn on" id="bGrain">具体音</div>
+  <div class="btn" id="bFull">全画面</div>
+  <div class="btn on" id="bSound">音</div>
+</div>
+
+<div id="overlay">
+  <h1>SCORE FOR THE IMPOSSIBLE</h1>
+  <h2>不完全な演奏機械</h2>
+  <p>このシステムは、演奏不可能な楽譜を書き続け、<br>内部の「仮想演奏者」がそれに挑み続けます。</p>
+  <p>あなたの声・物音・動きは楽譜をさらに複雑にします。<br>楽譜が複雑になるほど、演奏者の集中は削られ、演奏は崩れます。<br>赤い痕跡は、零れ落ちた音のエラーです。</p>
+  <p>画面に触れて押さえている間 — フェルマータ。演奏者は息をつきます。</p>
+  <div id="startBtn">触れて開始</div>
+  <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても内部シードで動作します）</div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   SCORE FOR THE IMPOSSIBLE — 不完全な演奏機械  v1
+   New Complexity interactive installation prototype
+   単一HTML / 依存なし / PC & iPhone Safari
+   ================================================================ */
+
+// ---------- utils ----------
+const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const rng   = Math.random;
+const rngi  = n=>Math.floor(rng()*n);
+function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function shuffled(arr){ const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=rngi(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+// ---------- global state ----------
+let ctx=null, master=null, limiter=null, analyser=null;
+let micReady=false, camReady=false, running=false;
+let soundOn=true, grainOn=true;
+
+const st = {
+  complexity: 0.2,     // 0..1 楽譜の要求水準
+  conc: 1.0,           // 仮想演奏者の集中力
+  fatigue: 0,          // 疲労（集中力の上限を削る）
+  micRms: 0, micCent: 0, motion: 0,
+  tempoMul: 1, microGrid: 2,   // microGrid: 許容微分音幅（48EDOステップ, ±2=八分音まで）
+  fermata: false,
+  errRecent: 0,        // 直近エラー量（描画用）
+};
+
+// ---------- series engine (セリー) ----------
+const DYN_NAMES = ['pppp','ppp','pp','p','mf','f','ff','ffff'];
+const DYN_GAIN  = [0.030,0.050,0.080,0.130,0.200,0.300,0.430,0.620];
+const RATIOS    = [[3,2],[5,4],[4,3],[7,6],[5,3],[7,4],[9,8],[11,8]];
+
+const serial = {
+  row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
+  oct: shuffled([-1,-1,0,0,0,1,1,2]),
+  infl: shuffled([-2,-1,-1,0,0,0,1,1,2]),   // 48EDOステップ（八分音）単位
+  dyn: shuffled([0,1,2,3,4,5,6,7]),
+  atk: shuffled([0.002,0.004,0.008,0.015,0.03,0.06]),
+  i:0, form:0, t:0,
+  next(){
+    const k = this.i++;
+    let pc = this.row[k % 12];
+    // 音列変形: P / I / R / RI をフレーズごとに巡回
+    if (this.form===1) pc = (12 - pc) % 12;                       // I
+    if (this.form===2) pc = this.row[11 - (k % 12)];              // R
+    if (this.form===3) pc = (12 - this.row[11 - (k % 12)]) % 12;  // RI
+    pc = (pc + this.t) % 12;
+    const infl = clamp(this.infl[k % this.infl.length], -st.microGrid, st.microGrid);
+    return {
+      steps: (pc - 9) * 4 + this.oct[k % this.oct.length] * 48 + infl, // A=0中心, 48EDO
+      infl,
+      dyn:  this.dyn[k % this.dyn.length],
+      atk:  this.atk[k % this.atk.length],
+    };
+  },
+  advancePhrase(){ this.form = rngi(4); this.t = rngi(12); },
+  reseed(){ this.row = shuffled(this.row); this.oct = shuffled(this.oct);
+            this.infl = shuffled(this.infl); this.dyn = shuffled(this.dyn); },
+};
+const stepFreq = s => 220 * Math.pow(2, s/48);
+
+// ---------- rational-time tuplet tree (入れ子連符) ----------
+const MAX_PHRASE_EVENTS = 200;
+function buildNode(t0, dur, depth, cx, out){
+  const maxDepth = 1 + Math.round(cx * 3);
+  if (depth < maxDepth && out.events.length < MAX_PHRASE_EVENTS &&
+      (depth === 0 || rng() < 0.35 + cx * 0.5)){
+    // 複雑度が高いほど大きい分割比を選ぶ（深い階層では小さい比に制限）
+    const pool = depth >= 2 ? RATIOS.slice(0, 3) : RATIOS.slice(0, 3 + Math.round(cx * 5));
+    const [n] = pool[rngi(pool.length)];
+    const label = n + ':' + (depth === 0 ? [2,4,3][rngi(3)] : pool[rngi(pool.length)][1]);
+    out.brackets.push({ t0, t1: t0 + dur, label, depth });
+    const sub = dur / n;
+    for (let i = 0; i < n; i++) buildNode(t0 + i * sub, sub, depth + 1, cx * 0.92, out);
+  } else {
+    if (rng() < 0.14) out.events.push({ t: t0, dur, rest: true, depth });
+    else out.events.push({ t: t0, dur, depth });
+  }
+}
+
+// ---------- virtual performer (仮想演奏者) ----------
+function perform(ev){
+  const depthN = clamp(ev.depth / 4, 0, 1);
+  const err = (1 - st.conc) * (0.35 + 0.65 * depthN);   // 誤差係数
+  ev.err = err;
+  ev.offset  = gauss() * err * 0.09;                    // タイミングの揺れ
+  ev.dropped = rng() < err * 0.42;                      // 脱落
+  ev.slip    = (rng() < err * 0.5) ? (rngi(2)+1) * (rng()<.5?-1:1) : 0; // 音高の滑り(八分音)
+  ev.gainMul = clamp(1 + gauss() * err * 0.6, 0.15, 1.8);
+  ev.pt = ev.t + ev.offset;
+}
+
+// ---------- score data ----------
+let renderEvents = [];   // 描画対象（休符含む）
+let brackets     = [];   // 連符ブラケット
+let pending      = [];   // 音声スケジュール待ち
+let smudges      = [];   // エラーの染み
+let nextPhraseT  = 0;
+let lastPitchSteps = 0;
+
+function generatePhrase(t0){
+  serial.advancePhrase();
+  const bpm = 54 * st.tempoMul;
+  const beatLen = 60 / bpm;
+  const beats = 3 + rngi(3);
+  const out = { events: [], brackets: [] };
+  for (let b = 0; b < beats; b++)
+    buildNode(t0 + b * beatLen, beatLen, 0, st.complexity, out);
+  out.events.sort((a,b)=>a.t-b.t);
+  for (const ev of out.events){
+    if (!ev.rest){
+      Object.assign(ev, serial.next());
+      perform(ev);
+      lastPitchSteps = ev.steps;
+      if (!ev.dropped) pending.push(ev);
+    }
+    renderEvents.push(ev);
+  }
+  brackets.push(...out.brackets);
+  return t0 + beats * beatLen + lerp(0.35, 0.04, st.complexity);
+}
+
+// ---------- audio ----------
+let activeVoices = 0;
+const MAX_VOICES = 64;
+function scheduleAudio(ev){
+  ev.scheduled = true;
+  if (!soundOn || activeVoices >= MAX_VOICES) return;
+  activeVoices++;
+  const f = clamp(stepFreq(ev.steps + ev.slip), 55, 4300);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  o.onended = () => { activeVoices--; };
+  const g = ctx.createGain();
+  const peak = DYN_GAIN[ev.dyn] * ev.gainMul;
+  const t = Math.max(ev.pt, ctx.currentTime + 0.01);
+  const rel = Math.max(ev.dur * 1.5, 0.09);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.001), t + ev.atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + ev.atk + rel);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + ev.atk + rel + 0.05);
+  // 強音イベント時、会場音のグレインを撒く（具体音レイヤー）
+  if (grainOn && micReady && ev.dyn >= 6 && rng() < 0.6) playGrain(t, peak);
+}
+
+// mic ring buffer → granular
+const RING_SEC = 4;
+let ring = null, ringPos = 0, ringLen = 0, grainGain = null;
+function setupRing(micSrc){
+  ringLen = Math.floor(ctx.sampleRate * RING_SEC);
+  ring = new Float32Array(ringLen);
+  const sp = ctx.createScriptProcessor(2048, 1, 1);
+  sp.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++){
+      ring[ringPos] = inp[i];
+      ringPos = (ringPos + 1) % ringLen;
+    }
+  };
+  micSrc.connect(sp);
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  sp.connect(mute).connect(ctx.destination);   // iOSでprocessを回すためのダミー接続
+  grainGain = ctx.createGain(); grainGain.gain.value = 0.5;
+  grainGain.connect(master);
+}
+function playGrain(when, peak){
+  if (!ring) return;
+  const len = Math.floor(ctx.sampleRate * (0.03 + rng() * 0.12));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  const start = (ringPos - len - rngi(ctx.sampleRate * 2) + ringLen * 2) % ringLen;
+  for (let i = 0; i < len; i++){
+    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / len);  // hann窓
+    d[i] = ring[(start + i) % ringLen] * w;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  src.playbackRate.value = Math.pow(2, (rng() * 2 - 1) * 0.6);
+  const g = ctx.createGain(); g.gain.value = clamp(peak * 0.5, 0.02, 0.3);
+  src.connect(g).connect(grainGain);
+  src.start(Math.max(when, ctx.currentTime + 0.01));
+}
+
+// fermata drone
+let droneOsc = null, droneGain = null;
+function droneOn(){
+  droneOff();
+  droneOsc = ctx.createOscillator(); droneOsc.type = 'sine';
+  droneOsc.frequency.value = clamp(stepFreq(lastPitchSteps), 55, 2000);
+  droneGain = ctx.createGain();
+  droneGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  droneGain.gain.exponentialRampToValueAtTime(0.09, ctx.currentTime + 0.8);
+  droneOsc.connect(droneGain).connect(master);
+  droneOsc.start();
+}
+function droneOff(){
+  if (!droneOsc) return;
+  const o = droneOsc, g = droneGain;
+  g.gain.cancelScheduledValues(ctx.currentTime);
+  g.gain.setValueAtTime(g.gain.value, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+  o.stop(ctx.currentTime + 0.7);
+  droneOsc = droneGain = null;
+}
+
+// ---------- scheduler loop ----------
+function schedulerTick(){
+  if (!running) return;
+  const now = ctx.currentTime;
+  if (!st.fermata){
+    if (nextPhraseT < now) nextPhraseT = now + 0.2;
+    while (nextPhraseT < now + 3) nextPhraseT = generatePhrase(nextPhraseT);
+  }
+  for (const ev of pending)
+    if (!ev.scheduled && ev.pt < now + 0.4) scheduleAudio(ev);
+  pending = pending.filter(ev => !ev.scheduled);
+  renderEvents = renderEvents.filter(ev => ev.t > now - 14);
+  brackets = brackets.filter(b => b.t1 > now - 14);
+  smudges = smudges.filter(s => now - s.at < 25);
+}
+
+// ---------- inputs: mic analysis / camera motion ----------
+const freqData = new Uint8Array(512);
+let timeData = null;
+function analyzeMic(){
+  if (!analyser) return;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  st.micRms = lerp(st.micRms, Math.sqrt(sum / timeData.length), 0.25);
+  analyser.getByteFrequencyData(freqData);
+  let e = 0, ei = 0;
+  for (let i = 0; i < freqData.length; i++){ e += freqData[i]; ei += freqData[i] * i; }
+  if (e > 500) st.micCent = lerp(st.micCent, (ei / e) / freqData.length * 2, 0.15);
+}
+
+const camV = document.getElementById('cam');
+const camCv = document.createElement('canvas'); camCv.width = 64; camCv.height = 48;
+const camCtx = camCv.getContext('2d', { willReadFrequently: true });
+let prevFrame = null;
+setInterval(()=>{
+  if (!camReady || camV.videoWidth === 0) return;
+  camCtx.drawImage(camV, 0, 0, 64, 48);
+  const img = camCtx.getImageData(0, 0, 64, 48).data;
+  if (prevFrame){
+    let d = 0;
+    for (let i = 0; i < img.length; i += 4){
+      const l = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+      d += Math.abs(l - prevFrame[i >> 2]);
+    }
+    st.motion = lerp(st.motion, clamp(d / (64 * 48) / 18, 0, 1), 0.3);
+  }
+  if (!prevFrame) prevFrame = new Float32Array(64 * 48);
+  for (let i = 0; i < img.length; i += 4)
+    prevFrame[i >> 2] = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+}, 100);
+
+// ---------- state update ----------
+let walkPhase = rng() * 100;
+function updateState(dt, tSec){
+  analyzeMic();
+  // 複雑度: 会場が騒がしい/動きがあるほど楽譜の要求が上がる
+  let target;
+  if (micReady){
+    target = 0.12 + st.micRms * 3.5 + st.micCent * 0.35 + st.motion * 0.7;
+  } else {
+    walkPhase += dt * 0.05;
+    target = 0.3 + 0.22 * Math.sin(walkPhase) + 0.12 * Math.sin(walkPhase * 3.7) + st.motion * 0.7;
+  }
+  st.complexity = lerp(st.complexity, clamp(target, 0.05, 1), 1 - Math.exp(-dt / 1.6));
+
+  // 集中力: 複雑さと会場の動きに削られ、フェルマータで回復する
+  const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
+  const recover = st.fermata ? 0.38 : 0.065;
+  st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
+  st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
+
+  st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
+  if (rng() < dt / 45) serial.reseed();   // 数十秒ごとに音列を再シード
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('cv');
+const g2 = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+let specCv = null, specCtx = null;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  g2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  specCv = document.createElement('canvas');
+  specCv.width = W; specCv.height = 160;
+  specCtx = specCv.getContext('2d');
+}
+window.addEventListener('resize', resize); resize();
+
+const PX_PER_SEC = 90;
+const INK = '#e8e0cc', RED = '#c8402a';
+
+function drawSpectrogram(){
+  if (!analyser) return;
+  specCtx.drawImage(specCv, -1, 0);
+  specCtx.fillStyle = '#0c0a07'; specCtx.fillRect(W - 1, 0, 1, 160);
+  for (let y = 0; y < 160; y++){
+    const v = freqData[Math.floor(y / 160 * 200)] / 255;
+    if (v > 0.05){
+      specCtx.fillStyle = `rgba(200,150,60,${v * 0.55})`;
+      specCtx.fillRect(W - 1, 159 - y, 1, 1);
+    }
+  }
+}
+
+function draw(now){
+  g2.fillStyle = '#0c0a07'; g2.fillRect(0, 0, W, H);
+  drawSpectrogram();
+  g2.globalAlpha = 0.35; g2.drawImage(specCv, 0, H - 170, W, 160); g2.globalAlpha = 1;
+
+  const S = clamp(H * 0.022, 8, 14);        // 五線の間隔
+  const cY = H * 0.46;                       // 五線中央（B線相当）
+  const playX = W * 0.62;
+  const px = t => playX + (t - now) * PX_PER_SEC;
+  const stepY = s => cY - s * (S / 8);       // 48EDO 1oct = 6S
+
+  // 五線
+  g2.strokeStyle = 'rgba(232,224,204,0.5)'; g2.lineWidth = 1;
+  for (let i = -2; i <= 2; i++){
+    g2.beginPath(); g2.moveTo(0, cY + i * S); g2.lineTo(W, cY + i * S); g2.stroke();
+  }
+
+  // エラーの染み
+  for (const s of smudges){
+    const age = now - s.at, a = clamp((1 - age / 25) * s.mag * 0.5, 0, 0.5);
+    if (a <= 0.01) continue;
+    const x = px(s.t);
+    if (x < -60 || x > W + 60) continue;
+    const r = 8 + s.mag * 26 + age * 1.2;
+    const grd = g2.createRadialGradient(x, s.y, 0, x, s.y, r);
+    grd.addColorStop(0, `rgba(200,64,42,${a})`);
+    grd.addColorStop(1, 'rgba(200,64,42,0)');
+    g2.fillStyle = grd;
+    g2.beginPath(); g2.arc(x, s.y, r, 0, 7); g2.fill();
+  }
+
+  // 連符ブラケット
+  g2.font = '10px serif'; g2.textAlign = 'center';
+  for (const b of brackets){
+    const x0 = px(b.t0), x1 = px(b.t1);
+    if (x1 < -20 || x0 > W + 20) continue;
+    const y = cY - 3.2 * S - 13 - b.depth * 13;
+    g2.strokeStyle = 'rgba(232,224,204,0.6)'; g2.lineWidth = 1;
+    g2.beginPath();
+    g2.moveTo(x0, y + 4); g2.lineTo(x0, y); g2.lineTo(x1, y); g2.lineTo(x1, y + 4);
+    g2.stroke();
+    g2.fillStyle = 'rgba(232,224,204,0.75)';
+    g2.fillText(b.label, (x0 + x1) / 2, y - 2);
+  }
+
+  // 音符
+  for (const ev of renderEvents){
+    const x = px(ev.t);
+    if (x < -40 || x > W + 40) continue;
+    const past = ev.t < now;
+
+    if (ev.rest){
+      g2.strokeStyle = past ? 'rgba(232,224,204,0.25)' : 'rgba(232,224,204,0.6)';
+      g2.lineWidth = 1.5;
+      g2.beginPath(); g2.moveTo(x - 3, cY - 6); g2.lineTo(x + 3, cY + 6); g2.stroke();
+      continue;
+    }
+
+    const y = stepY(ev.steps);
+    const ideal = past ? 0.3 : 0.95;
+
+    // 加線
+    g2.strokeStyle = `rgba(232,224,204,${ideal * 0.5})`; g2.lineWidth = 1;
+    if (Math.abs(y - cY) > 2.4 * S){
+      const dir = y < cY ? -1 : 1;
+      for (let ly = cY + dir * 3 * S; dir * (ly - y) <= S * 0.4; ly += dir * S){
+        g2.beginPath(); g2.moveTo(x - 7, ly); g2.lineTo(x + 7, ly); g2.stroke();
+      }
+    }
+    // 符頭・符幹（理想の楽譜）
+    g2.fillStyle = `rgba(232,224,204,${ideal})`;
+    g2.beginPath(); g2.ellipse(x, y, 4.2, 3.1, -0.3, 0, 7); g2.fill();
+    g2.strokeStyle = `rgba(232,224,204,${ideal * 0.85})`; g2.lineWidth = 1.2;
+    const up = ev.steps < 0;
+    g2.beginPath();
+    g2.moveTo(x + (up ? 4 : -4), y);
+    g2.lineTo(x + (up ? 4 : -4), y + (up ? -3 : 3) * S);
+    g2.stroke();
+    // 持続線
+    g2.strokeStyle = `rgba(232,224,204,${ideal * 0.3})`;
+    g2.beginPath(); g2.moveTo(x + 5, y); g2.lineTo(x + ev.dur * PX_PER_SEC * 0.8, y); g2.stroke();
+    // 微分音矢印
+    if (ev.infl){
+      g2.fillStyle = `rgba(232,224,204,${ideal})`;
+      const n = Math.abs(ev.infl), dir = ev.infl > 0 ? -1 : 1;
+      for (let k = 0; k < n; k++){
+        const ay = y + dir * (7 + k * 5);
+        g2.beginPath();
+        g2.moveTo(x - 9, ay); g2.lineTo(x - 12, ay - dir * 4); g2.lineTo(x - 6, ay - dir * 4);
+        g2.closePath(); g2.fill();
+      }
+    }
+    // 強弱記号
+    g2.fillStyle = `rgba(200,180,140,${ideal * 0.9})`;
+    g2.font = 'italic 11px serif';
+    g2.fillText(DYN_NAMES[ev.dyn], x, cY + 3.6 * S + 14 + (ev.dyn % 2) * 12);
+
+    // ---- 演奏結果（過去のみ）: 理想とのズレを赤で ----
+    if (past){
+      if (ev.dropped){
+        g2.strokeStyle = 'rgba(200,64,42,0.85)'; g2.lineWidth = 1.6;
+        g2.beginPath();
+        g2.moveTo(x - 5, y - 5); g2.lineTo(x + 5, y + 5);
+        g2.moveTo(x + 5, y - 5); g2.lineTo(x - 5, y + 5);
+        g2.stroke();
+      } else {
+        const rx = px(ev.pt), ry = stepY(ev.steps + ev.slip);
+        g2.fillStyle = 'rgba(200,64,42,0.8)';
+        g2.beginPath(); g2.ellipse(rx, ry, 3.6, 2.7, -0.3, 0, 7); g2.fill();
+        if (Math.abs(rx - x) > 2 || ev.slip){
+          g2.strokeStyle = 'rgba(200,64,42,0.35)'; g2.lineWidth = 1;
+          g2.beginPath(); g2.moveTo(x, y); g2.lineTo(rx, ry); g2.stroke();
+        }
+      }
+      // 通過時に染みを生成
+      if (!ev.smudged){
+        ev.smudged = true;
+        const mag = (ev.dropped ? 1 : 0) + Math.abs(ev.offset) * 8 + Math.abs(ev.slip) * 0.4;
+        if (mag > 0.35){
+          smudges.push({ t: ev.t, y, mag: clamp(mag, 0, 1.6), at: now });
+          st.errRecent = clamp(st.errRecent + mag * 0.3, 0, 2);
+        }
+      }
+    }
+  }
+
+  // 演奏カーソル
+  g2.strokeStyle = `rgba(232,224,204,${0.45 + st.errRecent * 0.2})`;
+  g2.lineWidth = 1;
+  g2.beginPath(); g2.moveTo(playX, cY - 5 * S); g2.lineTo(playX, cY + 5 * S); g2.stroke();
+
+  // フェルマータ表示
+  if (st.fermata){
+    g2.strokeStyle = INK; g2.lineWidth = 2;
+    g2.beginPath(); g2.arc(playX, cY - 6 * S, 16, Math.PI, 0); g2.stroke();
+    g2.fillStyle = INK;
+    g2.beginPath(); g2.arc(playX, cY - 6 * S - 3, 3, 0, 7); g2.fill();
+  }
+
+  // HUD
+  drawHUD();
+}
+
+function bar(x, y, w, v, label, color){
+  g2.fillStyle = 'rgba(232,224,204,0.15)'; g2.fillRect(x, y, w, 4);
+  g2.fillStyle = color; g2.fillRect(x, y, w * clamp(v, 0, 1), 4);
+  g2.fillStyle = 'rgba(232,224,204,0.6)'; g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillText(label, x, y - 4);
+}
+function drawHUD(){
+  const x = 14;
+  bar(x, 28, 130, st.complexity, 'COMPLEXITY  要求水準', '#c89632');
+  bar(x, 52, 130, st.conc, 'CONCENTRATION  集中', '#7ba05a');
+  bar(x, 76, 130, st.fatigue, 'FATIGUE  疲労', '#c8402a');
+  g2.fillStyle = 'rgba(232,224,204,0.45)'; g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillText(`MIC ${micReady ? (st.micRms * 100).toFixed(0).padStart(3) : '---'}   CAM ${camReady ? (st.motion * 100).toFixed(0).padStart(3) : '---'}   TEMPO ×${st.tempoMul.toFixed(2)}   GRID ±${st.microGrid}/8`,
+    x, 100);
+}
+
+// ---------- main loops ----------
+let lastFrame = 0;
+function frame(ts){
+  if (!running) return;
+  const dt = clamp((ts - lastFrame) / 1000, 0.001, 0.1);
+  lastFrame = ts;
+  updateState(dt, ts / 1000);
+  draw(ctx.currentTime);
+  requestAnimationFrame(frame);
+}
+
+// ---------- interaction ----------
+cv.addEventListener('pointerdown', e => {
+  if (!running) return;
+  st.fermata = true;
+  pending = pending.filter(ev => ev.scheduled);
+  const cut = ctx.currentTime + 0.35;
+  renderEvents = renderEvents.filter(ev => ev.t < cut);
+  brackets = brackets.filter(b => b.t0 < cut);
+  droneOn();
+  applyPointer(e);
+});
+cv.addEventListener('pointermove', e => { if (st.fermata) applyPointer(e); });
+window.addEventListener('pointerup', () => {
+  if (!st.fermata) return;
+  st.fermata = false;
+  droneOff();
+  nextPhraseT = ctx.currentTime + 0.5;
+});
+function applyPointer(e){
+  st.tempoMul = lerp(0.4, 1.8, clamp(e.clientX / W, 0, 1));
+  st.microGrid = clamp(Math.round(lerp(0, 2, 1 - e.clientY / H)), 0, 2); // 上=八分音, 下=半音のみ
+}
+
+// ---------- buttons ----------
+const bGrain = document.getElementById('bGrain');
+const bSound = document.getElementById('bSound');
+const bFull  = document.getElementById('bFull');
+bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
+bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
+const docEl = document.documentElement;
+if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen)
+  bFull.style.display = 'none';   // iPhone Safari は Fullscreen API 非対応
+bFull.onclick  = () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement)
+    (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  else
+    (docEl.requestFullscreen || docEl.webkitRequestFullscreen)?.call(docEl);
+};
+
+// ---------- init ----------
+document.getElementById('startBtn').addEventListener('click', async () => {
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('btns').style.display = 'flex';
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC();
+  await ctx.resume();
+  master = ctx.createGain(); master.gain.value = 0.85;
+  limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -14; limiter.knee.value = 4;
+  limiter.ratio.value = 14; limiter.attack.value = 0.002; limiter.release.value = 0.2;
+  master.connect(limiter).connect(ctx.destination);
+
+  // マイク＋カメラ（iOS Safariは同時取得が安定するため単一呼び出しを優先。
+  //  片方拒否などで失敗したら個別取得にフォールバック。全滅でも内部シードで続行）
+  const AUDIO_C = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  const VIDEO_C = { width: 320, height: 240, facingMode: 'user' };
+  let micStream = null, camStream = null;
+  try {
+    micStream = camStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C, video: VIDEO_C });
+  } catch (err) {
+    try { micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C }); }
+    catch (e) { console.warn('mic unavailable:', e.message); }
+    try { camStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_C }); }
+    catch (e) { console.warn('camera unavailable:', e.message); }
+  }
+  if (micStream && micStream.getAudioTracks().length){
+    const src = ctx.createMediaStreamSource(micStream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+    timeData = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    setupRing(src);
+    micReady = true;
+  }
+  if (camStream && camStream.getVideoTracks().length){
+    camV.srcObject = camStream;
+    await camV.play().catch(()=>{});
+    camReady = true;
+  }
+
+  running = true;
+  nextPhraseT = ctx.currentTime + 0.3;
+  setInterval(schedulerTick, 90);
+  lastFrame = performance.now();
+  requestAnimationFrame(frame);
+}, { once: true });
+</script>
+</body>
+</html>
