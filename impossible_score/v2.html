@@ -40,8 +40,8 @@
 <div id="overlay">
   <h1>SCORE FOR THE IMPOSSIBLE</h1>
   <h2>II. 神はサイコロを振る</h2>
-  <p>未来の音は、確率の雲としてただよう。<br>カーソルが触れた瞬間 — 観測 — 音はひとつの点に確定する。<br>観測されなかった音は、空の環だけを残す。</p>
-  <p>あなたの声と動きは、サイコロの振り方を変える。</p>
+  <p>粒子は、確率の雲として奥行きの中にただよう。<br>左から現れる観測線が空間を走査し、触れた粒子の運命を確定する。<br>観測されなかった音は、空の環だけを残す。</p>
+  <p>線が右端に達すると消え、静寂が訪れる。そしてまた、サイコロは振られる。</p>
   <div id="startBtn">観 測 を 開 始</div>
   <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても内部シードで動作します）</div>
 </div>
@@ -49,9 +49,11 @@
 <script>
 'use strict';
 /* ================================================================
-   SCORE FOR THE IMPOSSIBLE — II. 神はサイコロを振る  (prototype v2)
-   量子測定メタファー: 未来=重ね合わせの雲 / 観測=確定 / 脱落=空環
-   聴覚トリック: #1 レジスター音脈分凝(3声) #2 定量反復セル #4 潜在パルス
+   SCORE FOR THE IMPOSSIBLE — II. 神はサイコロを振る  (prototype v2.1)
+   走査線駆動: 楽譜は空間化され（x=有理数時間, y=音高, z=入れ子深度）、
+   観測線が左から走査して衝突した粒子の運命を確定する。
+   走査モード: STEADY(等速=基準グリッド) / WAVER(集中力低下でよろめく)
+              / MULTI(多重線=カノン)。右端で消滅 → 静寂（間、疲労に比例）
    ================================================================ */
 
 // ---------- utils ----------
@@ -85,7 +87,7 @@ const serial = {
   row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
   infl: shuffled([-2,-1,-1,0,0,0,1,1,2]),
   dyn: shuffled([0,1,2,3,4,5,6,7]),
-  atk: shuffled([0.002,0.004,0.008,0.015,0.03,0.06]),   // 音長セリー
+  atk: shuffled([0.002,0.004,0.008,0.015,0.03,0.06]),
   rat: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
   i:0, ri:0, form:0, t:0, last:null,
   next(octPool){
@@ -108,29 +110,28 @@ const serial = {
             this.dyn = shuffled(this.dyn); this.rat = shuffled(this.rat); },
 };
 const stepFreq = s => 220 * Math.pow(2, s/48);
+const beatLen = () => 60 / (54 * st.tempoMul);
 
-// ---------- register streams (音脈分凝: 3声を固定音域帯に閉じ込める) ----------
+// ---------- register streams ----------
 const STREAMS = [
-  { id:0, name:'L', octPool:[-2,-2,-1,-1],  act: cx => 0.72,             nextT:0, cell:null },
-  { id:1, name:'M', octPool:[-1,0,0,0,1],   act: cx => 0.95,             nextT:0, cell:null },
-  { id:2, name:'H', octPool:[1,1,2,2],      act: cx => 0.22 + cx * 0.7,  nextT:0, cell:null },
+  { id:0, name:'L', octPool:[-2,-2,-1,-1],  act: cx => 0.72,             cell:null },
+  { id:1, name:'M', octPool:[-1,0,0,0,1],   act: cx => 0.95,             cell:null },
+  { id:2, name:'H', octPool:[1,1,2,2],      act: cx => 0.22 + cx * 0.7,  cell:null },
 ];
 
-// ---------- rational tuplet tree ----------
-const MAX_PHRASE_EVENTS = 120;
-function buildNode(t0, dur, depth, cx, out, on, den, chain, beat){
+// ---------- rational tuplet tree (拍単位の空間) ----------
+function buildNode(b0, durB, depth, cx, out, on, den, chain, beat){
   const maxDepth = 1 + Math.round(cx * 3);
-  if (depth < maxDepth && out.events.length < MAX_PHRASE_EVENTS &&
+  if (depth < maxDepth && out.events.length < 120 &&
       (depth === 0 || rng() < 0.35 + cx * 0.5)){
     const pool = depth >= 2 ? RATIOS.slice(0, 3) : RATIOS.slice(0, 3 + Math.round(cx * 5));
     const [n] = pool[serial.nextRatio(pool.length)];
-    const sub = dur / n;
+    const sub = durB / n;
     for (let i = 0; i < n; i++)
-      buildNode(t0 + i * sub, sub, depth + 1, cx * 0.92, out,
+      buildNode(b0 + i * sub, sub, depth + 1, cx * 0.92, out,
                 on * n + i, den * n, chain.concat(n), beat);
   } else {
-    if (rng() < 0.2) out.events.push({ t: t0, dur, rest: true, depth });
-    else out.events.push({ t: t0, dur, depth, on, den, chain, beat });
+    if (rng() >= 0.2) out.events.push({ bPos: b0, durB, depth, on, den, chain, beat });
   }
 }
 
@@ -144,88 +145,209 @@ function perform(ev){
   ev.dropped = rng() < err * 0.42;
   ev.slip    = (rng() < err * 0.5) ? (rngi(2)+1) * (rng()<.5?-1:1) : 0;
   ev.gainMul = clamp(1 + gauss() * err * 0.6, 0.15, 1.8);
-  ev.pt = ev.t + ev.offset;
-  ev.dx = gauss() * 1.5; ev.dy = gauss() * 1.5;   // 確定後のブラウン漂流方向
+  ev.dx = gauss() * 1.5; ev.dy = gauss() * 1.5;
 }
 
-// ---------- score data ----------
-let renderEvents = [], pending = [], cellMarks = [], floatEqs = [], pulses = [];
+// ---------- page (空間化された楽譜の1ページ) ----------
+let page = null, ghosts = [], floatEqs = [], flashes = [];
 let lastPitchSteps = 0;
-const beatLen = () => 60 / (54 * st.tempoMul);
 
-// 定量反復セル: 凍結した理想セルをそのまま反復。演奏エラーは毎回振り直される
-// （同じ不可能に再挑戦し、毎回違う失敗をする）
-function emitCell(str, t0){
-  const c = str.cell;
-  const rep = c.total - c.repsLeft + 1;
-  for (const e of c.events){
-    const ev = { ...e, t: t0 + e.rel, stream: str.id, rep };
-    perform(ev);
-    lastPitchSteps = ev.steps;
-    if (!ev.dropped) pending.push(ev);
-    renderEvents.push(ev);
-  }
-  cellMarks.push({ t0, t1: t0 + c.dur, rep, total: c.total, stream: str.id });
-  c.repsLeft--;
-  if (c.repsLeft <= 0) str.cell = null;
-  return t0 + c.dur + 0.02;
-}
-
-function generateStreamPhrase(str, t0){
-  if (str.cell) return emitCell(str, t0);
-  const bl = beatLen();
-  // 声部の活性ゲート: 非活性なら休止フレーズ
-  if (rng() > str.act(st.complexity)) return t0 + (2 + rngi(3)) * bl;
-
-  serial.advancePhrase();
-  const beats = 2 + rngi(3);
-  const out = { events: [] };
-  for (let b = 0; b < beats; b++)
-    buildNode(t0 + b * bl, bl, 0, st.complexity, out, 0, 1, [], b);
-  out.events.sort((a,b)=>a.t-b.t);
-  const sounding = [];
-  for (const ev of out.events){
-    ev.stream = str.id;
-    if (!ev.rest){
+function genStream(str, beats, events, marks){
+  let b = 0;
+  while (b < beats){
+    if (str.cell){
+      const c = str.cell;
+      const rep = c.total - c.repsLeft + 1;
+      const len = Math.min(c.len, beats - b);
+      for (const e of c.events){
+        if (e.rel >= len) break;
+        events.push({ ...e, bPos: b + e.rel, stream: str.id, observed: false });
+      }
+      marks.push({ b0: b, b1: b + len, rep, total: c.total, stream: str.id });
+      b += len;
+      if (--c.repsLeft <= 0) str.cell = null;
+      continue;
+    }
+    if (rng() > str.act(st.complexity)){ b += 2 + rngi(3); continue; }
+    serial.advancePhrase();
+    const phraseBeats = Math.min(2 + rngi(3), beats - b);
+    const out = { events: [] };
+    for (let i = 0; i < phraseBeats; i++)
+      buildNode(b + i, 1, 0, st.complexity, out, 0, 1, [], b + i);
+    out.events.sort((a, x) => a.bPos - x.bPos);
+    const sounding = [];
+    for (const ev of out.events){
       Object.assign(ev, serial.next(str.octPool));
-      perform(ev);
-      lastPitchSteps = ev.steps;
-      if (!ev.dropped) pending.push(ev);
+      ev.stream = str.id;
+      ev.observed = false;
+      // 奥行き: 入れ子が深いほど手前に迫る（遠=小さく遅く静か、近=大きく速く大きい音）
+      ev.z = clamp(0.12 + ev.depth / 4 * 0.6 + rng() * 0.18, 0.05, 1);
+      events.push(ev);
       sounding.push(ev);
     }
-    renderEvents.push(ev);
+    // 定量反復セル捕獲（理想形を凍結、次のスロットで逐語反復。エラーは毎回振り直し）
+    if (!str.cell && sounding.length >= 3 && rng() < 0.3){
+      const n = Math.min(3 + rngi(4), sounding.length);
+      const cellEvs = sounding.slice(0, n).map(e => ({
+        rel: e.bPos - b, durB: e.durB, depth: e.depth, on: e.on, den: e.den,
+        chain: e.chain, beat: e.beat, steps: e.steps, infl: e.infl,
+        dyn: e.dyn, atk: e.atk, pc: e.pc, oct: e.oct, k: e.k, form: e.form,
+        tt: e.tt, z: e.z,
+      }));
+      str.cell = { events: cellEvs, len: phraseBeats, repsLeft: 2 + rngi(3), total: 0 };
+      str.cell.total = str.cell.repsLeft;
+    }
+    b += phraseBeats;
   }
-  // セル捕獲: 3〜6音の理想形を凍結し、次フレーズ以降 2〜4回 逐語反復する
-  if (!str.cell && sounding.length >= 3 && rng() < 0.3){
-    const n = Math.min(3 + rngi(4), sounding.length);
-    const cellEvs = sounding.slice(0, n).map(e => ({
-      rel: e.t - t0, dur: e.dur, depth: e.depth, on: e.on, den: e.den,
-      chain: e.chain, beat: e.beat, steps: e.steps, infl: e.infl,
-      dyn: e.dyn, atk: e.atk, pc: e.pc, oct: e.oct, k: e.k, form: e.form, tt: e.tt,
-    }));
-    const span = cellEvs[cellEvs.length-1].rel + cellEvs[cellEvs.length-1].dur;
-    str.cell = { events: cellEvs, dur: Math.max(span, bl * 0.8),
-                 repsLeft: 2 + rngi(3), total: 0 };
-    str.cell.total = str.cell.repsLeft;
+}
+
+function generatePage(){
+  const beats = 8 + rngi(7);
+  const events = [], marks = [];
+  for (const str of STREAMS) genStream(str, beats, events, marks);
+  return { beats, events, marks, bornAt: ctx.currentTime };
+}
+
+// ---------- sweep line (観測線) ----------
+const sweep = {
+  phase: 'rest',        // rest → in → sweep → out → rest …
+  x: 0, t: 0,
+  mode: 'steady',       // steady | waver | multi
+  trailBeats: [],       // multi: 後続線の遅延（拍単位）→ カノン/エコー
+  restDur: 2, wPh: 0, pulseBeat: 0,
+};
+const MODE_JP = { steady: 'STEADY', waver: 'WAVER', multi: 'CANON', };
+
+function beginPage(){
+  page = generatePage();
+  sweep.phase = 'in'; sweep.t = 0; sweep.x = 0;
+  sweep.wPh = rng() * 7; sweep.pulseBeat = 0;
+  const waverP = 0.22 + (1 - st.conc) * 0.28;
+  const r = rng();
+  if (r < 0.15){
+    sweep.mode = 'multi';
+    sweep.trailBeats = [0.4 + rng() * 0.6];
+    if (rng() < 0.4) sweep.trailBeats.push(1.1 + rng() * 0.8);
+  } else if (r < 0.15 + waverP){
+    sweep.mode = 'waver'; sweep.trailBeats = [];
+  } else {
+    sweep.mode = 'steady'; sweep.trailBeats = [];
   }
-  return t0 + beats * bl + lerp(0.3, 0.04, st.complexity);
+}
+
+function endPage(){
+  if (page){
+    for (const ev of page.events)
+      if (ev.observed && !ev.dropped) ghosts.push(ev);
+    page = null;
+  }
+  sweep.phase = 'rest'; sweep.t = 0;
+  sweep.restDur = 1.2 + st.fatigue * 6 + rng() * 2.5;   // 静寂は疲労に比例して長くなる
+}
+
+// 幾何: bPos → x
+const mX = () => W * 0.03;
+const usable = () => W * 0.94;
+const xOf = b => mX() + (page ? b / page.beats : 0) * usable();
+
+function sweepVel(){   // px/sec — 等速の基準。tempoは接触Xでライブに変わる
+  if (!page) return 0;
+  let v = usable() / (page.beats * beatLen());
+  if (sweep.mode === 'waver'){
+    const tSec = performance.now() / 1000;
+    v *= 1 + 0.30 * Math.sin(tSec * 0.8 + sweep.wPh)
+           + (1 - st.conc) * 0.3 * Math.sin(tSec * 5.3 + sweep.wPh * 2);
+    v = Math.max(v, usable() / (page.beats * beatLen()) * 0.15);
+  }
+  return v;
+}
+
+// 観測: 線が粒子に到達 → 運命の確定
+function observe(ev, at){
+  ev.observed = true;
+  ev.obsAt = at;
+  perform(ev);
+  ev.durSec = ev.durB * beatLen();
+  lastPitchSteps = ev.steps;
+  mathEv = ev;
+  if (!ev.dropped) scheduleAudio(ev, at + Math.max(0, ev.offset));
+  const big = ev.dropped || Math.abs(ev.offset) > 0.04 || ev.slip;
+  if (big) st.errRecent = clamp(st.errRecent + 0.3, 0, 2);
+  if (rng() < (big ? 0.5 : 0.08)){
+    const opts = [
+      `Δt=${(ev.offset*1000).toFixed(0)}ms`, `s=${ev.steps}`,
+      `${ev.on}/${ev.den}`, `σ=${(ev.sigma*1000).toFixed(0)}ms`,
+      `pc=${ev.pc.toString(2).padStart(4,'0')}₂`,
+      `f=${stepFreq(ev.steps).toFixed(1)}Hz`, `z=${ev.z.toFixed(2)}`,
+      `⟨${ev.chain && ev.chain.length ? ev.chain.join('·') : '1'}⟩`,
+    ];
+    floatEqs.push({ x: xOf(ev.bPos), y: 0, ev, text: opts[rngi(opts.length)], at });
+  }
+}
+
+function updateSweep(dt, now){
+  sweep.t += dt;
+  if (sweep.phase === 'rest'){
+    if (sweep.t > sweep.restDur && !st.fermata) beginPage();
+    return;
+  }
+  if (sweep.phase === 'in'){
+    if (sweep.t > 1.3){ sweep.phase = 'sweep'; sweep.t = 0; }
+    return;
+  }
+  if (sweep.phase === 'out'){
+    if (sweep.t > 0.9) endPage();
+    return;
+  }
+  // --- sweep ---
+  const v = sweepVel();
+  if (!st.fermata) sweep.x += v * dt;
+  if (!page) return;
+  const look = v * 0.12;   // 120ms先読みでサンプル精度スケジュール
+  // 主線: 未観測粒子との衝突
+  for (const ev of page.events){
+    if (ev.observed) continue;
+    const ex = xOf(ev.bPos);
+    if (ex <= sweep.x + look)
+      observe(ev, now + clamp((ex - sweep.x) / Math.max(v, 1), 0, 0.15));
+  }
+  // 後続線(multi): 観測済み粒子を弱く再観測 = カノン/エコー
+  const beatPx = usable() / page.beats;
+  sweep.trailBeats.forEach((tb, ti) => {
+    const xT = sweep.x - tb * beatPx;
+    for (const ev of page.events){
+      if (!ev.observed || ev.dropped || (ev.echoMask & (1 << ti))) continue;
+      const ex = xOf(ev.bPos);
+      if (ex <= xT + look){
+        ev.echoMask |= (1 << ti);
+        scheduleEcho(ev, now + clamp((ex - xT) / Math.max(v, 1), 0, 0.15));
+      }
+    }
+  });
+  // 潜在パルス: 線が拍格子を横切る瞬間に刻む
+  const bx = (sweep.x - mX()) / usable() * page.beats;
+  while (sweep.pulseBeat <= bx && sweep.pulseBeat <= page.beats){
+    const xB = xOf(sweep.pulseBeat);
+    schedulePulse(now + clamp((xB - sweep.x) / Math.max(v, 1), 0, 0.15));
+    flashes.push({ b: sweep.pulseBeat, at: now });
+    sweep.pulseBeat++;
+  }
+  if (sweep.x > W * 1.0){ sweep.phase = 'out'; sweep.t = 0; }
 }
 
 // ---------- audio ----------
 let activeVoices = 0;
 const MAX_VOICES = 64;
-function scheduleAudio(ev){
-  ev.scheduled = true;
+function scheduleAudio(ev, at){
   if (!soundOn || activeVoices >= MAX_VOICES) return;
   activeVoices++;
   const f = clamp(stepFreq(ev.steps + ev.slip), 40, 4300);
   const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
   o.onended = () => { activeVoices--; };
   const g = ctx.createGain();
-  const peak = DYN_GAIN[ev.dyn] * ev.gainMul;
-  const t = Math.max(ev.pt, ctx.currentTime + 0.01);
-  // ソリッドな矩形エンベロープ（2ms/4msはクリック防止のみ）
-  const len = clamp(Math.min(ev.dur * 0.85, 0.03 + ev.atk * 2), 0.02, 0.16);
+  const peak = DYN_GAIN[ev.dyn] * ev.gainMul * lerp(0.5, 1.15, ev.z);  // 奥行き→音量
+  const t = Math.max(at, ctx.currentTime + 0.01);
+  const len = clamp(Math.min(ev.durSec * 0.85, 0.03 + ev.atk * 2), 0.02, 0.16);
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(peak, t + 0.002);
   g.gain.setValueAtTime(peak, t + len);
@@ -234,11 +356,26 @@ function scheduleAudio(ev){
   o.start(t); o.stop(t + len + 0.02);
   if (grainOn && micReady && ev.dyn >= 6 && rng() < 0.6) playGrain(t, peak);
 }
-
-// 潜在パルス (ghost tactus): 可聴閾すれすれの拍。連符はこの基準への緊張として鳴る
-function schedulePulse(t){
-  pulses.push({ t });
+function scheduleEcho(ev, at){
+  if (!soundOn || activeVoices >= MAX_VOICES) return;
+  activeVoices++;
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.value = clamp(stepFreq(ev.steps + ev.slip), 40, 4300);
+  o.onended = () => { activeVoices--; };
+  const g = ctx.createGain();
+  const peak = DYN_GAIN[ev.dyn] * ev.gainMul * lerp(0.5, 1.15, ev.z) * 0.32;
+  const t = Math.max(at, ctx.currentTime + 0.01);
+  const len = clamp(Math.min(ev.durSec * 0.85, 0.03 + ev.atk * 2), 0.02, 0.16) * 0.7;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.002);
+  g.gain.setValueAtTime(peak, t + len);
+  g.gain.linearRampToValueAtTime(0, t + len + 0.004);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + len + 0.02);
+}
+function schedulePulse(at){
   if (!soundOn) return;
+  const t = Math.max(at, ctx.currentTime + 0.005);
   const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1320;
   const g = ctx.createGain();
   g.gain.setValueAtTime(0, t);
@@ -248,8 +385,6 @@ function schedulePulse(t){
   o.connect(g).connect(master);
   o.start(t); o.stop(t + 0.03);
 }
-
-// 静寂なノイズ床
 function startNoiseFloor(){
   const len = ctx.sampleRate * 2;
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -321,28 +456,6 @@ function droneOff(){
   droneOsc = droneGain = null;
 }
 
-// ---------- scheduler ----------
-let pulseT = 0;
-function schedulerTick(){
-  if (!running) return;
-  const now = ctx.currentTime;
-  if (!st.fermata){
-    for (const str of STREAMS){
-      if (str.nextT < now) str.nextT = now + 0.2 + str.id * 0.07;
-      while (str.nextT < now + 3) str.nextT = generateStreamPhrase(str, str.nextT);
-    }
-    if (pulseT < now) pulseT = now + 0.2;
-    while (pulseT < now + 2){ schedulePulse(pulseT); pulseT += beatLen(); }
-  }
-  for (const ev of pending)
-    if (!ev.scheduled && ev.pt < now + 0.4) scheduleAudio(ev);
-  pending = pending.filter(ev => !ev.scheduled);
-  renderEvents = renderEvents.filter(ev => ev.t > now - 14);
-  cellMarks = cellMarks.filter(c => c.t1 > now - 14);
-  pulses = pulses.filter(p => p.t > now - 4);
-  floatEqs = floatEqs.filter(f => now - f.at < 4);
-}
-
 // ---------- inputs ----------
 const freqData = new Uint8Array(512);
 let timeData = null;
@@ -379,7 +492,7 @@ setInterval(()=>{
     prevFrame[i >> 2] = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
 }, 100);
 
-// ---------- Fluxus event scores（フルクサスの調味料: 一行の指示） ----------
+// ---------- Fluxus text（文面は今後検討 — 文学/哲学の一節の抽象的利用を予定） ----------
 const FLUX_POOL = [
   'GOD PLAYS DICE.', 'THIS IS NOT RANDOM.', 'OBSERVE.', 'DO NOTHING.',
   'COUNT THE SEVENS.', 'WAIT.', '静 止 せ よ', '偶 然 は 厳 密 で あ る',
@@ -407,21 +520,18 @@ function updateState(dt, now){
   st.complexity = lerp(st.complexity, st.gVal, 1 - Math.exp(-dt / 1.6));
 
   const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
-  const recover = st.fermata ? 0.38 : 0.065;
+  const recover = (st.fermata || sweep.phase === 'rest') ? 0.30 : 0.065;
   st.drain = drain; st.recover = recover; st.dCdt = recover - drain;
   st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
-  st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
+  st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - ((st.fermata || sweep.phase === 'rest') ? 0.015 : 0.0006)) * dt, 0, 0.75);
 
   st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
 
-  // サイコロ: 音列の再シード（数十秒ごと）
-  if (rng() < dt / 45){ serial.reseed(); fluxShow('DICE ARE THROWN.', now); }
-  // 崩壊の宣言
+  if (rng() < dt / 50){ serial.reseed(); fluxShow('DICE ARE THROWN.', now); }
   if (st.conc < 0.18 && !brokeShown){ fluxShow('THE PERFORMER IS BREAKING.', now); brokeShown = true; }
   if (st.conc > 0.5) brokeShown = false;
-  // ときどき、指示だけが現れる
   fluxTimer += dt;
-  if (fluxTimer > 75){ fluxTimer = 0; fluxShow(FLUX_POOL[rngi(FLUX_POOL.length)], now); }
+  if (fluxTimer > 90){ fluxTimer = 0; fluxShow(FLUX_POOL[rngi(FLUX_POOL.length)], now); }
 }
 
 // ---------- rendering ----------
@@ -436,135 +546,120 @@ function resize(){
 }
 window.addEventListener('resize', resize); resize();
 
-const PX_PER_SEC = 90;
 const RED = '#c8402a';
-// 静寂なノイズ: ゆっくり漂う塵
-const dust = Array.from({length: 70}, () => ({
-  x: rng(), y: rng(), p: rng() * 100, s: 0.3 + rng() * 0.9,
-}));
+// 塵: 3層の視差（遠=小さく遅い、近=大きく速い）
+const dust = Array.from({length: 90}, (_, i) => {
+  const z = [0.2, 0.55, 0.9][i % 3];
+  return { x: rng(), y: rng(), p: rng() * 100, z };
+});
 
 let mathEv = null, mathOn = true;
+const stepY = s => H * 0.5 - s * (H * 0.42 / 150);
+
+function drawParticleObserved(ev, now){
+  const ex = xOf2(ev), age = now - ev.obsAt;
+  if (age < 0) return;
+  const size = lerp(0.9, 2.6, ev.z) + ev.dyn * 0.14;
+  // 観測の環（収斂）
+  if (age < 0.35){
+    const rr = 3 + age * 52;
+    g2.strokeStyle = `rgba(220,220,220,${(1 - age / 0.35) * (0.25 + ev.z * 0.35)})`;
+    g2.lineWidth = 1;
+    g2.beginPath(); g2.arc(ex, stepY(ev.steps + ev.slip), rr, 0, 7); g2.stroke();
+  }
+  if (ev.dropped){
+    const a = clamp(0.55 - age * 0.2, 0, 0.55) * lerp(0.5, 1, ev.z);
+    if (a > 0.01){
+      g2.strokeStyle = `rgba(200,64,42,${a})`; g2.lineWidth = 1;
+      g2.beginPath(); g2.arc(ex, stepY(ev.steps), size + 1.6, 0, 7); g2.stroke();
+    }
+    return;
+  }
+  // 確定した点: 奥行きに応じた速度で漂流し消える（発散）
+  const drift = (0.5 + ev.z * 1.8) * age;
+  const rx = ex + ev.dx * drift, ry = stepY(ev.steps + ev.slip) + ev.dy * drift;
+  const a = clamp(1 - age / 12, 0, 1) * lerp(0.4, 0.95, ev.z);
+  g2.fillStyle = `rgba(232,230,224,${a})`;
+  g2.beginPath(); g2.arc(rx, ry, size, 0, 7); g2.fill();
+  if (Math.abs(ev.offset) > 0.02 || ev.slip){
+    g2.strokeStyle = `rgba(200,64,42,${a * 0.4})`; g2.lineWidth = 0.7;
+    g2.beginPath(); g2.arc(ex, stepY(ev.steps), size + 1, 0, 7); g2.stroke();
+    g2.beginPath(); g2.moveTo(ex, stepY(ev.steps)); g2.lineTo(rx, ry); g2.stroke();
+  }
+}
+// ghost はページ消滅後も xOf が使えないため、観測時の x を凍結する
+function xOf2(ev){
+  if (ev.fx !== undefined) return ev.fx;
+  if (page && page.events.includes(ev)) return xOf(ev.bPos);
+  return ev.fx = ev.lastX ?? W * 0.5;
+}
 
 function draw(now, tSec){
   g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
 
-  const playX = W * 0.6;
-  const px = t => playX + (t - now) * PX_PER_SEC;
-  const stepY = s => H * 0.5 - s * (H * 0.42 / 150);
-
-  // 塵（静寂なノイズ）
+  // 塵の視差
   for (const d of dust){
-    const dx = (d.x * W + Math.sin(tSec * 0.05 + d.p) * 14) % W;
-    const dy = (d.y * H + Math.cos(tSec * 0.04 + d.p * 1.7) * 10) % H;
-    g2.fillStyle = 'rgba(220,220,220,0.05)';
-    g2.fillRect(dx, dy, d.s, d.s);
+    const speed = 2 + d.z * 9;
+    const dx = ((d.x * W - tSec * speed) % W + W) % W;
+    const dy = (d.y * H + Math.sin(tSec * (0.03 + d.z * 0.05) + d.p) * (6 + d.z * 10)) % H;
+    g2.fillStyle = `rgba(220,220,220,${0.028 + d.z * 0.05})`;
+    const s = 0.4 + d.z * 1.1;
+    g2.fillRect(dx, dy, s, s);
   }
 
-  // 声部帯の基準線（極細）
-  for (const str of STREAMS){
-    const cSteps = str.octPool.reduce((a,b)=>a+b,0) / str.octPool.length * 48;
-    const y = stepY(cSteps);
-    g2.strokeStyle = 'rgba(220,220,220,0.055)'; g2.lineWidth = 1;
-    g2.beginPath(); g2.moveTo(0, y); g2.lineTo(W, y); g2.stroke();
-  }
+  const fadeIn = sweep.phase === 'in' ? clamp(sweep.t / 1.3, 0, 1) : 1;
+  const fadeOut = sweep.phase === 'out' ? clamp(1 - sweep.t / 0.9, 0, 1) : 1;
 
-  // 潜在パルス: 過去2拍ぶんの拍点を足元に極小の点で
-  for (const p of pulses){
-    const x = px(p.t);
-    if (x < 0 || x > W) continue;
-    const age = now - p.t;
-    const a = age < 0 ? 0.08 : clamp(0.35 - age * 0.25, 0, 0.35);
-    g2.fillStyle = `rgba(220,220,220,${a})`;
-    g2.beginPath(); g2.arc(x, H * 0.94, age < 0 ? 1 : 1.6, 0, 7); g2.fill();
-  }
-
-  // 反復セルの括弧（×n/total）
-  g2.font = '9px monospace'; g2.textAlign = 'center';
-  for (const c of cellMarks){
-    const x0 = px(c.t0), x1 = px(c.t1);
-    if (x1 < -20 || x0 > W + 20) continue;
-    const cSteps = STREAMS[c.stream].octPool.reduce((a,b)=>a+b,0) / STREAMS[c.stream].octPool.length * 48;
-    const y = stepY(cSteps) + 44;
-    const a = c.t1 < now ? 0.18 : 0.45;
-    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 1;
-    g2.beginPath();
-    g2.moveTo(x0, y - 3); g2.lineTo(x0, y); g2.lineTo(x1, y); g2.lineTo(x1, y - 3);
-    g2.stroke();
-    g2.fillStyle = `rgba(220,220,220,${a + 0.15})`;
-    g2.fillText(`×${c.rep}/${c.total}`, (x0 + x1) / 2, y + 10);
-  }
-
-  // ---- 音符: 未来=確率雲 / 観測=収斂 / 過去=確定点の発散 ----
-  for (const ev of renderEvents){
-    if (ev.rest) continue;
-    const x = px(ev.t);
-    if (x < -60 || x > W + 60) continue;
-    const y = stepY(ev.steps);
-    const past = ev.t < now;
-    if (past && (!mathEv || ev.t > mathEv.t)) mathEv = ev;
-
-    if (!past){
-      // 重ね合わせ: 誤差期待値に比例した雲（揺らぎ）
-      const r = 2.5 + ev.err * 22;
-      const nPts = 4;
-      for (let i = 0; i < nPts; i++){
-        const jx = Math.sin(tSec * (1.3 + i * 0.31) + ev.t * 7 + i * 2.4) * r;
-        const jy = Math.cos(tSec * (1.1 + i * 0.27) + ev.t * 5 + i * 1.9) * r;
-        g2.fillStyle = `rgba(220,220,220,${0.16 + 0.05 * i})`;
-        g2.beginPath(); g2.arc(x + jx, y + jy, 1.1, 0, 7); g2.fill();
-      }
-      // 雲の中心（意図された座標）
-      g2.fillStyle = 'rgba(220,220,220,0.4)';
-      g2.beginPath(); g2.arc(x, y, 1.3, 0, 7); g2.fill();
-    } else {
-      const age = now - ev.pt;
-      // 観測の環（収斂の瞬間）
-      if (age >= 0 && age < 0.35){
-        const rr = 3 + age * 52;
-        g2.strokeStyle = `rgba(220,220,220,${(1 - age / 0.35) * 0.5})`;
-        g2.lineWidth = 1;
-        g2.beginPath(); g2.arc(px(ev.pt), stepY(ev.steps + ev.slip), rr, 0, 7); g2.stroke();
-      }
-      if (ev.dropped){
-        // 観測されなかった音: 空の環
-        const a = clamp(0.55 - age * 0.2, 0, 0.55);
-        if (a > 0.01){
-          g2.strokeStyle = `rgba(200,64,42,${a})`; g2.lineWidth = 1;
-          g2.beginPath(); g2.arc(x, y, 3.2, 0, 7); g2.stroke();
+  if (page){
+    // 拍格子（運命のグリッド、極めて薄く）＋パルスの閃き
+    for (let b = 0; b <= page.beats; b++){
+      const x = xOf(b);
+      let a = 0.032 * fadeIn;
+      for (const f of flashes)
+        if (f.b === b) a += clamp(0.22 - (now - f.at) * 0.44, 0, 0.22);
+      g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 1;
+      g2.beginPath(); g2.moveTo(x, H * 0.06); g2.lineTo(x, H * 0.94); g2.stroke();
+    }
+    // 反復セル括弧
+    g2.font = '9px monospace'; g2.textAlign = 'center';
+    for (const c of page.marks){
+      const x0 = xOf(c.b0), x1 = xOf(c.b1);
+      const cSteps = STREAMS[c.stream].octPool.reduce((a,b)=>a+b,0) / STREAMS[c.stream].octPool.length * 48;
+      const y = stepY(cSteps) + 46;
+      const a = 0.35 * fadeIn * fadeOut;
+      g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 1;
+      g2.beginPath();
+      g2.moveTo(x0, y - 3); g2.lineTo(x0, y); g2.lineTo(x1, y); g2.lineTo(x1, y - 3);
+      g2.stroke();
+      g2.fillStyle = `rgba(220,220,220,${a + 0.12})`;
+      g2.fillText(`×${c.rep}/${c.total}`, (x0 + x1) / 2, y + 10);
+    }
+    // 粒子
+    for (const ev of page.events){
+      const ex = xOf(ev.bPos);
+      ev.lastX = ex;
+      if (!ev.observed){
+        // 重ね合わせの雲。奥行きで大きさ・明るさ・揺れの速さが変わる
+        const y = stepY(ev.steps);
+        const cloudErr = (1 - st.conc) * (0.35 + 0.65 * ev.depth / 4);
+        const r = (2 + cloudErr * 20) * (0.5 + ev.z * 0.8);
+        const spd = 0.4 + ev.z * 1.6;
+        const baseA = lerp(0.10, 0.30, ev.z) * fadeIn * fadeOut;
+        for (let i = 0; i < 4; i++){
+          const jx = Math.sin(tSec * spd * (1.3 + i * 0.31) + ev.bPos * 7 + i * 2.4) * r;
+          const jy = Math.cos(tSec * spd * (1.1 + i * 0.27) + ev.bPos * 5 + i * 1.9) * r;
+          g2.fillStyle = `rgba(220,220,220,${baseA + 0.04 * i})`;
+          g2.beginPath(); g2.arc(ex + jx, y + jy, 0.6 + ev.z * 0.9, 0, 7); g2.fill();
         }
+        g2.fillStyle = `rgba(220,220,220,${lerp(0.2, 0.5, ev.z) * fadeIn * fadeOut})`;
+        g2.beginPath(); g2.arc(ex, y, 0.7 + ev.z * 0.9, 0, 7); g2.fill();
       } else {
-        // 確定した点: ゆっくり漂流し消える（発散）
-        const rx = px(ev.pt) + ev.dx * age * 2.2;
-        const ry = stepY(ev.steps + ev.slip) + ev.dy * age * 2.2;
-        const a = clamp(1 - age / 12, 0, 1);
-        g2.fillStyle = `rgba(232,230,224,${a * 0.9})`;
-        g2.beginPath(); g2.arc(rx, ry, 1.6 + ev.dyn * 0.22, 0, 7); g2.fill();
-        // 理想座標とのずれ: 幽霊環と髪の毛の線
-        if (Math.abs(ev.offset) > 0.02 || ev.slip){
-          g2.strokeStyle = `rgba(200,64,42,${a * 0.4})`; g2.lineWidth = 0.7;
-          g2.beginPath(); g2.arc(x, y, 2.6, 0, 7); g2.stroke();
-          g2.beginPath(); g2.moveTo(x, y); g2.lineTo(rx, ry); g2.stroke();
-        }
-      }
-      // 数式の浮上（観測の痕跡に、ときどき変数が現れる）
-      if (!ev.eqDone){
-        ev.eqDone = true;
-        const big = ev.dropped || Math.abs(ev.offset) > 0.04 || ev.slip;
-        if (rng() < (big ? 0.5 : 0.08)){
-          const opts = [
-            `Δt=${(ev.offset*1000).toFixed(0)}ms`, `s=${ev.steps}`,
-            `${ev.on}/${ev.den}`, `σ=${(ev.sigma*1000).toFixed(0)}ms`,
-            `pc=${ev.pc.toString(2).padStart(4,'0')}₂`,
-            `f=${stepFreq(ev.steps).toFixed(1)}Hz`,
-            `⟨${ev.chain && ev.chain.length ? ev.chain.join('·') : '1'}⟩`,
-          ];
-          floatEqs.push({ x, y, text: opts[rngi(opts.length)], at: now });
-        }
-        if (ev.dropped || Math.abs(ev.offset) > 0.03)
-          st.errRecent = clamp(st.errRecent + 0.3, 0, 2);
+        drawParticleObserved(ev, now);
       }
     }
   }
+  // ページ消滅後の残光
+  for (const ev of ghosts) drawParticleObserved(ev, now);
 
   // 浮上する数式
   g2.font = '9px monospace'; g2.textAlign = 'left';
@@ -572,22 +667,41 @@ function draw(now, tSec){
     const age = now - f.at;
     const a = clamp((1 - age / 4) * 0.55, 0, 0.55);
     g2.fillStyle = `rgba(220,220,220,${a})`;
-    g2.fillText(f.text, f.x + 8, f.y - 6 - age * 7);
+    g2.fillText(f.text, f.x + 8, stepY(f.ev.steps) - 6 - age * 7);
   }
 
-  // 観測カーソル（拍で微かに呼吸する）
-  const bp = ((now - pulseT) / beatLen()) % 1;
-  const breathe = 0.22 + 0.1 * Math.exp(-((bp + 1) % 1) * 6);
-  g2.strokeStyle = `rgba(220,220,220,${breathe + st.errRecent * 0.1})`;
-  g2.lineWidth = 1;
-  g2.beginPath(); g2.moveTo(playX, 0); g2.lineTo(playX, H); g2.stroke();
-
-  // フェルマータ
-  if (st.fermata){
-    g2.strokeStyle = 'rgba(220,220,220,0.8)'; g2.lineWidth = 1.5;
-    g2.beginPath(); g2.arc(playX, H * 0.08, 14, Math.PI, 0); g2.stroke();
-    g2.fillStyle = 'rgba(220,220,220,0.8)';
-    g2.beginPath(); g2.arc(playX, H * 0.08 - 3, 2.5, 0, 7); g2.fill();
+  // ---- 観測線 ----
+  if (sweep.phase !== 'rest'){
+    const lineA = (sweep.phase === 'in') ? clamp(sweep.t / 1.3, 0, 1)
+                : (sweep.phase === 'out') ? clamp(1 - sweep.t / 0.9, 0, 1) : 1;
+    const trembleX = st.fermata ? Math.sin(tSec * 40) * 0.9 : 0;
+    const lx = sweep.x + trembleX;
+    // 主線
+    g2.strokeStyle = `rgba(220,220,220,${(0.35 + st.errRecent * 0.12) * lineA})`;
+    g2.lineWidth = 1;
+    g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, H); g2.stroke();
+    // 微かなグロー
+    g2.strokeStyle = `rgba(220,220,220,${0.06 * lineA})`;
+    g2.lineWidth = 5;
+    g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, H); g2.stroke();
+    // 後続線（カノン）
+    if (page){
+      const beatPx = usable() / page.beats;
+      sweep.trailBeats.forEach((tb, i) => {
+        const xT = sweep.x - tb * beatPx;
+        if (xT < 0) return;
+        g2.strokeStyle = `rgba(220,220,220,${0.14 * lineA / (i + 1)})`;
+        g2.lineWidth = 1;
+        g2.beginPath(); g2.moveTo(xT, 0); g2.lineTo(xT, H); g2.stroke();
+      });
+    }
+    // フェルマータ
+    if (st.fermata){
+      g2.strokeStyle = 'rgba(220,220,220,0.8)'; g2.lineWidth = 1.5;
+      g2.beginPath(); g2.arc(lx, H * 0.08, 14, Math.PI, 0); g2.stroke();
+      g2.fillStyle = 'rgba(220,220,220,0.8)';
+      g2.beginPath(); g2.arc(lx, H * 0.08 - 3, 2.5, 0, 7); g2.fill();
+    }
   }
 
   // Fluxus 指示テキスト
@@ -606,8 +720,7 @@ function draw(now, tSec){
   drawHUD();
 }
 
-// ---------- math: 12×12 dot matrix + live equations ----------
-const DUO = '0123456789AB';
+// ---------- math panel ----------
 function drawMath(now){
   const cell = 11, mw = cell * 12;
   const x0 = W - mw - 18, y0 = H - mw - 64;
@@ -618,7 +731,6 @@ function drawMath(now){
   const r = serial.row;
   const hlRow = (form === 0 || form === 2) ? r.indexOf((12 - tt) % 12) : -1;
   const hlCol = (form === 1 || form === 3) ? r.indexOf(tt % 12) : -1;
-  // 行列を「点の大きさ」で描く（数字ではなく点描）
   for (let i = 0; i < 12; i++){
     for (let j = 0; j < 12; j++){
       const v = (r[j] - r[i] + 12) % 12;
@@ -635,14 +747,15 @@ function drawMath(now){
   const eps = (form === 1 || form === 3) ? '−x' : 'x';
   g2.fillText(`${['P','I','R','RI'][form]}${tt}: x↦(${eps}+${tt}) mod 12`, x0, y0 + mw + 14);
   g2.fillText(`Ċ=${st.recover.toFixed(2)}−${st.drain.toFixed(2)}  X=${st.complexity.toFixed(2)}  Φ=${st.fatigue.toFixed(2)}`, x0, y0 + mw + 27);
-  if (M) g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  σ=${((M.sigma||0)*1000).toFixed(0)}ms`, x0, y0 + mw + 40);
+  if (M) g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  z=${M.z.toFixed(2)}  σ=${((M.sigma||0)*1000).toFixed(0)}ms`, x0, y0 + mw + 40);
 }
 
 function drawHUD(){
   g2.font = '9px monospace'; g2.textAlign = 'left';
   g2.fillStyle = 'rgba(220,220,220,0.4)';
+  const mode = sweep.phase === 'rest' ? 'SILENCE' : MODE_JP[sweep.mode];
   g2.fillText(
-    `X ${st.complexity.toFixed(2)}   C ${st.conc.toFixed(2)}   Φ ${st.fatigue.toFixed(2)}   ` +
+    `${mode}   X ${st.complexity.toFixed(2)}   C ${st.conc.toFixed(2)}   Φ ${st.fatigue.toFixed(2)}   ` +
     `MIC ${micReady ? (st.micRms * 100).toFixed(0) : '--'}   CAM ${camReady ? (st.motion * 100).toFixed(0) : '--'}   ` +
     `×${st.tempoMul.toFixed(2)}   ±${st.microGrid}/8`, 14, 24);
 }
@@ -655,6 +768,10 @@ function frame(ts){
   lastFrame = ts;
   const now = ctx.currentTime;
   updateState(dt, now);
+  updateSweep(dt, now);
+  flashes = flashes.filter(f => now - f.at < 0.6);
+  floatEqs = floatEqs.filter(f => now - f.at < 4);
+  ghosts = ghosts.filter(ev => now - ev.obsAt < 13);
   draw(now, ts / 1000);
   requestAnimationFrame(frame);
 }
@@ -663,10 +780,6 @@ function frame(ts){
 cv.addEventListener('pointerdown', e => {
   if (!running) return;
   st.fermata = true;
-  pending = pending.filter(ev => ev.scheduled);
-  const cut = ctx.currentTime + 0.35;
-  renderEvents = renderEvents.filter(ev => ev.t < cut);
-  cellMarks = cellMarks.filter(c => c.t0 < cut);
   droneOn();
   if (rng() < 0.4) fluxShow('BREATHE.', ctx.currentTime);
   applyPointer(e);
@@ -676,9 +789,6 @@ window.addEventListener('pointerup', () => {
   if (!st.fermata) return;
   st.fermata = false;
   droneOff();
-  const t = ctx.currentTime + 0.5;
-  for (const str of STREAMS) str.nextT = t + str.id * 0.07;
-  pulseT = t;
 });
 function applyPointer(e){
   st.tempoMul = lerp(0.4, 1.8, clamp(e.clientX / W, 0, 1));
@@ -744,10 +854,7 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   }
 
   running = true;
-  const t0 = ctx.currentTime + 0.3;
-  for (const str of STREAMS) str.nextT = t0 + str.id * 0.07;
-  pulseT = t0;
-  setInterval(schedulerTick, 90);
+  sweep.phase = 'rest'; sweep.t = 0; sweep.restDur = 1.2;
   lastFrame = performance.now();
   requestAnimationFrame(frame);
 }, { once: true });
