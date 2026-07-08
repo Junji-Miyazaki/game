@@ -56,6 +56,8 @@
    - 発音 = 粒子と線の出会い。タイミングは相対速度から生じる
    - z はフレーズ単位 → 反復セルは繰り返しごとに違う深度・違う速さで流れ、
      同じ素材の多重テンポ（彫刻的カノン）が生まれる
+   - 粒子は速度ベクトルを持ち、同じ深度層の粒子とブラウン運動的に弾性衝突。
+     衝突後は「運命」（左流）と「意思」（セリー由来の固有軌道）へ緩和して戻る
    ================================================================ */
 
 // ---------- utils ----------
@@ -179,15 +181,80 @@ function assignMotion(ev){
   ev.mPh = ((ev.on || 0) / q) * Math.PI * 2;
   ev.mW2 = ev.mW * 1.4142;
 }
-function yFloat(ev, tau){
+// 意思の速度場（固有軌道の微分）: 衝突がなければこの揺れに沿って浮遊する
+function vyWill(ev, tau){
   if (tau < 0) tau = 0;
   switch (ev.mLaw){
-    case 0: return ev.mA * Math.sin(ev.mW * tau + ev.mPh);                                // 単振動
-    case 1: return ev.mA * 0.6 * (Math.sin(ev.mW * tau + ev.mPh) + Math.sin(ev.mW2 * tau)); // 干渉(うなり)
-    case 2: return ev.mA * Math.sin(ev.mW * tau + ev.mPh) * (1 - Math.exp(-tau / 2.5));   // 目覚める振り子
-    case 3: return ev.mA * Math.sin(ev.mW * tau + ev.mPh + 2 * Math.sin(0.37 * ev.mW * tau)); // FM揺らぎ
+    case 0: return ev.mA * ev.mW * Math.cos(ev.mW * tau + ev.mPh);
+    case 1: return ev.mA * 0.6 * (ev.mW * Math.cos(ev.mW * tau + ev.mPh) + ev.mW2 * Math.cos(ev.mW2 * tau));
+    case 2: return ev.mA * ev.mW * Math.cos(ev.mW * tau + ev.mPh) * (1 - Math.exp(-tau / 2.5));
+    case 3: return ev.mA * ev.mW * Math.cos(ev.mW * tau + ev.mPh + 2 * Math.sin(0.37 * ev.mW * tau));
   }
   return 0;
+}
+
+// ---------- 物理: ブラウン運動的な粒子間衝突 ----------
+//   粒子は速度ベクトルを持ち、同じ深度層（|Δz|<0.18）の粒子と弾性衝突して向きを変える。
+//   衝突後は「運命」（左向きの流れ＝観測へ向かう）と「意思」（固有軌道）へゆっくり緩和する。
+//   偶然（衝突）と必然（セリー）のせめぎ合い。
+const radiusOf = ev => 2.5 + ev.z * 3;
+function updatePhysics(dt, now){
+  const alive = [];
+  for (const ev of renderEvents){
+    if (now < ev.t) continue;
+    if (ev.px === undefined){
+      ev.px = spawnX(); ev.py = stepY(ev.steps);
+      ev.vx = -speedOf(ev.z); ev.vy = 0;
+    }
+    const tau = now - ev.t;
+    ev.vx += (-speedOf(ev.z) - ev.vx) * Math.min(dt / 5, 1);          // 運命への緩和
+    ev.vy += (vyWill(ev, tau) * 0.5 - ev.vy) * Math.min(dt / 2.5, 1); // 意思への緩和
+    ev.px += ev.vx * dt; ev.py += ev.vy * dt;
+    if (ev.py < H * 0.03){ ev.py = H * 0.03; ev.vy = Math.abs(ev.vy); }
+    if (ev.py > H * 0.97){ ev.py = H * 0.97; ev.vy = -Math.abs(ev.vy); }
+    if (ev.px > W * 0.995){ ev.px = W * 0.995; ev.vx = -Math.abs(ev.vx); }
+    alive.push(ev);
+  }
+  // 空間ハッシュで近傍だけ判定
+  const cs = 30, grid = new Map();
+  for (const ev of alive){
+    const key = Math.floor(ev.px / cs) + ',' + Math.floor(ev.py / cs);
+    let cell = grid.get(key);
+    if (!cell){ cell = []; grid.set(key, cell); }
+    cell.push(ev);
+  }
+  const OFFS = [[0,0],[1,0],[0,1],[1,1],[-1,1]];
+  for (const [key, cell] of grid){
+    const [kx, ky] = key.split(',').map(Number);
+    for (const [ox, oy] of OFFS){
+      const other = (ox === 0 && oy === 0) ? cell : grid.get((kx + ox) + ',' + (ky + oy));
+      if (!other) continue;
+      for (let i = 0; i < cell.length; i++){
+        const a = cell[i];
+        const j0 = (other === cell) ? i + 1 : 0;
+        for (let j = j0; j < other.length; j++){
+          const b = other[j];
+          if (Math.abs(a.z - b.z) > 0.18) continue;   // 別の深度層は素通り
+          const ddx = b.px - a.px, ddy = b.py - a.py;
+          const rr = radiusOf(a) + radiusOf(b);
+          const d2 = ddx * ddx + ddy * ddy;
+          if (d2 >= rr * rr || d2 === 0) continue;
+          const d = Math.sqrt(d2), nx = ddx / d, ny = ddy / d;
+          const rvn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+          if (rvn > 0){                                // 等質量の弾性衝突: 法線成分を交換
+            a.vx -= rvn * nx; a.vy -= rvn * ny;
+            b.vx += rvn * nx; b.vy += rvn * ny;
+          }
+          const push = (rr - d) / 2;                   // 重なり解消
+          a.px -= nx * push; a.py -= ny * push;
+          b.px += nx * push; b.py += ny * push;
+          a.hitAt = b.hitAt = now;
+          if (rng() < 0.05)
+            floatEqs.push({ x: (a.px + b.px) / 2, y: (a.py + b.py) / 2, text: 'Σp = const', at: now });
+        }
+      }
+    }
+  }
 }
 
 // 定量反復セル: 繰り返しごとに新しい z ＝ 違う深度・違う速さで流れる
@@ -195,12 +262,14 @@ function emitCell(str, t0){
   const c = str.cell;
   const rep = c.total - c.repsLeft + 1;
   const z = clamp(0.1 + rng() * 0.85, 0.05, 1);
+  const members = [];
   for (const e of c.events){
     const ev = { ...e, t: t0 + e.rel, stream: str.id, rep, z, crossed: false };
     assignMotion(ev);   // セルの同一性→同じ軌道（振幅だけ z で変わる）
     renderEvents.push(ev);
+    members.push(ev);
   }
-  cellMarks.push({ t0, t1: t0 + c.dur, rep, total: c.total, stream: str.id, z });
+  cellMarks.push({ t0, t1: t0 + c.dur, rep, total: c.total, stream: str.id, z, evs: members });
   c.repsLeft--;
   if (c.repsLeft <= 0) str.cell = null;
   return t0 + c.dur + 0.02;
@@ -257,12 +326,12 @@ function observe(ev, at){
       `${ev.on}/${ev.den}`, `σ=${(ev.sigma*1000).toFixed(0)}ms`,
       `pc=${ev.pc.toString(2).padStart(4,'0')}₂`,
       `f=${stepFreq(ev.steps).toFixed(1)}Hz`,
-      `v=${speedOf(ev.z).toFixed(0)}px/s`, `z=${ev.z.toFixed(2)}`,
+      `v=${(ev.px !== undefined ? Math.hypot(ev.vx, ev.vy) : speedOf(ev.z)).toFixed(0)}px/s`, `z=${ev.z.toFixed(2)}`,
       `y=A·sin(${ev.mW.toFixed(2)}τ+${ev.mPh.toFixed(2)})`,
       `ω=${ev.mW.toFixed(2)}  A=${ev.mA.toFixed(1)}`,
       `⟨${ev.chain && ev.chain.length ? ev.chain.join('·') : '1'}⟩`,
     ];
-    floatEqs.push({ x: xAt(ev, at), y: stepY(ev.steps), text: opts[rngi(opts.length)], at });
+    floatEqs.push({ x: ev.px !== undefined ? ev.px : xAt(ev, at), y: ev.py !== undefined ? ev.py : stepY(ev.steps), text: opts[rngi(opts.length)], at });
   }
 }
 
@@ -273,25 +342,28 @@ function updateLine(dt, now){
     if (line.x > W * 0.97){ line.x = W * 0.97; line.dir = -1; }
     if (line.x < W * 0.03){ line.x = W * 0.03; line.dir = 1; }
   }
-  const check = (ev) => {
-    if (ev.crossed || now < ev.t) return;
-    const x = xAt(ev, now);
-    if (x > spawnX()) return;
-    // 相対接近速度: 粒子は左向き speedOf、線の速度は dir·VL（右向き正）
-    const closing = speedOf(ev.z) + (st.fermata ? 0 : line.dir * VL);
-    if (closing <= 0) return;
-    const dx = x - line.x;
-    if (dx <= closing * 0.12){
-      const tCross = now + Math.max(dx, 0) / closing;
-      if (ev.isPulse){
-        ev.crossed = true;
-        schedulePulse(tCross);
-        flashes.push({ at: tCross });
-      } else observe(ev, tCross);
+  // 粒子: 物理座標と現在速度から出会いを予測（相対速度で創発するタイミング）
+  const lineV = st.fermata ? 0 : line.dir * VL;
+  for (const ev of renderEvents){
+    if (ev.crossed || ev.px === undefined) continue;
+    const dx = ev.px - line.x;
+    const relV = lineV - ev.vx;              // 接近率（>0 で近づく）
+    if (dx <= 0) observe(ev, now + 0.01);
+    else if (relV > 0 && dx <= relV * 0.12) observe(ev, now + dx / relV);
+  }
+  // 拍マーカー: 剛体グリッドのまま（衝突しない）
+  for (const p of pulseMarks){
+    if (p.crossed || now < p.t) continue;
+    const x = xAt(p, now);
+    const closing = speedOf(p.z) + lineV;
+    if (closing <= 0) continue;
+    const dxp = x - line.x;
+    if (dxp <= closing * 0.12){
+      p.crossed = true;
+      schedulePulse(now + clamp(Math.max(dxp, 0) / closing, 0, 0.15));
+      flashes.push({ at: now });
     }
-  };
-  for (const ev of renderEvents) check(ev);
-  for (const p of pulseMarks) check(p);
+  }
 }
 
 // ---------- audio ----------
@@ -415,11 +487,11 @@ function schedulerTick(){
     }
   }
   renderEvents = renderEvents.filter(ev =>
-    (now - ev.t) < 60 &&
+    (now - ev.t) < 90 &&
     (!ev.crossed || now - ev.obsAt < 13) &&
-    xAt(ev, now) > -80);
+    (ev.px === undefined || ev.px > -80));
   pulseMarks = pulseMarks.filter(p => !p.crossed && xAt(p, now) > -20);
-  cellMarks = cellMarks.filter(c => (now - c.t1) < 40 && spawnX() - (now - c.t1) * speedOf(c.z) > -60);
+  cellMarks = cellMarks.filter(c => (now - c.t1) < 60);
   flashes = flashes.filter(f => now - f.at < 0.6);
   floatEqs = floatEqs.filter(f => now - f.at < 4);
 }
@@ -541,31 +613,34 @@ function draw(now, tSec){
     g2.beginPath(); g2.moveTo(x, H * 0.1); g2.lineTo(x, H * 0.9); g2.stroke();
   }
 
-  // 反復セル括弧（セルの z 速度で流れる）
+  // 反復セル: 構成粒子を細線で結ぶ星座として表示（衝突で散っても繋がりは残る）
   g2.font = '9px monospace'; g2.textAlign = 'center';
   for (const c of cellMarks){
-    const x0 = spawnX() - (now - c.t0) * speedOf(c.z);
-    const x1 = spawnX() - (now - c.t1) * speedOf(c.z);
-    if (Math.max(x0, x1) < -20 || Math.min(x0, x1) > W + 20) continue;
-    const cSteps = STREAMS[c.stream].octPool.reduce((a,b)=>a+b,0) / STREAMS[c.stream].octPool.length * 48;
-    const y = stepY(cSteps) + 46;
-    const a = 0.35 * lerp(0.5, 1, c.z);
-    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 1;
+    const pts = c.evs.filter(e => e.px !== undefined && e.px > -60 && e.px < W + 60);
+    if (pts.length < 2) continue;
+    const a = 0.2 * lerp(0.5, 1, c.z);
+    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 0.6;
     g2.beginPath();
-    g2.moveTo(x0, y - 3); g2.lineTo(x0, y); g2.lineTo(x1, y); g2.lineTo(x1, y - 3);
+    g2.moveTo(pts[0].px, pts[0].py);
+    for (let i = 1; i < pts.length; i++) g2.lineTo(pts[i].px, pts[i].py);
     g2.stroke();
-    g2.fillStyle = `rgba(220,220,220,${a + 0.12})`;
-    g2.fillText(`×${c.rep}/${c.total}`, (x0 + x1) / 2, y + 10);
+    g2.fillStyle = `rgba(220,220,220,${a + 0.16})`;
+    g2.fillText(`×${c.rep}/${c.total}`, pts[0].px, pts[0].py - 12);
   }
 
-  // ---- 粒子 ----
+  // ---- 粒子（物理シミュレーション座標で描画） ----
   for (const ev of renderEvents){
-    if (now < ev.t) continue;
-    const x = xAt(ev, now);
-    if (x < -60 || x > W + 10) continue;
-    const fl = yFloat(ev, now - ev.t);           // 粒子の意思（固有の浮遊軌道）
-    const y = stepY(ev.steps) + fl;
+    if (ev.px === undefined) continue;
+    const x = ev.px, y = ev.py;
+    if (x < -60 || x > W + 60) continue;
     const sizeBase = lerp(0.9, 2.6, ev.z) + ev.dyn * 0.14;
+
+    // 衝突の閃輪
+    if (ev.hitAt && now - ev.hitAt < 0.25){
+      const ha = (1 - (now - ev.hitAt) / 0.25) * 0.4;
+      g2.strokeStyle = `rgba(220,220,220,${ha})`; g2.lineWidth = 1;
+      g2.beginPath(); g2.arc(x, y, sizeBase + 3 + (now - ev.hitAt) * 24, 0, 7); g2.stroke();
+    }
 
     if (!ev.crossed || now < ev.obsAt){
       // 未観測: 重ね合わせの雲（生まれた直後はフェードイン）
@@ -584,12 +659,13 @@ function draw(now, tSec){
       g2.beginPath(); g2.arc(x, y, 0.7 + ev.z * 0.9, 0, 7); g2.fill();
     } else {
       const age = now - ev.obsAt;
+      const slipY = ev.slip * (H * 0.42 / 150);   // 音高スリップの視覚オフセット
       // 観測の環（収斂）
       if (age < 0.35){
         const rr = 3 + age * 52;
         g2.strokeStyle = `rgba(220,220,220,${(1 - age / 0.35) * (0.25 + ev.z * 0.35)})`;
         g2.lineWidth = 1;
-        g2.beginPath(); g2.arc(x, stepY(ev.steps + ev.slip) + fl, rr, 0, 7); g2.stroke();
+        g2.beginPath(); g2.arc(x, y - slipY, rr, 0, 7); g2.stroke();
       }
       if (ev.dropped){
         const a = clamp(0.55 - age * 0.2, 0, 0.55) * lerp(0.5, 1, ev.z);
@@ -598,16 +674,15 @@ function draw(now, tSec){
           g2.beginPath(); g2.arc(x, y, sizeBase + 1.6, 0, 7); g2.stroke();
         }
       } else {
-        // 確定した点: 固有の軌道で浮遊し続けながら漂流し消える
-        const drift = (0.5 + ev.z * 1.8) * age;
-        const rx = x + ev.dx * drift, ry = stepY(ev.steps + ev.slip) + fl + ev.dy * drift;
+        // 確定した点: 物理に従って流れ続け、消えていく
+        const rx = x, ry = y - slipY;
         const a = clamp(1 - age / 12, 0, 1) * lerp(0.4, 0.95, ev.z);
         g2.fillStyle = `rgba(232,230,224,${a})`;
         g2.beginPath(); g2.arc(rx, ry, sizeBase, 0, 7); g2.fill();
         if (Math.abs(ev.offset) > 0.02 || ev.slip){
           g2.strokeStyle = `rgba(200,64,42,${a * 0.4})`; g2.lineWidth = 0.7;
           g2.beginPath(); g2.arc(x, y, sizeBase + 1, 0, 7); g2.stroke();
-          g2.beginPath(); g2.moveTo(x, y); g2.lineTo(rx, ry); g2.stroke();
+          if (ev.slip){ g2.beginPath(); g2.moveTo(x, y); g2.lineTo(rx, ry); g2.stroke(); }
         }
       }
     }
@@ -692,7 +767,7 @@ function drawMath(now){
   const eps = (form === 1 || form === 3) ? '−x' : 'x';
   g2.fillText(`${['P','I','R','RI'][form]}${tt}: x↦(${eps}+${tt}) mod 12`, x0, y0 + mw + 14);
   g2.fillText(`Ċ=${st.recover.toFixed(2)}−${st.drain.toFixed(2)}  X=${st.complexity.toFixed(2)}  Φ=${st.fatigue.toFixed(2)}`, x0, y0 + mw + 27);
-  if (M) g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  z=${M.z.toFixed(2)}  v=${speedOf(M.z).toFixed(0)}px/s`, x0, y0 + mw + 40);
+  if (M) g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  z=${M.z.toFixed(2)}  v=${(M.px !== undefined ? Math.hypot(M.vx, M.vy) : speedOf(M.z)).toFixed(0)}px/s`, x0, y0 + mw + 40);
 }
 
 function drawHUD(){
@@ -713,6 +788,7 @@ function frame(ts){
   const dt = clamp(now - lastNow, 0.001, 0.5);
   lastNow = now;
   updateState(dt, now);
+  updatePhysics(dt, now);
   updateLine(dt, now);
   draw(now, ts / 1000);
   requestAnimationFrame(frame);
