@@ -91,6 +91,26 @@ const DYN_NAMES = ['pppp','ppp','pp','p','mf','f','ff','ffff'];
 const RATIOS    = [[3,2],[5,4],[4,3],[7,6],[5,3],[7,4],[9,8],[11,8]];
 const PARTIALS  = [1, 2, 3, 4, 5, 7];   // 音色セリー: 混ぜる倍音（1=純サイン）
 
+// ---------- メシアン「移調の限られた旋法」エポック制 ----------
+// 世界には常に「現在のモード（音の場）」がある。音列は音を直接指定せず、
+// モードへの索引として働く。エポック（時代）が変わるとモードと移調が振り直され、
+// 響きの色が章立てとして変わる。半音階（=12音列）は最大エントロピーの極
+const MLT = [
+  { name:'I',   pcs:[0,2,4,6,8,10],               transp:2  },  // 全音音階
+  { name:'II',  pcs:[0,1,3,4,6,7,9,10],           transp:3  },  // 八音音階(dim)
+  { name:'III', pcs:[0,2,3,4,6,7,8,10,11],        transp:4  },
+  { name:'IV',  pcs:[0,1,2,5,6,7,8,11],           transp:6  },
+  { name:'VI',  pcs:[0,2,4,5,6,8,10,11],          transp:6  },
+  { name:'VII', pcs:[0,1,2,3,5,6,7,8,9,11],       transp:6  },
+  { name:'XII', pcs:[0,1,2,3,4,5,6,7,8,9,10,11],  transp:12 },  // 半音階=12音技法の極
+];
+let epoch = { m: 1, tr: 0 };
+function newEpoch(now){
+  epoch.m = rngi(MLT.length);
+  epoch.tr = rngi(MLT[epoch.m].transp);
+  fluxShow(`MODE ${MLT[epoch.m].name} · t=${epoch.tr}`, now);
+}
+
 const serial = {
   row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
   infl: shuffled([-2,-1,-1,0,0,0,1,1,2]),
@@ -103,9 +123,13 @@ const serial = {
   next(octPool){
     const k = this.i++;
     const idx = (this.form >= 2) ? 11 - (k % 12) : k % 12;
-    let pc = this.row[idx];
-    if (this.form === 1 || this.form === 3) pc = (12 - pc) % 12;
-    pc = (pc + this.t) % 12;
+    // 音列は「モードへの索引」: P/I/R/RI と移高は索引空間で作用し、
+    // 現在のエポックのモードが索引を実際の音高類へ写す
+    let ix = this.row[idx];
+    if (this.form === 1 || this.form === 3) ix = (12 - ix) % 12;
+    ix = (ix + this.t) % 12;
+    const mode = MLT[epoch.m];
+    const pc = (mode.pcs[ix % mode.pcs.length] + epoch.tr) % 12;
     const infl = clamp(this.infl[k % this.infl.length], -st.microGrid, st.microGrid);
     const oct = octPool[k % octPool.length];
     const dyn = this.dyn[k % this.dyn.length];
@@ -629,7 +653,7 @@ function updateState(dt, now){
 
   st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
 
-  if (rng() < dt / 50){ serial.reseed(); fluxShow('DICE ARE THROWN.', now); }
+  if (rng() < dt / 50){ serial.reseed(); newEpoch(now); }   // サイコロ=音列再シード+新しい時代（モード）
   if (st.conc < 0.18 && !brokeShown){ fluxShow('THE OBSERVER IS BREAKING.', now); brokeShown = true; }
   if (st.conc > 0.5) brokeShown = false;
   fluxTimer += dt;
@@ -974,9 +998,10 @@ function drawMath(now){
   const eps = (form === 1 || form === 3) ? '−x' : 'x';
   g2.fillText(`${['P','I','R','RI'][form]}${tt}: x↦(${eps}+${tt}) mod 12`, x0, y0 + mw + 14);
   g2.fillText(`Ċ=${st.recover.toFixed(2)}−${st.drain.toFixed(2)}  X=${st.complexity.toFixed(2)}  Φ=${st.fatigue.toFixed(2)}`, x0, y0 + mw + 27);
-  g2.fillText(`捕捉${caught} 漏れ${missedN} 消音${droppedN}`, x0, y0 + mw + 40);
+  g2.fillText(`Mode ${MLT[epoch.m].name}·t${epoch.tr} [${MLT[epoch.m].pcs.join(' ')}]`, x0, y0 + mw + 40);
+  g2.fillText(`捕捉${caught} 漏れ${missedN} 消音${droppedN}`, x0, y0 + mw + 53);
   if (M && M.den !== undefined)
-    g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  dur×${M.durMul}  h${PARTIALS[M.tim||0]}`, x0, y0 + mw + 53);
+    g2.fillText(`t=${M.beat + 1}拍+${M.on}/${M.den}  dur×${M.durMul}  h${PARTIALS[M.tim||0]}`, x0, y0 + mw + 66);
 }
 
 function drawHUD(now){
@@ -1088,6 +1113,7 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   }
 
   running = true;
+  newEpoch(ctx.currentTime);   // 最初の時代のモードが振られる
   const t0 = ctx.currentTime + 0.3;
   for (const str of STREAMS) str.nextT = t0 + str.id * 0.07;
   pulseGenT = t0;
