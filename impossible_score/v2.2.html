@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SCORE FOR THE IMPOSSIBLE II.2 — 生の観測</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#050505; touch-action:none;
+              font-family:"Hiragino Mincho ProN","Yu Mincho",serif; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #cam { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
+  #btns { position:fixed; top:10px; right:10px; display:flex; gap:8px; z-index:20; }
+  .btn { color:#666; border:1px solid #333; padding:6px 12px; font-size:11px;
+         letter-spacing:.1em; cursor:pointer; user-select:none; -webkit-user-select:none;
+         background:rgba(5,5,5,.7); }
+  .btn.on { color:#ddd; border-color:#777; }
+  #overlay { position:fixed; inset:0; z-index:30; background:#050505;
+             display:flex; flex-direction:column; align-items:center; justify-content:center;
+             color:#ddd; text-align:center; padding:24px; }
+  #overlay h1 { font-size:clamp(16px,3.4vw,28px); letter-spacing:.4em; font-weight:normal; margin-bottom:8px; }
+  #overlay h2 { font-size:clamp(11px,2vw,15px); letter-spacing:.55em; color:#777; font-weight:normal; margin-bottom:40px; }
+  #overlay p  { font-size:clamp(11px,1.5vw,13px); line-height:2.2; color:#999; max-width:36em; margin-bottom:8px; }
+  #startBtn { margin-top:44px; border:1px solid #777; padding:14px 50px; letter-spacing:.5em;
+              font-size:13px; cursor:pointer; color:#ddd; }
+  #startBtn:active { background:#ddd; color:#050505; }
+  #permNote { margin-top:18px; font-size:10px; color:#555; letter-spacing:.15em; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<video id="cam" playsinline muted autoplay></video>
+<div id="btns" style="display:none">
+  <div class="btn on" id="bMath">数理</div>
+  <div class="btn on" id="bGrain">具体音</div>
+  <div class="btn" id="bFull">全画面</div>
+  <div class="btn on" id="bSound">音</div>
+</div>
+
+<div id="overlay">
+  <h1>SCORE FOR THE IMPOSSIBLE</h1>
+  <h2>II.2 生の観測</h2>
+  <p>はじめ、空間には何もない。数秒ごとに、同じ姿の生がひとつずつ生まれる。<br>生は出会いによって子を残し、子は親と少し違う声を持つ。<br>生まれたばかりの生は確率の雲のように淡く、歳とともに確かな点になる。</p>
+  <p>観測線は往復しながら、出会った生をそのたびに記録する——音は記録の瞬間にだけ生まれる。<br>画面に触れている間、観測者は目を閉じる。生は記録されずに過ぎていく。<br>やがてすべての生は終わり、また、はじまる。</p>
+  <div id="startBtn">観 測 を 開 始</div>
+  <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても内部シードで動作します）</div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   SCORE FOR THE IMPOSSIBLE — II.2 生の観測  (v2.2)
+   個体出生モデル + 衝突生殖 + 寿命:
+   - 創世: 無から約4秒ごとに「同種」のファウンダーが誕生（7体まで）
+   - 生殖: 衝突時に確率 p·(1−N/K) で子が生まれる（成熟4s・クールダウン3s）
+     子は両親の形質（音高類・強弱・奥行き・運動法則）を混合継承、25%で
+     音列由来の突然変異 — 同種から始まり、相互作用の履歴だけが個性を作る
+   - 寿命: Gompertz型ハザード（中央値~45s、過密で増大）。滅亡→再創世の循環
+   - 音 = 観測線との出会いの瞬間のみ。観測（音）は出生確率を一時的に上げ、
+     環境（マイク/動き）は環境収容力Kを動かす — 繁栄と滅亡は創発する
+   - 大きさ=年齢: 若い生は確率雲のように淡く小さく、老いた生は確かで大きく重い
+   - フェルマータ: 観測者は目を閉じ、生は記録されずに過ぎる
+   ================================================================ */
+
+// ---------- utils ----------
+const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const rng   = Math.random;
+const rngi  = n=>Math.floor(rng()*n);
+function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function shuffled(arr){ const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=rngi(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+// ---------- global state ----------
+let ctx=null, master=null, limiter=null, analyser=null;
+let micReady=false, camReady=false, running=false;
+let soundOn=true, grainOn=true;
+
+const st = {
+  complexity: 0.2, conc: 1.0, fatigue: 0,
+  micRms: 0, micCent: 0, motion: 0,
+  tempoMul: 1, microGrid: 2,
+  fermata: false, errRecent: 0,
+  gVal: 0.2, drain: 0, recover: 0, dCdt: 0,
+};
+
+// ---------- series engine（形質の源泉） ----------
+const DYN_GAIN  = [0.030,0.050,0.080,0.130,0.200,0.300,0.430,0.620];
+const DYN_NAMES = ['pppp','ppp','pp','p','mf','f','ff','ffff'];
+
+const serial = {
+  row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
+  infl: shuffled([-2,-1,-1,0,0,0,1,1,2]),
+  dyn: shuffled([0,1,2,3,4,5,6,7]),
+  atk: shuffled([0.002,0.004,0.008,0.015,0.03,0.06]),
+  i:0, form:0, t:0, last:null,
+  next(){
+    const k = this.i++;
+    const idx = (this.form >= 2) ? 11 - (k % 12) : k % 12;
+    let pc = this.row[idx];
+    if (this.form === 1 || this.form === 3) pc = (12 - pc) % 12;
+    pc = (pc + this.t) % 12;
+    const infl = clamp(this.infl[k % this.infl.length], -st.microGrid, st.microGrid);
+    const dyn = this.dyn[k % this.dyn.length];
+    this.last = { k: idx, pc, infl, dyn, form: this.form, t: this.t };
+    return { pc, infl, dyn, atk: this.atk[k % this.atk.length],
+             k: idx, form: this.form, tt: this.t };
+  },
+  advancePhrase(){ this.form = rngi(4); this.t = rngi(12); },
+  reseed(){ this.row = shuffled(this.row); this.infl = shuffled(this.infl);
+            this.dyn = shuffled(this.dyn); },
+};
+const stepFreq = s => 220 * Math.pow(2, s/48);
+const beatLen = () => 60 / (54 * st.tempoMul);
+
+// ---------- 幾何 ----------
+const PX_PER_SEC = 62;
+const VL = 22;                                       // 観測線の速度
+const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);
+const line = { x: -10, dir: 1, bornAt: 0, passId: 0 };
+let W = 0, H = 0, DPR = 1;
+const spawnX = () => W * 0.99;
+const stepY = s => H * 0.5 - s * (H * 0.42 / 150);
+
+// ---------- population（個体群） ----------
+let population = [];
+let births = 0, deaths = 0, maxGen = 0;
+let founderTimer = 0, birthBoost = 0, prevPop = 0;
+let birthMarks = [], deathMarks = [];
+const K = () => 18 + st.complexity * 70;             // 環境収容力（マイク/動きで変動）
+const MAX_POP = 140;
+const ageOf = (p, now) => now - p.birthT;
+const grown = (p, now) => Math.min(ageOf(p, now) / 40, 1);   // 0=誕生 → 1=成熟
+const sizeOf = (p, now) => (1.0 + grown(p, now) * 2.0) * (0.6 + p.z * 0.8);
+const radiusOf = (p, now) => sizeOf(p, now) * 2.6;   // 衝突断面は広め（繁殖は衝突律速のため）
+const massOf = (p, now) => (0.6 + p.z * 1.4) * (0.5 + grown(p, now));
+
+// 意思（固有の運動法則）: 形質から導出。方位だけは偶然（誕生の場所と向き）
+function assignMotion(p){
+  p.mLaw = (p.pc + p.gen) % 4;
+  p.mW = 0.4 + (p.pc % 5) * 0.18 + p.gen * 0.07;
+  p.mPh = (p.pc / 12) * Math.PI * 2;
+  p.mAmp = [0.6, 1.2, 0.3, 2.0][p.mLaw];             // 進行方位の蛇行の深さ
+  p.head0 = rng() * Math.PI * 2;
+}
+
+function makeBody(p, x, y){
+  p.px = x; p.py = y;
+  const a = rng() * Math.PI * 2, s = speedOf(p.z) * 0.45;
+  p.vx = Math.cos(a) * s; p.vy = Math.sin(a) * s;
+  p.steps = (p.pc - 9) * 4 + p.oct * 48 + p.infl;
+  p.lastRep = -99; p.lastPass = -1; p.prevDx = undefined;
+  return p;
+}
+
+// ファウンダー: 全員が同じ形質（同種）。個性は相互作用が作る
+function spawnFounder(now){
+  const p = {
+    birthT: now, gen: 0, depth: 0,
+    pc: serial.row[0], oct: 0, infl: 0, dyn: 4, atk: 0.008,
+    z: 0.5, on: 0, den: 1, chain: [],
+    k: 0, form: 0, tt: 0,
+  };
+  assignMotion(p);
+  makeBody(p, W * (0.2 + rng() * 0.7), H * (0.15 + rng() * 0.7));
+  population.push(p);
+  births++;
+  birthMarks.push({ x: p.px, y: p.py, at: now });
+}
+
+// 衝突生殖: 両親の形質の混合 + 突然変異（音列から）
+function spawnChild(a, b, now){
+  const mut = rng() < 0.25;
+  let pc, k, form, tt;
+  if (mut){
+    const tr = serial.next();
+    pc = tr.pc; k = tr.k; form = tr.form; tt = tr.tt;
+  } else {
+    const src = rng() < 0.5 ? a : b;
+    pc = src.pc; k = src.k; form = src.form; tt = src.tt;
+  }
+  const gen = Math.max(a.gen, b.gen) + 1;
+  const p = {
+    birthT: now, gen, depth: Math.min(gen, 4),
+    pc,
+    oct: rng() < 0.5 ? a.oct : b.oct,
+    infl: clamp(Math.round((a.infl + b.infl) / 2 + (rng() < 0.3 ? (rng() < 0.5 ? -1 : 1) : 0)),
+                -st.microGrid, st.microGrid),
+    dyn: clamp((rng() < 0.5 ? a.dyn : b.dyn) + (rng() < 0.3 ? (rng() < 0.5 ? -1 : 1) : 0), 0, 7),
+    atk: rng() < 0.5 ? a.atk : b.atk,
+    z: clamp((a.z + b.z) / 2 + gauss() * 0.08, 0.05, 1),
+    on: 0, den: 1 + gen, chain: [],
+    k, form, tt,
+  };
+  // 世代が上がると音域も分化していく（親から±1オクターブの変異）
+  if (rng() < 0.25) p.oct = clamp(p.oct + (rng() < 0.5 ? -1 : 1), -2, 2);
+  assignMotion(p);
+  makeBody(p, (a.px + b.px) / 2 + gauss() * 4, (a.py + b.py) / 2 + gauss() * 4);
+  population.push(p);
+  births++;
+  maxGen = Math.max(maxGen, gen);
+  birthMarks.push({ x: p.px, y: p.py, at: now });
+}
+
+// ---------- virtual observer（観測者の誤差モデル） ----------
+function perform(p){
+  const depthN = clamp(p.depth / 4, 0, 1);
+  const err = (1 - st.conc) * (0.35 + 0.65 * depthN);
+  p.err = err;
+  p.sigma   = err * 0.09;
+  p.offset  = gauss() * p.sigma;
+  p.dropped = rng() < err * 0.42;
+  p.slip    = (rng() < err * 0.5) ? (rngi(2)+1) * (rng()<.5?-1:1) : 0;
+  p.gainMul = clamp(1 + gauss() * err * 0.6, 0.15, 1.8);
+}
+
+// ---------- score data ----------
+let floatEqs = [], flashes = [], pulseMarks = [], scoreMarks = [];
+let lastPitchSteps = 0, pulseGenT = 0;
+let mathEv = null, mathOn = true;
+const xAt = (m, now) => spawnX() - (now - m.t) * speedOf(m.z);   // 拍マーカー用
+
+// ---------- 観測: 線と生の出会い → 記録 = 音 ----------
+function observe(p, now){
+  p.obsAt = now;
+  perform(p);
+  lastPitchSteps = p.steps;
+  mathEv = p;
+  p.ageSec = ageOf(p, now);
+  if (!p.dropped) scheduleAudio(p, now + Math.max(0, p.offset));
+  birthBoost = clamp(birthBoost + 0.08, 0, 1);   // 音の生成が出生確率を押し上げる
+  const big = p.dropped || Math.abs(p.offset) > 0.04 || p.slip;
+  if (big) st.errRecent = clamp(st.errRecent + 0.3, 0, 2);
+  // 観測の記録: 楽譜の破片が結晶する
+  scoreMarks.push({ x: p.px, y: p.py, z: p.z, slip: p.slip, infl: p.infl,
+                    dyn: p.dyn, chain: p.gen > 0 ? [p.gen] : null, dropped: p.dropped, at: now });
+  if (scoreMarks.length > 90) scoreMarks.shift();
+  if (rng() < (big ? 0.45 : 0.07)){
+    const opts = [
+      `age=${p.ageSec.toFixed(1)}s`, `gen=${p.gen}`, `N=${population.length}`,
+      `Δt=${(p.offset*1000).toFixed(0)}ms`, `s=${p.steps}`,
+      `pc=${p.pc.toString(2).padStart(4,'0')}₂`,
+      `f=${stepFreq(p.steps).toFixed(1)}Hz`, `z=${p.z.toFixed(2)}`,
+      `v=${Math.hypot(p.vx, p.vy).toFixed(0)}px/s`,
+    ];
+    floatEqs.push({ x: p.px, y: p.py, text: opts[rngi(opts.length)], at: now });
+  }
+}
+
+// ---------- 物理: 徘徊・衝突・生殖・寿命 ----------
+function updatePhysics(dt, now){
+  // 徘徊（意思）: ゆっくり回転する固有の方位へ緩和
+  for (const p of population){
+    const tau = ageOf(p, now);
+    const theta = p.head0 + Math.sin(p.mW * 0.3 * tau + p.mPh) * p.mAmp;
+    const spd = speedOf(p.z) * 0.45;
+    p.vx += (Math.cos(theta) * spd - p.vx) * Math.min(dt / 6, 1);
+    p.vy += (Math.sin(theta) * spd - p.vy) * Math.min(dt / 4, 1);
+    p.px += p.vx * dt; p.py += p.vy * dt;
+    let bounced = false;
+    if (p.px < W * 0.02){ p.px = W * 0.02; p.vx = Math.abs(p.vx); bounced = true; }
+    if (p.px > W * 0.98){ p.px = W * 0.98; p.vx = -Math.abs(p.vx); bounced = true; }
+    if (p.py < H * 0.03){ p.py = H * 0.03; p.vy = Math.abs(p.vy); bounced = true; }
+    if (p.py > H * 0.97){ p.py = H * 0.97; p.vy = -Math.abs(p.vy); bounced = true; }
+    if (bounced) p.head0 = Math.atan2(p.vy, p.vx);
+  }
+  // 衝突（空間ハッシュ）: 運動量の交換 + 確率的な生殖
+  const cs = 34, grid = new Map();
+  for (const p of population){
+    const key = Math.floor(p.px / cs) + ',' + Math.floor(p.py / cs);
+    let cell = grid.get(key);
+    if (!cell){ cell = []; grid.set(key, cell); }
+    cell.push(p);
+  }
+  const OFFS = [[0,0],[1,0],[0,1],[1,1],[-1,1]];
+  const newborns = [];
+  for (const [key, cell] of grid){
+    const [kx, ky] = key.split(',').map(Number);
+    for (const [ox, oy] of OFFS){
+      const other = (ox === 0 && oy === 0) ? cell : grid.get((kx + ox) + ',' + (ky + oy));
+      if (!other) continue;
+      for (let i = 0; i < cell.length; i++){
+        const a = cell[i];
+        const j0 = (other === cell) ? i + 1 : 0;
+        for (let j = j0; j < other.length; j++){
+          const b = other[j];
+          if (Math.abs(a.z - b.z) > 0.22) continue;
+          const ddx = b.px - a.px, ddy = b.py - a.py;
+          const rr = radiusOf(a, now) + radiusOf(b, now);
+          const d2 = ddx * ddx + ddy * ddy;
+          if (d2 >= rr * rr || d2 === 0) continue;
+          const d = Math.sqrt(d2), nx = ddx / d, ny = ddy / d;
+          const rvn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+          if (rvn > 0){
+            // 質量つき弾性衝突（質量=奥行き×年齢）: 若く軽い者は弾かれ、老いた者は押し進む
+            const ma = massOf(a, now), mb = massOf(b, now);
+            const ja = 2 * mb / (ma + mb) * rvn, jb = 2 * ma / (ma + mb) * rvn;
+            a.vx -= ja * nx; a.vy -= ja * ny;
+            b.vx += jb * nx; b.vy += jb * ny;
+          }
+          const push = (rr - d) / 2;
+          a.px -= nx * push; a.py -= ny * push;
+          b.px += nx * push; b.py += ny * push;
+          a.hitAt = b.hitAt = now;
+          // 生殖: 成熟した二者の出会いから、ロジスティック制約の下で
+          const N = population.length + newborns.length;
+          const mature = ageOf(a, now) > 4 && ageOf(b, now) > 4;
+          const rested = now - a.lastRep > 3 && now - b.lastRep > 3;
+          const pB = 0.5 * Math.max(0, 1 - N / K()) * (1 + birthBoost);
+          if (mature && rested && N < MAX_POP && rng() < pB){
+            a.lastRep = b.lastRep = now;
+            newborns.push([a, b]);
+          }
+        }
+      }
+    }
+  }
+  for (const [a, b] of newborns) spawnChild(a, b, now);
+  // 寿命: Gompertz型ハザード（過密でさらに上がる）
+  const over = Math.max(0, population.length / K() - 1);
+  population = population.filter(p => {
+    const age = ageOf(p, now);
+    const h = 0.0028 * Math.exp(age / 16) * (1 + over * 3);
+    if (rng() < h * dt){
+      deaths++;
+      deathMarks.push({ x: p.px, y: p.py, z: p.z, size: sizeOf(p, now), at: now });
+      return false;
+    }
+    return true;
+  });
+}
+
+// ---------- 観測線の運動と出会いの検出 ----------
+function updateLine(dt, now){
+  if (!st.fermata){
+    line.x += line.dir * VL * dt;
+    if (line.x > W * 0.97){ line.x = W * 0.97; line.dir = -1; line.passId++; }
+    if (line.x < W * 0.03){ line.x = W * 0.03; line.dir = 1; line.passId++; }
+  }
+  for (const p of population){
+    const dx = p.px - line.x;
+    if (p.prevDx !== undefined && (dx > 0) !== (p.prevDx > 0) && p.lastPass !== line.passId){
+      p.lastPass = line.passId;
+      if (!st.fermata) observe(p, now);   // フェルマータ中は目を閉じている＝記録されない
+    }
+    p.prevDx = dx;
+  }
+  // 拍マーカー（剛体グリッド、右→左に流れる）
+  const lineV = st.fermata ? 0 : line.dir * VL;
+  for (const m of pulseMarks){
+    if (m.crossed || now < m.t) continue;
+    const x = xAt(m, now);
+    const closing = speedOf(m.z) + lineV;
+    if (closing <= 0) continue;
+    const dxp = x - line.x;
+    if (dxp <= closing * 0.12){
+      m.crossed = true;
+      schedulePulse(now + clamp(Math.max(dxp, 0) / closing, 0, 0.15));
+      flashes.push({ at: now });
+    }
+  }
+}
+
+// ---------- audio ----------
+let activeVoices = 0;
+const MAX_VOICES = 64;
+function scheduleAudio(p, at){
+  if (!soundOn || activeVoices >= MAX_VOICES) return;
+  activeVoices++;
+  const f = clamp(stepFreq(p.steps + p.slip), 40, 4300);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  o.onended = () => { activeVoices--; };
+  const g = ctx.createGain();
+  const ageF = 0.45 + Math.min((p.ageSec || 0) / 40, 1) * 0.85;   // 大きさ=年齢→音量
+  const peak = DYN_GAIN[p.dyn] * p.gainMul * ageF * lerp(0.5, 1.15, p.z);
+  const t = Math.max(at, ctx.currentTime + 0.01);
+  const len = clamp(0.02 + p.atk * 2 + Math.min((p.ageSec || 0) / 40, 1) * 0.05, 0.02, 0.2);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.002);
+  g.gain.setValueAtTime(peak, t + len);
+  g.gain.linearRampToValueAtTime(0, t + len + 0.004);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + len + 0.02);
+  if (grainOn && micReady && p.dyn >= 6 && rng() < 0.6) playGrain(t, peak);
+}
+function schedulePulse(at){
+  if (!soundOn) return;
+  const t = Math.max(at, ctx.currentTime + 0.005);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1320;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.013, t + 0.001);
+  g.gain.setValueAtTime(0.013, t + 0.008);
+  g.gain.linearRampToValueAtTime(0, t + 0.011);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + 0.03);
+}
+function startNoiseFloor(){
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = rng() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300;
+  const g = ctx.createGain(); g.gain.value = 0.006;
+  src.connect(lp).connect(g).connect(master);
+  src.start();
+}
+
+// mic ring buffer → granular
+const RING_SEC = 4;
+let ring = null, ringPos = 0, ringLen = 0, grainGain = null;
+function setupRing(micSrc){
+  ringLen = Math.floor(ctx.sampleRate * RING_SEC);
+  ring = new Float32Array(ringLen);
+  const sp = ctx.createScriptProcessor(2048, 1, 1);
+  sp.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++){
+      ring[ringPos] = inp[i];
+      ringPos = (ringPos + 1) % ringLen;
+    }
+  };
+  micSrc.connect(sp);
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  sp.connect(mute).connect(ctx.destination);
+  grainGain = ctx.createGain(); grainGain.gain.value = 0.5;
+  grainGain.connect(master);
+}
+function playGrain(when, peak){
+  if (!ring) return;
+  const len = Math.floor(ctx.sampleRate * (0.03 + rng() * 0.12));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  const start = (ringPos - len - rngi(ctx.sampleRate * 2) + ringLen * 2) % ringLen;
+  for (let i = 0; i < len; i++){
+    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / len);
+    d[i] = ring[(start + i) % ringLen] * w;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  src.playbackRate.value = Math.pow(2, (rng() * 2 - 1) * 0.6);
+  const g = ctx.createGain(); g.gain.value = clamp(peak * 0.5, 0.02, 0.3);
+  src.connect(g).connect(grainGain);
+  src.start(Math.max(when, ctx.currentTime + 0.01));
+}
+
+// fermata drone
+let droneOsc = null, droneGain = null;
+function droneOn(){
+  droneOff();
+  droneOsc = ctx.createOscillator(); droneOsc.type = 'sine';
+  droneOsc.frequency.value = clamp(stepFreq(lastPitchSteps), 40, 2000);
+  droneGain = ctx.createGain();
+  droneGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  droneGain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.8);
+  droneOsc.connect(droneGain).connect(master);
+  droneOsc.start();
+}
+function droneOff(){
+  if (!droneOsc) return;
+  const o = droneOsc, g = droneGain;
+  g.gain.cancelScheduledValues(ctx.currentTime);
+  g.gain.setValueAtTime(g.gain.value, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+  o.stop(ctx.currentTime + 0.7);
+  droneOsc = droneGain = null;
+}
+
+// ---------- scheduler ----------
+function schedulerTick(){
+  if (!running) return;
+  const now = ctx.currentTime;
+  // 創世: 個体数が7未満なら約4秒ごとにファウンダーが生まれる
+  if (!st.fermata){
+    founderTimer -= 0.09;
+    if (population.length < 7 && founderTimer <= 0){
+      spawnFounder(now);
+      founderTimer = 4;
+      if (population.length === 1) fluxShow('GENESIS.', now);
+    }
+    // 潜在パルス
+    if (pulseGenT < now) pulseGenT = now + 0.2;
+    while (pulseGenT < now + 3){
+      pulseMarks.push({ t: pulseGenT, z: 0.55, crossed: false });
+      pulseGenT += beatLen();
+    }
+  }
+  if (prevPop > 3 && population.length === 0) fluxShow('EXTINCTION.', now);
+  prevPop = population.length;
+  pulseMarks = pulseMarks.filter(m => !m.crossed && xAt(m, now) > -20);
+  flashes = flashes.filter(f => now - f.at < 0.6);
+  floatEqs = floatEqs.filter(f => now - f.at < 4);
+  scoreMarks = scoreMarks.filter(s => now - s.at < 15);
+  birthMarks = birthMarks.filter(b => now - b.at < 1);
+  deathMarks = deathMarks.filter(d => now - d.at < 3);
+}
+
+// ---------- inputs ----------
+const freqData = new Uint8Array(512);
+let timeData = null;
+function analyzeMic(){
+  if (!analyser) return;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  st.micRms = lerp(st.micRms, Math.sqrt(sum / timeData.length), 0.25);
+  analyser.getByteFrequencyData(freqData);
+  let e = 0, ei = 0;
+  for (let i = 0; i < freqData.length; i++){ e += freqData[i]; ei += freqData[i] * i; }
+  if (e > 500) st.micCent = lerp(st.micCent, (ei / e) / freqData.length * 2, 0.15);
+}
+
+const camV = document.getElementById('cam');
+const camCv = document.createElement('canvas'); camCv.width = 64; camCv.height = 48;
+const camCtx = camCv.getContext('2d', { willReadFrequently: true });
+let prevFrame = null;
+setInterval(()=>{
+  if (!camReady || camV.videoWidth === 0) return;
+  camCtx.drawImage(camV, 0, 0, 64, 48);
+  const img = camCtx.getImageData(0, 0, 64, 48).data;
+  if (prevFrame){
+    let d = 0;
+    for (let i = 0; i < img.length; i += 4){
+      const l = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+      d += Math.abs(l - prevFrame[i >> 2]);
+    }
+    st.motion = lerp(st.motion, clamp(d / (64 * 48) / 18, 0, 1), 0.3);
+  }
+  if (!prevFrame) prevFrame = new Float32Array(64 * 48);
+  for (let i = 0; i < img.length; i += 4)
+    prevFrame[i >> 2] = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+}, 100);
+
+// ---------- Fluxus text（文面は今後検討） ----------
+const FLUX_POOL = [
+  'GOD PLAYS DICE.', 'THIS IS NOT RANDOM.', 'OBSERVE.', 'DO NOTHING.',
+  'WAIT.', '静 止 せ よ', '偶 然 は 厳 密 で あ る',
+  'LISTEN TO THE ROOM.', 'EVERY LIFE IS EXACT.',
+];
+let fluxMsg = null, fluxLastAt = -999, fluxTimer = 0;
+function fluxShow(text, now){
+  if (now - fluxLastAt < 20) return;
+  fluxMsg = { text, at: now }; fluxLastAt = now;
+}
+
+// ---------- state update ----------
+let walkPhase = rng() * 100;
+let brokeShown = false;
+function updateState(dt, now){
+  analyzeMic();
+  let target;
+  if (micReady){
+    target = 0.12 + st.micRms * 3.5 + st.micCent * 0.35 + st.motion * 0.7;
+  } else {
+    walkPhase += dt * 0.05;
+    target = 0.3 + 0.22 * Math.sin(walkPhase) + 0.12 * Math.sin(walkPhase * 3.7) + st.motion * 0.7;
+  }
+  st.gVal = clamp(target, 0.05, 1);
+  st.complexity = lerp(st.complexity, st.gVal, 1 - Math.exp(-dt / 1.6));
+
+  const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
+  const recover = st.fermata ? 0.38 : 0.065;
+  st.drain = drain; st.recover = recover; st.dCdt = recover - drain;
+  st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
+  st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
+
+  st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
+  birthBoost = Math.max(0, birthBoost - dt * 0.15);
+
+  if (rng() < dt / 60){ serial.reseed(); fluxShow('DICE ARE THROWN.', now); }
+  if (st.conc < 0.18 && !brokeShown){ fluxShow('THE OBSERVER IS BREAKING.', now); brokeShown = true; }
+  if (st.conc > 0.5) brokeShown = false;
+  fluxTimer += dt;
+  if (fluxTimer > 90){ fluxTimer = 0; fluxShow(FLUX_POOL[rngi(FLUX_POOL.length)], now); }
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('cv');
+const g2 = cv.getContext('2d');
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  g2.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+const RED = '#c8402a';
+const dust = Array.from({length: 90}, (_, i) => {
+  const z = [0.2, 0.55, 0.9][i % 3];
+  return { x: rng(), y: rng(), p: rng() * 100, z };
+});
+
+function draw(now, tSec){
+  g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
+
+  // 塵の視差
+  for (const d of dust){
+    const dx = ((d.x * W - tSec * speedOf(d.z) * 0.12) % W + W) % W;
+    const dy = (d.y * H + Math.sin(tSec * (0.03 + d.z * 0.05) + d.p) * (6 + d.z * 10)) % H;
+    g2.fillStyle = `rgba(220,220,220,${0.028 + d.z * 0.05})`;
+    const s = 0.4 + d.z * 1.1;
+    g2.fillRect(dx, dy, s, s);
+  }
+
+  // 拍マーカー（幽霊グリッド）
+  for (const m of pulseMarks){
+    if (now < m.t) continue;
+    const x = xAt(m, now);
+    if (x < -5 || x > W) continue;
+    g2.strokeStyle = 'rgba(220,220,220,0.045)'; g2.lineWidth = 1;
+    g2.beginPath(); g2.moveTo(x, H * 0.1); g2.lineTo(x, H * 0.9); g2.stroke();
+  }
+
+  // 楽譜の破片（観測の記録）
+  drawShards(now);
+
+  // 誕生の環
+  for (const b of birthMarks){
+    const age = now - b.at;
+    const a = clamp((1 - age) * 0.5, 0, 0.5);
+    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 0.8;
+    g2.beginPath(); g2.arc(b.x, b.y, 2 + age * 26, 0, 7); g2.stroke();
+  }
+  // 死の溶解
+  for (const d of deathMarks){
+    const age = now - d.at;
+    const a = clamp((1 - age / 3) * 0.4, 0, 0.4);
+    g2.fillStyle = `rgba(220,220,220,${a * 0.5})`;
+    g2.beginPath(); g2.arc(d.x, d.y, d.size * (1 + age * 0.6), 0, 7); g2.fill();
+    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 0.5;
+    g2.beginPath(); g2.arc(d.x, d.y, d.size * (1 + age * 2.2), 0, 7); g2.stroke();
+  }
+
+  // ---- 個体群 ----
+  for (const p of population){
+    const x = p.px, y = p.py;
+    const gr = grown(p, now);
+    const size = sizeOf(p, now);
+    // 衝突の閃輪
+    if (p.hitAt && now - p.hitAt < 0.25){
+      const ha = (1 - (now - p.hitAt) / 0.25) * 0.4;
+      g2.strokeStyle = `rgba(220,220,220,${ha})`; g2.lineWidth = 1;
+      g2.beginPath(); g2.arc(x, y, size + 3 + (now - p.hitAt) * 24, 0, 7); g2.stroke();
+    }
+    // 若さ=確率雲、老い=確定した点
+    const cloud = 1 - gr;
+    if (cloud > 0.05){
+      const r = 3 + cloud * 9;
+      const spd = 0.4 + p.z * 1.6;
+      for (let i = 0; i < 3; i++){
+        const jx = Math.sin(tSec * spd * (1.3 + i * 0.31) + p.birthT * 7 + i * 2.4) * r;
+        const jy = Math.cos(tSec * spd * (1.1 + i * 0.27) + p.birthT * 5 + i * 1.9) * r;
+        g2.fillStyle = `rgba(220,220,220,${cloud * (0.1 + 0.04 * i)})`;
+        g2.beginPath(); g2.arc(x + jx, y + jy, 0.7 + p.z * 0.8, 0, 7); g2.fill();
+      }
+    }
+    const a = lerp(0.3, 0.95, gr) * lerp(0.55, 1, p.z);
+    g2.fillStyle = `rgba(232,230,224,${a})`;
+    g2.beginPath(); g2.arc(x, y, size, 0, 7); g2.fill();
+    // 直近の観測（収斂の環 / 記録漏れの赤環）
+    if (p.obsAt !== undefined){
+      const oa = now - p.obsAt;
+      if (oa >= 0 && oa < 0.35){
+        const rr = 3 + oa * 52;
+        g2.strokeStyle = `rgba(220,220,220,${(1 - oa / 0.35) * 0.45})`;
+        g2.lineWidth = 1;
+        g2.beginPath(); g2.arc(x, y, rr, 0, 7); g2.stroke();
+      }
+      if (p.dropped && oa < 1.6){
+        g2.strokeStyle = `rgba(200,64,42,${clamp(0.6 - oa * 0.35, 0, 0.6)})`; g2.lineWidth = 1;
+        g2.beginPath(); g2.arc(x, y, size + 2.5, 0, 7); g2.stroke();
+      }
+    }
+  }
+
+  // 浮上する数式
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  for (const f of floatEqs){
+    const age = now - f.at;
+    const a = clamp((1 - age / 4) * 0.55, 0, 0.55);
+    g2.fillStyle = `rgba(220,220,220,${a})`;
+    g2.fillText(f.text, f.x + 8, f.y - 6 - age * 7);
+  }
+
+  // ---- 観測線（往復） ----
+  const bornA = clamp((now - line.bornAt) / 1.5, 0, 1);
+  let lineA = (0.35 + st.errRecent * 0.12) * bornA;
+  for (const f of flashes) lineA += clamp(0.3 - (now - f.at) * 0.6, 0, 0.3);
+  if (st.fermata) lineA *= 0.35;                     // 目を閉じている
+  const trembleX = st.fermata ? Math.sin(tSec * 40) * 0.9 : 0;
+  const lx = line.x + trembleX;
+  g2.strokeStyle = `rgba(220,220,220,${clamp(lineA, 0, 0.85)})`;
+  g2.lineWidth = 1;
+  g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, H); g2.stroke();
+  g2.strokeStyle = `rgba(220,220,220,${0.06 * bornA})`;
+  g2.lineWidth = 5;
+  g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, H); g2.stroke();
+  g2.fillStyle = `rgba(220,220,220,${0.3 * bornA})`;
+  g2.beginPath();
+  g2.moveTo(lx + line.dir * 8, H * 0.965);
+  g2.lineTo(lx, H * 0.96); g2.lineTo(lx, H * 0.97);
+  g2.closePath(); g2.fill();
+
+  if (st.fermata){
+    g2.strokeStyle = 'rgba(220,220,220,0.8)'; g2.lineWidth = 1.5;
+    g2.beginPath(); g2.arc(lx, H * 0.08, 14, Math.PI, 0); g2.stroke();
+    g2.fillStyle = 'rgba(220,220,220,0.8)';
+    g2.beginPath(); g2.arc(lx, H * 0.08 - 3, 2.5, 0, 7); g2.fill();
+  }
+
+  // Fluxus 指示テキスト
+  if (fluxMsg){
+    const age = now - fluxMsg.at;
+    if (age > 7) fluxMsg = null;
+    else {
+      const a = age < 1 ? age : age > 5 ? (7 - age) / 2 : 1;
+      g2.fillStyle = `rgba(220,220,220,${a * 0.7})`;
+      g2.font = '11px monospace'; g2.textAlign = 'center';
+      g2.fillText(fluxMsg.text.split('').join(' '), W / 2, H * 0.8);
+    }
+  }
+
+  if (mathOn) drawMath(now);
+  drawHUD(now);
+}
+
+// ---------- 楽譜の破片 ----------
+function drawShards(now){
+  g2.textAlign = 'center';
+  for (const s of scoreMarks){
+    const age = now - s.at;
+    const life = clamp(1 - age / 15, 0, 1);
+    if (life <= 0) continue;
+    const x = s.x - age * 4;
+    const y = s.y;
+    if (x < -40) continue;
+    const S = 5 + s.z * 3;
+    const A = life * (0.2 + s.z * 0.3);
+    const ink = a => `rgba(232,224,204,${a})`;
+    g2.lineWidth = 0.6;
+    g2.strokeStyle = ink(A * 0.6);
+    for (let i = -2; i <= 2; i++){
+      g2.beginPath(); g2.moveTo(x - 4.5 * S, y + i * S); g2.lineTo(x + 4.5 * S, y + i * S); g2.stroke();
+    }
+    if (s.dropped){
+      g2.strokeStyle = `rgba(200,64,42,${Math.min(A * 1.4, 0.8)})`; g2.lineWidth = 1.2;
+      g2.beginPath();
+      g2.moveTo(x - S * 0.7, y - S * 0.7); g2.lineTo(x + S * 0.7, y + S * 0.7);
+      g2.moveTo(x + S * 0.7, y - S * 0.7); g2.lineTo(x - S * 0.7, y + S * 0.7);
+      g2.stroke();
+    } else {
+      g2.fillStyle = ink(Math.min(A * 1.5, 0.85));
+      g2.beginPath(); g2.ellipse(x, y, S * 0.62, S * 0.45, -0.3, 0, 7); g2.fill();
+      g2.strokeStyle = ink(Math.min(A * 1.2, 0.7)); g2.lineWidth = 0.9;
+      g2.beginPath(); g2.moveTo(x + S * 0.6, y); g2.lineTo(x + S * 0.6, y - 3 * S); g2.stroke();
+      if (s.slip){
+        g2.strokeStyle = `rgba(200,64,42,${Math.min(A * 1.2, 0.7)})`; g2.lineWidth = 0.8;
+        g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x, y - s.slip * S * 0.5); g2.stroke();
+      }
+    }
+    if (s.infl){
+      g2.fillStyle = ink(Math.min(A * 1.4, 0.8));
+      const n = Math.abs(s.infl), dir = s.infl > 0 ? -1 : 1;
+      for (let k = 0; k < n; k++){
+        const ay = y + dir * (S * 1.1 + k * 4);
+        g2.beginPath();
+        g2.moveTo(x - S * 1.3, ay);
+        g2.lineTo(x - S * 1.3 - 3, ay - dir * 4);
+        g2.lineTo(x - S * 1.3 + 3, ay - dir * 4);
+        g2.closePath(); g2.fill();
+      }
+    }
+    g2.font = `italic ${Math.round(7 + s.z * 3)}px serif`;
+    g2.fillStyle = `rgba(200,180,140,${Math.min(A * 1.3, 0.75)})`;
+    g2.fillText(DYN_NAMES[s.dyn], x, y + 3.2 * S);
+    if (s.chain && s.chain.length){
+      g2.font = '8px serif';
+      g2.fillStyle = ink(A * 0.9);
+      g2.fillText('g' + s.chain.join(''), x, y - 3.6 * S);   // 世代の刻印
+    }
+  }
+}
+
+// ---------- math panel ----------
+function drawMath(now){
+  const cell = 11, mw = cell * 12;
+  const x0 = W - mw - 18, y0 = H - mw - 64;
+  const M = mathEv;
+  const form = M ? M.form : serial.form;
+  const tt   = M ? M.tt   : serial.t;
+  const kk   = M ? M.k    : -1;
+  const r = serial.row;
+  const hlRow = (form === 0 || form === 2) ? r.indexOf((12 - tt) % 12) : -1;
+  const hlCol = (form === 1 || form === 3) ? r.indexOf(tt % 12) : -1;
+  for (let i = 0; i < 12; i++){
+    for (let j = 0; j < 12; j++){
+      const v = (r[j] - r[i] + 12) % 12;
+      const cur = (i === hlRow && j === kk) || (j === hlCol && i === kk);
+      const a = (i === hlRow || j === hlCol) ? 0.7 : 0.18;
+      g2.fillStyle = cur ? RED : `rgba(220,220,220,${a})`;
+      g2.beginPath();
+      g2.arc(x0 + j * cell + cell / 2, y0 + i * cell + cell / 2, 0.6 + v / 12 * 2.4, 0, 7);
+      g2.fill();
+    }
+  }
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.5)';
+  const eps = (form === 1 || form === 3) ? '−x' : 'x';
+  g2.fillText(`${['P','I','R','RI'][form]}${tt}: x↦(${eps}+${tt}) mod 12`, x0, y0 + mw + 14);
+  g2.fillText(`λ=λ₀N(1−N/K)  N=${population.length}  K=${K().toFixed(0)}`, x0, y0 + mw + 27);
+  g2.fillText(`h(a)=h₀e^(a/16)  ↑${births} ↓${deaths}  boost=${birthBoost.toFixed(2)}`, x0, y0 + mw + 40);
+  if (M && M.birthT !== undefined)
+    g2.fillText(`age=${(now - M.birthT).toFixed(1)}s  gen=${M.gen}  z=${M.z.toFixed(2)}`, x0, y0 + mw + 53);
+}
+
+function drawHUD(now){
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.4)';
+  g2.fillText(
+    `N ${String(population.length).padStart(3)}/${K().toFixed(0)}   GEN ${maxGen}   ↑${births} ↓${deaths}   ` +
+    `C ${st.conc.toFixed(2)}   MIC ${micReady ? (st.micRms * 100).toFixed(0) : '--'}   CAM ${camReady ? (st.motion * 100).toFixed(0) : '--'}   ` +
+    `LINE ${line.dir > 0 ? '→' : '←'}${st.fermata ? ' 休' : ''}`, 14, 24);
+}
+
+// ---------- main loop ----------
+let lastNow = 0;
+function frame(ts){
+  if (!running) return;
+  const now = ctx.currentTime;
+  const dt = clamp(now - lastNow, 0.001, 0.5);
+  lastNow = now;
+  updateState(dt, now);
+  updatePhysics(dt, now);
+  updateLine(dt, now);
+  draw(now, ts / 1000);
+  requestAnimationFrame(frame);
+}
+
+// ---------- interaction ----------
+cv.addEventListener('pointerdown', e => {
+  if (!running) return;
+  st.fermata = true;          // 観測者は目を閉じる（生は続くが記録されない）
+  droneOn();
+  if (rng() < 0.4) fluxShow('THE OBSERVER SLEEPS.', ctx.currentTime);
+  applyPointer(e);
+});
+cv.addEventListener('pointermove', e => { if (st.fermata) applyPointer(e); });
+window.addEventListener('pointerup', () => {
+  if (!st.fermata) return;
+  st.fermata = false;
+  droneOff();
+  pulseGenT = ctx.currentTime + 0.5;
+});
+function applyPointer(e){
+  st.tempoMul = lerp(0.4, 1.8, clamp(e.clientX / W, 0, 1));
+  st.microGrid = clamp(Math.round(lerp(0, 2, 1 - e.clientY / H)), 0, 2);
+}
+
+// ---------- buttons ----------
+const bGrain = document.getElementById('bGrain');
+const bSound = document.getElementById('bSound');
+const bFull  = document.getElementById('bFull');
+const bMath  = document.getElementById('bMath');
+bMath.onclick  = () => { mathOn = !mathOn; bMath.classList.toggle('on', mathOn); };
+bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
+bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
+const docEl = document.documentElement;
+if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen)
+  bFull.style.display = 'none';
+bFull.onclick  = () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement)
+    (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  else
+    (docEl.requestFullscreen || docEl.webkitRequestFullscreen)?.call(docEl);
+};
+
+// ---------- init ----------
+document.getElementById('startBtn').addEventListener('click', async () => {
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('btns').style.display = 'flex';
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC();
+  await ctx.resume();
+  master = ctx.createGain(); master.gain.value = 0.85;
+  limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -14; limiter.knee.value = 4;
+  limiter.ratio.value = 14; limiter.attack.value = 0.002; limiter.release.value = 0.2;
+  master.connect(limiter).connect(ctx.destination);
+  startNoiseFloor();
+
+  const AUDIO_C = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  const VIDEO_C = { width: 320, height: 240, facingMode: 'user' };
+  let micStream = null, camStream = null;
+  try {
+    micStream = camStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C, video: VIDEO_C });
+  } catch (err) {
+    try { micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C }); }
+    catch (e) { console.warn('mic unavailable:', e.message); }
+    try { camStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_C }); }
+    catch (e) { console.warn('camera unavailable:', e.message); }
+  }
+  if (micStream && micStream.getAudioTracks().length){
+    const src = ctx.createMediaStreamSource(micStream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+    timeData = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    setupRing(src);
+    micReady = true;
+  }
+  if (camStream && camStream.getVideoTracks().length){
+    camV.srcObject = camStream;
+    await camV.play().catch(()=>{});
+    camReady = true;
+  }
+
+  running = true;
+  pulseGenT = ctx.currentTime + 0.3;
+  founderTimer = 0.5;                       // まもなく最初の生が生まれる
+  line.x = W * 0.03; line.dir = 1; line.bornAt = ctx.currentTime;
+  setInterval(schedulerTick, 90);
+  lastNow = ctx.currentTime;
+  requestAnimationFrame(frame);
+}, { once: true });
+</script>
+</body>
+</html>
