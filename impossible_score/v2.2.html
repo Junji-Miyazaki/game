@@ -135,6 +135,11 @@ const grown = (p, now) => Math.min(ageOf(p, now) / 40, 1);   // 0=誕生 → 1=�
 const sizeOf = (p, now) => (1.0 + grown(p, now) * 2.0) * (0.6 + p.z * 0.8);
 const radiusOf = (p, now) => sizeOf(p, now) * 2.6;   // 衝突断面は広め（繁殖は衝突律速のため）
 const massOf = (p, now) => (0.6 + p.z * 1.4) * (0.5 + grown(p, now));
+// 声の高さ = 同一性(pc) × 現在地(縦位置→音域±2oct) × 加齢(生涯で3半音下降) × 傷(衝突の履歴=微分音の漂い)
+const stepsOf = (p, now) => (p.pc - 9) * 4
+  + Math.round((0.5 - p.py / H) * 2.2) * 48
+  + p.infl + (p.scar || 0)
+  - Math.round(grown(p, now) * 12);
 
 // 意思（固有の運動法則）: 形質から導出。方位だけは偶然（誕生の場所と向き）
 function assignMotion(p){
@@ -224,6 +229,7 @@ const xAt = (m, now) => spawnX() - (now - m.t) * speedOf(m.z);   // 拍マーカ
 // ---------- 観測: 線と生の出会い → 記録 = 音 ----------
 function observe(p, now){
   p.obsAt = now;
+  p.steps = stepsOf(p, now);   // 観測の瞬間の「声」: 位置・年齢・傷で毎回違う
   perform(p);
   lastPitchSteps = p.steps;
   mathEv = p;
@@ -303,6 +309,13 @@ function updatePhysics(dt, now){
           a.px -= nx * push; a.py -= ny * push;
           b.px += nx * push; b.py += ny * push;
           a.hitAt = b.hitAt = now;
+          // 傷: 衝突の履歴が声を変える（微分音の漂い。強い衝突は声量も変える）
+          if (rng() < 0.4) a.scar = clamp((a.scar || 0) + (rng() < 0.5 ? -1 : 1), -10, 10);
+          if (rng() < 0.4) b.scar = clamp((b.scar || 0) + (rng() < 0.5 ? -1 : 1), -10, 10);
+          if (rvn > 30){
+            if (rng() < 0.25) a.dyn = clamp(a.dyn + 1, 0, 7);
+            if (rng() < 0.25) b.dyn = clamp(b.dyn + 1, 0, 7);
+          }
           // 生殖: 成熟した二者の出会いから、ロジスティック制約の下で
           const N = population.length + newborns.length;
           const mature = ageOf(a, now) > 4 && ageOf(b, now) > 4;
@@ -375,7 +388,7 @@ function scheduleAudio(p, at){
   const ageF = 0.45 + Math.min((p.ageSec || 0) / 40, 1) * 0.85;   // 大きさ=年齢→音量
   const peak = DYN_GAIN[p.dyn] * p.gainMul * ageF * lerp(0.5, 1.15, p.z);
   const t = Math.max(at, ctx.currentTime + 0.01);
-  const len = clamp(0.02 + p.atk * 2 + Math.min((p.ageSec || 0) / 40, 1) * 0.05, 0.02, 0.2);
+  const len = clamp(0.02 + p.atk * 2 + Math.min((p.ageSec || 0) / 40, 1) * 0.09, 0.02, 0.25);
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(peak, t + 0.002);
   g.gain.setValueAtTime(peak, t + len);
