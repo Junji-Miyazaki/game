@@ -162,19 +162,29 @@ function makeBody(p, x, y){
   return p;
 }
 
-// ファウンダー: 右端に「同種」で生まれる
-function spawnFounder(now){
-  const p = {
-    birthT: now, gen: 0, depth: 0,
-    pc: serial.row[0], infl: 0, dyn: 4, atk: 0.008,
-    z: 0.5, scar: 0,
-    k: 0, form: 0, tt: 0,
-  };
-  assignMotion(p);
-  makeBody(p, spawnX(), fieldBottom() * (0.15 + rng() * 0.7));
-  population.push(p);
-  births++;
-  birthMarks.push({ x: p.px, y: p.py, at: now });
+// コホート（同世代群）: 2〜6体が一斉に生まれる。同じ奥行きを共有し縦に帯状に
+// 散るため、観測線をほぼ同時に横切り和音/クラスターとして鳴る。
+// 各個体は音列の連続する音を順に受け取る＝音列断片の垂直化（セリーの和音）
+function spawnCohort(now){
+  serial.advancePhrase();   // コホートごとに音列の変形・移高が変わる
+  const size = 2 + rngi(2) + Math.round(st.complexity * 3);   // 2..6体
+  const z = clamp(0.15 + rng() * 0.7, 0.05, 1);
+  const yBase = fieldBottom() * (0.1 + rng() * 0.55);
+  for (let i = 0; i < size; i++){
+    const tr = serial.next();
+    const p = {
+      birthT: now, gen: 0, depth: 0,
+      pc: tr.pc, infl: tr.infl, dyn: tr.dyn, atk: tr.atk,
+      z: clamp(z + gauss() * 0.04, 0.05, 1), scar: 0,
+      k: tr.k, form: tr.form, tt: tr.tt,
+    };
+    assignMotion(p);
+    makeBody(p, spawnX() - i * 5,
+             clamp(yBase + i * (16 + rng() * 22), H * 0.04, fieldBottom() * 0.97));
+    population.push(p);
+    births++;
+    birthMarks.push({ x: p.px, y: p.py, at: now });
+  }
 }
 
 // 衝突生殖: 形質の混合 + 突然変異
@@ -350,7 +360,10 @@ function updatePhysics(dt, now){
       }
     }
   }
-  for (const [a, b] of newborns) spawnChild(a, b, now);
+  for (const [a, b] of newborns){
+    spawnChild(a, b, now);
+    if (rng() < 0.15) spawnChild(a, b, now);   // 双子
+  }
   // 寿命（Gompertz、過密で増大）＋ 左端到達＝時の彼方へ
   const over = Math.max(0, population.length / K() - 1);
   population = population.filter(p => {
@@ -509,10 +522,11 @@ function schedulerTick(){
   const now = ctx.currentTime;
   if (!st.fermata){
     founderTimer -= 0.09;
-    if (population.length < 7 && founderTimer <= 0){
-      spawnFounder(now);
-      founderTimer = 4;
-      if (population.length === 1) fluxShow('GENESIS.', now);
+    if (population.length < 10 && founderTimer <= 0){
+      const wasEmpty = population.length === 0;
+      spawnCohort(now);
+      founderTimer = 3 + rng() * 4;               // 補充間隔も揺らぐ
+      if (wasEmpty) fluxShow('GENESIS.', now);
     }
     if (pulseGenT < now) pulseGenT = now + 0.2;
     while (pulseGenT < now + 3){
