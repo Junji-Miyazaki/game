@@ -136,8 +136,9 @@ const K = () => 18 + st.complexity * 70;
 const MAX_POP = 140;
 const ageOf = (p, now) => now - p.birthT;
 const grown = (p, now) => Math.min(ageOf(p, now) / 30, 1);
-const sizeOf = (p, now) => (1.0 + grown(p, now) * 2.0) * (0.6 + p.z * 0.8);
-const radiusOf = (p, now) => sizeOf(p, now) * 2.6;
+// v2.1様式: 粒子は小さな点。大きさは奥行き主体、年齢の効果はわずかに残す
+const sizeOf = (p, now) => (lerp(0.9, 2.6, p.z) + p.dyn * 0.14) * (0.8 + grown(p, now) * 0.5);
+const radiusOf = (p, now) => 4 + p.z * 5;   // 衝突断面は年齢非依存（生殖バランス維持）
 const massOf = (p, now) => (0.6 + p.z * 1.4) * (0.5 + grown(p, now));
 // 声の高さ = 同一性(pc) × 現在地(縦位置→音域±2oct) × 加齢(下降) × 傷(衝突の履歴)
 const stepsOf = (p, now) => (p.pc - 9) * 4
@@ -675,18 +676,16 @@ function draw(now, tSec){
       g2.strokeStyle = `rgba(220,220,220,${ha})`; g2.lineWidth = 1;
       g2.beginPath(); g2.arc(x, y, size + 3 + (now - p.hitAt) * 24, 0, 7); g2.stroke();
     }
-    const cloud = 1 - gr;
-    if (cloud > 0.05){
-      const r = 3 + cloud * 9;
-      const spd = 0.4 + p.z * 1.6;
-      for (let i = 0; i < 3; i++){
-        const jx = Math.sin(tSec * spd * (1.3 + i * 0.31) + p.birthT * 7 + i * 2.4) * r;
-        const jy = Math.cos(tSec * spd * (1.1 + i * 0.27) + p.birthT * 5 + i * 1.9) * r;
-        g2.fillStyle = `rgba(220,220,220,${cloud * (0.1 + 0.04 * i)})`;
-        g2.beginPath(); g2.arc(x + jx, y + jy, 0.7 + p.z * 0.8, 0, 7); g2.fill();
-      }
+    // v2.1様式の重ね合わせの雲（若いほど大きく揺らぎ、老いるほど点に収束）
+    const cr = (3 + p.z * 3) * (0.45 + (1 - gr) * 0.75);
+    const spd = 0.4 + p.z * 1.6;
+    for (let i = 0; i < 4; i++){
+      const jx = Math.sin(tSec * spd * (1.3 + i * 0.31) + p.birthT * 7 + i * 2.4) * cr;
+      const jy = Math.cos(tSec * spd * (1.1 + i * 0.27) + p.birthT * 5 + i * 1.9) * cr;
+      g2.fillStyle = `rgba(220,220,220,${lerp(0.08, 0.22, p.z) + 0.03 * i})`;
+      g2.beginPath(); g2.arc(x + jx, y + jy, 0.6 + p.z * 0.9, 0, 7); g2.fill();
     }
-    const a = lerp(0.3, 0.95, gr) * lerp(0.55, 1, p.z);
+    const a = lerp(0.35, 0.9, p.z) * (0.5 + gr * 0.5);
     g2.fillStyle = `rgba(232,230,224,${a})`;
     g2.beginPath(); g2.arc(x, y, size, 0, 7); g2.fill();
     if (p.obsAt !== undefined){
