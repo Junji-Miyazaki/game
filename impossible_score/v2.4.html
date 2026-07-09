@@ -31,6 +31,7 @@
 <canvas id="cv"></canvas>
 <video id="cam" playsinline muted autoplay></video>
 <div id="btns" style="display:none">
+  <div class="btn on" id="bGlow">輝</div>
   <div class="btn on" id="bMath">数理</div>
   <div class="btn on" id="bGrain">具体音</div>
   <div class="btn" id="bFull">全画面</div>
@@ -75,7 +76,7 @@ function shuffled(arr){ const a=arr.slice();
 // ---------- global state ----------
 let ctx=null, master=null, limiter=null, analyser=null;
 let micReady=false, camReady=false, running=false;
-let soundOn=true, grainOn=true;
+let soundOn=true, grainOn=true, glowOn=true;
 
 const st = {
   complexity: 0.2, conc: 1.0, fatigue: 0,
@@ -83,6 +84,7 @@ const st = {
   tempoMul: 1, microGrid: 2,
   fermata: false, errRecent: 0,
   gVal: 0.2, drain: 0, recover: 0, dCdt: 0,
+  vis: 1,   // 動的視認性係数（環境が騒がしいほどグラフィックが濃く太く）
 };
 
 // ---------- series engine（総音列: 6つのパラメータすべてがセリー） ----------
@@ -652,6 +654,9 @@ function updateState(dt, now){
   st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
 
   st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
+  // 動的視認性: 会場が騒がしい/複雑なほど、描画が濃く太く自己主張する
+  st.vis = lerp(st.vis, clamp(1 + st.motion * 0.8 + st.complexity * 0.45, 1, 2.1),
+                1 - Math.exp(-dt / 1.2));
 
   if (rng() < dt / 50){ serial.reseed(); newEpoch(now); }   // サイコロ=音列再シード+新しい時代（モード）
   if (st.conc < 0.18 && !brokeShown){ fluxShow('THE OBSERVER IS BREAKING.', now); brokeShown = true; }
@@ -663,11 +668,19 @@ function updateState(dt, now){
 // ---------- rendering ----------
 const cv = document.getElementById('cv');
 const g2 = cv.getContext('2d');
+let bloomA = null, bloomAx = null, bloomB = null, bloomBx = null;
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
   cv.width = W * DPR; cv.height = H * DPR;
   g2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // ブルーム用の縮小バッファ（1/4と1/8。縮小→拡大がぼかしになる）
+  bloomA = document.createElement('canvas');
+  bloomA.width = Math.max(1, W >> 2); bloomA.height = Math.max(1, H >> 2);
+  bloomAx = bloomA.getContext('2d');
+  bloomB = document.createElement('canvas');
+  bloomB.width = Math.max(1, W >> 3); bloomB.height = Math.max(1, H >> 3);
+  bloomBx = bloomB.getContext('2d');
 }
 window.addEventListener('resize', resize); resize();
 
@@ -681,6 +694,7 @@ const dust = Array.from({length: 90}, (_, i) => {
 function draw(now, tSec){
   g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
   const fB = fieldBottom();
+  const vb = st.vis;   // 動的視認性係数
 
   for (const d of dust){
     const dx = ((d.x * W - tSec * speedOf(d.z) * 0.12) % W + W) % W;
@@ -694,7 +708,7 @@ function draw(now, tSec){
     if (now < m.t) continue;
     const x = xAt(m, now);
     if (x < -5 || x > W) continue;
-    g2.strokeStyle = 'rgba(220,220,220,0.045)'; g2.lineWidth = 1;
+    g2.strokeStyle = `rgba(220,220,220,${0.045 * vb})`; g2.lineWidth = 1;
     g2.beginPath(); g2.moveTo(x, fB * 0.06); g2.lineTo(x, fB * 0.96); g2.stroke();
   }
 
@@ -703,8 +717,8 @@ function draw(now, tSec){
   for (const c of cellMarks){
     const pts = c.evs.filter(e => e.px !== undefined && e.px > -60 && e.px < W + 60);
     if (pts.length < 2) continue;
-    const a = 0.2 * lerp(0.5, 1, c.z);
-    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 0.6;
+    const a = 0.2 * lerp(0.5, 1, c.z) * (0.7 + 0.3 * vb);
+    g2.strokeStyle = `rgba(220,220,220,${a})`; g2.lineWidth = 0.6 * vb;
     g2.beginPath();
     g2.moveTo(pts[0].px, pts[0].py);
     for (let i = 1; i < pts.length; i++) g2.lineTo(pts[i].px, pts[i].py);
@@ -732,14 +746,14 @@ function draw(now, tSec){
       const cloudErr = (1 - st.conc) * (0.35 + 0.65 * ev.depth / 4);
       const r = (2 + cloudErr * 20) * (0.5 + ev.z * 0.8);
       const spd = 0.4 + ev.z * 1.6;
-      const baseA = lerp(0.10, 0.30, ev.z) * sa;
+      const baseA = lerp(0.10, 0.30, ev.z) * sa * (0.7 + 0.3 * vb);
       for (let i = 0; i < 4; i++){
         const jx = Math.sin(tSec * spd * (1.3 + i * 0.31) + ev.t * 7 + i * 2.4) * r;
         const jy = Math.cos(tSec * spd * (1.1 + i * 0.27) + ev.t * 5 + i * 1.9) * r;
         g2.fillStyle = `rgba(220,220,220,${baseA + 0.04 * i})`;
         g2.beginPath(); g2.arc(x + jx, y + jy, 0.6 + ev.z * 0.9, 0, 7); g2.fill();
       }
-      g2.fillStyle = `rgba(220,220,220,${lerp(0.2, 0.5, ev.z) * sa})`;
+      g2.fillStyle = `rgba(220,220,220,${clamp(lerp(0.2, 0.5, ev.z) * sa * (0.7 + 0.3 * vb), 0, 1)})`;
       g2.beginPath(); g2.arc(x, y, 0.7 + ev.z * 0.9, 0, 7); g2.fill();
     } else {
       const age = now - ev.obsAt;
@@ -758,7 +772,7 @@ function draw(now, tSec){
         }
       } else {
         const rx = x, ry = y - slipY;
-        const a = clamp(1 - age / 12, 0, 1) * lerp(0.4, 0.95, ev.z);
+        const a = clamp((1 - age / 12) * lerp(0.4, 0.95, ev.z) * (0.75 + 0.25 * vb), 0, 1);
         g2.fillStyle = `rgba(232,230,224,${a})`;
         g2.beginPath(); g2.arc(rx, ry, sizeBase, 0, 7); g2.fill();
         if (Math.abs(ev.offset) > 0.02 || ev.slip){
@@ -797,8 +811,8 @@ function draw(now, tSec){
   g2.strokeStyle = `rgba(220,220,220,${clamp(lineA, 0, 0.85)})`;
   g2.lineWidth = 1;
   g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, fB + 8); g2.stroke();
-  g2.strokeStyle = `rgba(220,220,220,${0.06 * bornA})`;
-  g2.lineWidth = 5;
+  g2.strokeStyle = `rgba(220,220,220,${0.06 * bornA * vb})`;
+  g2.lineWidth = 5 * vb;
   g2.beginPath(); g2.moveTo(lx, 0); g2.lineTo(lx, fB + 8); g2.stroke();
   g2.fillStyle = `rgba(220,220,220,${0.3 * bornA})`;
   g2.beginPath();
@@ -811,6 +825,20 @@ function draw(now, tSec){
     g2.beginPath(); g2.arc(lx, H * 0.06, 14, Math.PI, 0); g2.stroke();
     g2.fillStyle = 'rgba(220,220,220,0.8)';
     g2.beginPath(); g2.arc(lx, H * 0.06 - 3, 2.5, 0, 7); g2.fill();
+  }
+
+  // ブルーム（光の滲み）: 場のレイヤーにだけ適用。縮小コピー→加算合成で
+  // 「周囲の空気をわずかに照らす光の粒」に。譜面・数理・HUDはこの後に描くので鮮鋭なまま
+  if (glowOn && bloomA){
+    bloomAx.drawImage(cv, 0, 0, bloomA.width, bloomA.height);
+    bloomBx.drawImage(bloomA, 0, 0, bloomB.width, bloomB.height);
+    g2.save();
+    g2.globalCompositeOperation = 'lighter';
+    g2.globalAlpha = clamp(0.26 * vb, 0, 0.6);
+    g2.drawImage(bloomA, 0, 0, W, H);
+    g2.globalAlpha = clamp(0.18 * vb, 0, 0.45);
+    g2.drawImage(bloomB, 0, 0, W, H);
+    g2.restore();
   }
 
   drawRibbon(now);
@@ -1009,7 +1037,7 @@ function drawHUD(now){
   g2.fillStyle = 'rgba(220,220,220,0.4)';
   g2.fillText(
     `粒 ${renderEvents.length}   声 ${activeVoices}   観測 ${caught}·漏${missedN}·消${droppedN}   ` +
-    `C ${st.conc.toFixed(2)}   X ${st.complexity.toFixed(2)}   ` +
+    `C ${st.conc.toFixed(2)}   X ${st.complexity.toFixed(2)}   V ${st.vis.toFixed(2)}   ` +
     `MIC ${micReady ? (st.micRms * 100).toFixed(0) : '--'}  CAM ${camReady ? (st.motion * 100).toFixed(0) : '--'}   ` +
     `LINE ${line.dir > 0 ? '→' : '←'}${st.fermata ? ' 休' : ''}`, 14, 24);
 }
@@ -1059,6 +1087,8 @@ const bGrain = document.getElementById('bGrain');
 const bSound = document.getElementById('bSound');
 const bFull  = document.getElementById('bFull');
 const bMath  = document.getElementById('bMath');
+const bGlow  = document.getElementById('bGlow');
+bGlow.onclick  = () => { glowOn = !glowOn; bGlow.classList.toggle('on', glowOn); };
 bMath.onclick  = () => { mathOn = !mathOn; bMath.classList.toggle('on', mathOn); };
 bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
 bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
