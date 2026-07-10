@@ -48,14 +48,14 @@
 <div id="overlay">
   <h1>SCORE FOR EVIDENCE</h1>
   <h2>three studies for seven voices and an observer<br><span style="font-size:9px;letter-spacing:.2em;color:#5c5343">on real PubMed evidence · 161,892 co-citations · 155 retractions</span></h2>
-  <p>七つの概念が、それぞれの声を持つ。<br>ふたつの概念が結ばれるとき——それが医学の主張である——二つの声が音程を作る。</p>
-  <p>確立された主張は協和へ収束し、執拗に反復される。<br>係争中の主張は微分音のうなりを生む。定説が覆るとき、音程は崩壊する。</p>
-  <p>だが観測者は、そのすべてを聴き取れない。<br>漏れた音は淡い休符に、記録に失敗した音は赤い休符になる。</p>
+  <p>Seven concepts, each with its own voice. When two are joined — a claim of medicine — their voices form an interval.</p>
+  <p>An established claim converges to consonance and is repeated insistently. A contested claim beats in microtones. When a doctrine is overturned, the interval collapses.</p>
+  <p>But the observer cannot hear all of it. A missed sound becomes a faint rest; a sound that failed to be recorded, a red rest.</p>
   <div class="disc">
-    この作品は医学研究の営みの<b>模型</b>である。<br>
-    データは二次資料から手作業で構成した心臓病学の7概念・1950–2020年の関係グラフであり、文献そのものではない。<br>
-    データと音のあいだの写像はすべて作者の選択である。作品は何も証明しない。<br>
-    地図は領土ではない。その隙間に、音楽がある。
+    This work is a <b>model</b> of the enterprise of medical research.<br>
+    The edge histories are derived from real PubMed counts; the DAG structure and the direction of causation are the author’s model — as they are in epidemiology itself.<br>
+    Every mapping between data and sound is the author’s choice. The work proves nothing.<br>
+    The map is not the territory. In the gap, there is music.
   </div>
   <div id="pieces">
     <div class="pbtn" data-mi="0">I. Saturated Fat and Coronary Heart Disease
@@ -68,7 +68,7 @@
       <span class="form">Six Epochs for Seven Voices and an Observer,<br>in Just Intonation on the Eighth Partial</span>
       <span>a time-dependent trial sequence, 1995–2020; converging to 8:10:12</span></div>
   </div>
-  <div id="permNote">音が鳴ります。画面を押さえている間、観測者は目を閉じます。</div>
+  <div id="permNote">Sound will play. While you hold the screen, the observer closes its eyes.</div>
 </div>
 
 <script>
@@ -122,7 +122,7 @@ const SUITE = [
     form:'Eight Decades for Seven Voices and an Observer, in Pythagorean Tuning',
     design:'a natural-history cohort, 1950–2020; cholesterol feeds coronary above and haemorrhage below',
     sub:'1950–2020',
-    disc:'DATA v1 · PubMed esearch カウント（2026-07-11 採取）· 強度=Dice係数 / 状態=強いデザインの占有率 / 撤回=実数。概念→MeSHの対応・因果の向き・係争と逆転の注釈は作者のモデルである。',
+    disc:'DATA v1 · PubMed esearch counts (harvested 2026-07-11) · weight = Dice coefficient / status = share of strong designs / retractions = real counts. Concept-to-MeSH mapping, causal direction, and the contested/reversed annotations are the author\u2019s model.',
     concepts:[
       { id:'SFA',  jp:'飽和脂肪',       en:'Saturated Fat', partial:1, band: 1, col:'232,224,204' },
       { id:'SUGR', jp:'糖',             en:'Sugar',         partial:6, band: 2, col:'230,215,180' },
@@ -130,7 +130,7 @@ const SUITE = [
       { id:'TG',   jp:'中性脂肪',       en:'Triglycerides', partial:7, band: 0, col:'225,205,180' },
       { id:'STAT', jp:'スタチン',       en:'Statins',       partial:4, band: 1, col:'190,220,205' },
       { id:'CHD',  jp:'冠動脈疾患',     en:'Coronary Disease', partial:2, band:-1, col:'232,190,180' },
-      { id:'ICH',  jp:'脳出血',         en:'Cerebral Hemorrhage', partial:5, band:-3, col:'205,150,175' } ],
+      { id:'ICH',  jp:'脳出血',         en:'Cerebral Hemorrhage', partial:5, band:-2, col:'205,150,175' } ],
         // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted]
     // STAT は薬剤が存在しない年代には辺を持たない（co=0 の辺は落ちる）
         // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted]
@@ -154,7 +154,7 @@ const SUITE = [
     form:'Six Epochs for Seven Voices and an Observer, in Quarter-Comma Meantone',
     design:'a dose–response study, 1970–2020; the sweet third turns wolf',
     sub:'1970–2020',
-    disc:'DATA v1 · PubMed esearch カウント（2026-07-11 採取）· 強度=Dice係数 / 状態=強いデザインの占有率 / 撤回=実数。概念→MeSHの対応・因果の向き・係争と逆転の注釈は作者のモデルである。',
+    disc:'DATA v1 · PubMed esearch counts (harvested 2026-07-11) · weight = Dice coefficient / status = share of strong designs / retractions = real counts. Concept-to-MeSH mapping, causal direction, and the contested/reversed annotations are the author\u2019s model.',
     concepts:[
       { id:'ALC',  jp:'飲酒',       en:'Alcohol',          partial:1, band: 0, col:'232,224,204' },
       { id:'MI',   jp:'心筋梗塞',   en:'Myocardial Infarction', partial:2, band:-2, col:'232,190,180' },
@@ -179,7 +179,7 @@ const SUITE = [
     design:'a time-dependent trial sequence, 1995–2020; converging to 8:10:12',
     sub:'1995–2020',
     tuning:'spectral', pulse:'clinical',
-    disc:'DATA v1 · PubMed esearch カウント（2026-07-11 採取、Stroke領域に固定）· 強度=Dice係数 / 状態=強いデザインの占有率 / 撤回=実数。概念→MeSHの対応・因果の向き・係争と逆転の注釈は作者のモデルである。',
+    disc:'DATA v1 · PubMed esearch counts (harvested 2026-07-11, Stroke domain fixed) · weight = Dice coefficient / status = share of strong designs / retractions = real counts. Concept-to-MeSH mapping, causal direction, and the contested/reversed annotations are the author\u2019s model.',
     concepts:[
       { id:'TPA',   jp:'血栓溶解',   en:'Thrombolysis',     partial:1, band: 0, col:'210,220,232' },
       { id:'EVT',   jp:'血栓回収',   en:'Thrombectomy',     partial:2, band: 1, col:'190,220,205' },
@@ -202,13 +202,13 @@ const SUITE = [
 
 // 各相を代表する実在の文献（模型の典拠。音になった主張の出典として静かに現れる）
 const CITES = [
-  { 1960:'Keys A. Seven Countries Study. Circulation 1970',
-    1970:'Turpeinen O, et al. Int J Epidemiol 1979 — Finnish Mental Hospital diet trial',
-    1980:'Iso H, et al. N Engl J Med 1989 — low cholesterol, intracerebral haemorrhage (MRFIT)',
-    1990:'Scandinavian Simvastatin Survival Study. Lancet 1994',
-    2000:'Heart Protection Study. Lancet 2002',
-    2010:'Siri-Tarino PW, et al. Am J Clin Nutr 2010',
-    2020:'Astrup A, et al. J Am Coll Cardiol 2020' },
+  { 1960:{ r:'Keys A. Seven Countries Study. Circulation 1970', c:'' },
+    1970:{ r:'Turpeinen O, et al. Int J Epidemiol 1979', c:'the cholesterol-lowering diet halved coronary incidence' },
+    1980:{ r:'Iso H, et al. N Engl J Med 1989 (MRFIT)', c:'low cholesterol — threefold fatal intracranial haemorrhage' },
+    1990:{ r:'Scandinavian Simvastatin Survival Study. Lancet 1994', c:'simvastatin cut all-cause mortality by 30%' },
+    2000:{ r:'Heart Protection Study. Lancet 2002', c:'benefit even at low baseline cholesterol' },
+    2010:{ r:'Siri-Tarino PW, et al. Am J Clin Nutr 2010', c:'no link between saturated fat and coronary disease' },
+    2020:{ r:'Astrup A, et al. J Am Coll Cardiol 2020', c:'evidence no longer supports limiting saturated fat' } },
   { 1990:'Marmot MG, et al. Lancet 1981',
     2000:'Corrao G, et al. Addiction 2000',
     2010:'Ronksley PE, et al. BMJ 2011',
@@ -508,12 +508,15 @@ function utter(edge, now){
 }
 
 // 出典が水面から浮かび上がるように現れる（同時に1件、16秒の間隔）
-// 時代を変えたランドマーク論文: 相の交代時に、画面中央に大きく浮かび上がる
+// 時代を変えたランドマーク論文: 相の交代時に、画面中央に大きく浮かび上がる。
+// 参照(著者・雑誌・年)に続いて、実際の結論の一節(PubMedから取得)が現れる
 function pushCite(now, year){
   const cite = CITES[curMi] && CITES[curMi][year];
   if (!cite) return;
+  const ref = typeof cite === 'string' ? cite : cite.r;
+  const concl = typeof cite === 'string' ? '' : (cite.c || '');
   lastCiteAt = now;
-  citations = [{ text: cite, at: now, ph: (year % 7) * 0.9, life: 13 }];
+  citations = [{ ref, concl, at: now, ph: (year % 7) * 0.9, life: 15 }];
 }
 
 // 用量掃引: 用量の低→高を順に鳴らす一つのフレーズ。音高の輪郭が曲線そのもの。
@@ -759,9 +762,9 @@ function droneOff(){
 
 // ---------- (3) 隙間と方法の開示 ----------
 const FLUX_POOL = [
-  '地 図 は 領 土 で は な い', 'THIS IS A MODEL, NOT A PROOF.',
+  'THE MAP IS NOT THE TERRITORY.', 'THIS IS A MODEL, NOT A PROOF.',
   'THE MAPPING IS A CHOICE.', 'EVERY SILENCE IS EXACT.',
-  '知 る と は 取 り こ ぼ す こ と', 'WHO WAS NOT RECORDED?',
+  'TO KNOW IS TO OMIT.', 'WHO WAS NOT RECORDED?',
   'CONSONANCE IS NOT TRUTH.',
 ];
 let fluxMsg = null, fluxLastAt = -999, fluxTimer = 0;
@@ -972,25 +975,32 @@ function draw(now, tSec){
       g2.font = '7px monospace'; g2.fillText('n=' + e.n, e.x, e.y - age * 5 + 9);
       g2.font = '9px "Hiragino Mincho ProN", serif'; }
   }
-  // 時代を変えたランドマーク論文: 画面中央に大きく浮かび上がる
+  // 時代を変えたランドマーク論文: 画面中央に大きく浮かび上がる（参照＋実際の結論の一節）
   for (const c of citations){
     const age = now - c.at;
     const rise = clamp(age / 2.6, 0, 1);
     const k = age < 2.6 ? rise : (age > c.life - 3.5 ? Math.max(0, (c.life - age) / 3.5) : 1);
     const a = k * 0.62;
     if (a <= 0.01) continue;
-    const cx = W / 2, cy = fieldTop() + (fieldBottom() - fieldTop()) * 0.42 - Math.max(0, age - 2.6) * 1.0;
+    const cx = W / 2, cy = fieldTop() + (fieldBottom() - fieldTop()) * 0.40 - Math.max(0, age - 2.6) * 0.9;
     g2.save();
     g2.textAlign = 'center';
     g2.font = '15px "Hiragino Mincho ProN", serif';
     g2.shadowColor = 'rgba(210,210,200,0.7)';
     g2.shadowBlur = (16 - rise * 12) + Math.sin(age * 0.7 + c.ph) * 1.8;   // 深いほど滲む
     g2.fillStyle = `rgba(220,216,204,${a})`;
-    g2.fillText(c.text, cx, cy);
-    const tw = Math.min(g2.measureText(c.text).width, W * 0.8);
+    g2.fillText(c.ref, cx, cy);
+    const tw = Math.min(g2.measureText(c.ref).width, W * 0.82);
     g2.shadowBlur = 0;
     g2.strokeStyle = `rgba(220,216,204,${a * 0.4})`; g2.lineWidth = 0.7;
     g2.beginPath(); g2.moveTo(cx - tw * rise / 2, cy + 8); g2.lineTo(cx + tw * rise / 2, cy + 8); g2.stroke();
+    // 結論の一節: 参照が結晶したのち、一拍おいて下に現れる（実データ）
+    if (c.concl && age > 2.8){
+      const ca = clamp((age - 2.8) / 1.6, 0, 1) * k * 0.5;
+      g2.font = 'italic 11px "Hiragino Mincho ProN", serif';
+      g2.fillStyle = `rgba(210,206,196,${ca})`;
+      g2.fillText('“' + c.concl + '”', cx, cy + 22);
+    }
     g2.restore();
   }
 
@@ -1133,7 +1143,7 @@ function drawGraph(now){
     }
     g2.font = `${lit > 0.2 ? 'bold ' : ''}10px "Hiragino Mincho ProN", serif`;
     g2.fillStyle = `rgba(${c.col},${0.35 + lit * 0.6})`;
-    g2.fillText(c.jp, q.x, q.y - 12);
+    g2.fillText(c.en, q.x, q.y - 12);
     g2.font = '7px monospace';
     g2.fillStyle = `rgba(${c.col},${0.16 + lit * 0.4})`;
     g2.fillText(`h${c.partial}`, q.x, q.y + 15);
@@ -1271,9 +1281,9 @@ function drawHUD(){
   g2.font = '9px monospace'; g2.textAlign = 'left';
   g2.fillStyle = 'rgba(220,220,220,0.4)';
   g2.fillText(
-    `記録 ${caught}·漏${missedN}·失${droppedN}·撤${retracted}   ` +
+    `rec ${caught}·miss ${missedN}·drop ${droppedN}·retr ${retracted}   ` +
     `C ${st.conc.toFixed(2)}   X ${st.complexity.toFixed(2)}   A ${st.attn.toFixed(2)}   ` +
-    `${line.dir > 0 ? '→' : '←'}${st.fermata ? ' 休' : ''}`, 14, 22);
+    `${line.dir > 0 ? '→' : '←'}${st.fermata ? ' hold' : ''}`, 14, 22);
 }
 
 // ---------- loop ----------
