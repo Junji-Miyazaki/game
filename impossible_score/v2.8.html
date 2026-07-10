@@ -203,8 +203,8 @@ const SUITE = [
 // 各相を代表する実在の文献（模型の典拠。音になった主張の出典として静かに現れる）
 const CITES = [
   { 1960:'Keys A. Seven Countries Study. Circulation 1970',
-    1970:'Iso H, et al. N Engl J Med 1989 — low cholesterol, intracerebral haemorrhage (MRFIT)',
-    1980:'Lipid Research Clinics. CPPT. JAMA 1984',
+    1970:'Turpeinen O, et al. Int J Epidemiol 1979 — Finnish Mental Hospital diet trial',
+    1980:'Iso H, et al. N Engl J Med 1989 — low cholesterol, intracerebral haemorrhage (MRFIT)',
     1990:'Scandinavian Simvastatin Survival Study. Lancet 1994',
     2000:'Heart Protection Study. Lancet 2002',
     2010:'Siri-Tarino PW, et al. Am J Clin Nutr 2010',
@@ -389,7 +389,7 @@ function notation(steps, lenSec){
 }
 
 // ---------- state ----------
-let particles = [], ribbon = [], floatEqs = [], bonds = [], citations = [];
+let particles = [], ribbon = [], floatEqs = [], bonds = [], citations = [], ephem = [];
 let lastCiteAt = -99;
 let caught = 0, missedN = 0, droppedN = 0, retracted = 0;
 let pulseGenT = 0, graveT = 0, pulseMarks = [], flashes = [];
@@ -495,21 +495,25 @@ function utter(edge, now){
       crossed: false, px: undefined, py: undefined, sustained: true,
     });
   }
-  // 強く確立した主張は、ときおり自らの出典を浮かび上がらせる
-  if (established && w >= 0.75 && rng() < 0.16) pushCite(now, DECADES[epochIx].year);
+  // 絶え間なく処理される論文: 発話のたびに、いま照合された関係が薄く明滅して消える
+  if (rng() < 0.5){
+    const A = CONCEPTS[ai], B = CONCEPTS[bi];
+    ephem.push({ text: `${A.en} × ${B.en}`, n: edge.co, at: now, life: 1.4,
+                 x: W * (0.30 + rng() * 0.40), y: fieldTop() + (fieldBottom() - fieldTop()) * (0.28 + rng() * 0.5) });
+    if (ephem.length > 40) ephem.shift();
+  }
   taleaIx++;
   // 結合強度が高いほど頻繁に反復される（執拗なライトモチーフ）
   edge.nextT = t + lerp(4.2, 0.4, w) + rng() * 0.8;
 }
 
 // 出典が水面から浮かび上がるように現れる（同時に1件、16秒の間隔）
+// 時代を変えたランドマーク論文: 相の交代時に、画面中央に大きく浮かび上がる
 function pushCite(now, year){
-  if (citations.length || now - lastCiteAt < 16) return;
   const cite = CITES[curMi] && CITES[curMi][year];
   if (!cite) return;
   lastCiteAt = now;
-  citations.push({ text: cite, at: now, ph: (year % 7) * 0.9, life: 12,
-    y: fieldTop() + (fieldBottom() - fieldTop()) * 0.72 });
+  citations = [{ text: cite, at: now, ph: (year % 7) * 0.9, life: 13 }];
 }
 
 // 用量掃引: 用量の低→高を順に鳴らす一つのフレーズ。音高の輪郭が曲線そのもの。
@@ -563,6 +567,7 @@ function schedulerTick(){
   floatEqs = floatEqs.filter(f => now - f.at < 3.2);
   bonds = bonds.filter(b => now - b.at < 0.5);
   citations = citations.filter(c => now - c.at < c.life);
+  ephem = ephem.filter(e => now - e.at < e.life);
   ribbon = ribbon.filter(n => W - 24 - (now - n.at) * RIBBON_FLOW > 46);
 }
 
@@ -955,26 +960,37 @@ function draw(now, tSec){
     g2.restore();
   }
 
-  // 論文引用: 音になった主張の出典。静かに現れ、揺らぎながら消える（うるさくしない）
+  // 絶え間なく処理される論文: 発話ごとに関係が薄く明滅しては消える（無数の照合）
+  g2.textAlign = 'center'; g2.font = '9px "Hiragino Mincho ProN", serif';
+  for (const e of ephem){
+    const age = now - e.at, k = age < 0.3 ? age / 0.3 : Math.max(0, (e.life - age) / (e.life - 0.3));
+    const a = k * 0.16;
+    if (a <= 0.01) continue;
+    g2.fillStyle = `rgba(210,210,200,${a})`;
+    g2.fillText(e.text, e.x, e.y - age * 5);
+    if (e.n) { g2.fillStyle = `rgba(210,210,200,${a * 0.7})`;
+      g2.font = '7px monospace'; g2.fillText('n=' + e.n, e.x, e.y - age * 5 + 9);
+      g2.font = '9px "Hiragino Mincho ProN", serif'; }
+  }
+  // 時代を変えたランドマーク論文: 画面中央に大きく浮かび上がる
   for (const c of citations){
     const age = now - c.at;
-    const rise = clamp(age / 2.4, 0, 1);                       // 浮上（ぼやけ→輪郭）
-    const k = age < 2.4 ? rise : (age > c.life - 3 ? Math.max(0, (c.life - age) / 3) : 1);
-    const a = k * 0.5;
+    const rise = clamp(age / 2.6, 0, 1);
+    const k = age < 2.6 ? rise : (age > c.life - 3.5 ? Math.max(0, (c.life - age) / 3.5) : 1);
+    const a = k * 0.62;
     if (a <= 0.01) continue;
-    const dx = Math.sin(age * 0.5 + c.ph) * 1.4;
-    const y = c.y - rise * 14 - Math.max(0, age - 2.4) * 1.1;  // 水面へ上がり、やがて漂う
+    const cx = W / 2, cy = fieldTop() + (fieldBottom() - fieldTop()) * 0.42 - Math.max(0, age - 2.6) * 1.0;
     g2.save();
-    g2.font = '12.5px "Hiragino Mincho ProN", serif';
-    g2.textAlign = 'left';
-    g2.shadowColor = 'rgba(210,210,200,0.6)';
-    g2.shadowBlur = (13 - rise * 10) + Math.sin(age * 0.8 + c.ph) * 1.6;   // 深いほど滲む
-    g2.fillStyle = `rgba(214,210,198,${a})`;
-    g2.fillText(c.text, 16 + dx, y);
-    const tw = g2.measureText(c.text).width;
+    g2.textAlign = 'center';
+    g2.font = '15px "Hiragino Mincho ProN", serif';
+    g2.shadowColor = 'rgba(210,210,200,0.7)';
+    g2.shadowBlur = (16 - rise * 12) + Math.sin(age * 0.7 + c.ph) * 1.8;   // 深いほど滲む
+    g2.fillStyle = `rgba(220,216,204,${a})`;
+    g2.fillText(c.text, cx, cy);
+    const tw = Math.min(g2.measureText(c.text).width, W * 0.8);
     g2.shadowBlur = 0;
-    g2.strokeStyle = `rgba(214,210,198,${a * 0.4})`; g2.lineWidth = 0.6;
-    g2.beginPath(); g2.moveTo(16 + dx, y + 5); g2.lineTo(16 + dx + tw * rise, y + 5); g2.stroke();
+    g2.strokeStyle = `rgba(220,216,204,${a * 0.4})`; g2.lineWidth = 0.7;
+    g2.beginPath(); g2.moveTo(cx - tw * rise / 2, cy + 8); g2.lineTo(cx + tw * rise / 2, cy + 8); g2.stroke();
     g2.restore();
   }
 
