@@ -335,41 +335,6 @@ function sieveSteps(pc, oct){
   return CENTS_TO_STEP(cents) + oct * 48;
 }
 
-// ---------- 案B: 凍結セリー（作品の底に一度だけ眠る、動かない厳密な音列＝化石/遺伝子） ----------
-// 起動時に一度、厳密な12音セリー＋総音列（持続・強度・音色）を生成して凍結する。
-// 演奏中はここから窓を切り抜き（P/I/R/RI変形つき）、一声部として引用的に鳴らす。
-// 厳密なセリエリズムが素材（オブジェ）として実在し続けるが、切り貼りは自由。
-const FROZEN = {
-  row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
-  dur: shuffled([0.18,0.25,0.25,0.4,0.5,0.7,1.0,1.4]),
-  dyn: shuffled([1,2,3,4,4,5,6,7]),
-  tim: shuffled([1,1,2,3,4,5,7,1]),
-};
-const FORM_TAG = ['P', 'I', 'R', 'RI'];
-let serialT = 0, lastSerial = null;
-function sampleFossil(now){
-  if (!field) return;
-  const L = 3 + rngi(5);                 // 窓長 3..7
-  const start = rngi(12), form = rngi(4), tr = rngi(12);
-  lastSerial = { form: FORM_TAG[form], tr, L, at: now };
-  let t = now + 0.1;
-  for (let k = 0; k < L; k++){
-    const idx = (form >= 2) ? (start + (L - 1 - k)) % 12 : (start + k) % 12;   // R/RI 逆行
-    let pc = FROZEN.row[idx];
-    if (form === 1 || form === 3) pc = (12 - pc) % 12;                          // I/RI 反行
-    pc = (pc + tr) % 12;
-    const dur = FROZEN.dur[idx] * 0.9;
-    particles.push({
-      serial: true, ci: field.rootIx, edge: null,
-      t, steps: sieveSteps(pc, 1),        // 篩で音律に吸着、固定音域(band 1)＝聴き分けられる声部
-      z: 0.72, dyn: FROZEN.dyn[idx], depth: 1,
-      dur: clamp(dur, 0.05, 0.7), partial: FROZEN.tim[idx],
-      crossed: false, px: undefined, py: undefined,
-    });
-    t += clamp(dur, 0.08, 0.7) + 0.008;
-  }
-  serialT = now + 5 + rng() * 5;          // 5..10秒ごとに化石が表層に浮かぶ
-}
 const droneRatios = () => {
   const t = movement && movement.tuning;
   if (t === 'spectral')    return { 1: 1.0, 3: 0.42, 5: 0.20 };          // 第1·3·5倍音
@@ -648,7 +613,6 @@ function schedulerTick(){
     }
     if (graveT < now) graveT = now + 2;
     while (graveT < now + 3){ scheduleGravity(graveT); graveT += beatLen() * (8 + rngi(9)); }
-    if (serialT < now){ sampleFossil(now); }   // 案B: 凍結セリーの断片を引用する声部
     if (curMi === 1){                                  // 用量掃引（うるさくしない: 11〜14秒毎）
       if (sweepT < now) sweepT = now + 2;
       while (sweepT < now + 2){ emitDoseSweep(sweepT, now); sweepT += 11 + rng() * 3; }
@@ -1247,12 +1211,6 @@ function drawGraph(now){
   g2.font = 'italic 9px "Hiragino Mincho ProN", serif';
   g2.fillStyle = 'rgba(220,220,220,0.30)';
   g2.fillText(epochCaption(), 14, fieldTop() - 25);
-  // 化石セリーの引用が今どの変形で鳴っているか（P/I/R/RI · 移高）
-  if (lastSerial && now - lastSerial.at < 6){
-    const fa = clamp(1 - (now - lastSerial.at) / 6, 0, 1) * 0.4;
-    g2.font = '8px monospace'; g2.fillStyle = `rgba(150,170,190,${fa})`;
-    g2.fillText(`fossil series · ${lastSerial.form}${lastSerial.tr} · ${lastSerial.L} notes`, W - 190, fieldTop() - 12);
-  }
   g2.font = '8px monospace';
   g2.fillStyle = 'rgba(220,220,220,0.22)';
   const tune = { spectral:'just intonation · 8th partial', pythagorean:'Pythagorean · stacked fifths',
@@ -1463,7 +1421,7 @@ async function startPiece(mi){
   const t0 = ctx.currentTime;
   epochIx = 0;
   advanceEpoch(t0, true);
-  pulseGenT = t0 + 0.3; graveT = t0 + 1; serialT = t0 + 6;
+  pulseGenT = t0 + 0.3; graveT = t0 + 1;
   line.x = W * 0.03; line.dir = 1; line.bornAt = t0;
   setInterval(schedulerTick, 120);
   lastNow = t0;
