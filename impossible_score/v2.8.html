@@ -332,6 +332,42 @@ function sieveSteps(pc, oct){
   const cents = tab ? tab[pc % 12] : (pc % 12) * 100;   // 未定義なら平均律
   return CENTS_TO_STEP(cents) + oct * 48;
 }
+
+// ---------- 案B: 凍結セリー（作品の底に一度だけ眠る、動かない厳密な音列＝化石/遺伝子） ----------
+// 起動時に一度、厳密な12音セリー＋総音列（持続・強度・音色）を生成して凍結する。
+// 演奏中はここから窓を切り抜き（P/I/R/RI変形つき）、一声部として引用的に鳴らす。
+// 厳密なセリエリズムが素材（オブジェ）として実在し続けるが、切り貼りは自由。
+const FROZEN = {
+  row: shuffled([0,1,2,3,4,5,6,7,8,9,10,11]),
+  dur: shuffled([0.18,0.25,0.25,0.4,0.5,0.7,1.0,1.4]),
+  dyn: shuffled([1,2,3,4,4,5,6,7]),
+  tim: shuffled([1,1,2,3,4,5,7,1]),
+};
+const FORM_TAG = ['P', 'I', 'R', 'RI'];
+let serialT = 0, lastSerial = null;
+function sampleFossil(now){
+  if (!field) return;
+  const L = 3 + rngi(5);                 // 窓長 3..7
+  const start = rngi(12), form = rngi(4), tr = rngi(12);
+  lastSerial = { form: FORM_TAG[form], tr, L, at: now };
+  let t = now + 0.1;
+  for (let k = 0; k < L; k++){
+    const idx = (form >= 2) ? (start + (L - 1 - k)) % 12 : (start + k) % 12;   // R/RI 逆行
+    let pc = FROZEN.row[idx];
+    if (form === 1 || form === 3) pc = (12 - pc) % 12;                          // I/RI 反行
+    pc = (pc + tr) % 12;
+    const dur = FROZEN.dur[idx] * 0.9;
+    particles.push({
+      serial: true, ci: field.rootIx, edge: null,
+      t, steps: sieveSteps(pc, 1),        // 篩で音律に吸着、固定音域(band 1)＝聴き分けられる声部
+      z: 0.72, dyn: FROZEN.dyn[idx], depth: 1,
+      dur: clamp(dur, 0.05, 0.7), partial: FROZEN.tim[idx],
+      crossed: false, px: undefined, py: undefined,
+    });
+    t += clamp(dur, 0.08, 0.7) + 0.008;
+  }
+  serialT = now + 5 + rng() * 5;          // 5..10秒ごとに化石が表層に浮かぶ
+}
 const droneRatios = () => {
   const t = movement && movement.tuning;
   if (t === 'spectral')    return { 1: 1.0, 3: 0.42, 5: 0.20 };          // 第1·3·5倍音
@@ -472,12 +508,12 @@ function observe(p, at){
   perform(p);
   caught++;
   const C = CONCEPTS[p.ci];
-  if (!p.orn){ C.litAt = at; if (p.edge) p.edge.litAt = at; }   // 装飾音は同一性でないのでノードを点灯しない
+  if (!p.orn && !p.serial){ C.litAt = at; if (p.edge) p.edge.litAt = at; }  // 装飾音・化石は同一性でないのでノードを点灯しない
   if (p.dropped){ droppedN++; pushRest(lenSec, 'drop', at); return; }
   const sounded = p.steps + p.slip;
   scheduleAudio(p, at + Math.max(0, p.offset), sounded, lenSec);
   const note = notation(sounded, lenSec);
-  note.dyn = p.dyn; note.at = at; note.col = C.col;
+  note.dyn = p.dyn; note.at = at; note.col = p.serial ? '150,170,190' : C.col;   // 化石声部は寒色
   rbPush(note);
   if (rng() < 0.10)
     floatEqs.push({ x: p.px, y: p.py, text: C.en, at, col: C.col });
@@ -610,6 +646,7 @@ function schedulerTick(){
     }
     if (graveT < now) graveT = now + 2;
     while (graveT < now + 3){ scheduleGravity(graveT); graveT += beatLen() * (8 + rngi(9)); }
+    if (serialT < now){ sampleFossil(now); }   // 案B: 凍結セリーの断片を引用する声部
     if (curMi === 1){                                  // 用量掃引（うるさくしない: 11〜14秒毎）
       if (sweepT < now) sweepT = now + 2;
       while (sweepT < now + 2){ emitDoseSweep(sweepT, now); sweepT += 11 + rng() * 3; }
@@ -943,6 +980,7 @@ function draw(now, tSec){
   for (const p of particles){
     if (p.px === undefined || p.px < -40 || p.px > W + 20) continue;
     const C = CONCEPTS[p.ci];
+    const col = p.serial ? '150,170,190' : C.col;   // 化石声部=寒色（アーカイブの色）
     const size = lerp(1.0, 2.8, p.z) + p.dyn * 0.12;
     if (!p.crossed || p.missed){
       const sa = clamp((now - p.t) / 0.4, 0, 1);
@@ -951,15 +989,15 @@ function draw(now, tSec){
       for (let i = 0; i < 3; i++){
         const jx = Math.sin(tSec * (1.3 + i * 0.31) + p.t * 7 + i * 2.4) * r;
         const jy = Math.cos(tSec * (1.1 + i * 0.27) + p.t * 5 + i * 1.9) * r;
-        g2.fillStyle = `rgba(${C.col},${(0.08 + 0.035 * i) * sa * (0.7 + 0.3 * vb)})`;
+        g2.fillStyle = `rgba(${col},${(0.08 + 0.035 * i) * sa * (0.7 + 0.3 * vb)})`;
         g2.beginPath(); g2.arc(p.px + jx, p.py + jy, 0.6 + p.z * 0.9, 0, 7); g2.fill();
       }
-      g2.fillStyle = `rgba(${C.col},${clamp(lerp(0.18, 0.45, p.z) * sa * (0.7 + 0.3 * vb), 0, 1)})`;
+      g2.fillStyle = `rgba(${col},${clamp(lerp(0.18, 0.45, p.z) * sa * (0.7 + 0.3 * vb), 0, 1)})`;
       g2.beginPath(); g2.arc(p.px, p.py, 0.7 + p.z * 0.9, 0, 7); g2.fill();
     } else {
       const age = now - p.obsAt;
       if (age >= 0 && age < 0.35){
-        g2.strokeStyle = `rgba(${C.col},${(1 - age / 0.35) * 0.4})`; g2.lineWidth = 1;
+        g2.strokeStyle = `rgba(${col},${(1 - age / 0.35) * 0.4})`; g2.lineWidth = 1;
         g2.beginPath(); g2.arc(p.px, p.py, 3 + age * 50, 0, 7); g2.stroke();
       }
       if (p.dropped){
@@ -968,7 +1006,7 @@ function draw(now, tSec){
         g2.beginPath(); g2.arc(p.px, p.py, size + 1.8, 0, 7); g2.stroke();
       } else {
         const a = clamp((1 - age / 10) * (0.75 + 0.25 * vb), 0, 1);
-        g2.fillStyle = `rgba(${C.col},${a})`;
+        g2.fillStyle = `rgba(${col},${a})`;
         g2.beginPath(); g2.arc(p.px, p.py, size, 0, 7); g2.fill();
       }
     }
@@ -1207,6 +1245,12 @@ function drawGraph(now){
   g2.font = 'italic 9px "Hiragino Mincho ProN", serif';
   g2.fillStyle = 'rgba(220,220,220,0.30)';
   g2.fillText(epochCaption(), 14, fieldTop() - 25);
+  // 化石セリーの引用が今どの変形で鳴っているか（P/I/R/RI · 移高）
+  if (lastSerial && now - lastSerial.at < 6){
+    const fa = clamp(1 - (now - lastSerial.at) / 6, 0, 1) * 0.4;
+    g2.font = '8px monospace'; g2.fillStyle = `rgba(150,170,190,${fa})`;
+    g2.fillText(`fossil series · ${lastSerial.form}${lastSerial.tr} · ${lastSerial.L} notes`, W - 190, fieldTop() - 12);
+  }
   g2.font = '8px monospace';
   g2.fillStyle = 'rgba(220,220,220,0.22)';
   const tune = { spectral:'just intonation · 8th partial', pythagorean:'Pythagorean · stacked fifths',
@@ -1417,7 +1461,7 @@ async function startPiece(mi){
   const t0 = ctx.currentTime;
   epochIx = 0;
   advanceEpoch(t0, true);
-  pulseGenT = t0 + 0.3; graveT = t0 + 1;
+  pulseGenT = t0 + 0.3; graveT = t0 + 1; serialT = t0 + 6;
   line.x = W * 0.03; line.dir = 1; line.bornAt = t0;
   setInterval(schedulerTick, 120);
   lastNow = t0;
