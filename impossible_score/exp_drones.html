@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>DRONE FIELD — experimental</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#040406; touch-action:none;
+              font-family:"Hiragino Mincho ProN","Yu Mincho",serif; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #btns { position:fixed; top:10px; right:10px; display:flex; gap:8px; z-index:20; }
+  .btn { color:#667; border:1px solid #334; padding:6px 12px; font-size:11px; letter-spacing:.1em;
+         cursor:pointer; user-select:none; -webkit-user-select:none; background:rgba(6,6,10,.7); }
+  .btn.on { color:#cde; border-color:#78a; }
+  #overlay { position:fixed; inset:0; z-index:30; background:#040406;
+             display:flex; flex-direction:column; align-items:center; justify-content:center;
+             color:#cde; text-align:center; padding:24px; }
+  #overlay h1 { font-size:clamp(18px,4vw,32px); letter-spacing:.45em; font-weight:normal; margin-bottom:10px; }
+  #overlay h2 { font-size:clamp(11px,2vw,14px); letter-spacing:.5em; color:#789; font-weight:normal; margin-bottom:38px; }
+  #overlay p  { font-size:clamp(11px,1.5vw,13px); line-height:2.1; color:#8ab; max-width:34em; margin-bottom:8px; }
+  #startBtn { margin-top:40px; border:1px solid #78a; padding:14px 48px; letter-spacing:.5em;
+              font-size:13px; cursor:pointer; color:#cde; }
+  #startBtn:active { background:#cde; color:#040406; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="btns" style="display:none">
+  <div class="btn on" id="bGlow">glow</div>
+  <div class="btn on" id="bSound">sound</div>
+  <div class="btn" id="bFull">full</div>
+</div>
+<div id="overlay">
+  <h1>DRONE FIELD</h1>
+  <h2>a field of sustained voices, scanned</h2>
+  <p>すべての音は持続音。声たちは空間に漂う。<br>観測線が触れるたび、その声に変調・ディチューン・フィルタがかかる。</p>
+  <p>密集は発散へ広がり、散った音はやがて収束して高密度へ——<br>場は絶えず呼吸し、パラメータは留まらない。</p>
+  <div id="startBtn">開 始</div>
+</div>
+<script>
+'use strict';
+/* ================================================================
+   DRONE FIELD — experimental (SCORE FOR EVIDENCE 系とは別の実験機)
+   全音=持続音。観測線が声に触れると変調(ビブラート/フィルタ掃引/ディチューン)。
+   マクロ二相: 密集→発散(spread拡大) と 分離→収束(spread縮小=高密度) を呼吸する。
+   ================================================================ */
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rng=Math.random, rngi=n=>Math.floor(rng()*n);
+function gauss(){let u=0,v=0;while(!u)u=rng();while(!v)v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+let ctx=null, master=null, limiter=null, running=false, soundOn=true, glowOn=true;
+let W=0,H=0,DPR=1;
+const cv=document.getElementById('cv'), g2=cv.getContext('2d');
+let bloomA,bloomAx;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2); W=innerWidth; H=innerHeight;
+  cv.width=W*DPR; cv.height=H*DPR; g2.setTransform(DPR,0,0,DPR,0,0);
+  bloomA=document.createElement('canvas'); bloomA.width=Math.max(1,W>>2); bloomA.height=Math.max(1,H>>2);
+  bloomAx=bloomA.getContext('2d');
+}
+addEventListener('resize',resize); resize();
+
+// ---------- マクロ場: 中心音高と拡がり(spread)の呼吸 ----------
+const field = {
+  center: 0,          // 中心音高(半音, A=0基準の相対)
+  centerVel: 0,
+  spread: 6,          // 拡がり(半音): 小=収束/高密度, 大=発散/広帯域
+  spreadTarget: 6,
+  mode: 'converge',   // 'converge' | 'disperse'
+  modeT: 0,
+  density: 0,         // 表示用: 1/(1+spread) 由来
+};
+function scheduleModeSwitch(now){
+  field.mode = field.mode === 'converge' ? 'disperse' : 'converge';
+  field.spreadTarget = field.mode === 'disperse' ? 22 + rng()*16 : 1.5 + rng()*3;
+  field.modeT = now + 14 + rng()*16;   // 14〜30秒で相が入れ替わる
+}
+
+// ---------- 声(持続音のボイス) ----------
+const NV = 13;
+let voices = [];
+const A4 = 415;   // 基準周波数(やや低め)
+const semiToHz = s => A4 * Math.pow(2, s/12);
+
+function makeVoice(i){
+  const off = (i/(NV-1))*2 - 1 + gauss()*0.05;   // 扇の中の固定位置 [-1..1]
+  const osc = ctx.createOscillator(); osc.type='sine';
+  const osc2 = ctx.createOscillator(); osc2.type='sine'; osc2.detune.value = 6 + rng()*10; // 軽い唸り
+  const vib = ctx.createOscillator(); vib.type='sine'; vib.frequency.value = 4+rng()*4;
+  const vibG = ctx.createGain(); vibG.gain.value = 0;            // ビブラート深さ(Hz)
+  vib.connect(vibG); vibG.connect(osc.frequency); vibG.connect(osc2.frequency);
+  const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=900+rng()*700; filt.Q.value=3+rng()*4;
+  const mix2 = ctx.createGain(); mix2.gain.value=0.28;
+  const g = ctx.createGain(); g.gain.value=0;
+  osc.connect(filt); osc2.connect(mix2); mix2.connect(filt); filt.connect(g); g.connect(master);
+  osc.start(); osc2.start(); vib.start();
+  return {
+    i, off, xOff: gauss()*0.7, osc, osc2, vib, vibG, filt, g,
+    x: W*0.5, targetX: W*0.5, jit: rng()*6.28,
+    semi: 0, targetSemi: 0, amp: 0, targetAmp: 0.16,
+    filtBase: filt.frequency.value, det2: osc2.detune.value,
+    prevSide: 0, hit: -9, birth: 0, energy: 0,
+  };
+}
+
+// 観測線が声に触れた瞬間の変調(モジュレーション/ディチューン/フィルタ掃引/ビブラート)
+function contact(v, now){
+  v.hit = now; v.energy = 1;
+  const f = semiToHz(v.semi);
+  // ビブラート・バースト
+  v.vib.frequency.setTargetAtTime(3 + rng()*7, now, 0.05);
+  const depth = f * (0.004 + rng()*0.02);           // 音高比例の深さ
+  v.vibG.gain.cancelScheduledValues(now);
+  v.vibG.gain.setValueAtTime(v.vibG.gain.value, now);
+  v.vibG.gain.linearRampToValueAtTime(depth, now+0.05);
+  v.vibG.gain.setTargetAtTime(0, now+0.1, 0.6);
+  // フィルタ掃引(開いて閉じる)
+  v.filt.frequency.cancelScheduledValues(now);
+  v.filt.frequency.setValueAtTime(v.filt.frequency.value, now);
+  v.filt.frequency.linearRampToValueAtTime(clamp(f*6, 800, 6000), now+0.12);
+  v.filt.frequency.setTargetAtTime(v.filtBase, now+0.15, 0.8);
+  // ディチューン・キック(戻る)
+  const kick = (rng()*2-1) * (25 + rng()*70);
+  v.osc.detune.cancelScheduledValues(now);
+  v.osc.detune.setValueAtTime(v.osc.detune.value, now);
+  v.osc.detune.linearRampToValueAtTime(kick, now+0.08);
+  v.osc.detune.setTargetAtTime(0, now+0.12, 0.9);
+  // パラメータは留まらない: 触れるたび基底がわずかに漂う
+  v.filtBase = clamp(v.filtBase * (0.9 + rng()*0.25), 500, 3500);
+  v.det2 = clamp(v.det2 + gauss()*3, -18, 18); v.osc2.detune.setTargetAtTime(v.det2, now, 0.4);
+}
+
+let flashes=[];
+function updateAudio(dt, now){
+  // マクロ場の呼吸
+  if (now > field.modeT) scheduleModeSwitch(now);
+  field.spread = lerp(field.spread, field.spreadTarget, 1-Math.exp(-dt/3.5));
+  field.centerVel += gauss()*dt*0.6; field.centerVel *= 0.96;
+  field.center = clamp(field.center + field.centerVel*dt, -14, 14);
+  field.density = clamp(1/(1+field.spread*0.35), 0, 1);
+
+  for (const v of voices){
+    // 目標音高 = 中心 + 位置×拡がり + ゆらぎ。spread小→収束(密), 大→発散(広)
+    v.targetSemi = field.center + v.off * field.spread + Math.sin(now*0.2 + v.i)*0.4;
+    v.semi = lerp(v.semi, v.targetSemi, 1-Math.exp(-dt/2.2));      // ポルタメント(持続音の滑走)
+    const f = semiToHz(v.semi);
+    v.osc.frequency.setTargetAtTime(f, now, 0.15);
+    v.osc2.frequency.setTargetAtTime(f, now, 0.15);
+    // 振幅: 収束(密)ほど各声はやや控えめ、発散ほど分離して聴こえる。エネルギーで一時増幅
+    v.energy *= Math.pow(0.5, dt/1.2);
+    v.targetAmp = (0.10 + 0.09*(1-field.density)) * (1 + v.energy*0.8);
+    v.amp = lerp(v.amp, v.targetAmp, 1-Math.exp(-dt/0.6));
+    v.g.gain.setTargetAtTime(soundOn ? v.amp : 0, now, 0.1);
+    // 水平位置も収束↔発散で呼吸(音高とは独立の乱数オフset)。収束=中央の密な塊, 発散=散らばる
+    const xSpread = lerp(30, W*0.42, clamp(field.spread/28, 0, 1));
+    v.targetX = clamp(W*0.5 + v.xOff*xSpread + Math.sin(now*0.13 + v.jit)*22, 12, W-12);
+    v.x = lerp(v.x, v.targetX, 1-Math.exp(-dt/2.6));
+  }
+}
+
+// ---------- 観測線(往復スキャン) ----------
+const line = { x:0, dir:1, v:120 };
+function updateLine(dt, now){
+  line.x += line.dir*line.v*dt;
+  if (line.x>W){ line.x=W; line.dir=-1; } if (line.x<0){ line.x=0; line.dir=1; }
+  for (const v of voices){
+    const side = v.x < line.x ? -1 : 1;
+    if (v.prevSide!==0 && side!==v.prevSide){ contact(v, now); flashes.push({x:v.x,y:pitchY(v.semi),at:now}); }
+    v.prevSide = side;
+  }
+  flashes = flashes.filter(f=>now-f.at<0.7);
+}
+
+// ---------- 描画 ----------
+const pitchY = s => H*0.5 - s*(H*0.42/28);   // 半音→縦位置
+let tPrev=0;
+function draw(now, tSec){
+  g2.globalCompositeOperation='source-over';
+  g2.fillStyle='rgba(4,4,6,0.28)'; g2.fillRect(0,0,W,H);   // 残像(トレイル)
+  // 声(持続音の球)
+  for (const v of voices){
+    const y=pitchY(v.semi), age=now-v.hit;
+    const r = 10 + v.amp*60 + (age<0.7?(0.7-age)*30:0);
+    const hue = 200 + v.off*40 + field.center*3;
+    const bright = 0.5 + v.amp*2.4 + v.energy*0.6;
+    const grd=g2.createRadialGradient(v.x,y,0,v.x,y,r);
+    grd.addColorStop(0,`hsla(${hue},70%,72%,${clamp(bright,0,0.9)})`);
+    grd.addColorStop(1,`hsla(${hue},70%,55%,0)`);
+    g2.fillStyle=grd; g2.beginPath(); g2.arc(v.x,y,r,0,7); g2.fill();
+    // 接触の閃輪
+    if (age<0.7){ g2.strokeStyle=`hsla(${hue},80%,80%,${(0.7-age)})`; g2.lineWidth=1;
+      g2.beginPath(); g2.arc(v.x,y,r+age*60,0,7); g2.stroke(); }
+  }
+  // 声どうしを結ぶ細線(場の凝集/発散を可視化)。収束時ほど密に見える
+  g2.strokeStyle=`rgba(150,180,220,${0.06+field.density*0.14})`; g2.lineWidth=0.5;
+  for (let a=0;a<voices.length;a++) for (let b=a+1;b<voices.length;b++){
+    const va=voices[a],vb=voices[b]; const dy=Math.abs(va.semi-vb.semi);
+    if (dy<field.spread*0.5){ g2.beginPath(); g2.moveTo(va.x,pitchY(va.semi)); g2.lineTo(vb.x,pitchY(vb.semi)); g2.stroke(); }
+  }
+  // 観測線
+  g2.strokeStyle='rgba(200,220,255,0.5)'; g2.lineWidth=1;
+  g2.beginPath(); g2.moveTo(line.x,0); g2.lineTo(line.x,H); g2.stroke();
+  g2.strokeStyle='rgba(200,220,255,0.08)'; g2.lineWidth=6;
+  g2.beginPath(); g2.moveTo(line.x,0); g2.lineTo(line.x,H); g2.stroke();
+  // ブルーム
+  if (glowOn){
+    bloomAx.clearRect(0,0,bloomA.width,bloomA.height);
+    bloomAx.drawImage(cv,0,0,bloomA.width,bloomA.height);
+    g2.globalCompositeOperation='lighter'; g2.globalAlpha=0.5;
+    g2.drawImage(bloomA,0,0,W,H); g2.globalAlpha=1; g2.globalCompositeOperation='source-over';
+  }
+  // HUD
+  g2.fillStyle='rgba(180,200,230,0.4)'; g2.font='10px monospace'; g2.textAlign='left';
+  g2.fillText(`${field.mode.toUpperCase()}  spread ${field.spread.toFixed(1)}st  density ${(field.density*100).toFixed(0)}  center ${field.center.toFixed(1)}  voices ${voices.length}`, 14, 22);
+}
+
+let lastNow=0;
+function frame(ts){
+  if(!running) return;
+  const now=ctx.currentTime; const dt=clamp(now-lastNow,0.001,0.5); lastNow=now;
+  updateAudio(dt,now); updateLine(dt,now); draw(now, ts/1000);
+  requestAnimationFrame(frame);
+}
+
+// フェルマータ的操作: 押している間、線を止めて場を凝視(spreadを絞る=収束を早める)
+cv.addEventListener('pointerdown',e=>{ if(!running) return; line.v=0; field.spreadTarget=1.2; });
+addEventListener('pointerup',()=>{ if(!running) return; line.v=120; scheduleModeSwitch(ctx.currentTime); });
+
+const bGlow=document.getElementById('bGlow'), bSound=document.getElementById('bSound'), bFull=document.getElementById('bFull');
+bGlow.onclick=()=>{glowOn=!glowOn; bGlow.classList.toggle('on',glowOn);};
+bSound.onclick=()=>{soundOn=!soundOn; bSound.classList.toggle('on',soundOn);};
+const docEl=document.documentElement;
+if(!docEl.requestFullscreen&&!docEl.webkitRequestFullscreen) bFull.style.display='none';
+bFull.onclick=()=>{ if(document.fullscreenElement||document.webkitFullscreenElement)(document.exitFullscreen||document.webkitExitFullscreen)?.call(document); else (docEl.requestFullscreen||docEl.webkitRequestFullscreen)?.call(docEl); };
+
+document.getElementById('startBtn').addEventListener('click', async ()=>{
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('btns').style.display='flex';
+  const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC(); await ctx.resume();
+  master=ctx.createGain(); master.gain.value=0.5;
+  limiter=ctx.createDynamicsCompressor();
+  limiter.threshold.value=-12; limiter.knee.value=6; limiter.ratio.value=12; limiter.attack.value=0.004; limiter.release.value=0.25;
+  master.connect(limiter).connect(ctx.destination);
+  voices=[]; for(let i=0;i<NV;i++) voices.push(makeVoice(i));
+  running=true; field.modeT=ctx.currentTime+16; lastNow=ctx.currentTime;
+  requestAnimationFrame(frame);
+},{once:true});
+</script>
+</body>
+</html>
