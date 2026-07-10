@@ -94,6 +94,8 @@ const rng   = Math.random;
 const rngi  = n=>Math.floor(rng()*n);
 function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function shuffled(arr){ const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=rngi(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
 // ---------- global ----------
 let ctx=null, master=null, limiter=null, analyser=null;
