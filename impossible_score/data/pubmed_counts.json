@@ -1,0 +1,1310 @@
+{
+ "_provenance": {
+  "source": "NCBI PubMed E-utilities (esearch, rettype=count)",
+  "harvested": "2026-07-11",
+  "note": "DAGの構造と因果の向きは作者のモデル。データが決めるのは辺の強度・状態・撤回数のみ。",
+  "strong_designs": "(\"Meta-Analysis\"[pt] OR \"Randomized Controlled Trial\"[pt] OR \"Systematic Review\"[pt])"
+ },
+ "fat": {
+  "context": null,
+  "concepts": {
+   "SFA": "(\"Dietary Fats\"[MeSH] OR \"Fatty Acids\"[MeSH])",
+   "CHOL": "(\"Cholesterol\"[MeSH])",
+   "CVD": "(\"Coronary Disease\"[MeSH] OR \"Myocardial Infarction\"[MeSH])",
+   "SMOK": "(\"Smoking\"[MeSH])",
+   "STAT": "(\"Hydroxymethylglutaryl-CoA Reductase Inhibitors\"[MeSH])",
+   "SALT": "(\"Sodium, Dietary\"[MeSH])",
+   "SUGR": "(\"Dietary Sucrose\"[MeSH] OR \"Dietary Carbohydrates\"[MeSH])"
+  },
+  "epochs": {
+   "1950": {
+    "dp": "1950:1959",
+    "singles": {
+     "SFA": 5310,
+     "CHOL": 3029,
+     "CVD": 5190,
+     "SMOK": 719,
+     "STAT": 0,
+     "SALT": 2181,
+     "SUGR": 796
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 388,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SFA-CVD": {
+      "co": 22,
+      "strong": 0,
+      "retracted": 0
+     },
+     "CHOL-CVD": {
+      "co": 108,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 18,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SALT-CVD": {
+      "co": 7,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-CVD": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     }
+    }
+   },
+   "1960": {
+    "dp": "1960:1969",
+    "singles": {
+     "SFA": 23189,
+     "CHOL": 10347,
+     "CVD": 16661,
+     "SMOK": 3504,
+     "STAT": 0,
+     "SALT": 1520,
+     "SUGR": 4232
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 2927,
+      "strong": 10,
+      "retracted": 0
+     },
+     "SFA-CVD": {
+      "co": 516,
+      "strong": 7,
+      "retracted": 0
+     },
+     "CHOL-CVD": {
+      "co": 914,
+      "strong": 8,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 417,
+      "strong": 1,
+      "retracted": 0
+     },
+     "SALT-CVD": {
+      "co": 11,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 98,
+      "strong": 2,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-CVD": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     }
+    }
+   },
+   "1970": {
+    "dp": "1970:1979",
+    "singles": {
+     "SFA": 56813,
+     "CHOL": 19655,
+     "CVD": 36276,
+     "SMOK": 9377,
+     "STAT": 51,
+     "SALT": 3,
+     "SUGR": 8584
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 5896,
+      "strong": 37,
+      "retracted": 0
+     },
+     "SFA-CVD": {
+      "co": 1220,
+      "strong": 11,
+      "retracted": 0
+     },
+     "CHOL-CVD": {
+      "co": 1952,
+      "strong": 27,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 1399,
+      "strong": 11,
+      "retracted": 0
+     },
+     "SALT-CVD": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 219,
+      "strong": 2,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 31,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-CVD": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     }
+    }
+   },
+   "1980": {
+    "dp": "1980:1989",
+    "singles": {
+     "SFA": 72913,
+     "CHOL": 21646,
+     "CVD": 52646,
+     "SMOK": 15337,
+     "STAT": 339,
+     "SALT": 562,
+     "SUGR": 9292
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 5030,
+      "strong": 127,
+      "retracted": 1
+     },
+     "SFA-CVD": {
+      "co": 2085,
+      "strong": 53,
+      "retracted": 1
+     },
+     "CHOL-CVD": {
+      "co": 2616,
+      "strong": 82,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 1643,
+      "strong": 61,
+      "retracted": 2
+     },
+     "SALT-CVD": {
+      "co": 2,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 179,
+      "strong": 10,
+      "retracted": 1
+     },
+     "STAT-CHOL": {
+      "co": 174,
+      "strong": 2,
+      "retracted": 0
+     },
+     "STAT-CVD": {
+      "co": 13,
+      "strong": 1,
+      "retracted": 0
+     }
+    }
+   },
+   "1990": {
+    "dp": "1990:1999",
+    "singles": {
+     "SFA": 88980,
+     "CHOL": 27180,
+     "CVD": 61756,
+     "SMOK": 23480,
+     "STAT": 1682,
+     "SALT": 2348,
+     "SUGR": 11598
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 6122,
+      "strong": 622,
+      "retracted": 0
+     },
+     "SFA-CVD": {
+      "co": 1927,
+      "strong": 207,
+      "retracted": 0
+     },
+     "CHOL-CVD": {
+      "co": 3649,
+      "strong": 344,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 1547,
+      "strong": 94,
+      "retracted": 3
+     },
+     "SALT-CVD": {
+      "co": 18,
+      "strong": 1,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 134,
+      "strong": 22,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 686,
+      "strong": 109,
+      "retracted": 0
+     },
+     "STAT-CVD": {
+      "co": 259,
+      "strong": 50,
+      "retracted": 0
+     }
+    }
+   },
+   "2000": {
+    "dp": "2000:2009",
+    "singles": {
+     "SFA": 119521,
+     "CHOL": 37443,
+     "CVD": 90883,
+     "SMOK": 40440,
+     "STAT": 11784,
+     "SALT": 3263,
+     "SUGR": 19966
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 7027,
+      "strong": 1101,
+      "retracted": 6
+     },
+     "SFA-CVD": {
+      "co": 2516,
+      "strong": 463,
+      "retracted": 2
+     },
+     "CHOL-CVD": {
+      "co": 4511,
+      "strong": 512,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 2139,
+      "strong": 103,
+      "retracted": 0
+     },
+     "SALT-CVD": {
+      "co": 25,
+      "strong": 2,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 165,
+      "strong": 33,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 2987,
+      "strong": 579,
+      "retracted": 1
+     },
+     "STAT-CVD": {
+      "co": 2504,
+      "strong": 381,
+      "retracted": 1
+     }
+    }
+   },
+   "2010": {
+    "dp": "2010:2019",
+    "singles": {
+     "SFA": 142600,
+     "CHOL": 41806,
+     "CVD": 102707,
+     "SMOK": 56050,
+     "STAT": 16511,
+     "SALT": 5445,
+     "SUGR": 34335
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 5614,
+      "strong": 943,
+      "retracted": 15
+     },
+     "SFA-CVD": {
+      "co": 1835,
+      "strong": 433,
+      "retracted": 5
+     },
+     "CHOL-CVD": {
+      "co": 3002,
+      "strong": 398,
+      "retracted": 3
+     },
+     "SMOK-CVD": {
+      "co": 1663,
+      "strong": 102,
+      "retracted": 1
+     },
+     "SALT-CVD": {
+      "co": 43,
+      "strong": 1,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 105,
+      "strong": 18,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 3448,
+      "strong": 688,
+      "retracted": 2
+     },
+     "STAT-CVD": {
+      "co": 2376,
+      "strong": 498,
+      "retracted": 2
+     }
+    }
+   },
+   "2020": {
+    "dp": "2020:2026",
+    "singles": {
+     "SFA": 83209,
+     "CHOL": 24064,
+     "CVD": 59006,
+     "SMOK": 22741,
+     "STAT": 7894,
+     "SALT": 3205,
+     "SUGR": 25682
+    },
+    "pairs": {
+     "SFA-CHOL": {
+      "co": 1817,
+      "strong": 306,
+      "retracted": 4
+     },
+     "SFA-CVD": {
+      "co": 565,
+      "strong": 124,
+      "retracted": 3
+     },
+     "CHOL-CVD": {
+      "co": 1561,
+      "strong": 180,
+      "retracted": 3
+     },
+     "SMOK-CVD": {
+      "co": 368,
+      "strong": 26,
+      "retracted": 1
+     },
+     "SALT-CVD": {
+      "co": 12,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 34,
+      "strong": 9,
+      "retracted": 0
+     },
+     "STAT-CHOL": {
+      "co": 2012,
+      "strong": 338,
+      "retracted": 2
+     },
+     "STAT-CVD": {
+      "co": 917,
+      "strong": 188,
+      "retracted": 0
+     }
+    }
+   }
+  }
+ },
+ "alcohol": {
+  "context": null,
+  "concepts": {
+   "ALC": "(\"Alcohol Drinking\"[MeSH])",
+   "BP": "(\"Hypertension\"[MeSH] OR \"Blood Pressure\"[MeSH])",
+   "HDL": "(\"Cholesterol, HDL\"[MeSH] OR \"Lipoproteins, HDL\"[MeSH])",
+   "MI": "(\"Myocardial Infarction\"[MeSH])",
+   "ISCH": "(\"Brain Ischemia\"[MeSH] OR \"Cerebral Infarction\"[MeSH] OR \"Ischemic Stroke\"[MeSH])",
+   "ICH": "(\"Cerebral Hemorrhage\"[MeSH] OR \"Intracranial Hemorrhages\"[MeSH])",
+   "DOSE": "(\"Dose-Response Relationship, Drug\"[MeSH])"
+  },
+  "epochs": {
+   "1970": {
+    "dp": "1970:1989",
+    "singles": {
+     "ALC": 10677,
+     "BP": 139561,
+     "HDL": 8768,
+     "MI": 44832,
+     "ISCH": 15022,
+     "ICH": 15236,
+     "DOSE": 78458
+    },
+    "pairs": {
+     "ALC-BP": {
+      "co": 594,
+      "strong": 17,
+      "retracted": 0
+     },
+     "ALC-HDL": {
+      "co": 219,
+      "strong": 6,
+      "retracted": 0
+     },
+     "ALC-MI": {
+      "co": 74,
+      "strong": 0,
+      "retracted": 0
+     },
+     "ALC-ISCH": {
+      "co": 19,
+      "strong": 0,
+      "retracted": 0
+     },
+     "ALC-ICH": {
+      "co": 23,
+      "strong": 0,
+      "retracted": 0
+     },
+     "BP-ICH": {
+      "co": 1274,
+      "strong": 9,
+      "retracted": 0
+     },
+     "BP-ISCH": {
+      "co": 1405,
+      "strong": 16,
+      "retracted": 0
+     },
+     "BP-MI": {
+      "co": 4594,
+      "strong": 147,
+      "retracted": 1
+     },
+     "HDL-MI": {
+      "co": 236,
+      "strong": 5,
+      "retracted": 0
+     },
+     "DOSE-MI": {
+      "co": 311,
+      "strong": 30,
+      "retracted": 1
+     },
+     "DOSE-ISCH": {
+      "co": 123,
+      "strong": 4,
+      "retracted": 0
+     },
+     "DOSE-ICH": {
+      "co": 41,
+      "strong": 1,
+      "retracted": 0
+     }
+    }
+   },
+   "1990": {
+    "dp": "1990:1999",
+    "singles": {
+     "ALC": 11734,
+     "BP": 87630,
+     "HDL": 8434,
+     "MI": 27715,
+     "ISCH": 20521,
+     "ICH": 10827,
+     "DOSE": 82126
+    },
+    "pairs": {
+     "ALC-BP": {
+      "co": 679,
+      "strong": 54,
+      "retracted": 0
+     },
+     "ALC-HDL": {
+      "co": 238,
+      "strong": 20,
+      "retracted": 0
+     },
+     "ALC-MI": {
+      "co": 75,
+      "strong": 4,
+      "retracted": 0
+     },
+     "ALC-ISCH": {
+      "co": 50,
+      "strong": 2,
+      "retracted": 0
+     },
+     "ALC-ICH": {
+      "co": 42,
+      "strong": 2,
+      "retracted": 0
+     },
+     "BP-ICH": {
+      "co": 733,
+      "strong": 25,
+      "retracted": 0
+     },
+     "BP-ISCH": {
+      "co": 1307,
+      "strong": 27,
+      "retracted": 0
+     },
+     "BP-MI": {
+      "co": 1769,
+      "strong": 162,
+      "retracted": 1
+     },
+     "HDL-MI": {
+      "co": 189,
+      "strong": 26,
+      "retracted": 0
+     },
+     "DOSE-MI": {
+      "co": 372,
+      "strong": 84,
+      "retracted": 0
+     },
+     "DOSE-ISCH": {
+      "co": 407,
+      "strong": 34,
+      "retracted": 0
+     },
+     "DOSE-ICH": {
+      "co": 127,
+      "strong": 18,
+      "retracted": 0
+     }
+    }
+   },
+   "2000": {
+    "dp": "2000:2009",
+    "singles": {
+     "ALC": 17711,
+     "BP": 104755,
+     "HDL": 12253,
+     "MI": 41121,
+     "ISCH": 30094,
+     "ICH": 15367,
+     "DOSE": 144142
+    },
+    "pairs": {
+     "ALC-BP": {
+      "co": 873,
+      "strong": 44,
+      "retracted": 0
+     },
+     "ALC-HDL": {
+      "co": 233,
+      "strong": 18,
+      "retracted": 0
+     },
+     "ALC-MI": {
+      "co": 156,
+      "strong": 8,
+      "retracted": 0
+     },
+     "ALC-ISCH": {
+      "co": 62,
+      "strong": 1,
+      "retracted": 0
+     },
+     "ALC-ICH": {
+      "co": 53,
+      "strong": 2,
+      "retracted": 0
+     },
+     "BP-ICH": {
+      "co": 881,
+      "strong": 41,
+      "retracted": 0
+     },
+     "BP-ISCH": {
+      "co": 1649,
+      "strong": 76,
+      "retracted": 1
+     },
+     "BP-MI": {
+      "co": 2419,
+      "strong": 172,
+      "retracted": 3
+     },
+     "HDL-MI": {
+      "co": 322,
+      "strong": 34,
+      "retracted": 0
+     },
+     "DOSE-MI": {
+      "co": 700,
+      "strong": 123,
+      "retracted": 1
+     },
+     "DOSE-ISCH": {
+      "co": 923,
+      "strong": 52,
+      "retracted": 2
+     },
+     "DOSE-ICH": {
+      "co": 219,
+      "strong": 32,
+      "retracted": 0
+     }
+    }
+   },
+   "2010": {
+    "dp": "2010:2017",
+    "singles": {
+     "ALC": 23738,
+     "BP": 100674,
+     "HDL": 12341,
+     "MI": 40690,
+     "ISCH": 33898,
+     "ICH": 19201,
+     "DOSE": 99692
+    },
+    "pairs": {
+     "ALC-BP": {
+      "co": 844,
+      "strong": 48,
+      "retracted": 0
+     },
+     "ALC-HDL": {
+      "co": 168,
+      "strong": 6,
+      "retracted": 0
+     },
+     "ALC-MI": {
+      "co": 95,
+      "strong": 11,
+      "retracted": 0
+     },
+     "ALC-ISCH": {
+      "co": 60,
+      "strong": 1,
+      "retracted": 0
+     },
+     "ALC-ICH": {
+      "co": 54,
+      "strong": 4,
+      "retracted": 0
+     },
+     "BP-ICH": {
+      "co": 990,
+      "strong": 124,
+      "retracted": 0
+     },
+     "BP-ISCH": {
+      "co": 1405,
+      "strong": 102,
+      "retracted": 0
+     },
+     "BP-MI": {
+      "co": 1533,
+      "strong": 157,
+      "retracted": 2
+     },
+     "HDL-MI": {
+      "co": 261,
+      "strong": 31,
+      "retracted": 1
+     },
+     "DOSE-MI": {
+      "co": 555,
+      "strong": 194,
+      "retracted": 1
+     },
+     "DOSE-ISCH": {
+      "co": 608,
+      "strong": 43,
+      "retracted": 2
+     },
+     "DOSE-ICH": {
+      "co": 195,
+      "strong": 31,
+      "retracted": 4
+     }
+    }
+   },
+   "2018": {
+    "dp": "2018:2019",
+    "singles": {
+     "ALC": 6572,
+     "BP": 25479,
+     "HDL": 2514,
+     "MI": 10771,
+     "ISCH": 10784,
+     "ICH": 5699,
+     "DOSE": 22143
+    },
+    "pairs": {
+     "ALC-BP": {
+      "co": 213,
+      "strong": 10,
+      "retracted": 0
+     },
+     "ALC-HDL": {
+      "co": 38,
+      "strong": 1,
+      "retracted": 0
+     },
+     "ALC-MI": {
+      "co": 12,
+      "strong": 1,
+      "retracted": 0
+     },
+     "ALC-ISCH": {
+      "co": 14,
+      "strong": 0,
+      "retracted": 0
+     },
+     "ALC-ICH": {
+      "co": 17,
+      "strong": 1,
+      "retracted": 0
+     },
+     "BP-ICH": {
+      "co": 285,
+      "strong": 28,
+      "retracted": 1
+     },
+     "BP-ISCH": {
+      "co": 409,
+      "strong": 53,
+      "retracted": 0
+     },
+     "BP-MI": {
+      "co": 374,
+      "strong": 43,
+      "retracted": 2
+     },
+     "HDL-MI": {
+      "co": 69,
+      "strong": 7,
+      "retracted": 0
+     },
+     "DOSE-MI": {
+      "co": 80,
+      "strong": 28,
+      "retracted": 1
+     },
+     "DOSE-ISCH": {
+      "co": 104,
+      "strong": 7,
+      "retracted": 1
+     },
+     "DOSE-ICH": {
+      "co": 48,
+      "strong": 8,
+      "retracted": 1
+     }
+    }
+   },
+   "2020": {
+    "dp": "2020:2026",
+    "singles": {
+     "ALC": 15552,
+     "BP": 69628,
+     "HDL": 7165,
+     "MI": 30910,
+     "ISCH": 38421,
+     "ICH": 16508,
+     "DOSE": 34181
+    },
+    "pairs": {
+     "ALC-BP": {
+      "co": 356,
+      "strong": 25,
+      "retracted": 0
+     },
+     "ALC-HDL": {
+      "co": 59,
+      "strong": 3,
+      "retracted": 0
+     },
+     "ALC-MI": {
+      "co": 21,
+      "strong": 2,
+      "retracted": 0
+     },
+     "ALC-ISCH": {
+      "co": 47,
+      "strong": 2,
+      "retracted": 0
+     },
+     "ALC-ICH": {
+      "co": 19,
+      "strong": 3,
+      "retracted": 0
+     },
+     "BP-ICH": {
+      "co": 580,
+      "strong": 80,
+      "retracted": 4
+     },
+     "BP-ISCH": {
+      "co": 1072,
+      "strong": 139,
+      "retracted": 4
+     },
+     "BP-MI": {
+      "co": 798,
+      "strong": 108,
+      "retracted": 2
+     },
+     "HDL-MI": {
+      "co": 170,
+      "strong": 18,
+      "retracted": 0
+     },
+     "DOSE-MI": {
+      "co": 98,
+      "strong": 29,
+      "retracted": 1
+     },
+     "DOSE-ISCH": {
+      "co": 168,
+      "strong": 17,
+      "retracted": 1
+     },
+     "DOSE-ICH": {
+      "co": 40,
+      "strong": 2,
+      "retracted": 2
+     }
+    }
+   }
+  }
+ },
+ "reperfusion": {
+  "context": "(\"Stroke\"[MeSH] OR \"Brain Ischemia\"[MeSH] OR \"Cerebral Infarction\"[MeSH])",
+  "concepts": {
+   "ONSET": "(\"Time-to-Treatment\"[MeSH])",
+   "TPA": "(\"Tissue Plasminogen Activator\"[MeSH] OR \"Thrombolytic Therapy\"[MeSH])",
+   "EVT": "(\"Thrombectomy\"[MeSH] OR \"Mechanical Thrombolysis\"[MeSH])",
+   "REPERF": "(\"Reperfusion\"[MeSH] OR \"Cerebral Revascularization\"[MeSH])",
+   "INF": "(\"Brain Infarction\"[MeSH] OR \"Brain Ischemia\"[MeSH])",
+   "SICH": "(\"Intracranial Hemorrhages\"[MeSH] OR \"Cerebral Hemorrhage\"[MeSH])",
+   "MRS": "(\"Recovery of Function\"[MeSH] OR \"Treatment Outcome\"[MeSH])"
+  },
+  "epochs": {
+   "1995": {
+    "dp": "1995:2004",
+    "singles": {
+     "ONSET": 0,
+     "TPA": 1500,
+     "EVT": 23,
+     "REPERF": 682,
+     "INF": 24356,
+     "SICH": 2354,
+     "MRS": 3395
+    },
+    "pairs": {
+     "ONSET-TPA": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "ONSET-REPERF": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "TPA-REPERF": {
+      "co": 47,
+      "strong": 0,
+      "retracted": 0
+     },
+     "TPA-MRS": {
+      "co": 399,
+      "strong": 49,
+      "retracted": 0
+     },
+     "TPA-SICH": {
+      "co": 258,
+      "strong": 29,
+      "retracted": 0
+     },
+     "EVT-REPERF": {
+      "co": 1,
+      "strong": 0,
+      "retracted": 0
+     },
+     "EVT-MRS": {
+      "co": 7,
+      "strong": 0,
+      "retracted": 0
+     },
+     "EVT-SICH": {
+      "co": 4,
+      "strong": 0,
+      "retracted": 0
+     },
+     "REPERF-MRS": {
+      "co": 84,
+      "strong": 0,
+      "retracted": 0
+     },
+     "INF-MRS": {
+      "co": 1797,
+      "strong": 196,
+      "retracted": 0
+     }
+    }
+   },
+   "2005": {
+    "dp": "2005:2012",
+    "singles": {
+     "ONSET": 35,
+     "TPA": 3466,
+     "EVT": 336,
+     "REPERF": 858,
+     "INF": 28540,
+     "SICH": 3301,
+     "MRS": 10030
+    },
+    "pairs": {
+     "ONSET-TPA": {
+      "co": 19,
+      "strong": 1,
+      "retracted": 0
+     },
+     "ONSET-REPERF": {
+      "co": 2,
+      "strong": 0,
+      "retracted": 0
+     },
+     "TPA-REPERF": {
+      "co": 177,
+      "strong": 11,
+      "retracted": 0
+     },
+     "TPA-MRS": {
+      "co": 1331,
+      "strong": 115,
+      "retracted": 0
+     },
+     "TPA-SICH": {
+      "co": 537,
+      "strong": 36,
+      "retracted": 0
+     },
+     "EVT-REPERF": {
+      "co": 58,
+      "strong": 2,
+      "retracted": 0
+     },
+     "EVT-MRS": {
+      "co": 164,
+      "strong": 4,
+      "retracted": 0
+     },
+     "EVT-SICH": {
+      "co": 25,
+      "strong": 0,
+      "retracted": 0
+     },
+     "REPERF-MRS": {
+      "co": 275,
+      "strong": 16,
+      "retracted": 0
+     },
+     "INF-MRS": {
+      "co": 4502,
+      "strong": 447,
+      "retracted": 6
+     }
+    }
+   },
+   "2013": {
+    "dp": "2013:2014",
+    "singles": {
+     "ONSET": 153,
+     "TPA": 1501,
+     "EVT": 369,
+     "REPERF": 345,
+     "INF": 9609,
+     "SICH": 1305,
+     "MRS": 4302
+    },
+    "pairs": {
+     "ONSET-TPA": {
+      "co": 81,
+      "strong": 4,
+      "retracted": 0
+     },
+     "ONSET-REPERF": {
+      "co": 8,
+      "strong": 1,
+      "retracted": 0
+     },
+     "TPA-REPERF": {
+      "co": 85,
+      "strong": 7,
+      "retracted": 0
+     },
+     "TPA-MRS": {
+      "co": 681,
+      "strong": 55,
+      "retracted": 0
+     },
+     "TPA-SICH": {
+      "co": 230,
+      "strong": 21,
+      "retracted": 0
+     },
+     "EVT-REPERF": {
+      "co": 57,
+      "strong": 2,
+      "retracted": 0
+     },
+     "EVT-MRS": {
+      "co": 194,
+      "strong": 5,
+      "retracted": 0
+     },
+     "EVT-SICH": {
+      "co": 43,
+      "strong": 4,
+      "retracted": 0
+     },
+     "REPERF-MRS": {
+      "co": 152,
+      "strong": 8,
+      "retracted": 0
+     },
+     "INF-MRS": {
+      "co": 1876,
+      "strong": 207,
+      "retracted": 4
+     }
+    }
+   },
+   "2015": {
+    "dp": "2015:2017",
+    "singles": {
+     "ONSET": 386,
+     "TPA": 2030,
+     "EVT": 1029,
+     "REPERF": 449,
+     "INF": 14036,
+     "SICH": 1927,
+     "MRS": 6289
+    },
+    "pairs": {
+     "ONSET-TPA": {
+      "co": 218,
+      "strong": 14,
+      "retracted": 0
+     },
+     "ONSET-REPERF": {
+      "co": 15,
+      "strong": 1,
+      "retracted": 0
+     },
+     "TPA-REPERF": {
+      "co": 87,
+      "strong": 10,
+      "retracted": 0
+     },
+     "TPA-MRS": {
+      "co": 854,
+      "strong": 122,
+      "retracted": 0
+     },
+     "TPA-SICH": {
+      "co": 338,
+      "strong": 44,
+      "retracted": 0
+     },
+     "EVT-REPERF": {
+      "co": 96,
+      "strong": 14,
+      "retracted": 0
+     },
+     "EVT-MRS": {
+      "co": 547,
+      "strong": 72,
+      "retracted": 0
+     },
+     "EVT-SICH": {
+      "co": 85,
+      "strong": 20,
+      "retracted": 0
+     },
+     "REPERF-MRS": {
+      "co": 204,
+      "strong": 20,
+      "retracted": 0
+     },
+     "INF-MRS": {
+      "co": 2709,
+      "strong": 397,
+      "retracted": 6
+     }
+    }
+   },
+   "2018": {
+    "dp": "2018:2019",
+    "singles": {
+     "ONSET": 374,
+     "TPA": 1288,
+     "EVT": 1290,
+     "REPERF": 370,
+     "INF": 10633,
+     "SICH": 1336,
+     "MRS": 4868
+    },
+    "pairs": {
+     "ONSET-TPA": {
+      "co": 176,
+      "strong": 19,
+      "retracted": 0
+     },
+     "ONSET-REPERF": {
+      "co": 19,
+      "strong": 3,
+      "retracted": 0
+     },
+     "TPA-REPERF": {
+      "co": 68,
+      "strong": 10,
+      "retracted": 0
+     },
+     "TPA-MRS": {
+      "co": 609,
+      "strong": 80,
+      "retracted": 0
+     },
+     "TPA-SICH": {
+      "co": 212,
+      "strong": 27,
+      "retracted": 0
+     },
+     "EVT-REPERF": {
+      "co": 125,
+      "strong": 16,
+      "retracted": 0
+     },
+     "EVT-MRS": {
+      "co": 745,
+      "strong": 87,
+      "retracted": 1
+     },
+     "EVT-SICH": {
+      "co": 130,
+      "strong": 20,
+      "retracted": 0
+     },
+     "REPERF-MRS": {
+      "co": 193,
+      "strong": 22,
+      "retracted": 0
+     },
+     "INF-MRS": {
+      "co": 2195,
+      "strong": 283,
+      "retracted": 6
+     }
+    }
+   },
+   "2020": {
+    "dp": "2020:2026",
+    "singles": {
+     "ONSET": 908,
+     "TPA": 3669,
+     "EVT": 5366,
+     "REPERF": 1194,
+     "INF": 25510,
+     "SICH": 3746,
+     "MRS": 16287
+    },
+    "pairs": {
+     "ONSET-TPA": {
+      "co": 439,
+      "strong": 57,
+      "retracted": 0
+     },
+     "ONSET-REPERF": {
+      "co": 46,
+      "strong": 8,
+      "retracted": 0
+     },
+     "TPA-REPERF": {
+      "co": 208,
+      "strong": 41,
+      "retracted": 0
+     },
+     "TPA-MRS": {
+      "co": 2182,
+      "strong": 476,
+      "retracted": 6
+     },
+     "TPA-SICH": {
+      "co": 548,
+      "strong": 179,
+      "retracted": 1
+     },
+     "EVT-REPERF": {
+      "co": 363,
+      "strong": 57,
+      "retracted": 0
+     },
+     "EVT-MRS": {
+      "co": 3886,
+      "strong": 618,
+      "retracted": 8
+     },
+     "EVT-SICH": {
+      "co": 594,
+      "strong": 168,
+      "retracted": 2
+     },
+     "REPERF-MRS": {
+      "co": 589,
+      "strong": 88,
+      "retracted": 0
+     },
+     "INF-MRS": {
+      "co": 5595,
+      "strong": 893,
+      "retracted": 16
+     }
+    }
+   }
+  }
+ }
+}
