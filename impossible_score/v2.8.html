@@ -390,6 +390,7 @@ function notation(steps, lenSec){
 
 // ---------- state ----------
 let particles = [], ribbon = [], floatEqs = [], bonds = [], citations = [], ephem = [];
+let ribbonCursor = 0, ribbonView = 0;   // 書き込みヘッド（紙の座標）とその表示位置
 let lastCiteAt = -99;
 let caught = 0, missedN = 0, droppedN = 0, retracted = 0;
 let pulseGenT = 0, graveT = 0, pulseMarks = [], flashes = [];
@@ -418,9 +419,17 @@ function perform(p){
 }
 const pCatch = p => clamp((0.48 + p.z * 0.28) * (0.5 + st.conc * 0.5), 0.15, 0.96);
 
+// 書き込みヘッド方式: 音符/休符はインデックス順に等間隔で紙に書かれ、紙全体が滑らかに
+// 左へスクロールする（観測のバーストに依らず自然に流れ、下の情報も重ならない）
+const RIBBON_GAP = 52;
+function rbPush(n){
+  n.cx = ribbonCursor;
+  ribbonCursor += RIBBON_GAP;
+  ribbon.push(n);
+  if (ribbon.length > 240) ribbon.shift();
+}
 function pushRest(lenSec, kind, at){
-  ribbon.push({ rest: true, kind, val: valOf(lenSec), ms: Math.round(lenSec * 1000), at });
-  if (ribbon.length > 260) ribbon.shift();
+  rbPush({ rest: true, kind, val: valOf(lenSec), ms: Math.round(lenSec * 1000), at });
 }
 
 function observe(p, at){
@@ -437,8 +446,7 @@ function observe(p, at){
   scheduleAudio(p, at + Math.max(0, p.offset), sounded, lenSec);
   const note = notation(sounded, lenSec);
   note.dyn = p.dyn; note.at = at; note.col = C.col;
-  ribbon.push(note);
-  if (ribbon.length > 260) ribbon.shift();
+  rbPush(note);
   if (rng() < 0.10)
     floatEqs.push({ x: p.px, y: p.py, text: C.en, at, col: C.col });
 }
@@ -571,7 +579,7 @@ function schedulerTick(){
   bonds = bonds.filter(b => now - b.at < 0.5);
   citations = citations.filter(c => now - c.at < c.life);
   ephem = ephem.filter(e => now - e.at < e.life);
-  ribbon = ribbon.filter(n => W - 24 - (now - n.at) * RIBBON_FLOW > 46);
+  ribbon = ribbon.filter(n => (W - 24 - (ribbonView - n.cx)) > 44);   // 左端を過ぎた音符を捨てる
 }
 
 // ---------- 時代の交代 ----------
@@ -1181,7 +1189,7 @@ function drawRibbon(now){
   g2.font = '26px serif'; g2.fillText('\u{1D122}', 16, yB - SS * 1.1);
   g2.textAlign = 'center';
   for (const n of ribbon){
-    const x = W - 24 - (now - n.at) * RIBBON_FLOW;
+    const x = W - 24 - (ribbonView - n.cx);
     if (x < 50 || x > W - 6) continue;
     const fresh = clamp(1 - (now - n.at) / 2, 0, 1);
     if (n.rest) drawRest(n, x, fresh); else drawNote(n, x, fresh);
@@ -1295,6 +1303,9 @@ function frame(ts){
   lastNow = now;
   updateState(dt, now);
   updateParticles(dt, now);
+  // 紙は書き込みヘッドへ滑らかに追従（最小ドリフト付き＝静止しても自然に流れる）
+  ribbonView += Math.max(RIBBON_FLOW * dt, (ribbonCursor - ribbonView) * (1 - Math.exp(-dt / 0.5)));
+  if (ribbonView > ribbonCursor) ribbonView = ribbonCursor;
   updateDroneBed(now);
   draw(now, ts / 1000);
   requestAnimationFrame(frame);
