@@ -35,11 +35,10 @@
 </head>
 <body>
 <canvas id="cv"></canvas>
-<video id="cam" playsinline muted autoplay></video>
 <div id="btns" style="display:none">
+  <div class="btn" id="bHome">⌂</div>
   <div class="btn on" id="bGlow">輝</div>
   <div class="btn on" id="bGraph">地図</div>
-  <div class="btn on" id="bGrain">具体音</div>
   <div class="btn" id="bFull">全画面</div>
   <div class="btn on" id="bSound">音</div>
 </div>
@@ -61,7 +60,7 @@
     <div class="pbtn" data-mi="1">II. Alcohol<br>and Cardiovascular Disease<span>1970 – 2020</span></div>
     <div class="pbtn" data-mi="2">III. Acute Reperfusion Therapy<br>and Stroke Outcome<span>1995 – 2020</span></div>
   </div>
-  <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても動作します）</div>
+  <div id="permNote">音が鳴ります。画面を押さえている間、観測者は目を閉じます。</div>
 </div>
 
 <script>
@@ -90,8 +89,8 @@ function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
 
 // ---------- global ----------
 let ctx=null, master=null, limiter=null, analyser=null;
-let micReady=false, camReady=false, running=false;
-let soundOn=true, grainOn=true, glowOn=true, graphOn=true;
+let running=false;
+let soundOn=true, glowOn=true, graphOn=true;
 
 const st = {
   complexity: 0.2,   // 環境由来: 観測の複雑性（テクスチャ）
@@ -161,9 +160,9 @@ const SUITE = [
       { id:'MRS',   jp:'機能予後',   en:'Functional Outcome', partial:5, band:-2, col:'210,225,215' },
       { id:'INF',   jp:'脳梗塞',     en:'Infarct',          partial:6, band:-1, col:'205,205,215' } ],
     decades:[
-      { year:1995, root:'TPA', edges:[['TPA','REPERF',0.50,'establishing'],['TPA','MRS',0.50,'establishing'],['TPA','ONSET',0.60,'establishing'],['TPA','SICH',0.40,'contested'],['INF','MRS',0.45,'establishing']] },
-      { year:2005, root:'TPA', edges:[['TPA','MRS',0.68,'established'],['TPA','ONSET',0.72,'established'],['TPA','REPERF',0.62,'established'],['TPA','SICH',0.45,'contested'],['INF','MRS',0.55,'established']] },
-      { year:2013, root:'ONSET', edges:[['EVT','MRS',0.35,'contested'],['EVT','REPERF',0.50,'contested'],['TPA','MRS',0.70,'established'],['TPA','ONSET',0.75,'established'],['EVT','SICH',0.40,'contested']] },
+      { year:1995, root:'TPA', edges:[['TPA','REPERF',0.50,'establishing'],['TPA','MRS',0.50,'establishing'],['ONSET','TPA',0.60,'establishing'],['TPA','SICH',0.40,'contested'],['INF','MRS',0.45,'establishing']] },
+      { year:2005, root:'TPA', edges:[['TPA','MRS',0.68,'established'],['ONSET','TPA',0.72,'established'],['TPA','REPERF',0.62,'established'],['TPA','SICH',0.45,'contested'],['INF','MRS',0.55,'established']] },
+      { year:2013, root:'ONSET', edges:[['EVT','MRS',0.35,'contested'],['EVT','REPERF',0.50,'contested'],['TPA','MRS',0.70,'established'],['ONSET','TPA',0.75,'established'],['EVT','SICH',0.40,'contested']] },
       { year:2015, root:'EVT', edges:[['EVT','REPERF',0.82,'established'],['EVT','MRS',0.75,'establishing'],['ONSET','REPERF',0.70,'established'],['TPA','MRS',0.70,'established'],['REPERF','MRS',0.72,'establishing']] },
       { year:2018, root:'REPERF', edges:[['EVT','MRS',0.88,'established'],['REPERF','MRS',0.85,'established'],['ONSET','MRS',0.75,'established'],['EVT','REPERF',0.88,'established'],['EVT','SICH',0.40,'contested']] },
       { year:2020, root:'REPERF', edges:[['REPERF','MRS',0.88,'established'],['EVT','MRS',0.88,'established'],['ONSET','REPERF',0.82,'established'],['TPA','REPERF',0.62,'established'],['EVT','SICH',0.35,'contested'],['INF','MRS',0.60,'established']] } ] },
@@ -192,6 +191,15 @@ const CITES = [
 // 第II曲: 用量–反応曲線（相対危険）。曲線は「形」なので、旋律の輪郭に写す。
 // 保護の窪み（RR<1）はドローンの下に純正で沈み、有害域（RR>1）は微分音で濁って昇る。
 // 時代が進むと窪みは浅くなり、やがて消える = 消えゆく J カーブ
+// 因果の向き（DAG）: 曝露 → 治療 → 媒介 → アウトカム。エッジは常に前方向に走る
+const ROLE = {
+  SFA:'exposure', SMOK:'exposure', SALT:'exposure', SUGR:'exposure', CHOL:'mediator', STAT:'treatment', CVD:'outcome',
+  ALC:'exposure', DOSE:'exposure', BP:'mediator', HDL:'mediator', MI:'outcome', ISCH:'outcome', ICH:'outcome',
+  ONSET:'exposure', TPA:'treatment', EVT:'treatment', REPERF:'mediator', INF:'mediator', SICH:'outcome', MRS:'outcome',
+};
+const LAYER = { exposure:0, treatment:1, mediator:2, outcome:3 };
+const LAYER_LABEL = ['exposure', 'treatment', 'mediator', 'outcome'];
+
 const DOSE_LABELS = ['0', '<1', '1–2', '2–3', '3–4', '5–6', '7+'];
 const JCURVE = {
   1970: [1.00, 0.82, 0.75, 0.80, 0.95, 1.20, 1.55],
@@ -275,6 +283,7 @@ function notation(steps, lenSec){
 
 // ---------- state ----------
 let particles = [], ribbon = [], floatEqs = [], bonds = [], citations = [];
+let lastCiteAt = -99;
 let caught = 0, missedN = 0, droppedN = 0, retracted = 0;
 let pulseGenT = 0, graveT = 0, pulseMarks = [], flashes = [];
 const RIBBON_FLOW = 30;
@@ -283,7 +292,7 @@ const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);
 const line = { x: -10, dir: 1, bornAt: 0 };
 let W = 0, H = 0, DPR = 1;
 const spawnX = () => W * 0.99;
-const fieldTop = () => H * 0.20;
+const fieldTop = () => H * 0.26;
 const fieldBottom = () => H - 176;
 const stepY = s => (fieldTop() + fieldBottom()) / 2 - s * ((fieldBottom() - fieldTop()) * 0.42 / 150);
 
@@ -378,9 +387,21 @@ function utter(edge, now){
       crossed: false, px: undefined, py: undefined, sustained: true,
     });
   }
+  // 強く確立した主張は、ときおり自らの出典を浮かび上がらせる
+  if (established && w >= 0.75 && rng() < 0.16) pushCite(now, DECADES[epochIx].year);
   taleaIx++;
   // 結合強度が高いほど頻繁に反復される（執拗なライトモチーフ）
   edge.nextT = t + lerp(4.2, 0.4, w) + rng() * 0.8;
+}
+
+// 出典が水面から浮かび上がるように現れる（同時に1件、16秒の間隔）
+function pushCite(now, year){
+  if (citations.length || now - lastCiteAt < 16) return;
+  const cite = CITES[curMi] && CITES[curMi][year];
+  if (!cite) return;
+  lastCiteAt = now;
+  citations.push({ text: cite, at: now, ph: (year % 7) * 0.9, life: 12,
+    y: fieldTop() + (fieldBottom() - fieldTop()) * 0.72 });
 }
 
 // 用量掃引: 用量の低→高を順に鳴らす一つのフレーズ。音高の輪郭が曲線そのもの。
@@ -454,9 +475,7 @@ function advanceEpoch(now, announce){
       curveTarget = JCURVE[d.year];
       curveAt = now;
     }
-    const cite = CITES[curMi] && CITES[curMi][d.year];
-    if (cite) citations.push({ text: cite, at: now, ph: epochIx * 1.3, life: 11,
-      y: fieldTop() + (fieldBottom() - fieldTop()) * 0.72 });
+    pushCite(now, d.year);
   }
 }
 
@@ -472,10 +491,19 @@ function scheduleAudio(p, at, steps, lenSec){
   const g = ctx.createGain();
   const peak = DYN_GAIN[p.dyn] * p.gainMul * lerp(0.5, 1.1, p.z);
   const t = Math.max(at, ctx.currentTime + 0.01);
+  // 短い音はソリッドな発信音（緊張）、一定以上の長い音は弓のように柔らかく立ち上がる
+  const bow = lenSec > 0.6;
+  const atk = bow ? clamp(lenSec * 0.28, 0.14, 0.7) : 0.004;
+  const rel = bow ? 0.36 : 0.012;
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(peak, t + 0.004);
+  if (bow){
+    g.gain.linearRampToValueAtTime(peak * 0.72, t + atk * 0.55);
+    g.gain.linearRampToValueAtTime(peak, t + atk);           // 弓の膨らみ
+  } else {
+    g.gain.linearRampToValueAtTime(peak, t + atk);
+  }
   g.gain.setValueAtTime(peak, t + lenSec);
-  g.gain.linearRampToValueAtTime(0, t + lenSec + 0.01);
+  g.gain.linearRampToValueAtTime(0, t + lenSec + rel);
   o.connect(g);
   let o2 = null;
   if (p.partial > 1 && f * p.partial < 8200){        // 音色 = 概念の同一性
@@ -484,9 +512,8 @@ function scheduleAudio(p, at, steps, lenSec){
     o2.connect(g2n).connect(g);
   }
   g.connect(master);
-  o.start(t); o.stop(t + lenSec + 0.03);
-  if (o2){ o2.start(t); o2.stop(t + lenSec + 0.03); }
-  if (grainOn && micReady && p.dyn >= 6 && rng() < 0.5) playGrain(t, peak);
+  o.start(t); o.stop(t + lenSec + rel + 0.03);
+  if (o2){ o2.start(t); o2.stop(t + lenSec + rel + 0.03); }
 }
 function schedulePulse(at){
   if (!soundOn || !field) return;
@@ -570,39 +597,6 @@ function startNoiseFloor(){
   src.connect(lp).connect(g).connect(master);
   src.start();
 }
-// mic granular
-const RING_SEC = 4;
-let ring = null, ringPos = 0, ringLen = 0, grainGain = null;
-function setupRing(micSrc){
-  ringLen = Math.floor(ctx.sampleRate * RING_SEC);
-  ring = new Float32Array(ringLen);
-  const sp = ctx.createScriptProcessor(2048, 1, 1);
-  sp.onaudioprocess = e => {
-    const inp = e.inputBuffer.getChannelData(0);
-    for (let i = 0; i < inp.length; i++){ ring[ringPos] = inp[i]; ringPos = (ringPos + 1) % ringLen; }
-  };
-  micSrc.connect(sp);
-  const mute = ctx.createGain(); mute.gain.value = 0;
-  sp.connect(mute).connect(ctx.destination);
-  grainGain = ctx.createGain(); grainGain.gain.value = 0.45;
-  grainGain.connect(master);
-}
-function playGrain(when, peak){
-  if (!ring) return;
-  const len = Math.floor(ctx.sampleRate * (0.03 + rng() * 0.1));
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  const start = (ringPos - len - rngi(ctx.sampleRate * 2) + ringLen * 2) % ringLen;
-  for (let i = 0; i < len; i++){
-    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / len);
-    d[i] = ring[(start + i) % ringLen] * w;
-  }
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  src.playbackRate.value = Math.pow(2, (rng() * 2 - 1) * 0.6);
-  const g = ctx.createGain(); g.gain.value = clamp(peak * 0.5, 0.02, 0.3);
-  src.connect(g).connect(grainGain);
-  src.start(Math.max(when, ctx.currentTime + 0.01));
-}
 let droneOsc = null, droneGain = null;
 function droneOn(){
   droneOff();
@@ -625,41 +619,6 @@ function droneOff(){
   droneOsc = droneGain = null;
 }
 
-// ---------- inputs ----------
-const freqData = new Uint8Array(512);
-let timeData = null;
-function analyzeMic(){
-  if (!analyser) return;
-  analyser.getFloatTimeDomainData(timeData);
-  let sum = 0;
-  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
-  st.micRms = lerp(st.micRms, Math.sqrt(sum / timeData.length), 0.25);
-  analyser.getByteFrequencyData(freqData);
-  let e = 0, ei = 0;
-  for (let i = 0; i < freqData.length; i++){ e += freqData[i]; ei += freqData[i] * i; }
-  if (e > 500) st.micCent = lerp(st.micCent, (ei / e) / freqData.length * 2, 0.15);
-}
-const camV = document.getElementById('cam');
-const camCv = document.createElement('canvas'); camCv.width = 64; camCv.height = 48;
-const camCtx = camCv.getContext('2d', { willReadFrequently: true });
-let prevFrame = null;
-setInterval(()=>{
-  if (!camReady || camV.videoWidth === 0) return;
-  camCtx.drawImage(camV, 0, 0, 64, 48);
-  const img = camCtx.getImageData(0, 0, 64, 48).data;
-  if (prevFrame){
-    let d = 0;
-    for (let i = 0; i < img.length; i += 4){
-      const l = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
-      d += Math.abs(l - prevFrame[i >> 2]);
-    }
-    st.motion = lerp(st.motion, clamp(d / (64 * 48) / 18, 0, 1), 0.3);
-  }
-  if (!prevFrame) prevFrame = new Float32Array(64 * 48);
-  for (let i = 0; i < img.length; i += 4)
-    prevFrame[i >> 2] = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
-}, 100);
-
 // ---------- (3) 隙間と方法の開示 ----------
 const FLUX_POOL = [
   '地 図 は 領 土 で は な い', 'THIS IS A MODEL, NOT A PROOF.',
@@ -676,20 +635,17 @@ function fluxShow(text, now){
 // ---------- state update ----------
 let brokeShown = false;
 function updateState(dt, now){
-  analyzeMic();
-  // (2) 環境 → 観測の複雑性（テクスチャ）。データの場には触れない
-  const target = micReady
-    ? 0.12 + st.micRms * 3.5 + st.micCent * 0.35 + st.motion * 0.7
-    : 0.35 + 0.15 * Math.sin(now * 0.05) + st.motion * 0.7;
+  // (2) 観測者の内なる気候 → 観測の複雑性（テクスチャ）。データの場には触れない
+  const target = 0.34 + 0.20 * Math.sin(now * 0.031) + 0.12 * Math.sin(now * 0.011 + 1.7);
   st.complexity = lerp(st.complexity, clamp(target, 0.05, 1), 1 - Math.exp(-dt / 1.6));
 
-  const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
+  const drain = 0.045 + st.complexity * 0.13;
   const recover = st.fermata ? 0.38 : 0.065;
   st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
   st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
   st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
-  st.vis = lerp(st.vis, clamp(1 + st.motion * 0.8 + st.complexity * 0.45, 1, 2.1), 1 - Math.exp(-dt / 1.2));
-  const attnT = 1 - clamp(st.motion * 2 + st.micRms * 6, 0, 1);
+  st.vis = lerp(st.vis, clamp(1 + st.complexity * 0.55, 1, 1.9), 1 - Math.exp(-dt / 1.2));
+  const attnT = st.fermata ? 1 : clamp(1 - st.complexity * 0.6, 0, 1);
   st.attn += (attnT - st.attn) * (1 - Math.exp(-dt / 30));
 
   if (!st.fermata && now - epochT > EPOCH_SEC){
@@ -869,17 +825,23 @@ function draw(now, tSec){
   // 論文引用: 音になった主張の出典。静かに現れ、揺らぎながら消える（うるさくしない）
   for (const c of citations){
     const age = now - c.at;
-    const k = age < 1.8 ? age / 1.8 : (age > c.life - 2.5 ? Math.max(0, (c.life - age) / 2.5) : 1);
-    const a = k * 0.46;
+    const rise = clamp(age / 2.4, 0, 1);                       // 浮上（ぼやけ→輪郭）
+    const k = age < 2.4 ? rise : (age > c.life - 3 ? Math.max(0, (c.life - age) / 3) : 1);
+    const a = k * 0.5;
     if (a <= 0.01) continue;
     const dx = Math.sin(age * 0.5 + c.ph) * 1.4;
+    const y = c.y - rise * 14 - Math.max(0, age - 2.4) * 1.1;  // 水面へ上がり、やがて漂う
     g2.save();
-    g2.font = '12px "Hiragino Mincho ProN", serif';
+    g2.font = '12.5px "Hiragino Mincho ProN", serif';
     g2.textAlign = 'left';
-    g2.shadowColor = 'rgba(210,210,200,0.55)';
-    g2.shadowBlur = 5 + Math.sin(age * 0.8 + c.ph) * 2;   // 呼吸する滲み
+    g2.shadowColor = 'rgba(210,210,200,0.6)';
+    g2.shadowBlur = (13 - rise * 10) + Math.sin(age * 0.8 + c.ph) * 1.6;   // 深いほど滲む
     g2.fillStyle = `rgba(214,210,198,${a})`;
-    g2.fillText(c.text, 16 + dx, c.y - age * 2.4);
+    g2.fillText(c.text, 16 + dx, y);
+    const tw = g2.measureText(c.text).width;
+    g2.shadowBlur = 0;
+    g2.strokeStyle = `rgba(214,210,198,${a * 0.4})`; g2.lineWidth = 0.6;
+    g2.beginPath(); g2.moveTo(16 + dx, y + 5); g2.lineTo(16 + dx + tw * rise, y + 5); g2.stroke();
     g2.restore();
   }
 
@@ -964,47 +926,73 @@ function drawCurve(now){
 }
 
 // ---------- 知識グラフ（俯瞰の地図 = 凡例） ----------
+function graphPositions(){
+  const x0 = W * 0.27, w = W * 0.46;
+  const yTop = 44, yH = fieldTop() - 96;
+  const byLayer = [[], [], [], []];
+  CONCEPTS.forEach((c, i) => byLayer[LAYER[ROLE[c.id]]].push(i));
+  const pos = [];
+  byLayer.forEach((arr, L) => arr.forEach((ci, k) => {
+    pos[ci] = { x: x0 + (L / 3) * w, y: yTop + yH * ((k + 1) / (arr.length + 1)) };
+  }));
+  return { pos, x0, w, yTop, yH };
+}
+function arrow(p, q, col, lw){
+  const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L;
+  const x1 = p.x + ux * 7, y1 = p.y + uy * 7;
+  const x2 = q.x - ux * 10, y2 = q.y - uy * 10;
+  g2.strokeStyle = col; g2.lineWidth = lw;
+  g2.beginPath(); g2.moveTo(x1, y1); g2.lineTo(x2, y2); g2.stroke();
+  const ah = 5 + lw * 1.1;
+  g2.fillStyle = col;
+  g2.beginPath();
+  g2.moveTo(x2, y2);
+  g2.lineTo(x2 - ux * ah - uy * ah * 0.45, y2 - uy * ah + ux * ah * 0.45);
+  g2.lineTo(x2 - ux * ah + uy * ah * 0.45, y2 - uy * ah - ux * ah * 0.45);
+  g2.closePath(); g2.fill();
+}
+// 有向非巡回グラフ（DAG）: 曝露 → 治療 → 媒介 → アウトカム。因果の向きが矢印で読める
 function drawGraph(now){
   if (!field) return;
-  const cx = W / 2, cy = fieldTop() * 0.52, R = Math.min(W * 0.22, fieldTop() * 0.34);
-  const pos = CONCEPTS.map((c, i) => {
-    const a = -Math.PI / 2 + i * (Math.PI * 2 / CONCEPTS.length);
-    return { x: cx + Math.cos(a) * R * 1.7, y: cy + Math.sin(a) * R * 0.8 };
-  });
-  // エッジ
+  const { pos, x0, w, yTop, yH } = graphPositions();
+  // 層の見出し
+  g2.font = '8px monospace'; g2.textAlign = 'center';
+  for (let L = 0; L < 4; L++){
+    g2.fillStyle = 'rgba(220,220,220,0.16)';
+    g2.fillText(LAYER_LABEL[L], x0 + (L / 3) * w, yTop - 16);
+  }
+  // 有向辺
   for (const e of field.edges){
-    const p = pos[e.ai], q = pos[e.bi];
     const lit = clamp(1 - (now - e.litAt) / 0.8, 0, 1);
     const col = STATUS_COL[e.status];
-    g2.strokeStyle = `rgba(${col},${0.10 + e.w * 0.28 + lit * 0.5})`;
-    g2.lineWidth = 0.4 + e.w * 2.2 + lit * 1.2;
-    g2.beginPath(); g2.moveTo(p.x, p.y); g2.lineTo(q.x, q.y); g2.stroke();
+    arrow(pos[e.ai], pos[e.bi], `rgba(${col},${0.10 + e.w * 0.26 + lit * 0.5})`, 0.4 + e.w * 1.8 + lit * 1.1);
   }
   // ノード（＝凡例。発音で点灯し、対応が学習される）
   g2.textAlign = 'center';
   CONCEPTS.forEach((c, i) => {
-    const p = pos[i];
+    const q = pos[i];
     const lit = clamp(1 - (now - c.litAt) / 0.7, 0, 1);
     const isRoot = i === field.rootIx;
     g2.fillStyle = `rgba(${c.col},${0.22 + lit * 0.75})`;
-    g2.beginPath(); g2.arc(p.x, p.y, 2.6 + lit * 5 + (isRoot ? 1.6 : 0), 0, 7); g2.fill();
+    g2.beginPath(); g2.arc(q.x, q.y, 2.6 + lit * 5 + (isRoot ? 1.6 : 0), 0, 7); g2.fill();
     if (isRoot){
       g2.strokeStyle = `rgba(${c.col},${0.35 + lit * 0.4})`; g2.lineWidth = 0.8;
-      g2.beginPath(); g2.arc(p.x, p.y, 9, 0, 7); g2.stroke();
+      g2.beginPath(); g2.arc(q.x, q.y, 9, 0, 7); g2.stroke();
     }
     g2.font = `${lit > 0.2 ? 'bold ' : ''}10px "Hiragino Mincho ProN", serif`;
     g2.fillStyle = `rgba(${c.col},${0.35 + lit * 0.6})`;
-    g2.fillText(c.jp, p.x, p.y - 12);
+    g2.fillText(c.jp, q.x, q.y - 12);
     g2.font = '7px monospace';
-    g2.fillStyle = `rgba(${c.col},${0.18 + lit * 0.4})`;
-    g2.fillText(`h${c.partial}`, p.x, p.y + 15);
+    g2.fillStyle = `rgba(${c.col},${0.16 + lit * 0.4})`;
+    g2.fillText(`h${c.partial}`, q.x, q.y + 15);
   });
   g2.textAlign = 'left'; g2.font = '9px monospace';
   g2.fillStyle = 'rgba(220,220,220,0.4)';
-  g2.fillText(`${movement.no}. ${movement.title} — ${field.dec.year} · 重心=${CONCEPTS[field.rootIx].jp}`, 14, fieldTop() - 26);
+  g2.fillText(`${movement.no}. ${movement.title}`, 14, fieldTop() - 26);
   g2.font = '8px monospace';
   g2.fillStyle = 'rgba(220,220,220,0.26)';
-  g2.fillText('確立 —  形成 —  係争 —  逆転 —', 14, fieldTop() - 12);
+  g2.fillText(`${field.dec.year} · 重心=${CONCEPTS[field.rootIx].jp} · 確立 — 形成 — 係争 — 逆転 —`, 14, fieldTop() - 12);
 }
 
 // ---------- 大譜表リボン ----------
@@ -1129,7 +1117,6 @@ function drawHUD(){
   g2.fillText(
     `記録 ${caught}·漏${missedN}·失${droppedN}·撤${retracted}   ` +
     `C ${st.conc.toFixed(2)}   X ${st.complexity.toFixed(2)}   A ${st.attn.toFixed(2)}   ` +
-    `MIC ${micReady ? (st.micRms * 100).toFixed(0) : '--'}  CAM ${camReady ? (st.motion * 100).toFixed(0) : '--'}   ` +
     `${line.dir > 0 ? '→' : '←'}${st.fermata ? ' 休' : ''}`, 14, 22);
 }
 
@@ -1161,14 +1148,14 @@ window.addEventListener('pointerup', () => {
 });
 
 // ---------- buttons ----------
-const bGrain = document.getElementById('bGrain');
 const bSound = document.getElementById('bSound');
 const bFull  = document.getElementById('bFull');
 const bGlow  = document.getElementById('bGlow');
 const bGraph = document.getElementById('bGraph');
+const bHome  = document.getElementById('bHome');
+bHome.onclick  = () => location.reload();   // 目立たない帰還点
 bGlow.onclick  = () => { glowOn = !glowOn; bGlow.classList.toggle('on', glowOn); };
 bGraph.onclick = () => { graphOn = !graphOn; bGraph.classList.toggle('on', graphOn); };
-bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
 bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
 const docEl = document.documentElement;
 if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen) bFull.style.display = 'none';
@@ -1197,30 +1184,6 @@ async function startPiece(mi){
   master.connect(limiter).connect(ctx.destination);
   startNoiseFloor();
   startDroneBed();
-
-  const AUDIO_C = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
-  const VIDEO_C = { width: 320, height: 240, facingMode: 'user' };
-  let micStream = null, camStream = null;
-  try { micStream = camStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C, video: VIDEO_C }); }
-  catch (err) {
-    try { micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C }); }
-    catch (e) { console.warn('mic unavailable:', e.message); }
-    try { camStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_C }); }
-    catch (e) { console.warn('camera unavailable:', e.message); }
-  }
-  if (micStream && micStream.getAudioTracks().length){
-    const src = ctx.createMediaStreamSource(micStream);
-    analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
-    timeData = new Float32Array(analyser.fftSize);
-    src.connect(analyser);
-    setupRing(src);
-    micReady = true;
-  }
-  if (camStream && camStream.getVideoTracks().length){
-    camV.srcObject = camStream;
-    await camV.play().catch(()=>{});
-    camReady = true;
-  }
 
   running = true;
   const t0 = ctx.currentTime;
