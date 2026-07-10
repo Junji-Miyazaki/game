@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SCORE FOR THE IMPOSSIBLE II.6 — 知識のグラフ</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#050505; touch-action:none;
+              font-family:"Hiragino Mincho ProN","Yu Mincho",serif; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #cam { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
+  #btns { position:fixed; top:10px; right:10px; display:flex; gap:8px; z-index:20; }
+  .btn { color:#666; border:1px solid #333; padding:6px 12px; font-size:11px;
+         letter-spacing:.1em; cursor:pointer; user-select:none; -webkit-user-select:none;
+         background:rgba(5,5,5,.7); }
+  .btn.on { color:#ddd; border-color:#777; }
+  #overlay { position:fixed; inset:0; z-index:30; background:#050505;
+             display:flex; flex-direction:column; align-items:center; justify-content:center;
+             color:#ddd; text-align:center; padding:24px; }
+  #overlay h1 { font-size:clamp(16px,3.4vw,28px); letter-spacing:.4em; font-weight:normal; margin-bottom:8px; }
+  #overlay h2 { font-size:clamp(11px,2vw,15px); letter-spacing:.55em; color:#777; font-weight:normal; margin-bottom:36px; }
+  #overlay p  { font-size:clamp(11px,1.5vw,13px); line-height:2.2; color:#999; max-width:40em; margin-bottom:10px; }
+  #overlay .disc { color:#5c5343; font-size:11px; line-height:2; margin-top:24px; max-width:40em; }
+  #startBtn { margin-top:36px; border:1px solid #777; padding:14px 50px; letter-spacing:.5em;
+              font-size:13px; cursor:pointer; color:#ddd; }
+  #startBtn:active { background:#ddd; color:#050505; }
+  #permNote { margin-top:16px; font-size:10px; color:#555; letter-spacing:.15em; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<video id="cam" playsinline muted autoplay></video>
+<div id="btns" style="display:none">
+  <div class="btn on" id="bGlow">輝</div>
+  <div class="btn on" id="bGraph">地図</div>
+  <div class="btn on" id="bGrain">具体音</div>
+  <div class="btn" id="bFull">全画面</div>
+  <div class="btn on" id="bSound">音</div>
+</div>
+
+<div id="overlay">
+  <h1>SCORE FOR THE IMPOSSIBLE</h1>
+  <h2>II.6 知識のグラフ</h2>
+  <p>七つの概念が、それぞれの声を持つ。<br>ふたつの概念が結ばれるとき——それが医学の主張である——二つの声が音程を作る。</p>
+  <p>確立された主張は協和へ収束し、執拗に反復される。<br>係争中の主張は微分音のうなりを生む。定説が覆るとき、音程は崩壊する。</p>
+  <p>だが観測者は、そのすべてを聴き取れない。<br>漏れた音は淡い休符に、記録に失敗した音は赤い休符になる。</p>
+  <div class="disc">
+    この作品は医学研究の営みの<b>模型</b>である。<br>
+    データは二次資料から手作業で構成した心臓病学の7概念・1950–2020年の関係グラフであり、文献そのものではない。<br>
+    データと音のあいだの写像はすべて作者の選択である。作品は何も証明しない。<br>
+    地図は領土ではない。その隙間に、音楽がある。
+  </div>
+  <div id="startBtn">観 測 を 開 始</div>
+  <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても動作します）</div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   SCORE FOR THE IMPOSSIBLE — II.6 知識のグラフ  (v2.6)
+   設計の3制約（DESIGN_v2.6.md）:
+   (1) 声は7つ以下・ラベル同期（発音でノードと凡例が点灯し、対応が学習される）
+   (2) データ→場 / 観測→質感 の二軸分離
+       データ（知識グラフ）は「何が鳴りうるか」だけを決める:
+         概念のピッチ配置（協和度）・重心音・微分音の傷・反復の執拗さ
+       観測エンジンは「どう鳴り損なうか」だけを決める:
+         捕捉漏れ・記録失敗・タイミングの揺れ・音高の滑り・入れ子連符の複雑性
+       => 複雑性は常に観測の質感であり、エビデンスの記号ではない
+   (3) 必然性を主張しない。方法とデータの模型性を常時開示する
+   ================================================================ */
+
+// ---------- utils ----------
+const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const rng   = Math.random;
+const rngi  = n=>Math.floor(rng()*n);
+function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+
+// ---------- global ----------
+let ctx=null, master=null, limiter=null, analyser=null;
+let micReady=false, camReady=false, running=false;
+let soundOn=true, grainOn=true, glowOn=true, graphOn=true;
+
+const st = {
+  complexity: 0.2,   // 環境由来: 観測の複雑性（テクスチャ）
+  conc: 1.0, fatigue: 0,
+  micRms: 0, micCent: 0, motion: 0,
+  fermata: false, errRecent: 0, vis: 1, attn: 0.5,
+};
+
+// ================================================================
+//  データ層 = 場（何が鳴りうるか）
+//  --- MODEL v0: 二次資料から手作業で構成した模型。文献そのものではない ---
+// ================================================================
+const DISCLOSURE = 'MODEL v0 · 心臓病学 7概念 · 1950–2020 · 手作業による二次資料からの模型。文献そのものではない。';
+
+// 概念 = 7声。identity = 音色（倍音）+ 音域帯 + 色。ピッチはエポックの場が決める
+const CONCEPTS = [
+  { id:'SFA',  jp:'飽和脂肪',      en:'Saturated Fat', partial:1, band: 0, col:'232,224,204' },
+  { id:'CHOL', jp:'コレステロール', en:'Cholesterol',   partial:3, band: 1, col:'210,220,232' },
+  { id:'CVD',  jp:'心疾患',        en:'Heart Disease', partial:2, band:-2, col:'232,190,180' },
+  { id:'SMOK', jp:'喫煙',          en:'Smoking',       partial:5, band: 2, col:'200,200,190' },
+  { id:'STAT', jp:'スタチン',      en:'Statins',       partial:4, band: 1, col:'190,220,205' },
+  { id:'SALT', jp:'塩分',          en:'Sodium',        partial:7, band:-1, col:'225,215,225' },
+  { id:'SUGR', jp:'糖',            en:'Sugar',         partial:6, band: 0, col:'230,215,180' },
+];
+const IX = {}; CONCEPTS.forEach((c,i)=>IX[c.id]=i);
+
+// 状態: establishing 形成中 / established 確立 / contested 係争 / reversed 逆転
+// エッジ = [概念a, 概念b, 結合強度w, 状態]
+const DECADES = [
+  { year:1950, root:'CVD', edges:[
+    ['SMOK','CVD',0.45,'establishing'], ['CHOL','CVD',0.40,'establishing'],
+    ['SFA','CHOL',0.30,'establishing'] ] },
+  { year:1960, root:'CHOL', edges:[
+    ['SFA','CHOL',0.60,'establishing'], ['CHOL','CVD',0.60,'establishing'],
+    ['SMOK','CVD',0.65,'establishing'], ['SALT','CVD',0.30,'establishing'] ] },
+  { year:1970, root:'SFA', edges:[
+    ['SFA','CHOL',0.80,'established'], ['CHOL','CVD',0.80,'established'],
+    ['SFA','CVD',0.70,'establishing'], ['SMOK','CVD',0.75,'established'],
+    ['SALT','CVD',0.40,'contested'] ] },
+  { year:1980, root:'SFA', edges:[
+    ['SFA','CVD',0.85,'established'], ['SFA','CHOL',0.85,'established'],
+    ['CHOL','CVD',0.85,'established'], ['SMOK','CVD',0.85,'established'],
+    ['STAT','CHOL',0.40,'establishing'] ] },
+  { year:1990, root:'STAT', edges:[
+    ['STAT','CHOL',0.75,'established'], ['STAT','CVD',0.70,'established'],
+    ['SFA','CVD',0.80,'established'], ['SMOK','CVD',0.90,'established'],
+    ['SALT','CVD',0.50,'contested'] ] },
+  { year:2000, root:'STAT', edges:[
+    ['STAT','CVD',0.85,'established'], ['STAT','CHOL',0.85,'established'],
+    ['SFA','CVD',0.60,'contested'], ['SMOK','CVD',0.90,'established'],
+    ['SUGR','CVD',0.40,'establishing'] ] },
+  { year:2010, root:'SUGR', edges:[
+    ['SFA','CVD',0.40,'reversed'], ['SUGR','CVD',0.60,'establishing'],
+    ['STAT','CVD',0.85,'established'], ['STAT','CHOL',0.50,'contested'],
+    ['SALT','CVD',0.40,'contested'], ['SMOK','CVD',0.90,'established'] ] },
+  { year:2020, root:'SUGR', edges:[
+    ['SUGR','CVD',0.70,'establishing'], ['SFA','CVD',0.30,'reversed'],
+    ['STAT','CVD',0.80,'established'], ['SMOK','CVD',0.90,'established'],
+    ['SALT','CVD',0.35,'contested'], ['CHOL','CVD',0.60,'established'] ] },
+];
+const EPOCH_SEC = 38;   // 1エポック（10年）の長さ。全周 約5分でループ
+
+// 協和順のスロット（根音からの半音）: 完全1・5・4・長3・長6・短3・短6 → 不協和
+const SLOTS = [0, 7, 5, 4, 9, 3, 8, 2, 10, 1, 6, 11];
+
+let epochIx = 0, epochT = 0, field = null;
+
+// 場の構築: 結合の強い概念ほど根音に協和し、係争・逆転は微分音の傷を負う
+function buildField(dec){
+  const score = CONCEPTS.map(()=>0), detune = CONCEPTS.map(()=>0);
+  const edges = [];
+  for (const [a,b,w,status] of dec.edges){
+    const ai = IX[a], bi = IX[b];
+    score[ai] += w; score[bi] += w;
+    const d = status === 'reversed' ? 2 : status === 'contested' ? 1 : 0;
+    detune[ai] = Math.max(detune[ai], d); detune[bi] = Math.max(detune[bi], d);
+    edges.push({ ai, bi, w, status, nextT: 0, litAt: -99 });
+  }
+  const rootIx = IX[dec.root];
+  const ranked = CONCEPTS.map((c,i)=>i)
+    .filter(i => i !== rootIx)
+    .sort((x,y) => score[y] - score[x]);
+  const order = [rootIx, ...ranked];
+  const pcs = CONCEPTS.map(()=>0);
+  order.forEach((ci, k) => { pcs[ci] = SLOTS[k % SLOTS.length]; });
+  // 48EDO steps: 半音=4。identity の音域帯 band と、係争の微分音の傷
+  const steps = CONCEPTS.map((c,i) =>
+    pcs[i] * 4 + c.band * 48 + detune[i] * (i % 2 ? 1 : -1));
+  return { dec, edges, score, detune, steps, rootIx,
+           gravity: steps[rootIx] - 48 };
+}
+const conceptSteps = i => field.steps[i];
+
+// ---------- 記譜 ----------
+const DYN_NAMES = ['pppp','ppp','pp','p','mf','f','ff','ffff'];
+const DYN_GAIN  = [0.030,0.050,0.080,0.130,0.200,0.300,0.430,0.620];
+const LETTER_OF = [0,0,1,1,2,3,3,4,4,5,5,6];
+const SHARP_OF  = [0,1,0,1,0,0,1,0,1,0,1,0];
+const stepFreq = s => 220 * Math.pow(2, s/48);
+const beatLen = () => 60 / 54;
+function valOf(lenSec){
+  const r = lenSec / beatLen();
+  return r >= 3 ? 0 : r >= 1.5 ? 1 : r >= 0.75 ? 2 : r >= 0.375 ? 3 : r >= 0.1875 ? 4 : 5;
+}
+function notation(steps, lenSec){
+  const semis = Math.round(steps / 4);
+  const r = steps - semis * 4;
+  const n = 57 + semis;
+  const pc12 = ((n % 12) + 12) % 12;
+  const oct = Math.floor(n / 12) - 1;
+  return { n, dia: oct * 7 + LETTER_OF[pc12], sharp: SHARP_OF[pc12], r, val: valOf(lenSec),
+           hz: 220 * Math.pow(2, steps / 48), ms: Math.round(lenSec * 1000) };
+}
+
+// ---------- state ----------
+let particles = [], ribbon = [], floatEqs = [], bonds = [];
+let caught = 0, missedN = 0, droppedN = 0, retracted = 0;
+let pulseGenT = 0, graveT = 0, pulseMarks = [], flashes = [];
+const RIBBON_FLOW = 30;
+const PX_PER_SEC = 62, VL = 22;
+const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);
+const line = { x: -10, dir: 1, bornAt: 0 };
+let W = 0, H = 0, DPR = 1;
+const spawnX = () => W * 0.99;
+const fieldTop = () => H * 0.20;
+const fieldBottom = () => H - 176;
+const stepY = s => (fieldTop() + fieldBottom()) / 2 - s * ((fieldBottom() - fieldTop()) * 0.42 / 150);
+
+// ================================================================
+//  観測層 = 質感（どう鳴り損なうか）— データには一切触らせない
+// ================================================================
+function perform(p){
+  const depthN = clamp(p.depth / 4, 0, 1);           // depth は環境由来（複雑性=観測の質感）
+  const err = (1 - st.conc) * (0.35 + 0.65 * depthN);
+  p.err = err;
+  p.sigma  = err * 0.09;
+  p.offset = gauss() * p.sigma;
+  p.dropped = rng() < err * 0.42;
+  p.slip   = (rng() < err * 0.5) ? (rngi(2)+1) * (rng()<.5?-1:1) : 0;
+  p.gainMul = clamp(1 + gauss() * err * 0.6, 0.15, 1.8);
+}
+const pCatch = p => clamp((0.48 + p.z * 0.28) * (0.5 + st.conc * 0.5), 0.15, 0.96);
+
+function pushRest(lenSec, kind, at){
+  ribbon.push({ rest: true, kind, val: valOf(lenSec), ms: Math.round(lenSec * 1000), at });
+  if (ribbon.length > 260) ribbon.shift();
+}
+
+function observe(p, at){
+  p.crossed = true; p.obsAt = at;
+  const lenSec = p.dur;
+  if (rng() >= pCatch(p)){ p.missed = true; missedN++; pushRest(lenSec, 'miss', at); return; }
+  perform(p);
+  caught++;
+  const C = CONCEPTS[p.ci];
+  C.litAt = at;                                        // (1) ラベル同期
+  if (p.edge) p.edge.litAt = at;
+  if (p.dropped){ droppedN++; pushRest(lenSec, 'drop', at); return; }
+  const sounded = p.steps + p.slip;
+  scheduleAudio(p, at + Math.max(0, p.offset), sounded, lenSec);
+  const note = notation(sounded, lenSec);
+  note.dyn = p.dyn; note.at = at; note.col = C.col;
+  ribbon.push(note);
+  if (ribbon.length > 260) ribbon.shift();
+  if (rng() < 0.10)
+    floatEqs.push({ x: p.px, y: p.py, text: C.en, at, col: C.col });
+}
+
+// ================================================================
+//  発話 = エッジ（主張）が音程になる。確立ほど執拗に反復（ミニマル）
+// ================================================================
+const TALEA = [3, 5, 4, 7, 6];
+let taleaIx = 0;
+
+function utter(edge, now){
+  const { ai, bi, w, status } = edge;
+  // 撤回: 係争・逆転の主張は、まれに記録そのものが破綻する
+  if ((status === 'contested' || status === 'reversed') && rng() < 0.10){
+    retracted++;
+    for (let k = 0; k < 3 + rngi(3); k++) pushRest(0.2, 'drop', now + k * 0.12);
+    fluxShow('RETRACTED.', now);
+    return;
+  }
+  const established = w >= 0.6 && status !== 'reversed';
+  const reps = established ? 3 + rngi(3) : 1 + rngi(2);
+  const z = clamp(0.35 + w * 0.5 + gauss() * 0.06, 0.08, 1);
+  const dyn = clamp(2 + Math.round(w * 4), 0, 7);
+  // 観測の複雑性（環境由来）: 入れ子の深さは環境が決める。データではない
+  const depth = Math.round(st.complexity * 3.4);
+  let t = now + 0.05;
+  for (let rep = 0; rep < reps; rep++){
+    const n = TALEA[(taleaIx + rep) % TALEA.length];   // 拍の分解合成（タレア）
+    const slot = beatLen() * (1 + rngi(2)) / n;
+    for (let i = 0; i < n; i++){
+      const ci = (i % 2 === 0) ? ai : bi;              // 二声の交替 = 音程が聴こえる
+      const sub = (depth > 1 && rng() < 0.25 * st.complexity) ? 2 : 1;  // 観測の複雑性
+      for (let s = 0; s < sub; s++){
+        const C = CONCEPTS[ci];
+        particles.push({
+          ci, edge, t: t + i * slot + s * slot * 0.45,
+          steps: conceptSteps(ci), z, dyn, depth,
+          dur: clamp(slot * 0.8 / sub, 0.03, 1.2),
+          partial: C.partial, crossed: false,
+          px: undefined, py: undefined,
+        });
+      }
+    }
+    t += slot * n + 0.02;
+  }
+  taleaIx++;
+  // 結合強度が高いほど頻繁に反復される（執拗なライトモチーフ）
+  edge.nextT = t + lerp(6.5, 0.9, w) + rng() * 1.2;
+}
+
+function schedulerTick(){
+  if (!running || !field) return;
+  const now = ctx.currentTime;
+  if (!st.fermata){
+    for (const e of field.edges){
+      if (e.nextT < now) e.nextT = now + rng() * 1.5;
+      if (e.nextT < now + 1.5 && particles.length < 420) utter(e, e.nextT);
+    }
+    if (pulseGenT < now) pulseGenT = now + 0.2;
+    while (pulseGenT < now + 2){
+      pulseMarks.push({ t: pulseGenT, z: 0.55, crossed: false });
+      pulseGenT += beatLen();
+    }
+    if (graveT < now) graveT = now + 2;
+    while (graveT < now + 3){ scheduleGravity(graveT); graveT += beatLen() * (8 + rngi(9)); }
+  }
+  particles = particles.filter(p =>
+    (now - p.t) < 90 && (!p.crossed || p.missed || now - p.obsAt < 10) &&
+    (p.px === undefined || p.px > -60));
+  pulseMarks = pulseMarks.filter(m => !m.crossed && m.x !== undefined ? m.x > -20 : (now - m.t) < 40);
+  flashes = flashes.filter(f => now - f.at < 0.6);
+  floatEqs = floatEqs.filter(f => now - f.at < 3.2);
+  bonds = bonds.filter(b => now - b.at < 0.5);
+  ribbon = ribbon.filter(n => W - 24 - (now - n.at) * RIBBON_FLOW > 46);
+}
+
+// ---------- 時代の交代 ----------
+function advanceEpoch(now, announce){
+  field = buildField(DECADES[epochIx]);
+  epochT = now;
+  if (announce){
+    const d = DECADES[epochIx];
+    fluxShow(`${d.year}s · ${CONCEPTS[IX[d.root]].jp}`, now);
+    // パラダイムの移動: 重心音がたわむ
+    bendGravity(now);
+  }
+}
+
+// ---------- audio ----------
+let activeVoices = 0;
+const MAX_VOICES = 64;
+function scheduleAudio(p, at, steps, lenSec){
+  if (!soundOn || activeVoices >= MAX_VOICES) return;
+  activeVoices++;
+  const f = clamp(stepFreq(steps), 40, 4300);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  o.onended = () => { activeVoices--; };
+  const g = ctx.createGain();
+  const peak = DYN_GAIN[p.dyn] * p.gainMul * lerp(0.5, 1.1, p.z);
+  const t = Math.max(at, ctx.currentTime + 0.01);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.004);
+  g.gain.setValueAtTime(peak, t + lenSec);
+  g.gain.linearRampToValueAtTime(0, t + lenSec + 0.01);
+  o.connect(g);
+  let o2 = null;
+  if (p.partial > 1 && f * p.partial < 8200){        // 音色 = 概念の同一性
+    o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * p.partial;
+    const g2n = ctx.createGain(); g2n.gain.value = 0.20;
+    o2.connect(g2n).connect(g);
+  }
+  g.connect(master);
+  o.start(t); o.stop(t + lenSec + 0.03);
+  if (o2){ o2.start(t); o2.stop(t + lenSec + 0.03); }
+  if (grainOn && micReady && p.dyn >= 6 && rng() < 0.5) playGrain(t, peak);
+}
+function schedulePulse(at){
+  if (!soundOn || !field) return;
+  const t = Math.max(at, ctx.currentTime + 0.005);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.value = clamp(stepFreq(field.gravity + 96), 200, 3000);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.012, t + 0.001);
+  g.gain.setValueAtTime(0.012, t + 0.008);
+  g.gain.linearRampToValueAtTime(0, t + 0.011);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + 0.03);
+}
+// 重心音 = パラダイムの中心概念の根音（引力）
+let gravOsc = null, gravGain = null;
+function scheduleGravity(at){
+  if (!soundOn || !field) return;
+  const t = Math.max(at, ctx.currentTime + 0.01);
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.value = clamp(stepFreq(field.gravity), 40, 400);
+  const g = ctx.createGain();
+  const peak = 0.030 + st.attn * 0.035;
+  const len = 2 + rng() * 2;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.4);
+  g.gain.setValueAtTime(peak, t + len);
+  g.gain.linearRampToValueAtTime(0, t + len + 0.6);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + len + 0.7);
+}
+// パラダイム交代: 重心音が旧→新へたわむ（逆転劇の音響的な蝶番）
+function bendGravity(now){
+  if (!soundOn || !field) return;
+  const o = ctx.createOscillator(); o.type = 'sine';
+  const from = clamp(stepFreq(field.gravity + 5), 40, 400);
+  const to = clamp(stepFreq(field.gravity), 40, 400);
+  o.frequency.setValueAtTime(from, now);
+  o.frequency.exponentialRampToValueAtTime(to, now + 3.2);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.055, now + 0.8);
+  g.gain.linearRampToValueAtTime(0, now + 3.6);
+  o.connect(g).connect(master);
+  o.start(now); o.stop(now + 3.7);
+}
+function startNoiseFloor(){
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = rng() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300;
+  const g = ctx.createGain(); g.gain.value = 0.006;
+  src.connect(lp).connect(g).connect(master);
+  src.start();
+}
+// mic granular
+const RING_SEC = 4;
+let ring = null, ringPos = 0, ringLen = 0, grainGain = null;
+function setupRing(micSrc){
+  ringLen = Math.floor(ctx.sampleRate * RING_SEC);
+  ring = new Float32Array(ringLen);
+  const sp = ctx.createScriptProcessor(2048, 1, 1);
+  sp.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++){ ring[ringPos] = inp[i]; ringPos = (ringPos + 1) % ringLen; }
+  };
+  micSrc.connect(sp);
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  sp.connect(mute).connect(ctx.destination);
+  grainGain = ctx.createGain(); grainGain.gain.value = 0.45;
+  grainGain.connect(master);
+}
+function playGrain(when, peak){
+  if (!ring) return;
+  const len = Math.floor(ctx.sampleRate * (0.03 + rng() * 0.1));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  const start = (ringPos - len - rngi(ctx.sampleRate * 2) + ringLen * 2) % ringLen;
+  for (let i = 0; i < len; i++){
+    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / len);
+    d[i] = ring[(start + i) % ringLen] * w;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  src.playbackRate.value = Math.pow(2, (rng() * 2 - 1) * 0.6);
+  const g = ctx.createGain(); g.gain.value = clamp(peak * 0.5, 0.02, 0.3);
+  src.connect(g).connect(grainGain);
+  src.start(Math.max(when, ctx.currentTime + 0.01));
+}
+let droneOsc = null, droneGain = null;
+function droneOn(){
+  droneOff();
+  if (!field) return;
+  droneOsc = ctx.createOscillator(); droneOsc.type = 'sine';
+  droneOsc.frequency.value = clamp(stepFreq(field.gravity), 40, 400);
+  droneGain = ctx.createGain();
+  droneGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  droneGain.gain.exponentialRampToValueAtTime(0.07, ctx.currentTime + 0.8);
+  droneOsc.connect(droneGain).connect(master);
+  droneOsc.start();
+}
+function droneOff(){
+  if (!droneOsc) return;
+  const o = droneOsc, g = droneGain;
+  g.gain.cancelScheduledValues(ctx.currentTime);
+  g.gain.setValueAtTime(g.gain.value, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+  o.stop(ctx.currentTime + 0.7);
+  droneOsc = droneGain = null;
+}
+
+// ---------- inputs ----------
+const freqData = new Uint8Array(512);
+let timeData = null;
+function analyzeMic(){
+  if (!analyser) return;
+  analyser.getFloatTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+  st.micRms = lerp(st.micRms, Math.sqrt(sum / timeData.length), 0.25);
+  analyser.getByteFrequencyData(freqData);
+  let e = 0, ei = 0;
+  for (let i = 0; i < freqData.length; i++){ e += freqData[i]; ei += freqData[i] * i; }
+  if (e > 500) st.micCent = lerp(st.micCent, (ei / e) / freqData.length * 2, 0.15);
+}
+const camV = document.getElementById('cam');
+const camCv = document.createElement('canvas'); camCv.width = 64; camCv.height = 48;
+const camCtx = camCv.getContext('2d', { willReadFrequently: true });
+let prevFrame = null;
+setInterval(()=>{
+  if (!camReady || camV.videoWidth === 0) return;
+  camCtx.drawImage(camV, 0, 0, 64, 48);
+  const img = camCtx.getImageData(0, 0, 64, 48).data;
+  if (prevFrame){
+    let d = 0;
+    for (let i = 0; i < img.length; i += 4){
+      const l = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+      d += Math.abs(l - prevFrame[i >> 2]);
+    }
+    st.motion = lerp(st.motion, clamp(d / (64 * 48) / 18, 0, 1), 0.3);
+  }
+  if (!prevFrame) prevFrame = new Float32Array(64 * 48);
+  for (let i = 0; i < img.length; i += 4)
+    prevFrame[i >> 2] = img[i] * 0.3 + img[i+1] * 0.6 + img[i+2] * 0.1;
+}, 100);
+
+// ---------- (3) 隙間と方法の開示 ----------
+const FLUX_POOL = [
+  '地 図 は 領 土 で は な い', 'THIS IS A MODEL, NOT A PROOF.',
+  'THE MAPPING IS A CHOICE.', 'EVERY SILENCE IS EXACT.',
+  '知 る と は 取 り こ ぼ す こ と', 'WHO WAS NOT RECORDED?',
+  'CONSONANCE IS NOT TRUTH.',
+];
+let fluxMsg = null, fluxLastAt = -999, fluxTimer = 0;
+function fluxShow(text, now){
+  if (now - fluxLastAt < 12) return;
+  fluxMsg = { text, at: now }; fluxLastAt = now;
+}
+
+// ---------- state update ----------
+let brokeShown = false;
+function updateState(dt, now){
+  analyzeMic();
+  // (2) 環境 → 観測の複雑性（テクスチャ）。データの場には触れない
+  const target = micReady
+    ? 0.12 + st.micRms * 3.5 + st.micCent * 0.35 + st.motion * 0.7
+    : 0.35 + 0.15 * Math.sin(now * 0.05) + st.motion * 0.7;
+  st.complexity = lerp(st.complexity, clamp(target, 0.05, 1), 1 - Math.exp(-dt / 1.6));
+
+  const drain = 0.045 + st.complexity * 0.11 + st.motion * 0.22;
+  const recover = st.fermata ? 0.38 : 0.065;
+  st.conc = clamp(st.conc + (recover - drain) * dt, 0.05, 1 - st.fatigue * 0.6);
+  st.fatigue = clamp(st.fatigue + (st.complexity * 0.0035 - (st.fermata ? 0.02 : 0.0006)) * dt, 0, 0.75);
+  st.errRecent = Math.max(0, st.errRecent - dt * 0.4);
+  st.vis = lerp(st.vis, clamp(1 + st.motion * 0.8 + st.complexity * 0.45, 1, 2.1), 1 - Math.exp(-dt / 1.2));
+  const attnT = 1 - clamp(st.motion * 2 + st.micRms * 6, 0, 1);
+  st.attn += (attnT - st.attn) * (1 - Math.exp(-dt / 30));
+
+  if (!st.fermata && now - epochT > EPOCH_SEC){
+    epochIx = (epochIx + 1) % DECADES.length;
+    advanceEpoch(now, true);
+  }
+  if (st.conc < 0.18 && !brokeShown){ fluxShow('THE OBSERVER IS BREAKING.', now); brokeShown = true; }
+  if (st.conc > 0.5) brokeShown = false;
+  fluxTimer += dt;
+  if (fluxTimer > 26){ fluxTimer = 0; fluxShow(FLUX_POOL[rngi(FLUX_POOL.length)], now); }
+}
+
+// ---------- physics: 一方向の流れ ----------
+function updateParticles(dt, now){
+  for (const p of particles){
+    if (now < p.t) continue;
+    if (p.px === undefined){
+      p.px = spawnX();
+      p.py = clamp(stepY(p.steps) + gauss() * 6, fieldTop(), fieldBottom());
+      p.vy = gauss() * 8;
+    }
+    p.px -= speedOf(p.z) * dt;
+    p.py += p.vy * dt;
+    if (p.py < fieldTop()){ p.py = fieldTop(); p.vy = Math.abs(p.vy); }
+    if (p.py > fieldBottom()){ p.py = fieldBottom(); p.vy = -Math.abs(p.vy); }
+  }
+  // 観測線
+  if (!st.fermata){
+    line.x += line.dir * VL * dt;
+    if (line.x > W * 0.97){ line.x = W * 0.97; line.dir = -1; }
+    if (line.x < W * 0.03){ line.x = W * 0.03; line.dir = 1; }
+  }
+  const lineV = st.fermata ? 0 : line.dir * VL;
+  for (const p of particles){
+    if (p.crossed || p.px === undefined) continue;
+    const dx = p.px - line.x;
+    const relV = lineV + speedOf(p.z);
+    if (dx <= 0) observe(p, now + 0.01);
+    else if (relV > 0 && dx <= relV * 0.12) observe(p, now + dx / relV);
+  }
+  for (const m of pulseMarks){
+    if (m.crossed || now < m.t) continue;
+    m.x = spawnX() - (now - m.t) * speedOf(m.z);
+    const closing = speedOf(m.z) + lineV;
+    if (closing <= 0) continue;
+    const dxp = m.x - line.x;
+    if (dxp <= closing * 0.12){
+      m.crossed = true;
+      schedulePulse(now + clamp(Math.max(dxp, 0) / closing, 0, 0.15));
+      flashes.push({ at: now });
+    }
+  }
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('cv');
+const g2 = cv.getContext('2d');
+let bloomA = null, bloomAx = null, bloomB = null, bloomBx = null;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  g2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  bloomA = document.createElement('canvas');
+  bloomA.width = Math.max(1, W >> 2); bloomA.height = Math.max(1, H >> 2);
+  bloomAx = bloomA.getContext('2d');
+  bloomB = document.createElement('canvas');
+  bloomB.width = Math.max(1, W >> 3); bloomB.height = Math.max(1, H >> 3);
+  bloomBx = bloomB.getContext('2d');
+}
+window.addEventListener('resize', resize); resize();
+
+const INK = 'rgba(232,224,204,';
+const STATUS_COL = {
+  establishing: '160,170,180',
+  established:  '220,220,210',
+  contested:    '210,160,70',
+  reversed:     '200,64,42',
+};
+
+function draw(now, tSec){
+  g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
+  const vb = st.vis;
+
+  // 背景: 巨大な年代
+  if (field){
+    g2.textAlign = 'center';
+    g2.font = `${Math.round(H * 0.22)}px serif`;
+    g2.fillStyle = 'rgba(220,220,220,0.028)';
+    g2.fillText(String(field.dec.year), W / 2, H * 0.62);
+  }
+
+  // 拍マーカー
+  for (const m of pulseMarks){
+    if (now < m.t || m.x === undefined || m.x < -5 || m.x > W) continue;
+    g2.strokeStyle = `rgba(220,220,220,${0.04 * vb})`; g2.lineWidth = 1;
+    g2.beginPath(); g2.moveTo(m.x, fieldTop()); g2.lineTo(m.x, fieldBottom()); g2.stroke();
+  }
+
+  // 粒子 + 概念の絆
+  for (const p of particles){
+    if (p.px === undefined || p.px < -40 || p.px > W + 20) continue;
+    const C = CONCEPTS[p.ci];
+    const size = lerp(1.0, 2.8, p.z) + p.dyn * 0.12;
+    if (!p.crossed || p.missed){
+      const sa = clamp((now - p.t) / 0.4, 0, 1);
+      const cloudErr = (1 - st.conc) * (0.35 + 0.65 * p.depth / 4);
+      const r = (2 + cloudErr * 18) * (0.5 + p.z * 0.8);
+      for (let i = 0; i < 3; i++){
+        const jx = Math.sin(tSec * (1.3 + i * 0.31) + p.t * 7 + i * 2.4) * r;
+        const jy = Math.cos(tSec * (1.1 + i * 0.27) + p.t * 5 + i * 1.9) * r;
+        g2.fillStyle = `rgba(${C.col},${(0.08 + 0.035 * i) * sa * (0.7 + 0.3 * vb)})`;
+        g2.beginPath(); g2.arc(p.px + jx, p.py + jy, 0.6 + p.z * 0.9, 0, 7); g2.fill();
+      }
+      g2.fillStyle = `rgba(${C.col},${clamp(lerp(0.18, 0.45, p.z) * sa * (0.7 + 0.3 * vb), 0, 1)})`;
+      g2.beginPath(); g2.arc(p.px, p.py, 0.7 + p.z * 0.9, 0, 7); g2.fill();
+    } else {
+      const age = now - p.obsAt;
+      if (age >= 0 && age < 0.35){
+        g2.strokeStyle = `rgba(${C.col},${(1 - age / 0.35) * 0.4})`; g2.lineWidth = 1;
+        g2.beginPath(); g2.arc(p.px, p.py, 3 + age * 50, 0, 7); g2.stroke();
+      }
+      if (p.dropped){
+        const a = clamp(0.55 - age * 0.25, 0, 0.55);
+        g2.strokeStyle = `rgba(200,64,42,${a})`; g2.lineWidth = 1;
+        g2.beginPath(); g2.arc(p.px, p.py, size + 1.8, 0, 7); g2.stroke();
+      } else {
+        const a = clamp((1 - age / 10) * (0.75 + 0.25 * vb), 0, 1);
+        g2.fillStyle = `rgba(${C.col},${a})`;
+        g2.beginPath(); g2.arc(p.px, p.py, size, 0, 7); g2.fill();
+      }
+    }
+  }
+
+  // 観測線
+  const bornA = clamp((now - line.bornAt) / 1.5, 0, 1);
+  let lineA = (0.35 + st.errRecent * 0.12) * bornA;
+  for (const f of flashes) lineA += clamp(0.3 - (now - f.at) * 0.6, 0, 0.3);
+  if (st.fermata) lineA *= 0.35;
+  const lx = line.x + (st.fermata ? Math.sin(tSec * 40) * 0.9 : 0);
+  g2.strokeStyle = `rgba(220,220,220,${clamp(lineA, 0, 0.85)})`; g2.lineWidth = 1;
+  g2.beginPath(); g2.moveTo(lx, fieldTop() - 10); g2.lineTo(lx, fieldBottom() + 8); g2.stroke();
+  g2.strokeStyle = `rgba(220,220,220,${0.06 * bornA * vb})`; g2.lineWidth = 5 * vb;
+  g2.beginPath(); g2.moveTo(lx, fieldTop() - 10); g2.lineTo(lx, fieldBottom() + 8); g2.stroke();
+  g2.fillStyle = `rgba(220,220,220,${0.3 * bornA})`;
+  g2.beginPath();
+  g2.moveTo(lx + line.dir * 8, fieldBottom() - 4);
+  g2.lineTo(lx, fieldBottom() - 9); g2.lineTo(lx, fieldBottom() + 1);
+  g2.closePath(); g2.fill();
+  if (st.fermata){
+    g2.strokeStyle = 'rgba(220,220,220,0.8)'; g2.lineWidth = 1.5;
+    g2.beginPath(); g2.arc(lx, fieldTop() + 6, 12, Math.PI, 0); g2.stroke();
+  }
+
+  // 浮上する概念名（ラベル同期の補強）
+  g2.textAlign = 'left'; g2.font = '9px monospace';
+  for (const f of floatEqs){
+    const age = now - f.at;
+    const a = clamp((1 - age / 3.2) * 0.5, 0, 0.5);
+    g2.fillStyle = `rgba(${f.col},${a})`;
+    g2.fillText(f.text, f.x + 8, f.y - 6 - age * 6);
+  }
+
+  // ブルーム（場のレイヤーのみ。譜面・地図・開示はこの後）
+  if (glowOn && bloomA){
+    bloomAx.drawImage(cv, 0, 0, bloomA.width, bloomA.height);
+    bloomBx.drawImage(bloomA, 0, 0, bloomB.width, bloomB.height);
+    g2.save();
+    g2.globalCompositeOperation = 'lighter';
+    g2.globalAlpha = clamp(0.24 * vb, 0, 0.6);
+    g2.drawImage(bloomA, 0, 0, W, H);
+    g2.globalAlpha = clamp(0.16 * vb, 0, 0.45);
+    g2.drawImage(bloomB, 0, 0, W, H);
+    g2.restore();
+  }
+
+  if (graphOn) drawGraph(now);
+  drawRibbon(now);
+
+  // Fluxus / 開示
+  if (fluxMsg){
+    const age = now - fluxMsg.at;
+    if (age > 7) fluxMsg = null;
+    else {
+      const a = age < 1 ? age : age > 5 ? (7 - age) / 2 : 1;
+      g2.fillStyle = `rgba(220,220,220,${a * 0.7})`;
+      g2.font = '11px monospace'; g2.textAlign = 'center';
+      g2.fillText(fluxMsg.text, W / 2, fieldBottom() - 24);
+    }
+  }
+  g2.textAlign = 'left'; g2.font = '8px monospace';
+  g2.fillStyle = 'rgba(220,220,220,0.28)';
+  g2.fillText(DISCLOSURE, 14, H - 6);
+  drawHUD();
+}
+
+// ---------- 知識グラフ（俯瞰の地図 = 凡例） ----------
+function drawGraph(now){
+  if (!field) return;
+  const cx = W / 2, cy = fieldTop() * 0.52, R = Math.min(W * 0.22, fieldTop() * 0.34);
+  const pos = CONCEPTS.map((c, i) => {
+    const a = -Math.PI / 2 + i * (Math.PI * 2 / CONCEPTS.length);
+    return { x: cx + Math.cos(a) * R * 1.7, y: cy + Math.sin(a) * R * 0.8 };
+  });
+  // エッジ
+  for (const e of field.edges){
+    const p = pos[e.ai], q = pos[e.bi];
+    const lit = clamp(1 - (now - e.litAt) / 0.8, 0, 1);
+    const col = STATUS_COL[e.status];
+    g2.strokeStyle = `rgba(${col},${0.10 + e.w * 0.28 + lit * 0.5})`;
+    g2.lineWidth = 0.4 + e.w * 2.2 + lit * 1.2;
+    g2.beginPath(); g2.moveTo(p.x, p.y); g2.lineTo(q.x, q.y); g2.stroke();
+  }
+  // ノード（＝凡例。発音で点灯し、対応が学習される）
+  g2.textAlign = 'center';
+  CONCEPTS.forEach((c, i) => {
+    const p = pos[i];
+    const lit = clamp(1 - (now - c.litAt) / 0.7, 0, 1);
+    const isRoot = i === field.rootIx;
+    g2.fillStyle = `rgba(${c.col},${0.22 + lit * 0.75})`;
+    g2.beginPath(); g2.arc(p.x, p.y, 2.6 + lit * 5 + (isRoot ? 1.6 : 0), 0, 7); g2.fill();
+    if (isRoot){
+      g2.strokeStyle = `rgba(${c.col},${0.35 + lit * 0.4})`; g2.lineWidth = 0.8;
+      g2.beginPath(); g2.arc(p.x, p.y, 9, 0, 7); g2.stroke();
+    }
+    g2.font = `${lit > 0.2 ? 'bold ' : ''}10px "Hiragino Mincho ProN", serif`;
+    g2.fillStyle = `rgba(${c.col},${0.35 + lit * 0.6})`;
+    g2.fillText(c.jp, p.x, p.y - 12);
+    g2.font = '7px monospace';
+    g2.fillStyle = `rgba(${c.col},${0.18 + lit * 0.4})`;
+    g2.fillText(`h${c.partial}`, p.x, p.y + 15);
+  });
+  g2.textAlign = 'left'; g2.font = '9px monospace';
+  g2.fillStyle = 'rgba(220,220,220,0.4)';
+  g2.fillText(`${field.dec.year}s  重心=${CONCEPTS[field.rootIx].jp}`, 14, fieldTop() - 26);
+  g2.font = '8px monospace';
+  g2.fillStyle = 'rgba(220,220,220,0.26)';
+  g2.fillText('確立 —  形成 —  係争 —  逆転 —', 14, fieldTop() - 12);
+}
+
+// ---------- 大譜表リボン ----------
+const SS = 6;
+const trebleY = () => H - 140;
+const bassY   = () => H - 78;
+const DIA_E4 = 4 * 7 + 2;
+const DIA_G2 = 2 * 7 + 4;
+function drawRibbon(now){
+  const yT = trebleY(), yB = bassY();
+  g2.fillStyle = 'rgba(10,9,7,0.9)';
+  g2.fillRect(0, H - 168, W, 168);
+  g2.strokeStyle = INK + '0.5)'; g2.lineWidth = 1;
+  for (let i = 0; i < 5; i++){
+    g2.beginPath(); g2.moveTo(10, yT - i * SS); g2.lineTo(W - 10, yT - i * SS); g2.stroke();
+    g2.beginPath(); g2.moveTo(10, yB - i * SS); g2.lineTo(W - 10, yB - i * SS); g2.stroke();
+  }
+  g2.fillStyle = INK + '0.8)'; g2.textAlign = 'left';
+  g2.font = '34px serif'; g2.fillText('\u{1D11E}', 14, yT - SS * 0.6);
+  g2.font = '26px serif'; g2.fillText('\u{1D122}', 16, yB - SS * 1.1);
+  g2.textAlign = 'center';
+  for (const n of ribbon){
+    const x = W - 24 - (now - n.at) * RIBBON_FLOW;
+    if (x < 50 || x > W - 6) continue;
+    const fresh = clamp(1 - (now - n.at) / 2, 0, 1);
+    if (n.rest) drawRest(n, x, fresh); else drawNote(n, x, fresh);
+  }
+}
+function drawNote(n, x, fresh){
+  const treble = n.n >= 60;
+  const y0 = treble ? trebleY() : bassY();
+  const stepPos = n.dia - (treble ? DIA_E4 : DIA_G2);
+  const y = y0 - stepPos * (SS / 2);
+  const a = 0.55 + fresh * 0.4;
+  const col = n.col ? `rgba(${n.col},` : INK;
+  g2.strokeStyle = col + (a * 0.8) + ')'; g2.lineWidth = 1;
+  if (stepPos < -1)
+    for (let l = -2; l >= stepPos - (stepPos % 2 === 0 ? 0 : 1); l -= 2){
+      const ly = y0 - l * (SS / 2);
+      g2.beginPath(); g2.moveTo(x - 7, ly); g2.lineTo(x + 7, ly); g2.stroke();
+    }
+  if (stepPos > 9)
+    for (let l = 10; l <= stepPos + (stepPos % 2 === 0 ? 0 : 1); l += 2){
+      const ly = y0 - l * (SS / 2);
+      g2.beginPath(); g2.moveTo(x - 7, ly); g2.lineTo(x + 7, ly); g2.stroke();
+    }
+  const hollow = n.val <= 1;
+  if (hollow){
+    g2.strokeStyle = col + a + ')'; g2.lineWidth = 1.4;
+    g2.beginPath(); g2.ellipse(x, y, 4.4, 3.2, -0.3, 0, 7); g2.stroke();
+  } else {
+    g2.fillStyle = col + a + ')';
+    g2.beginPath(); g2.ellipse(x, y, 4.4, 3.2, -0.3, 0, 7); g2.fill();
+  }
+  if (n.val >= 1){
+    const up = stepPos < 4;
+    const sx = x + (up ? 4 : -4);
+    const sy = y + (up ? -3.4 : 3.4) * SS;
+    g2.strokeStyle = col + a + ')'; g2.lineWidth = 1.1;
+    g2.beginPath(); g2.moveTo(sx, y); g2.lineTo(sx, sy); g2.stroke();
+    for (let f = 0; f < Math.max(0, n.val - 2); f++){
+      const fy = sy + (up ? 1 : -1) * (2 + f * 4.5);
+      g2.beginPath(); g2.moveTo(sx, fy);
+      g2.quadraticCurveTo(sx + 6, fy + (up ? 3 : -3), sx + 7, fy + (up ? 8 : -8));
+      g2.stroke();
+    }
+  }
+  let accX = x - 11;
+  if (n.sharp){
+    g2.font = `${Math.round(SS * 2.1)}px serif`;
+    g2.fillStyle = col + a + ')';
+    g2.fillText('♯', accX, y + SS * 0.7);
+    accX -= 8;
+  }
+  if (n.r){
+    const cnt = Math.abs(n.r), dir = n.r > 0 ? -1 : 1;
+    g2.fillStyle = col + a + ')';
+    for (let k = 0; k < cnt; k++){
+      const ay = y + dir * (3 + k * 5);
+      g2.beginPath();
+      g2.moveTo(accX, ay + dir * 3);
+      g2.lineTo(accX - 3, ay - dir * 2);
+      g2.lineTo(accX + 3, ay - dir * 2);
+      g2.closePath(); g2.fill();
+    }
+  }
+  g2.font = 'italic 10px serif';
+  g2.fillStyle = `rgba(200,180,140,${a})`;
+  g2.fillText(DYN_NAMES[n.dyn], x, bassY() + SS * 2.6);
+  g2.font = '7px monospace';
+  g2.fillStyle = col + (a * 0.75) + ')';
+  g2.fillText(`${n.hz.toFixed(1)}Hz`, x, bassY() + SS * 4.2);
+  g2.fillText(`${n.ms}ms`, x, bassY() + SS * 5.4);
+}
+function drawRest(n, x, fresh){
+  const yMid = trebleY() - 2 * SS;
+  const a = (n.kind === 'drop' ? 0.6 : 0.4) * (0.6 + fresh * 0.4);
+  const col = n.kind === 'drop' ? `rgba(200,64,42,${a})` : INK + a + ')';
+  g2.strokeStyle = col; g2.fillStyle = col; g2.lineWidth = 1.3;
+  if (n.val === 0) g2.fillRect(x - 4, yMid - SS, 8, SS * 0.55);
+  else if (n.val === 1) g2.fillRect(x - 4, yMid - SS * 0.55, 8, SS * 0.55);
+  else if (n.val === 2){
+    g2.beginPath();
+    g2.moveTo(x - 2, yMid - SS * 1.6); g2.lineTo(x + 2.5, yMid - SS * 0.6);
+    g2.lineTo(x - 1.5, yMid + SS * 0.2); g2.lineTo(x + 2.5, yMid + SS * 1.3);
+    g2.stroke();
+  } else {
+    g2.beginPath();
+    g2.moveTo(x + 2.5, yMid - SS * 1.2); g2.lineTo(x - 2.5, yMid + SS * 1.4);
+    g2.stroke();
+    for (let k = 0; k < n.val - 2; k++){
+      g2.beginPath(); g2.arc(x + 0.5 - k * 0.8, yMid - SS * 1.1 + k * 4.5, 1.5, 0, 7); g2.fill();
+    }
+  }
+  g2.font = '7px monospace'; g2.fillStyle = col;
+  g2.fillText(`${n.ms}ms`, x, bassY() + SS * 4.2);
+}
+
+function drawHUD(){
+  g2.font = '9px monospace'; g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.4)';
+  g2.fillText(
+    `記録 ${caught}·漏${missedN}·失${droppedN}·撤${retracted}   ` +
+    `C ${st.conc.toFixed(2)}   X ${st.complexity.toFixed(2)}   A ${st.attn.toFixed(2)}   ` +
+    `MIC ${micReady ? (st.micRms * 100).toFixed(0) : '--'}  CAM ${camReady ? (st.motion * 100).toFixed(0) : '--'}   ` +
+    `${line.dir > 0 ? '→' : '←'}${st.fermata ? ' 休' : ''}`, 14, 22);
+}
+
+// ---------- loop ----------
+let lastNow = 0;
+function frame(ts){
+  if (!running) return;
+  const now = ctx.currentTime;
+  const dt = clamp(now - lastNow, 0.001, 0.5);
+  lastNow = now;
+  updateState(dt, now);
+  updateParticles(dt, now);
+  draw(now, ts / 1000);
+  requestAnimationFrame(frame);
+}
+
+// ---------- interaction ----------
+cv.addEventListener('pointerdown', () => {
+  if (!running) return;
+  st.fermata = true; droneOn();
+  fluxShow('THE OBSERVER SLEEPS.', ctx.currentTime);
+});
+window.addEventListener('pointerup', () => {
+  if (!st.fermata) return;
+  st.fermata = false; droneOff();
+  pulseGenT = ctx.currentTime + 0.5;
+  epochT = ctx.currentTime - EPOCH_SEC * 0.5;
+});
+
+// ---------- buttons ----------
+const bGrain = document.getElementById('bGrain');
+const bSound = document.getElementById('bSound');
+const bFull  = document.getElementById('bFull');
+const bGlow  = document.getElementById('bGlow');
+const bGraph = document.getElementById('bGraph');
+bGlow.onclick  = () => { glowOn = !glowOn; bGlow.classList.toggle('on', glowOn); };
+bGraph.onclick = () => { graphOn = !graphOn; bGraph.classList.toggle('on', graphOn); };
+bGrain.onclick = () => { grainOn = !grainOn; bGrain.classList.toggle('on', grainOn); };
+bSound.onclick = () => { soundOn = !soundOn; bSound.classList.toggle('on', soundOn); };
+const docEl = document.documentElement;
+if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen) bFull.style.display = 'none';
+bFull.onclick  = () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement)
+    (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  else (docEl.requestFullscreen || docEl.webkitRequestFullscreen)?.call(docEl);
+};
+
+// ---------- init ----------
+document.getElementById('startBtn').addEventListener('click', async () => {
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('btns').style.display = 'flex';
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC();
+  await ctx.resume();
+  master = ctx.createGain(); master.gain.value = 0.85;
+  limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -14; limiter.knee.value = 4;
+  limiter.ratio.value = 14; limiter.attack.value = 0.002; limiter.release.value = 0.2;
+  master.connect(limiter).connect(ctx.destination);
+  startNoiseFloor();
+
+  const AUDIO_C = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  const VIDEO_C = { width: 320, height: 240, facingMode: 'user' };
+  let micStream = null, camStream = null;
+  try { micStream = camStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C, video: VIDEO_C }); }
+  catch (err) {
+    try { micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_C }); }
+    catch (e) { console.warn('mic unavailable:', e.message); }
+    try { camStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_C }); }
+    catch (e) { console.warn('camera unavailable:', e.message); }
+  }
+  if (micStream && micStream.getAudioTracks().length){
+    const src = ctx.createMediaStreamSource(micStream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+    timeData = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    setupRing(src);
+    micReady = true;
+  }
+  if (camStream && camStream.getVideoTracks().length){
+    camV.srcObject = camStream;
+    await camV.play().catch(()=>{});
+    camReady = true;
+  }
+
+  CONCEPTS.forEach(c => c.litAt = -99);
+  running = true;
+  const t0 = ctx.currentTime;
+  epochIx = 0;
+  advanceEpoch(t0, true);
+  pulseGenT = t0 + 0.3; graveT = t0 + 1;
+  line.x = W * 0.03; line.dir = 1; line.bornAt = t0;
+  setInterval(schedulerTick, 120);
+  lastNow = t0;
+  requestAnimationFrame(frame);
+}, { once: true });
+</script>
+</body>
+</html>
