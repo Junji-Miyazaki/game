@@ -25,6 +25,8 @@
   #startBtn { margin-top:36px; border:1px solid #777; padding:14px 50px; letter-spacing:.5em;
               font-size:13px; cursor:pointer; color:#ddd; }
   #startBtn:active { background:#ddd; color:#050505; }
+  .pbtn .form { font-style:italic; color:#8c8577; font-size:10.5px; letter-spacing:.02em;
+                margin-top:4px; margin-bottom:2px; }
   #permNote { margin-top:16px; font-size:10px; color:#555; letter-spacing:.15em; }
   #pieces { margin-top:34px; display:flex; gap:14px; flex-wrap:wrap; justify-content:center; }
   .pbtn { border:1px solid #4a4235; padding:14px 20px; cursor:pointer; color:#bbb;
@@ -45,7 +47,7 @@
 
 <div id="overlay">
   <h1>SCORE FOR EVIDENCE</h1>
-  <h2>t h r e e &nbsp; e p i d e m i o l o g i e s</h2>
+  <h2>three studies for seven voices and an observer</h2>
   <p>七つの概念が、それぞれの声を持つ。<br>ふたつの概念が結ばれるとき——それが医学の主張である——二つの声が音程を作る。</p>
   <p>確立された主張は協和へ収束し、執拗に反復される。<br>係争中の主張は微分音のうなりを生む。定説が覆るとき、音程は崩壊する。</p>
   <p>だが観測者は、そのすべてを聴き取れない。<br>漏れた音は淡い休符に、記録に失敗した音は赤い休符になる。</p>
@@ -56,9 +58,15 @@
     地図は領土ではない。その隙間に、音楽がある。
   </div>
   <div id="pieces">
-    <div class="pbtn" data-mi="0">I. Saturated Fat<br>and Coronary Heart Disease<span>1950 – 2020</span></div>
-    <div class="pbtn" data-mi="1">II. Alcohol<br>and Cardiovascular Disease<span>1970 – 2020</span></div>
-    <div class="pbtn" data-mi="2">III. Acute Reperfusion Therapy<br>and Stroke Outcome<span>1995 – 2020</span></div>
+    <div class="pbtn" data-mi="0">I. Saturated Fat and Coronary Heart Disease
+      <span class="form">Eight Decades for Seven Voices and an Observer,<br>in Chromatic Consonance-Rank</span>
+      <span>a natural-history cohort, 1950–2020; with one reversal</span></div>
+    <div class="pbtn" data-mi="1">II. Alcohol and Cardiovascular Disease
+      <span class="form">Six Epochs for Seven Voices and an Observer,<br>upon a Vanishing J-Curve</span>
+      <span>a dose–response study, 1970–2020; the protective nadir effaced</span></div>
+    <div class="pbtn" data-mi="2">III. Acute Reperfusion Therapy and Stroke Outcome
+      <span class="form">Six Epochs for Seven Voices and an Observer,<br>in Just Intonation on the Eighth Partial</span>
+      <span>a time-dependent trial sequence, 1995–2020; converging to 8:10:12</span></div>
   </div>
   <div id="permNote">音が鳴ります。画面を押さえている間、観測者は目を閉じます。</div>
 </div>
@@ -109,7 +117,10 @@ let DISCLOSURE = '';
 // 状態: establishing 形成中 / established 確立 / contested 係争 / reversed 逆転
 const SUITE = [
   { // ---- I. 遁走する定説: 確立 → 崩壊 ----
-    no:'I', title:'Saturated Fat and Coronary Heart Disease', sub:'1950–2020',
+    no:'I', title:'Saturated Fat and Coronary Heart Disease',
+    form:'Eight Decades for Seven Voices and an Observer, in Chromatic Consonance-Rank',
+    design:'a natural-history cohort, 1950–2020; with one reversal',
+    sub:'1950–2020',
     disc:'MODEL v0 · 心臓病学 7概念 · 1950–2020 · 手作業による二次資料からの模型。文献そのものではない。',
     concepts:[
       { id:'SFA',  jp:'飽和脂肪',       en:'Saturated Fat', partial:1, band: 0, col:'232,224,204' },
@@ -130,7 +141,10 @@ const SUITE = [
       { year:2020, root:'SUGR', edges:[['SUGR','CVD',0.70,'establishing'],['SFA','CVD',0.30,'reversed'],['STAT','CVD',0.80,'established'],['SMOK','CVD',0.90,'established'],['SALT','CVD',0.35,'contested'],['CHOL','CVD',0.60,'established']] } ] },
 
   { // ---- II. 消えゆくJカーブ: 偽りの保護 → 「安全な量はない」 ----
-    no:'II', title:'Alcohol and Cardiovascular Disease', sub:'1970–2020',
+    no:'II', title:'Alcohol and Cardiovascular Disease',
+    form:'Six Epochs for Seven Voices and an Observer, upon a Vanishing J-Curve',
+    design:'a dose–response study, 1970–2020; the protective nadir effaced',
+    sub:'1970–2020',
     disc:'MODEL v0 · アルコールと循環器 7概念 · 1970–2020 · 手作業による二次資料からの模型。文献そのものではない。',
     concepts:[
       { id:'ALC',  jp:'飲酒',       en:'Alcohol',          partial:1, band: 0, col:'232,224,204' },
@@ -149,7 +163,10 @@ const SUITE = [
       { year:2020, root:'ALC', edges:[['ALC','ICH',0.75,'established'],['ALC','BP',0.75,'established'],['ALC','ISCH',0.65,'established'],['ALC','MI',0.32,'reversed'],['DOSE','ISCH',0.55,'establishing'],['DOSE','ICH',0.60,'established']] } ] },
 
   { // ---- III. 時は脳なり: 混沌 → 確立 ----
-    no:'III', title:'Acute Reperfusion Therapy and Stroke Outcome', sub:'1995–2020',
+    no:'III', title:'Acute Reperfusion Therapy and Stroke Outcome',
+    form:'Six Epochs for Seven Voices and an Observer, in Just Intonation on the Eighth Partial',
+    design:'a time-dependent trial sequence, 1995–2020; converging to 8:10:12',
+    sub:'1995–2020',
     tuning:'spectral', pulse:'clinical',
     disc:'MODEL v0 · 急性期脳卒中治療 7概念 · 1995–2020 · 手作業による二次資料からの模型。文献そのものではない。',
     concepts:[
@@ -218,6 +235,21 @@ function getCurve(now){
   const k = clamp((now - curveAt) / 4, 0, 1);
   return curveTarget.map((v, i) => lerp(curvePrev[i], v, k));
 }
+// 相（10年）を楽章とみなす。性格を示す発想標語は、その相の結合状態から導かれる
+const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
+function epochCharacter(dec){
+  const totW = dec.edges.reduce((a,e)=>a+e[2], 0);
+  const estW = dec.edges.filter(e => e[3] === 'established').reduce((a,e)=>a+e[2], 0);
+  const contW = dec.edges.filter(e => e[3] === 'contested').reduce((a,e)=>a+e[2], 0);
+  if (dec.edges.some(e => e[3] === 'reversed')) return 'crollo';   // 崩壊: 定説が覆る相
+  if (contW / totW > 0.28) return 'inquieto';                      // 不安: 係争が場を占める相
+  if (estW / totW >= 0.72) return 'fermo';                         // 確固: 合意が凝集した相
+  return 'nascente';                                               // 生成: 仮説が形をなす相
+}
+const epochCaption = () => field
+  ? `Mvt ${ROMAN[epochIx]} · ${field.dec.year} — ${epochCharacter(field.dec)}, on ${CONCEPTS[field.rootIx].en}`
+  : '';
+
 let curMi = 0;
 let CONCEPTS = [], IX = {}, DECADES = [], movement = null;
 function loadMovement(mi){
@@ -493,7 +525,7 @@ function advanceEpoch(now, announce){
     bendGravity(now, hasRev ? 1 : 0.4);
     fluxLastAt = -999;
     if (hasRev) fluxShow('THE CONSENSUS COLLAPSES.', now);
-    else fluxShow(`${d.year} · ${CONCEPTS[IX[d.root]].jp}`, now);
+    else fluxShow(`Mvt ${ROMAN[epochIx]} · ${d.year} — ${epochCharacter(d)}`, now);
     if (curMi === 1 && JCURVE[d.year]){
       curvePrev = getCurve(now) || JCURVE[d.year];
       curveTarget = JCURVE[d.year];
@@ -1039,12 +1071,15 @@ function drawGraph(now){
     g2.fillText(`h${c.partial}`, q.x, q.y + 15);
   });
   g2.textAlign = 'left'; g2.font = '9px monospace';
-  g2.fillStyle = 'rgba(220,220,220,0.4)';
-  g2.fillText(`${movement.no}. ${movement.title}`, 14, fieldTop() - 26);
+  g2.fillStyle = 'rgba(220,220,220,0.42)';
+  g2.fillText(`${movement.no}. ${movement.title}`, 14, fieldTop() - 38);
+  g2.font = 'italic 9px "Hiragino Mincho ProN", serif';
+  g2.fillStyle = 'rgba(220,220,220,0.30)';
+  g2.fillText(epochCaption(), 14, fieldTop() - 25);
   g2.font = '8px monospace';
-  g2.fillStyle = 'rgba(220,220,220,0.26)';
-  const tune = field.spectral ? '倍音列（純正律）' : '半音階の協和序列';
-  g2.fillText(`${field.dec.year} · 重心=${CONCEPTS[field.rootIx].jp} · ${tune} · 確立 — 形成 — 係争 — 逆転 —`, 14, fieldTop() - 12);
+  g2.fillStyle = 'rgba(220,220,220,0.22)';
+  const tune = field.spectral ? 'just intonation · 8th partial' : 'chromatic consonance-rank';
+  g2.fillText(`${tune} — establishing · established · contested · reversed`, 14, fieldTop() - 12);
 }
 
 // ---------- 大譜表リボン ----------
