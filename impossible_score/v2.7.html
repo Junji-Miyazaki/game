@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>AUSCULTATION — 聴診（三つの疫学のための）</title>
+<title>SCORE FOR AUSCULTATION — three epidemiologies</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; overflow:hidden; background:#050505; touch-action:none;
@@ -45,8 +45,8 @@
 </div>
 
 <div id="overlay">
-  <h1>AUSCULTATION</h1>
-  <h2>聴 診 — 医 学 の 営 み を 聴 く</h2>
+  <h1>SCORE FOR AUSCULTATION</h1>
+  <h2>t h r e e &nbsp; e p i d e m i o l o g i e s</h2>
   <p>七つの概念が、それぞれの声を持つ。<br>ふたつの概念が結ばれるとき——それが医学の主張である——二つの声が音程を作る。</p>
   <p>確立された主張は協和へ収束し、執拗に反復される。<br>係争中の主張は微分音のうなりを生む。定説が覆るとき、音程は崩壊する。</p>
   <p>だが観測者は、そのすべてを聴き取れない。<br>漏れた音は淡い休符に、記録に失敗した音は赤い休符になる。</p>
@@ -57,9 +57,9 @@
     地図は領土ではない。その隙間に、音楽がある。
   </div>
   <div id="pieces">
-    <div class="pbtn" data-mi="0">I. 飽和脂肪と心疾患<span>1950 – 2020</span></div>
-    <div class="pbtn" data-mi="1">II. アルコールと循環器<span>1970 – 2020</span></div>
-    <div class="pbtn" data-mi="2">III. 急性期再開通療法と脳卒中予後<span>1995 – 2020</span></div>
+    <div class="pbtn" data-mi="0">I. Saturated Fat<br>and Coronary Heart Disease<span>1950 – 2020</span></div>
+    <div class="pbtn" data-mi="1">II. Alcohol<br>and Cardiovascular Disease<span>1970 – 2020</span></div>
+    <div class="pbtn" data-mi="2">III. Acute Reperfusion Therapy<br>and Stroke Outcome<span>1995 – 2020</span></div>
   </div>
   <div id="permNote">マイクとカメラの使用許可を求めます（拒否しても動作します）</div>
 </div>
@@ -67,8 +67,8 @@
 <script>
 'use strict';
 /* ================================================================
-   AUSCULTATION — 聴診（三つの疫学のための）  (v2.7)
-   三部作: I 遁走する定説 / II 消えゆくJカーブ / III 時は脳なり
+   SCORE FOR AUSCULTATION — three epidemiologies  (v2.7)
+   score = 楽譜であり、臨床スコア（mRS・リスクスコア）でもある
    設計の3制約（DESIGN_v2.6.md）:
    (1) 声は7つ以下・ラベル同期（発音でノードと凡例が点灯し、対応が学習される）
    (2) データ→場 / 観測→質感 の二軸分離
@@ -110,7 +110,7 @@ let DISCLOSURE = '';
 // 状態: establishing 形成中 / established 確立 / contested 係争 / reversed 逆転
 const SUITE = [
   { // ---- I. 遁走する定説: 確立 → 崩壊 ----
-    no:'I', title:'飽和脂肪と心疾患', sub:'1950–2020',
+    no:'I', title:'Saturated Fat and Coronary Heart Disease', sub:'1950–2020',
     disc:'MODEL v0 · 心臓病学 7概念 · 1950–2020 · 手作業による二次資料からの模型。文献そのものではない。',
     concepts:[
       { id:'SFA',  jp:'飽和脂肪',       en:'Saturated Fat', partial:1, band: 0, col:'232,224,204' },
@@ -131,7 +131,7 @@ const SUITE = [
       { year:2020, root:'SUGR', edges:[['SUGR','CVD',0.70,'establishing'],['SFA','CVD',0.30,'reversed'],['STAT','CVD',0.80,'established'],['SMOK','CVD',0.90,'established'],['SALT','CVD',0.35,'contested'],['CHOL','CVD',0.60,'established']] } ] },
 
   { // ---- II. 消えゆくJカーブ: 偽りの保護 → 「安全な量はない」 ----
-    no:'II', title:'アルコールと循環器', sub:'1970–2020',
+    no:'II', title:'Alcohol and Cardiovascular Disease', sub:'1970–2020',
     disc:'MODEL v0 · アルコールと循環器 7概念 · 1970–2020 · 手作業による二次資料からの模型。文献そのものではない。',
     concepts:[
       { id:'ALC',  jp:'飲酒',       en:'Alcohol',          partial:1, band: 0, col:'232,224,204' },
@@ -150,7 +150,7 @@ const SUITE = [
       { year:2020, root:'ALC', edges:[['ALC','ICH',0.75,'established'],['ALC','BP',0.75,'established'],['ALC','ISCH',0.65,'established'],['ALC','MI',0.32,'reversed'],['DOSE','ISCH',0.55,'establishing'],['DOSE','ICH',0.60,'established']] } ] },
 
   { // ---- III. 時は脳なり: 混沌 → 確立 ----
-    no:'III', title:'急性期再開通療法と脳卒中予後', sub:'1995–2020',
+    no:'III', title:'Acute Reperfusion Therapy and Stroke Outcome', sub:'1995–2020',
     disc:'MODEL v0 · 急性期脳卒中治療 7概念 · 1995–2020 · 手作業による二次資料からの模型。文献そのものではない。',
     concepts:[
       { id:'TPA',   jp:'血栓溶解',   en:'Thrombolysis',     partial:1, band: 0, col:'210,220,232' },
@@ -189,6 +189,26 @@ const CITES = [
     2018:'Nogueira RG, et al. DAWN. N Engl J Med 2018',
     2020:'Goyal M, et al. HERMES. Lancet 2016' },
 ];
+// 第II曲: 用量–反応曲線（相対危険）。曲線は「形」なので、旋律の輪郭に写す。
+// 保護の窪み（RR<1）はドローンの下に純正で沈み、有害域（RR>1）は微分音で濁って昇る。
+// 時代が進むと窪みは浅くなり、やがて消える = 消えゆく J カーブ
+const DOSE_LABELS = ['0', '<1', '1–2', '2–3', '3–4', '5–6', '7+'];
+const JCURVE = {
+  1970: [1.00, 0.82, 0.75, 0.80, 0.95, 1.20, 1.55],
+  1990: [1.00, 0.78, 0.70, 0.78, 0.98, 1.30, 1.70],
+  2000: [1.00, 0.80, 0.74, 0.85, 1.05, 1.40, 1.85],
+  2010: [1.00, 0.90, 0.88, 0.95, 1.12, 1.50, 2.00],
+  2018: [1.00, 0.98, 1.00, 1.08, 1.25, 1.60, 2.20],
+  2020: [1.00, 1.02, 1.06, 1.15, 1.35, 1.75, 2.40],
+};
+let curvePrev = null, curveTarget = null, curveAt = 0, sweepT = 0;
+// 相の交代で曲線はなめらかに変形する（4秒）
+function getCurve(now){
+  if (!curveTarget) return null;
+  if (!curvePrev) return curveTarget;
+  const k = clamp((now - curveAt) / 4, 0, 1);
+  return curveTarget.map((v, i) => lerp(curvePrev[i], v, k));
+}
 let curMi = 0;
 let CONCEPTS = [], IX = {}, DECADES = [], movement = null;
 function loadMovement(mi){
@@ -363,6 +383,29 @@ function utter(edge, now){
   edge.nextT = t + lerp(4.2, 0.4, w) + rng() * 0.8;
 }
 
+// 用量掃引: 用量の低→高を順に鳴らす一つのフレーズ。音高の輪郭が曲線そのもの。
+// RR<1 は基準（ドローン）より低く純正に、RR>1 は高く、超過分だけ微分音で濁る
+function emitDoseSweep(t0, now){
+  const c = getCurve(now);
+  if (!c || !field) return;
+  const base = field.gravity + 96;                  // ドローンの2オクターヴ上 = RR 1.00 の基準
+  const di = IX['DOSE'];
+  if (di === undefined) return;
+  const C = CONCEPTS[di];
+  for (let i = 0; i < c.length; i++){
+    const rr = c[i];
+    const harm = Math.max(0, rr - 1);
+    const steps = base + Math.round(48 * Math.log2(rr) * 0.7)
+                       + (harm > 0 ? Math.round(harm * 3) : 0);   // 有害域だけ微分音の傷
+    particles.push({
+      ci: di, edge: null, t: t0 + i * 0.42,
+      steps, z: 0.72, dyn: clamp(2 + i, 0, 7), depth: 0,
+      dur: (i === c.length - 1) ? 1.4 : 0.34,
+      partial: C.partial, crossed: false, px: undefined, py: undefined, sweep: true,
+    });
+  }
+}
+
 function schedulerTick(){
   if (!running || !field) return;
   const now = ctx.currentTime;
@@ -378,6 +421,10 @@ function schedulerTick(){
     }
     if (graveT < now) graveT = now + 2;
     while (graveT < now + 3){ scheduleGravity(graveT); graveT += beatLen() * (8 + rngi(9)); }
+    if (curMi === 1){                                  // 用量掃引（うるさくしない: 11〜14秒毎）
+      if (sweepT < now) sweepT = now + 2;
+      while (sweepT < now + 2){ emitDoseSweep(sweepT, now); sweepT += 11 + rng() * 3; }
+    }
   }
   particles = particles.filter(p =>
     (now - p.t) < 90 && (!p.crossed || p.missed || now - p.obsAt < 10) &&
@@ -402,6 +449,11 @@ function advanceEpoch(now, announce){
     fluxLastAt = -999;
     if (hasRev) fluxShow('THE CONSENSUS COLLAPSES.', now);
     else fluxShow(`${d.year} · ${CONCEPTS[IX[d.root]].jp}`, now);
+    if (curMi === 1 && JCURVE[d.year]){
+      curvePrev = getCurve(now) || JCURVE[d.year];
+      curveTarget = JCURVE[d.year];
+      curveAt = now;
+    }
     const cite = CITES[curMi] && CITES[curMi][d.year];
     if (cite) citations.push({ text: cite, at: now, ph: epochIx * 1.3, life: 11,
       y: fieldTop() + (fieldBottom() - fieldTop()) * 0.72 });
@@ -831,6 +883,7 @@ function draw(now, tSec){
     g2.restore();
   }
 
+  if (curMi === 1) drawCurve(now);
   if (graphOn) drawGraph(now);
   drawRibbon(now);
 
@@ -849,6 +902,65 @@ function draw(now, tSec){
   g2.fillStyle = 'rgba(220,220,220,0.28)';
   g2.fillText(DISCLOSURE, 14, H - 6);
   drawHUD();
+}
+
+// ---------- 用量–反応曲線（消えゆく J カーブ） ----------
+function drawCurve(now){
+  const c = getCurve(now);
+  if (!c) return;
+  const x0 = 20, w = 172, h = 74;
+  const y1 = fieldTop() + 118;                       // RR = 1.00 の基準線
+  const LO = Math.log2(0.62), HI = Math.log2(2.6);
+  const yOf = rr => y1 - (Math.log2(rr) / (rr < 1 ? -LO : HI)) * (h * 0.5);
+  const xOf = i => x0 + (i / (c.length - 1)) * w;
+
+  // 基準線（= ドローン、RR 1.00）
+  g2.strokeStyle = 'rgba(220,220,220,0.30)'; g2.lineWidth = 1;
+  g2.setLineDash([3, 3]);
+  g2.beginPath(); g2.moveTo(x0, y1); g2.lineTo(x0 + w, y1); g2.stroke();
+  g2.setLineDash([]);
+
+  // 保護の窪み（RR<1）の領域。窪みが消えると塗りも消える
+  let minRR = Infinity;
+  for (const rr of c) minRR = Math.min(minRR, rr);
+  if (minRR < 0.999){
+    g2.beginPath(); g2.moveTo(xOf(0), y1);
+    for (let i = 0; i < c.length; i++) g2.lineTo(xOf(i), yOf(Math.min(c[i], 1)));
+    g2.lineTo(xOf(c.length - 1), y1); g2.closePath();
+    g2.fillStyle = `rgba(190,220,205,${clamp((1 - minRR) * 0.5, 0, 0.13)})`;
+    g2.fill();
+  }
+  // 曲線
+  g2.strokeStyle = 'rgba(230,215,180,0.75)'; g2.lineWidth = 1.3;
+  g2.beginPath();
+  for (let i = 0; i < c.length; i++){
+    const x = xOf(i), y = yOf(c[i]);
+    i ? g2.lineTo(x, y) : g2.moveTo(x, y);
+  }
+  g2.stroke();
+  for (let i = 0; i < c.length; i++){
+    const harm = Math.max(0, c[i] - 1);
+    g2.fillStyle = harm > 0 ? `rgba(210,160,70,${0.4 + harm * 0.3})` : 'rgba(190,220,205,0.7)';
+    g2.beginPath(); g2.arc(xOf(i), yOf(c[i]), 1.9, 0, 7); g2.fill();
+  }
+  // 消えゆく「J」
+  const jA = clamp((0.98 - minRR) * 7, 0, 1);
+  if (jA > 0.02){
+    g2.font = '30px serif'; g2.textAlign = 'center';
+    g2.fillStyle = `rgba(190,220,205,${jA * 0.30})`;
+    g2.fillText('J', x0 + w * 0.28, y1 + 26);
+  }
+  // 軸
+  g2.font = '8px monospace'; g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.32)';
+  g2.fillText('RR', x0 - 6, y1 - h * 0.5 - 6);
+  g2.fillText('1.00', x0 + w + 4, y1 + 3);
+  g2.textAlign = 'center';
+  g2.fillStyle = 'rgba(220,220,220,0.22)';
+  for (let i = 0; i < c.length; i++) g2.fillText(DOSE_LABELS[i], xOf(i), y1 + h * 0.62);
+  g2.textAlign = 'left';
+  g2.fillStyle = 'rgba(220,220,220,0.28)';
+  g2.fillText('dose (drinks/day) →', x0, y1 + h * 0.62 + 12);
 }
 
 // ---------- 知識グラフ（俯瞰の地図 = 凡例） ----------
