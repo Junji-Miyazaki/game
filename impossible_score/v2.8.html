@@ -301,6 +301,37 @@ const PYTH_COMMA = 23.46;                                        // ピタゴラ
 const MEAN_CENTS = [0, 696.6, 503.4, 386.3, 889.7, 310.3, 1082.9, 193.2, 1006.8, 579.5, 772.6, 96.6];
 const MEAN_WOLF  = 737.6;                                        // ウルフ5度(cents)
 const CENTS_TO_STEP = c => c / 25;                              // 48EDO: 1 step = 25 cents
+
+// ---------- ポスト超複雑系セリエリズム: 引力場(案1) × 音律の篩(案4) ----------
+// 音列の「掟」を確率的引力に緩める。概念の音高(データの場)は保ちつつ、その隙間に
+// 装飾音を織り込む。装飾音の音高類は「借り(debt)＝自己回避的均等化(音列の名残)」と
+// 「主音・5度への引力(調的重力)」の綱引きで選ばれ、さらにその曲の音律の格子に吸着する。
+const pcDebt = new Array(12).fill(1);
+function pickPC(){
+  let w = [], tot = 0;
+  for (let p = 0; p < 12; p++){
+    const grav = 1 + 0.5 * Math.cos(2*Math.PI*(p % 12)/12) + 0.4 * Math.cos(2*Math.PI*((p-7+12)%12)/12);
+    const ww = Math.max(0.02, pcDebt[p]) * Math.max(0.15, grav);   // 借り × 重力
+    w.push(ww); tot += ww;
+  }
+  let r = rng() * tot, pc = 0;
+  for (pc = 0; pc < 12; pc++){ r -= w[pc]; if (r <= 0) break; }
+  pc = pc % 12;
+  pcDebt[pc] *= 0.30;                                  // 使ったら借りを返す
+  for (let p = 0; p < 12; p++) pcDebt[p] += 0.09;      // 使わぬ音は借りが積もる(均等化への傾向)
+  return pc;
+}
+// 篩: 音高類 pc(0..11) を、現在の曲の音律の許容格子(cents)へ吸着させる
+const SEMI_CENTS = {
+  pythagorean: [0,90,204,294,408,498,612,702,792,906,996,1110],
+  meantone:    [0,76,193,310,386,503,580,697,773,890,1007,1083],
+  spectral:    [0,0,204,386,386,551,702,702,841,969,969,1088],
+};
+function sieveSteps(pc, oct){
+  const tab = SEMI_CENTS[field && field.tuning] ;
+  const cents = tab ? tab[pc % 12] : (pc % 12) * 100;   // 未定義なら平均律
+  return CENTS_TO_STEP(cents) + oct * 48;
+}
 const droneRatios = () => {
   const t = movement && movement.tuning;
   if (t === 'spectral')    return { 1: 1.0, 3: 0.42, 5: 0.20 };          // 第1·3·5倍音
@@ -391,10 +422,11 @@ function notation(steps, lenSec){
 // ---------- state ----------
 let particles = [], ribbon = [], floatEqs = [], bonds = [], citations = [], ephem = [];
 let ribbonCursor = 0, ribbonView = 0;   // 書き込みヘッド（紙の座標）とその表示位置
+let lastLabelX = -999;                    // Hz/ms ラベル間引き用
 let lastCiteAt = -99;
 let caught = 0, missedN = 0, droppedN = 0, retracted = 0;
 let pulseGenT = 0, graveT = 0, pulseMarks = [], flashes = [];
-const RIBBON_FLOW = 30;
+const RIBBON_VIEW_SPEED = 26;   // 紙のスクロール速度（読める一定の速さ）px/s
 const PX_PER_SEC = 62, VL = 22;
 const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);
 const line = { x: -10, dir: 1, bornAt: 0 };
@@ -421,7 +453,8 @@ const pCatch = p => clamp((0.48 + p.z * 0.28) * (0.5 + st.conc * 0.5), 0.15, 0.9
 
 // 書き込みヘッド方式: 音符/休符はインデックス順に等間隔で紙に書かれ、紙全体が滑らかに
 // 左へスクロールする（観測のバーストに依らず自然に流れ、下の情報も重ならない）
-const RIBBON_GAP = 52;
+const RIBBON_GAP = 24;             // 音符間隔（圧縮＝密なファーニホウ的譜面）
+const RIBBON_MAXLEAD = 24 * 24;   // 待機できる音符数の上限（これを超えたら早送り）
 function rbPush(n){
   n.cx = ribbonCursor;
   ribbonCursor += RIBBON_GAP;
@@ -439,8 +472,7 @@ function observe(p, at){
   perform(p);
   caught++;
   const C = CONCEPTS[p.ci];
-  C.litAt = at;                                        // (1) ラベル同期
-  if (p.edge) p.edge.litAt = at;
+  if (!p.orn){ C.litAt = at; if (p.edge) p.edge.litAt = at; }   // 装飾音は同一性でないのでノードを点灯しない
   if (p.dropped){ droppedN++; pushRest(lenSec, 'drop', at); return; }
   const sounded = p.steps + p.slip;
   scheduleAudio(p, at + Math.max(0, p.offset), sounded, lenSec);
@@ -478,17 +510,30 @@ function utter(edge, now){
     const n = TALEA[(taleaIx + rep) % TALEA.length];   // 拍の分解合成（タレア）
     const slot = beatLen() * (1 + rngi(2)) / n;
     for (let i = 0; i < n; i++){
-      const ci = (i % 2 === 0) ? ai : bi;              // 二声の交替 = 音程が聴こえる
+      const ci = (i % 2 === 0) ? ai : bi;              // 二声の交替 = 音程が聴こえる（アンカー）
       const sub = (depth > 1 && rng() < 0.25 * st.complexity) ? 2 : 1;  // 観測の複雑性
       for (let s = 0; s < sub; s++){
         const C = CONCEPTS[ci];
-        particles.push({
-          ci, edge, t: t + i * slot + s * slot * 0.45,
-          steps: conceptSteps(ci), z, dyn, depth,
-          dur: clamp(slot * 0.8 / sub, 0.03, 1.2),
-          partial: C.partial, crossed: false,
-          px: undefined, py: undefined,
-        });
+        // 装飾音(ポスト・セリー): アンカーでないスロットの一部を、引力場×篩の音で埋める。
+        // 頻度は複雑性に比例。装飾はテクスチャなのでノードを点灯させない(orn)
+        const ornament = i % 2 === 1 && rng() < 0.28 + st.complexity * 0.32;
+        if (ornament){
+          particles.push({
+            ci, edge, orn: true, t: t + i * slot + s * slot * 0.45,
+            steps: sieveSteps(pickPC(), (CONCEPTS[ai].band + CONCEPTS[bi].band) / 2 | 0),
+            z: z * 0.8, dyn: clamp(dyn - 2, 0, 7), depth,
+            dur: clamp(slot * 0.55 / sub, 0.03, 0.5),
+            partial: 1, crossed: false, px: undefined, py: undefined,
+          });
+        } else {
+          particles.push({
+            ci, edge, t: t + i * slot + s * slot * 0.45,
+            steps: conceptSteps(ci), z, dyn, depth,
+            dur: clamp(slot * 0.8 / sub, 0.03, 1.2),
+            partial: C.partial, crossed: false,
+            px: undefined, py: undefined,
+          });
+        }
       }
     }
     t += slot * n + 0.02;
@@ -1188,6 +1233,7 @@ function drawRibbon(now){
   g2.font = '34px serif'; g2.fillText('\u{1D11E}', 14, yT - SS * 0.6);
   g2.font = '26px serif'; g2.fillText('\u{1D122}', 16, yB - SS * 1.1);
   g2.textAlign = 'center';
+  lastLabelX = -999;   // フレームごとにラベル間引きをリセット
   for (const n of ribbon){
     const x = W - 24 - (ribbonView - n.cx);
     if (x < 50 || x > W - 6) continue;
@@ -1253,13 +1299,17 @@ function drawNote(n, x, fresh){
       g2.closePath(); g2.fill();
     }
   }
-  g2.font = 'italic 10px serif';
-  g2.fillStyle = `rgba(200,180,140,${a})`;
-  g2.fillText(DYN_NAMES[n.dyn], x, bassY() + SS * 2.6);
-  g2.font = '7px monospace';
-  g2.fillStyle = col + (a * 0.75) + ')';
-  g2.fillText(`${n.hz.toFixed(1)}Hz`, x, bassY() + SS * 4.2);
-  g2.fillText(`${n.ms}ms`, x, bassY() + SS * 5.4);
+  // 強弱・Hz・ms は密集を避けるため一定間隔(px)でのみ表示（カメラ演奏者が読める最小密度）
+  if (x - lastLabelX > 58){
+    lastLabelX = x;
+    g2.font = 'italic 10px serif';
+    g2.fillStyle = `rgba(200,180,140,${a})`;
+    g2.fillText(DYN_NAMES[n.dyn], x, bassY() + SS * 2.6);
+    g2.font = '7px monospace';
+    g2.fillStyle = col + (a * 0.75) + ')';
+    g2.fillText(`${n.hz.toFixed(1)}Hz`, x, bassY() + SS * 4.2);
+    g2.fillText(`${n.ms}ms`, x, bassY() + SS * 5.4);
+  }
 }
 function drawRest(n, x, fresh){
   const yMid = trebleY() - 2 * SS;
@@ -1303,9 +1353,10 @@ function frame(ts){
   lastNow = now;
   updateState(dt, now);
   updateParticles(dt, now);
-  // 紙は書き込みヘッドへ滑らかに追従（最小ドリフト付き＝静止しても自然に流れる）
-  ribbonView += Math.max(RIBBON_FLOW * dt, (ribbonCursor - ribbonView) * (1 - Math.exp(-dt / 0.5)));
-  if (ribbonView > ribbonCursor) ribbonView = ribbonCursor;
+  // 紙は一定の読める速さでスクロール。音符が速く来すぎたら右外に待たせ順に流す
+  ribbonView += RIBBON_VIEW_SPEED * dt;
+  if (ribbonView > ribbonCursor) ribbonView = ribbonCursor;                       // 追いついたらピン留め（静止）
+  else if (ribbonCursor - ribbonView > RIBBON_MAXLEAD) ribbonView = ribbonCursor - RIBBON_MAXLEAD;  // 極端なバーストだけ緩く早送り
   updateDroneBed(now);
   draw(now, ts / 1000);
   requestAnimationFrame(frame);
