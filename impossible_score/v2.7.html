@@ -155,12 +155,12 @@ const SUITE = [
       { id:'HDL',  jp:'HDL',        en:'HDL Cholesterol',  partial:6, band: 2, col:'190,220,205' },
       { id:'DOSE', jp:'用量',       en:'Dose',             partial:7, band: 1, col:'230,215,180' } ],
     decades:[
-      { year:1970, root:'MI', edges:[['ALC','HDL',0.30,'establishing'],['HDL','MI',0.40,'establishing'],['ALC','ICH',0.30,'establishing'],['ALC','BP',0.35,'establishing']] },
-      { year:1990, root:'ALC', edges:[['ALC','HDL',0.65,'established'],['HDL','MI',0.60,'established'],['ALC','MI',0.60,'establishing'],['ALC','BP',0.50,'establishing'],['ALC','ICH',0.55,'established']] },
-      { year:2000, root:'ALC', edges:[['ALC','MI',0.72,'established'],['ALC','HDL',0.70,'established'],['ALC','ISCH',0.40,'contested'],['ALC','BP',0.62,'established'],['ALC','ICH',0.62,'established']] },
-      { year:2010, root:'BP', edges:[['ALC','BP',0.72,'established'],['ALC','ICH',0.68,'established'],['ALC','MI',0.50,'contested'],['ALC','ISCH',0.50,'contested'],['DOSE','ICH',0.45,'establishing'],['ALC','HDL',0.55,'contested']] },
-      { year:2018, root:'ALC', edges:[['ALC','MI',0.40,'reversed'],['ALC','HDL',0.35,'reversed'],['ALC','ISCH',0.62,'establishing'],['ALC','ICH',0.72,'established'],['ALC','BP',0.72,'established'],['DOSE','MI',0.55,'establishing']] },
-      { year:2020, root:'ALC', edges:[['ALC','ICH',0.75,'established'],['ALC','BP',0.75,'established'],['ALC','ISCH',0.65,'established'],['ALC','MI',0.32,'reversed'],['DOSE','ISCH',0.55,'establishing'],['DOSE','ICH',0.60,'established']] } ] },
+      { year:1970, root:'MI', edges:[['ALC','HDL',0.30,'establishing'],['HDL','MI',0.40,'establishing'],['ALC','ICH',0.30,'establishing'],['ALC','BP',0.35,'establishing'],['BP','ICH',0.50,'establishing']] },
+      { year:1990, root:'ALC', edges:[['ALC','HDL',0.65,'established'],['HDL','MI',0.60,'established'],['ALC','MI',0.60,'establishing'],['ALC','BP',0.50,'establishing'],['ALC','ICH',0.55,'established'],['BP','ICH',0.70,'established'],['BP','ISCH',0.58,'establishing']] },
+      { year:2000, root:'ALC', edges:[['ALC','MI',0.72,'established'],['ALC','HDL',0.70,'established'],['ALC','ISCH',0.40,'contested'],['ALC','BP',0.62,'established'],['ALC','ICH',0.62,'established'],['BP','ICH',0.75,'established'],['BP','ISCH',0.65,'established']] },
+      { year:2010, root:'BP', edges:[['ALC','BP',0.72,'established'],['ALC','ICH',0.68,'established'],['ALC','MI',0.50,'contested'],['ALC','ISCH',0.50,'contested'],['DOSE','ICH',0.45,'establishing'],['ALC','HDL',0.55,'contested'],['BP','ICH',0.80,'established'],['BP','ISCH',0.70,'established'],['BP','MI',0.62,'established']] },
+      { year:2018, root:'ALC', edges:[['ALC','MI',0.40,'reversed'],['ALC','HDL',0.35,'reversed'],['ALC','ISCH',0.62,'establishing'],['ALC','ICH',0.72,'established'],['ALC','BP',0.72,'established'],['DOSE','MI',0.55,'establishing'],['BP','ICH',0.80,'established'],['BP','ISCH',0.72,'established']] },
+      { year:2020, root:'ALC', edges:[['ALC','ICH',0.75,'established'],['ALC','BP',0.75,'established'],['ALC','ISCH',0.65,'established'],['ALC','MI',0.32,'reversed'],['DOSE','ISCH',0.55,'establishing'],['DOSE','ICH',0.60,'established'],['BP','ICH',0.82,'established'],['BP','ISCH',0.75,'established'],['BP','MI',0.66,'established']] } ] },
 
   { // ---- III. 時は脳なり: 混沌 → 確立 ----
     no:'III', title:'Acute Reperfusion Therapy and Stroke Outcome',
