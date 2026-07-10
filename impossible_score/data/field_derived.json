@@ -2,7 +2,7 @@
  "fat": [
   {
    "year": 1950,
-   "root": "CVD",
+   "root": "CHD",
    "edges": [
     {
      "a": "SFA",
@@ -12,7 +12,8 @@
      "co": 388,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -22,57 +23,41 @@
      "co": 45,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.25,
      "status": "establishing",
      "co": 22,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
-    },
-    {
-     "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.24,
-     "status": "establishing",
-     "co": 6,
-     "strong": 0,
-     "retr": 0,
-     "share": 0.0
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.28,
-     "status": "establishing",
-     "co": 18,
-     "strong": 0,
-     "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.43,
      "status": "establishing",
      "co": 108,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.19,
      "status": "establishing",
      "co": 2,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     }
    ],
    "retr": 0
@@ -89,7 +74,8 @@
      "co": 2927,
      "strong": 10,
      "retr": 0,
-     "share": 0.003
+     "share": 0.003,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -99,17 +85,30 @@
      "co": 1636,
      "strong": 3,
      "retr": 0,
-     "share": 0.002
+     "share": 0.002,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.43,
      "status": "establishing",
      "co": 516,
      "strong": 7,
      "retr": 0,
-     "share": 0.014
+     "share": 0.014,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.18,
+     "status": "establishing",
+     "co": 7,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -119,57 +118,63 @@
      "co": 104,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.44,
-     "status": "establishing",
-     "co": 201,
-     "strong": 3,
-     "retr": 0,
-     "share": 0.015
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.31,
      "status": "establishing",
      "co": 98,
      "strong": 2,
      "retr": 0,
-     "share": 0.02
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.51,
-     "status": "establishing",
-     "co": 417,
-     "strong": 1,
-     "retr": 0,
-     "share": 0.002
+     "share": 0.02,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.63,
      "status": "establishing",
      "co": 914,
      "strong": 8,
      "retr": 0,
-     "share": 0.009
+     "share": 0.009,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.4,
      "status": "establishing",
      "co": 202,
      "strong": 1,
      "retr": 0,
-     "share": 0.005
+     "share": 0.005,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.21,
+     "status": "establishing",
+     "co": 10,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.19,
+     "status": "establishing",
+     "co": 2,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 0
     }
    ],
    "retr": 0
@@ -186,7 +191,8 @@
      "co": 5896,
      "strong": 37,
      "retr": 0,
-     "share": 0.006
+     "share": 0.006,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -196,17 +202,30 @@
      "co": 4931,
      "strong": 34,
      "retr": 0,
-     "share": 0.007
+     "share": 0.007,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.43,
      "status": "establishing",
      "co": 1220,
      "strong": 11,
      "retr": 0,
-     "share": 0.009
+     "share": 0.009,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.2,
+     "status": "establishing",
+     "co": 37,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -216,57 +235,63 @@
      "co": 606,
      "strong": 12,
      "retr": 0,
-     "share": 0.02
+     "share": 0.02,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.54,
-     "status": "establishing",
-     "co": 663,
-     "strong": 11,
-     "retr": 0,
-     "share": 0.017
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.31,
      "status": "establishing",
      "co": 219,
      "strong": 2,
      "retr": 0,
-     "share": 0.009
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.6,
-     "status": "establishing",
-     "co": 1399,
-     "strong": 11,
-     "retr": 0,
-     "share": 0.008
+     "share": 0.009,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.63,
      "status": "establishing",
      "co": 1952,
      "strong": 27,
      "retr": 0,
-     "share": 0.014
+     "share": 0.014,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.52,
      "status": "establishing",
      "co": 1001,
      "strong": 17,
      "retr": 0,
-     "share": 0.017
+     "share": 0.017,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.22,
+     "status": "establishing",
+     "co": 27,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.19,
+     "status": "establishing",
+     "co": 7,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "STAT",
@@ -276,17 +301,8 @@
      "co": 31,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
-    },
-    {
-     "a": "STAT",
-     "b": "TG",
-     "w": 0.2,
-     "status": "establishing",
-     "co": 6,
-     "strong": 0,
-     "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     }
    ],
    "retr": 0
@@ -303,7 +319,8 @@
      "co": 5030,
      "strong": 127,
      "retr": 1,
-     "share": 0.025
+     "share": 0.025,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -313,17 +330,30 @@
      "co": 3264,
      "strong": 115,
      "retr": 0,
-     "share": 0.035
+     "share": 0.035,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.47,
      "status": "establishing",
      "co": 2085,
      "strong": 53,
      "retr": 1,
-     "share": 0.025
+     "share": 0.025,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.22,
+     "status": "establishing",
+     "co": 95,
+     "strong": 1,
+     "retr": 0,
+     "share": 0.011,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -333,57 +363,63 @@
      "co": 389,
      "strong": 38,
      "retr": 0,
-     "share": 0.098
+     "share": 0.098,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.51,
-     "status": "established",
-     "co": 631,
-     "strong": 55,
-     "retr": 0,
-     "share": 0.087
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.27,
      "status": "establishing",
      "co": 179,
      "strong": 10,
      "retr": 1,
-     "share": 0.056
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.54,
-     "status": "establishing",
-     "co": 1643,
-     "strong": 61,
-     "retr": 2,
-     "share": 0.037
+     "share": 0.056,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.64,
      "status": "establishing",
      "co": 2616,
      "strong": 82,
      "retr": 0,
-     "share": 0.031
+     "share": 0.031,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.45,
      "status": "contested",
      "co": 919,
      "strong": 32,
      "retr": 0,
-     "share": 0.035
+     "share": 0.035,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.19,
+     "status": "establishing",
+     "co": 13,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.19,
+     "status": "establishing",
+     "co": 6,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "STAT",
@@ -393,30 +429,22 @@
      "co": 174,
      "strong": 2,
      "retr": 0,
-     "share": 0.011
+     "share": 0.011,
+     "inv": 0
     },
     {
      "a": "STAT",
-     "b": "TG",
-     "w": 0.25,
-     "status": "establishing",
-     "co": 20,
-     "strong": 1,
-     "retr": 0,
-     "share": 0.05
-    },
-    {
-     "a": "STAT",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.18,
      "status": "establishing",
      "co": 13,
      "strong": 1,
      "retr": 0,
-     "share": 0.077
+     "share": 0.077,
+     "inv": 0
     }
    ],
-   "retr": 5
+   "retr": 3
   },
   {
    "year": 1990,
@@ -430,7 +458,8 @@
      "co": 6122,
      "strong": 622,
      "retr": 0,
-     "share": 0.102
+     "share": 0.102,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -440,17 +469,30 @@
      "co": 4386,
      "strong": 509,
      "retr": 0,
-     "share": 0.116
+     "share": 0.116,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.43,
      "status": "established",
      "co": 1927,
      "strong": 207,
      "retr": 0,
-     "share": 0.107
+     "share": 0.107,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.22,
+     "status": "establishing",
+     "co": 91,
+     "strong": 3,
+     "retr": 0,
+     "share": 0.033,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -460,57 +502,63 @@
      "co": 464,
      "strong": 106,
      "retr": 0,
-     "share": 0.228
+     "share": 0.228,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.51,
-     "status": "established",
-     "co": 792,
-     "strong": 151,
-     "retr": 0,
-     "share": 0.191
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.25,
      "status": "establishing",
      "co": 134,
      "strong": 22,
      "retr": 0,
-     "share": 0.164
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.49,
-     "status": "established",
-     "co": 1547,
-     "strong": 94,
-     "retr": 3,
-     "share": 0.061
+     "share": 0.164,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.68,
      "status": "established",
      "co": 3649,
      "strong": 344,
      "retr": 0,
-     "share": 0.094
+     "share": 0.094,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.47,
      "status": "contested",
      "co": 1254,
      "strong": 100,
      "retr": 0,
-     "share": 0.08
+     "share": 0.08,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.21,
+     "status": "establishing",
+     "co": 29,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.18,
+     "status": "establishing",
+     "co": 5,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "STAT",
@@ -520,30 +568,22 @@
      "co": 686,
      "strong": 109,
      "retr": 0,
-     "share": 0.159
+     "share": 0.159,
+     "inv": 0
     },
     {
      "a": "STAT",
-     "b": "TG",
-     "w": 0.42,
-     "status": "established",
-     "co": 179,
-     "strong": 52,
-     "retr": 0,
-     "share": 0.291
-    },
-    {
-     "a": "STAT",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.3,
      "status": "establishing",
      "co": 259,
      "strong": 50,
      "retr": 0,
-     "share": 0.193
+     "share": 0.193,
+     "inv": 0
     }
    ],
-   "retr": 3
+   "retr": 0
   },
   {
    "year": 2000,
@@ -557,7 +597,8 @@
      "co": 7027,
      "strong": 1101,
      "retr": 6,
-     "share": 0.157
+     "share": 0.157,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -567,17 +608,30 @@
      "co": 5855,
      "strong": 799,
      "retr": 4,
-     "share": 0.136
+     "share": 0.136,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.42,
      "status": "contested",
      "co": 2516,
      "strong": 463,
      "retr": 2,
-     "share": 0.184
+     "share": 0.184,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.21,
+     "status": "establishing",
+     "co": 99,
+     "strong": 2,
+     "retr": 0,
+     "share": 0.02,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -587,57 +641,63 @@
      "co": 612,
      "strong": 161,
      "retr": 0,
-     "share": 0.263
+     "share": 0.263,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.51,
-     "status": "established",
-     "co": 1185,
-     "strong": 180,
-     "retr": 1,
-     "share": 0.152
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.24,
      "status": "establishing",
      "co": 165,
      "strong": 33,
      "retr": 0,
-     "share": 0.2
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.47,
-     "status": "establishing",
-     "co": 2139,
-     "strong": 103,
-     "retr": 0,
-     "share": 0.048
+     "share": 0.2,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.64,
      "status": "established",
      "co": 4511,
      "strong": 512,
      "retr": 0,
-     "share": 0.114
+     "share": 0.114,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.45,
      "status": "contested",
      "co": 1579,
      "strong": 188,
      "retr": 0,
-     "share": 0.119
+     "share": 0.119,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.24,
+     "status": "establishing",
+     "co": 80,
+     "strong": 7,
+     "retr": 0,
+     "share": 0.087,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.2,
+     "status": "establishing",
+     "co": 17,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "STAT",
@@ -647,30 +707,33 @@
      "co": 2987,
      "strong": 579,
      "retr": 1,
-     "share": 0.194
+     "share": 0.194,
+     "inv": 0
     },
     {
      "a": "STAT",
-     "b": "TG",
-     "w": 0.51,
-     "status": "established",
-     "co": 647,
-     "strong": 201,
-     "retr": 0,
-     "share": 0.311
-    },
-    {
-     "a": "STAT",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.55,
      "status": "established",
      "co": 2504,
      "strong": 381,
      "retr": 1,
-     "share": 0.152
+     "share": 0.152,
+     "inv": 0
+    },
+    {
+     "a": "STAT",
+     "b": "ICH",
+     "w": 0.29,
+     "status": "establishing",
+     "co": 103,
+     "strong": 15,
+     "retr": 0,
+     "share": 0.146,
+     "inv": 0
     }
    ],
-   "retr": 15
+   "retr": 14
   },
   {
    "year": 2010,
@@ -684,7 +747,8 @@
      "co": 5614,
      "strong": 943,
      "retr": 15,
-     "share": 0.168
+     "share": 0.168,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -694,17 +758,30 @@
      "co": 6039,
      "strong": 810,
      "retr": 11,
-     "share": 0.134
+     "share": 0.134,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.36,
      "status": "reversed",
      "co": 1835,
      "strong": 433,
      "retr": 5,
-     "share": 0.236
+     "share": 0.236,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.22,
+     "status": "establishing",
+     "co": 154,
+     "strong": 18,
+     "retr": 0,
+     "share": 0.117,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -714,57 +791,63 @@
      "co": 769,
      "strong": 182,
      "retr": 2,
-     "share": 0.237
+     "share": 0.237,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.47,
-     "status": "established",
-     "co": 1273,
-     "strong": 219,
-     "retr": 3,
-     "share": 0.172
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.21,
      "status": "establishing",
      "co": 105,
      "strong": 18,
      "retr": 0,
-     "share": 0.171
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.4,
-     "status": "established",
-     "co": 1663,
-     "strong": 102,
-     "retr": 1,
-     "share": 0.061
+     "share": 0.171,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.51,
      "status": "established",
      "co": 3002,
      "strong": 398,
      "retr": 3,
-     "share": 0.133
+     "share": 0.133,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.36,
      "status": "established",
      "co": 1014,
      "strong": 118,
      "retr": 0,
-     "share": 0.116
+     "share": 0.116,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.23,
+     "status": "establishing",
+     "co": 81,
+     "strong": 5,
+     "retr": 0,
+     "share": 0.062,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.2,
+     "status": "establishing",
+     "co": 29,
+     "strong": 1,
+     "retr": 0,
+     "share": 0.034,
+     "inv": 0
     },
     {
      "a": "STAT",
@@ -774,30 +857,33 @@
      "co": 3448,
      "strong": 688,
      "retr": 2,
-     "share": 0.2
+     "share": 0.2,
+     "inv": 0
     },
     {
      "a": "STAT",
-     "b": "TG",
-     "w": 0.46,
-     "status": "established",
-     "co": 640,
-     "strong": 153,
-     "retr": 0,
-     "share": 0.239
-    },
-    {
-     "a": "STAT",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.51,
      "status": "established",
      "co": 2376,
      "strong": 498,
      "retr": 2,
-     "share": 0.21
+     "share": 0.21,
+     "inv": 0
+    },
+    {
+     "a": "STAT",
+     "b": "ICH",
+     "w": 0.31,
+     "status": "establishing",
+     "co": 200,
+     "strong": 36,
+     "retr": 1,
+     "share": 0.18,
+     "inv": 0
     }
    ],
-   "retr": 44
+   "retr": 41
   },
   {
    "year": 2020,
@@ -811,7 +897,8 @@
      "co": 1817,
      "strong": 306,
      "retr": 4,
-     "share": 0.168
+     "share": 0.168,
+     "inv": 0
     },
     {
      "a": "SFA",
@@ -821,17 +908,30 @@
      "co": 2330,
      "strong": 286,
      "retr": 3,
-     "share": 0.123
+     "share": 0.123,
+     "inv": 0
     },
     {
      "a": "SFA",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.3,
      "status": "reversed",
      "co": 565,
      "strong": 124,
      "retr": 3,
-     "share": 0.219
+     "share": 0.219,
+     "inv": 0
+    },
+    {
+     "a": "SFA",
+     "b": "ICH",
+     "w": 0.22,
+     "status": "establishing",
+     "co": 108,
+     "strong": 7,
+     "retr": 1,
+     "share": 0.065,
+     "inv": 1
     },
     {
      "a": "SUGR",
@@ -841,57 +941,63 @@
      "co": 210,
      "strong": 54,
      "retr": 0,
-     "share": 0.257
+     "share": 0.257,
+     "inv": 0
     },
     {
      "a": "SUGR",
-     "b": "CHOL",
-     "w": 0.36,
-     "status": "established",
-     "co": 387,
-     "strong": 48,
-     "retr": 0,
-     "share": 0.124
-    },
-    {
-     "a": "SUGR",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.19,
      "status": "establishing",
      "co": 34,
      "strong": 9,
      "retr": 0,
-     "share": 0.265
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.31,
-     "status": "establishing",
-     "co": 368,
-     "strong": 26,
-     "retr": 1,
-     "share": 0.071
+     "share": 0.265,
+     "inv": 0
     },
     {
      "a": "CHOL",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.49,
      "status": "established",
      "co": 1561,
      "strong": 180,
      "retr": 3,
-     "share": 0.115
+     "share": 0.115,
+     "inv": 0
     },
     {
      "a": "TG",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.38,
      "status": "established",
      "co": 696,
      "strong": 53,
      "retr": 2,
-     "share": 0.076
+     "share": 0.076,
+     "inv": 0
+    },
+    {
+     "a": "CHOL",
+     "b": "ICH",
+     "w": 0.25,
+     "status": "establishing",
+     "co": 75,
+     "strong": 6,
+     "retr": 1,
+     "share": 0.08,
+     "inv": 1
+    },
+    {
+     "a": "TG",
+     "b": "ICH",
+     "w": 0.22,
+     "status": "establishing",
+     "co": 31,
+     "strong": 2,
+     "retr": 0,
+     "share": 0.065,
+     "inv": 0
     },
     {
      "a": "STAT",
@@ -901,30 +1007,33 @@
      "co": 2012,
      "strong": 338,
      "retr": 2,
-     "share": 0.168
+     "share": 0.168,
+     "inv": 0
     },
     {
      "a": "STAT",
-     "b": "TG",
-     "w": 0.4,
-     "status": "established",
-     "co": 248,
-     "strong": 54,
-     "retr": 0,
-     "share": 0.218
-    },
-    {
-     "a": "STAT",
-     "b": "CVD",
+     "b": "CHD",
      "w": 0.44,
      "status": "established",
      "co": 917,
      "strong": 188,
      "retr": 0,
-     "share": 0.205
+     "share": 0.205,
+     "inv": 0
+    },
+    {
+     "a": "STAT",
+     "b": "ICH",
+     "w": 0.31,
+     "status": "establishing",
+     "co": 109,
+     "strong": 21,
+     "retr": 0,
+     "share": 0.193,
+     "inv": 0
     }
    ],
-   "retr": 18
+   "retr": 19
   }
  ],
  "alcohol": [
@@ -940,7 +1049,8 @@
      "co": 594,
      "strong": 17,
      "retr": 0,
-     "share": 0.029
+     "share": 0.029,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -950,7 +1060,8 @@
      "co": 219,
      "strong": 6,
      "retr": 0,
-     "share": 0.027
+     "share": 0.027,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -960,7 +1071,8 @@
      "co": 74,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -970,7 +1082,8 @@
      "co": 19,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -980,7 +1093,8 @@
      "co": 23,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -990,7 +1104,8 @@
      "co": 1274,
      "strong": 9,
      "retr": 0,
-     "share": 0.007
+     "share": 0.007,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1000,7 +1115,8 @@
      "co": 1405,
      "strong": 16,
      "retr": 0,
-     "share": 0.011
+     "share": 0.011,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1010,7 +1126,8 @@
      "co": 4594,
      "strong": 147,
      "retr": 1,
-     "share": 0.032
+     "share": 0.032,
+     "inv": 0
     },
     {
      "a": "HDL",
@@ -1020,7 +1137,8 @@
      "co": 236,
      "strong": 5,
      "retr": 0,
-     "share": 0.021
+     "share": 0.021,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1030,7 +1148,8 @@
      "co": 311,
      "strong": 30,
      "retr": 1,
-     "share": 0.096
+     "share": 0.096,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1040,7 +1159,8 @@
      "co": 123,
      "strong": 4,
      "retr": 0,
-     "share": 0.033
+     "share": 0.033,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1050,7 +1170,8 @@
      "co": 41,
      "strong": 1,
      "retr": 0,
-     "share": 0.024
+     "share": 0.024,
+     "inv": 0
     }
    ],
    "retr": 2
@@ -1067,7 +1188,8 @@
      "co": 679,
      "strong": 54,
      "retr": 0,
-     "share": 0.08
+     "share": 0.08,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1077,7 +1199,8 @@
      "co": 238,
      "strong": 20,
      "retr": 0,
-     "share": 0.084
+     "share": 0.084,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1087,7 +1210,8 @@
      "co": 75,
      "strong": 4,
      "retr": 0,
-     "share": 0.053
+     "share": 0.053,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1097,7 +1221,8 @@
      "co": 50,
      "strong": 2,
      "retr": 0,
-     "share": 0.04
+     "share": 0.04,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1107,7 +1232,8 @@
      "co": 42,
      "strong": 2,
      "retr": 0,
-     "share": 0.048
+     "share": 0.048,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1117,7 +1243,8 @@
      "co": 733,
      "strong": 25,
      "retr": 0,
-     "share": 0.034
+     "share": 0.034,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1127,7 +1254,8 @@
      "co": 1307,
      "strong": 27,
      "retr": 0,
-     "share": 0.021
+     "share": 0.021,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1137,7 +1265,8 @@
      "co": 1769,
      "strong": 162,
      "retr": 1,
-     "share": 0.092
+     "share": 0.092,
+     "inv": 0
     },
     {
      "a": "HDL",
@@ -1147,7 +1276,8 @@
      "co": 189,
      "strong": 26,
      "retr": 0,
-     "share": 0.138
+     "share": 0.138,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1157,7 +1287,8 @@
      "co": 372,
      "strong": 84,
      "retr": 0,
-     "share": 0.226
+     "share": 0.226,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1167,7 +1298,8 @@
      "co": 407,
      "strong": 34,
      "retr": 0,
-     "share": 0.084
+     "share": 0.084,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1177,7 +1309,8 @@
      "co": 127,
      "strong": 18,
      "retr": 0,
-     "share": 0.142
+     "share": 0.142,
+     "inv": 0
     }
    ],
    "retr": 1
@@ -1194,7 +1327,8 @@
      "co": 873,
      "strong": 44,
      "retr": 0,
-     "share": 0.05
+     "share": 0.05,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1204,7 +1338,8 @@
      "co": 233,
      "strong": 18,
      "retr": 0,
-     "share": 0.077
+     "share": 0.077,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1214,7 +1349,8 @@
      "co": 156,
      "strong": 8,
      "retr": 0,
-     "share": 0.051
+     "share": 0.051,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1224,7 +1360,8 @@
      "co": 62,
      "strong": 1,
      "retr": 0,
-     "share": 0.016
+     "share": 0.016,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1234,7 +1371,8 @@
      "co": 53,
      "strong": 2,
      "retr": 0,
-     "share": 0.038
+     "share": 0.038,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1244,7 +1382,8 @@
      "co": 881,
      "strong": 41,
      "retr": 0,
-     "share": 0.047
+     "share": 0.047,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1254,7 +1393,8 @@
      "co": 1649,
      "strong": 76,
      "retr": 1,
-     "share": 0.046
+     "share": 0.046,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1264,7 +1404,8 @@
      "co": 2419,
      "strong": 172,
      "retr": 3,
-     "share": 0.071
+     "share": 0.071,
+     "inv": 0
     },
     {
      "a": "HDL",
@@ -1274,7 +1415,8 @@
      "co": 322,
      "strong": 34,
      "retr": 0,
-     "share": 0.106
+     "share": 0.106,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1284,7 +1426,8 @@
      "co": 700,
      "strong": 123,
      "retr": 1,
-     "share": 0.176
+     "share": 0.176,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1294,7 +1437,8 @@
      "co": 923,
      "strong": 52,
      "retr": 2,
-     "share": 0.056
+     "share": 0.056,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1304,7 +1448,8 @@
      "co": 219,
      "strong": 32,
      "retr": 0,
-     "share": 0.146
+     "share": 0.146,
+     "inv": 0
     }
    ],
    "retr": 7
@@ -1321,7 +1466,8 @@
      "co": 844,
      "strong": 48,
      "retr": 0,
-     "share": 0.057
+     "share": 0.057,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1331,7 +1477,8 @@
      "co": 168,
      "strong": 6,
      "retr": 0,
-     "share": 0.036
+     "share": 0.036,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1341,7 +1488,8 @@
      "co": 95,
      "strong": 11,
      "retr": 0,
-     "share": 0.116
+     "share": 0.116,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1351,7 +1499,8 @@
      "co": 60,
      "strong": 1,
      "retr": 0,
-     "share": 0.017
+     "share": 0.017,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1361,7 +1510,8 @@
      "co": 54,
      "strong": 4,
      "retr": 0,
-     "share": 0.074
+     "share": 0.074,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1371,7 +1521,8 @@
      "co": 990,
      "strong": 124,
      "retr": 0,
-     "share": 0.125
+     "share": 0.125,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1381,7 +1532,8 @@
      "co": 1405,
      "strong": 102,
      "retr": 0,
-     "share": 0.073
+     "share": 0.073,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1391,7 +1543,8 @@
      "co": 1533,
      "strong": 157,
      "retr": 2,
-     "share": 0.102
+     "share": 0.102,
+     "inv": 0
     },
     {
      "a": "HDL",
@@ -1401,7 +1554,8 @@
      "co": 261,
      "strong": 31,
      "retr": 1,
-     "share": 0.119
+     "share": 0.119,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1411,7 +1565,8 @@
      "co": 555,
      "strong": 194,
      "retr": 1,
-     "share": 0.35
+     "share": 0.35,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1421,7 +1576,8 @@
      "co": 608,
      "strong": 43,
      "retr": 2,
-     "share": 0.071
+     "share": 0.071,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1431,7 +1587,8 @@
      "co": 195,
      "strong": 31,
      "retr": 4,
-     "share": 0.159
+     "share": 0.159,
+     "inv": 0
     }
    ],
    "retr": 10
@@ -1448,7 +1605,8 @@
      "co": 213,
      "strong": 10,
      "retr": 0,
-     "share": 0.047
+     "share": 0.047,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1458,7 +1616,8 @@
      "co": 38,
      "strong": 1,
      "retr": 0,
-     "share": 0.026
+     "share": 0.026,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1468,7 +1627,8 @@
      "co": 12,
      "strong": 1,
      "retr": 0,
-     "share": 0.083
+     "share": 0.083,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1478,7 +1638,8 @@
      "co": 14,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1488,7 +1649,8 @@
      "co": 17,
      "strong": 1,
      "retr": 0,
-     "share": 0.059
+     "share": 0.059,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1498,7 +1660,8 @@
      "co": 285,
      "strong": 28,
      "retr": 1,
-     "share": 0.098
+     "share": 0.098,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1508,7 +1671,8 @@
      "co": 409,
      "strong": 53,
      "retr": 0,
-     "share": 0.13
+     "share": 0.13,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1518,7 +1682,8 @@
      "co": 374,
      "strong": 43,
      "retr": 2,
-     "share": 0.115
+     "share": 0.115,
+     "inv": 0
     },
     {
      "a": "HDL",
@@ -1528,7 +1693,8 @@
      "co": 69,
      "strong": 7,
      "retr": 0,
-     "share": 0.101
+     "share": 0.101,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1538,7 +1704,8 @@
      "co": 80,
      "strong": 28,
      "retr": 1,
-     "share": 0.35
+     "share": 0.35,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1548,7 +1715,8 @@
      "co": 104,
      "strong": 7,
      "retr": 1,
-     "share": 0.067
+     "share": 0.067,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1558,7 +1726,8 @@
      "co": 48,
      "strong": 8,
      "retr": 1,
-     "share": 0.167
+     "share": 0.167,
+     "inv": 0
     }
    ],
    "retr": 6
@@ -1575,7 +1744,8 @@
      "co": 356,
      "strong": 25,
      "retr": 0,
-     "share": 0.07
+     "share": 0.07,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1585,7 +1755,8 @@
      "co": 59,
      "strong": 3,
      "retr": 0,
-     "share": 0.051
+     "share": 0.051,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1595,7 +1766,8 @@
      "co": 21,
      "strong": 2,
      "retr": 0,
-     "share": 0.095
+     "share": 0.095,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1605,7 +1777,8 @@
      "co": 47,
      "strong": 2,
      "retr": 0,
-     "share": 0.043
+     "share": 0.043,
+     "inv": 0
     },
     {
      "a": "ALC",
@@ -1615,7 +1788,8 @@
      "co": 19,
      "strong": 3,
      "retr": 0,
-     "share": 0.158
+     "share": 0.158,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1625,7 +1799,8 @@
      "co": 580,
      "strong": 80,
      "retr": 4,
-     "share": 0.138
+     "share": 0.138,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1635,7 +1810,8 @@
      "co": 1072,
      "strong": 139,
      "retr": 4,
-     "share": 0.13
+     "share": 0.13,
+     "inv": 0
     },
     {
      "a": "BP",
@@ -1645,7 +1821,8 @@
      "co": 798,
      "strong": 108,
      "retr": 2,
-     "share": 0.135
+     "share": 0.135,
+     "inv": 0
     },
     {
      "a": "HDL",
@@ -1655,7 +1832,8 @@
      "co": 170,
      "strong": 18,
      "retr": 0,
-     "share": 0.106
+     "share": 0.106,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1665,7 +1843,8 @@
      "co": 98,
      "strong": 29,
      "retr": 1,
-     "share": 0.296
+     "share": 0.296,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1675,7 +1854,8 @@
      "co": 168,
      "strong": 17,
      "retr": 1,
-     "share": 0.101
+     "share": 0.101,
+     "inv": 0
     },
     {
      "a": "DOSE",
@@ -1685,7 +1865,8 @@
      "co": 40,
      "strong": 2,
      "retr": 2,
-     "share": 0.05
+     "share": 0.05,
+     "inv": 0
     }
    ],
    "retr": 14
@@ -1704,7 +1885,8 @@
      "co": 47,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1714,7 +1896,8 @@
      "co": 399,
      "strong": 49,
      "retr": 0,
-     "share": 0.123
+     "share": 0.123,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1724,7 +1907,8 @@
      "co": 258,
      "strong": 29,
      "retr": 0,
-     "share": 0.112
+     "share": 0.112,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1734,7 +1918,8 @@
      "co": 1,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1744,7 +1929,8 @@
      "co": 7,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1754,7 +1940,8 @@
      "co": 4,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "REPERF",
@@ -1764,7 +1951,8 @@
      "co": 84,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "INF",
@@ -1774,7 +1962,8 @@
      "co": 1797,
      "strong": 196,
      "retr": 0,
-     "share": 0.109
+     "share": 0.109,
+     "inv": 0
     }
    ],
    "retr": 0
@@ -1791,7 +1980,8 @@
      "co": 19,
      "strong": 1,
      "retr": 0,
-     "share": 0.053
+     "share": 0.053,
+     "inv": 0
     },
     {
      "a": "ONSET",
@@ -1801,7 +1991,8 @@
      "co": 2,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1811,7 +2002,8 @@
      "co": 177,
      "strong": 11,
      "retr": 0,
-     "share": 0.062
+     "share": 0.062,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1821,7 +2013,8 @@
      "co": 1331,
      "strong": 115,
      "retr": 0,
-     "share": 0.086
+     "share": 0.086,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1831,7 +2024,8 @@
      "co": 537,
      "strong": 36,
      "retr": 0,
-     "share": 0.067
+     "share": 0.067,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1841,7 +2035,8 @@
      "co": 58,
      "strong": 2,
      "retr": 0,
-     "share": 0.034
+     "share": 0.034,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1851,7 +2046,8 @@
      "co": 164,
      "strong": 4,
      "retr": 0,
-     "share": 0.024
+     "share": 0.024,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1861,7 +2057,8 @@
      "co": 25,
      "strong": 0,
      "retr": 0,
-     "share": 0.0
+     "share": 0.0,
+     "inv": 0
     },
     {
      "a": "REPERF",
@@ -1871,7 +2068,8 @@
      "co": 275,
      "strong": 16,
      "retr": 0,
-     "share": 0.058
+     "share": 0.058,
+     "inv": 0
     },
     {
      "a": "INF",
@@ -1881,7 +2079,8 @@
      "co": 4502,
      "strong": 447,
      "retr": 6,
-     "share": 0.099
+     "share": 0.099,
+     "inv": 0
     }
    ],
    "retr": 6
@@ -1898,7 +2097,8 @@
      "co": 81,
      "strong": 4,
      "retr": 0,
-     "share": 0.049
+     "share": 0.049,
+     "inv": 0
     },
     {
      "a": "ONSET",
@@ -1908,7 +2108,8 @@
      "co": 8,
      "strong": 1,
      "retr": 0,
-     "share": 0.125
+     "share": 0.125,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1918,7 +2119,8 @@
      "co": 85,
      "strong": 7,
      "retr": 0,
-     "share": 0.082
+     "share": 0.082,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1928,7 +2130,8 @@
      "co": 681,
      "strong": 55,
      "retr": 0,
-     "share": 0.081
+     "share": 0.081,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -1938,7 +2141,8 @@
      "co": 230,
      "strong": 21,
      "retr": 0,
-     "share": 0.091
+     "share": 0.091,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1948,7 +2152,8 @@
      "co": 57,
      "strong": 2,
      "retr": 0,
-     "share": 0.035
+     "share": 0.035,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1958,7 +2163,8 @@
      "co": 194,
      "strong": 5,
      "retr": 0,
-     "share": 0.026
+     "share": 0.026,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -1968,7 +2174,8 @@
      "co": 43,
      "strong": 4,
      "retr": 0,
-     "share": 0.093
+     "share": 0.093,
+     "inv": 0
     },
     {
      "a": "REPERF",
@@ -1978,7 +2185,8 @@
      "co": 152,
      "strong": 8,
      "retr": 0,
-     "share": 0.053
+     "share": 0.053,
+     "inv": 0
     },
     {
      "a": "INF",
@@ -1988,7 +2196,8 @@
      "co": 1876,
      "strong": 207,
      "retr": 4,
-     "share": 0.11
+     "share": 0.11,
+     "inv": 0
     }
    ],
    "retr": 4
@@ -2005,7 +2214,8 @@
      "co": 218,
      "strong": 14,
      "retr": 0,
-     "share": 0.064
+     "share": 0.064,
+     "inv": 0
     },
     {
      "a": "ONSET",
@@ -2015,7 +2225,8 @@
      "co": 15,
      "strong": 1,
      "retr": 0,
-     "share": 0.067
+     "share": 0.067,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2025,7 +2236,8 @@
      "co": 87,
      "strong": 10,
      "retr": 0,
-     "share": 0.115
+     "share": 0.115,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2035,7 +2247,8 @@
      "co": 854,
      "strong": 122,
      "retr": 0,
-     "share": 0.143
+     "share": 0.143,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2045,7 +2258,8 @@
      "co": 338,
      "strong": 44,
      "retr": 0,
-     "share": 0.13
+     "share": 0.13,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2055,7 +2269,8 @@
      "co": 96,
      "strong": 14,
      "retr": 0,
-     "share": 0.146
+     "share": 0.146,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2065,7 +2280,8 @@
      "co": 547,
      "strong": 72,
      "retr": 0,
-     "share": 0.132
+     "share": 0.132,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2075,7 +2291,8 @@
      "co": 85,
      "strong": 20,
      "retr": 0,
-     "share": 0.235
+     "share": 0.235,
+     "inv": 0
     },
     {
      "a": "REPERF",
@@ -2085,7 +2302,8 @@
      "co": 204,
      "strong": 20,
      "retr": 0,
-     "share": 0.098
+     "share": 0.098,
+     "inv": 0
     },
     {
      "a": "INF",
@@ -2095,7 +2313,8 @@
      "co": 2709,
      "strong": 397,
      "retr": 6,
-     "share": 0.147
+     "share": 0.147,
+     "inv": 0
     }
    ],
    "retr": 6
@@ -2112,7 +2331,8 @@
      "co": 176,
      "strong": 19,
      "retr": 0,
-     "share": 0.108
+     "share": 0.108,
+     "inv": 0
     },
     {
      "a": "ONSET",
@@ -2122,7 +2342,8 @@
      "co": 19,
      "strong": 3,
      "retr": 0,
-     "share": 0.158
+     "share": 0.158,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2132,7 +2353,8 @@
      "co": 68,
      "strong": 10,
      "retr": 0,
-     "share": 0.147
+     "share": 0.147,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2142,7 +2364,8 @@
      "co": 609,
      "strong": 80,
      "retr": 0,
-     "share": 0.131
+     "share": 0.131,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2152,7 +2375,8 @@
      "co": 212,
      "strong": 27,
      "retr": 0,
-     "share": 0.127
+     "share": 0.127,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2162,7 +2386,8 @@
      "co": 125,
      "strong": 16,
      "retr": 0,
-     "share": 0.128
+     "share": 0.128,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2172,7 +2397,8 @@
      "co": 745,
      "strong": 87,
      "retr": 1,
-     "share": 0.117
+     "share": 0.117,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2182,7 +2408,8 @@
      "co": 130,
      "strong": 20,
      "retr": 0,
-     "share": 0.154
+     "share": 0.154,
+     "inv": 0
     },
     {
      "a": "REPERF",
@@ -2192,7 +2419,8 @@
      "co": 193,
      "strong": 22,
      "retr": 0,
-     "share": 0.114
+     "share": 0.114,
+     "inv": 0
     },
     {
      "a": "INF",
@@ -2202,7 +2430,8 @@
      "co": 2195,
      "strong": 283,
      "retr": 6,
-     "share": 0.129
+     "share": 0.129,
+     "inv": 0
     }
    ],
    "retr": 7
@@ -2219,7 +2448,8 @@
      "co": 439,
      "strong": 57,
      "retr": 0,
-     "share": 0.13
+     "share": 0.13,
+     "inv": 0
     },
     {
      "a": "ONSET",
@@ -2229,7 +2459,8 @@
      "co": 46,
      "strong": 8,
      "retr": 0,
-     "share": 0.174
+     "share": 0.174,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2239,7 +2470,8 @@
      "co": 208,
      "strong": 41,
      "retr": 0,
-     "share": 0.197
+     "share": 0.197,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2249,7 +2481,8 @@
      "co": 2182,
      "strong": 476,
      "retr": 6,
-     "share": 0.218
+     "share": 0.218,
+     "inv": 0
     },
     {
      "a": "TPA",
@@ -2259,7 +2492,8 @@
      "co": 548,
      "strong": 179,
      "retr": 1,
-     "share": 0.327
+     "share": 0.327,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2269,7 +2503,8 @@
      "co": 363,
      "strong": 57,
      "retr": 0,
-     "share": 0.157
+     "share": 0.157,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2279,7 +2514,8 @@
      "co": 3886,
      "strong": 618,
      "retr": 8,
-     "share": 0.159
+     "share": 0.159,
+     "inv": 0
     },
     {
      "a": "EVT",
@@ -2289,7 +2525,8 @@
      "co": 594,
      "strong": 168,
      "retr": 2,
-     "share": 0.283
+     "share": 0.283,
+     "inv": 0
     },
     {
      "a": "REPERF",
@@ -2299,7 +2536,8 @@
      "co": 589,
      "strong": 88,
      "retr": 0,
-     "share": 0.149
+     "share": 0.149,
+     "inv": 0
     },
     {
      "a": "INF",
@@ -2309,7 +2547,8 @@
      "co": 5595,
      "strong": 893,
      "retr": 16,
-     "share": 0.16
+     "share": 0.16,
+     "inv": 0
     }
    ],
    "retr": 33

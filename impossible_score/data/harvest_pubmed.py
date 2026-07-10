@@ -33,22 +33,22 @@ MOVEMENTS = [
   {
     'no': 'I', 'key': 'fat',
     'context': None,
-    # 中性脂肪(TG)を媒介層に追加し、ほぼ無音だった塩分を外して7声を保つ。
-    # 媒介が2ノード（LDL/総コレsteroールと中性脂肪）になりDAGが見やすくなる。
-    # TG→CVD は「独立した危険因子か否か」で長く係争された辺（音楽的にも生きる）
+    # 2つのアウトカム: 冠動脈(CHD)と脳出血(ICH)。同じ媒介コレステロールが
+    # 逆符号で作用する——CHOL↑→CHD↑（古典・逆転）、CHOL↓→ICH↑（Iso の逆相関、
+    # 日本 vs 欧米。J Epidemiol 1996 / NEJM 1989 MRFIT）。喫煙を外して7声を保つ。
     'concepts': {
       'SFA':  OR('Dietary Fats', 'Fatty Acids'),
       'SUGR': OR('Dietary Sucrose', 'Dietary Carbohydrates'),
-      'SMOK': OR('Smoking'),
       'CHOL': OR('Cholesterol'),
       'TG':   OR('Triglycerides', 'Hypertriglyceridemia'),
       'STAT': OR('Hydroxymethylglutaryl-CoA Reductase Inhibitors'),
-      'CVD':  OR('Coronary Disease', 'Myocardial Infarction'),
+      'CHD':  OR('Coronary Disease', 'Myocardial Infarction'),
+      'ICH':  OR('Cerebral Hemorrhage', 'Intracranial Hemorrhages'),
     },
-    'pairs': [('SFA','CHOL'), ('SFA','TG'), ('SFA','CVD'),
-              ('SUGR','TG'), ('SUGR','CHOL'), ('SUGR','CVD'),
-              ('SMOK','CVD'), ('CHOL','CVD'), ('TG','CVD'),
-              ('STAT','CHOL'), ('STAT','TG'), ('STAT','CVD')],
+    'pairs': [('SFA','CHOL'), ('SFA','TG'), ('SFA','CHD'), ('SFA','ICH'),
+              ('SUGR','TG'), ('SUGR','CHD'),
+              ('CHOL','CHD'), ('TG','CHD'), ('CHOL','ICH'), ('TG','ICH'),
+              ('STAT','CHOL'), ('STAT','CHD'), ('STAT','ICH')],
     'epochs': [(1950,'1950:1959'), (1960,'1960:1969'), (1970,'1970:1979'), (1980,'1980:1989'),
                (1990,'1990:1999'), (2000,'2000:2009'), (2010,'2010:2019'), (2020,'2020:2026')],
   },

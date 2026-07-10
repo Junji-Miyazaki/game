@@ -22,12 +22,12 @@ counts = json.load(open(os.path.join(D, 'pubmed_counts.json')))
 
 # 作者の注釈: 係争と逆転。(曲, 相, 'A-B') → 状態
 OVERLAY = {
-  ('fat',   2010, 'SFA-CVD'):  'reversed',    # Siri-Tarino 2010 以降、定説が覆る
-  ('fat',   2020, 'SFA-CVD'):  'reversed',
-  ('fat',   2000, 'SFA-CVD'):  'contested',
-  ('fat',   1990, 'TG-CVD'):   'contested',   # 中性脂肪は独立危険因子か——長い論争
-  ('fat',   2000, 'TG-CVD'):   'contested',
-  ('fat',   1980, 'TG-CVD'):   'contested',
+  ('fat',   2010, 'SFA-CHD'):  'reversed',    # Siri-Tarino 2010 以降、定説が覆る
+  ('fat',   2020, 'SFA-CHD'):  'reversed',
+  ('fat',   2000, 'SFA-CHD'):  'contested',
+  ('fat',   1990, 'TG-CHD'):   'contested',   # 中性脂肪は独立危険因子か——長い論争
+  ('fat',   2000, 'TG-CHD'):   'contested',
+  ('fat',   1980, 'TG-CHD'):   'contested',
 
   ('alcohol', 2018, 'ALC-MI'):   'reversed',  # GBD 2018「安全な量はない」
   ('alcohol', 2020, 'ALC-MI'):   'reversed',
@@ -45,11 +45,14 @@ OVERLAY = {
   ('reperfusion', 2020, 'EVT-SICH'):   'contested',
 }
 
+# 逆相関（負の関連）の辺 — 作者のモデル。低コレステロール→脳出血増（Iso, NEJM 1989 / J Epidemiol 1996）。
+# 同じ媒介コレステロールが冠動脈には正、脳出血には負に作用する。開示事項
+INVERSE = {('CHOL', 'ICH'), ('SFA', 'ICH')}
+
 # 各曲の重心（パラダイムの中心）— 作者の史観。開示事項
 ROOTS = {
-  'fat':        {1950:'CVD', 1960:'CHOL', 1970:'SFA', 1980:'SFA',
+  'fat':        {1950:'CHD', 1960:'CHOL', 1970:'SFA', 1980:'SFA',
                  1990:'STAT', 2000:'STAT', 2010:'SUGR', 2020:'SUGR'},
-  # 注: 1950/60年代に SUGR が重心になることはない。SUGR は媒介 TG 経由で後年台頭
   'alcohol':    {1970:'MI', 1990:'ALC', 2000:'ALC', 2010:'BP', 2018:'ALC', 2020:'ALC'},
   'reperfusion':{1995:'TPA', 2005:'TPA', 2013:'ONSET', 2015:'EVT', 2018:'REPERF', 2020:'REPERF'},
 }
@@ -84,7 +87,7 @@ for key in ('fat', 'alcohol', 'reperfusion'):
             a, b = pk.split('-')
             edges.append({'a': a, 'b': b, 'w': w, 'status': status,
                           'co': pv['co'], 'strong': pv['strong'], 'retr': pv['retracted'],
-                          'share': round(share, 3)})
+                          'share': round(share, 3), 'inv': 1 if (a, b) in INVERSE else 0})
             report.append((key, yr, pk, pv['co'], pv['strong'], pv['retracted'],
                            round(d, 4), w, status))
         edges = [e for e in edges if e['co'] > 0]

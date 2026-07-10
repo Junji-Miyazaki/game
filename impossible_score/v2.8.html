@@ -117,33 +117,35 @@ let DISCLOSURE = '';
 // 状態: establishing 形成中 / established 確立 / contested 係争 / reversed 逆転
 const SUITE = [
   { // ---- I. 遁走する定説: 確立 → 崩壊 ----
-    no:'I', title:'Saturated Fat and Coronary Heart Disease',
+    no:'I', title:'Saturated Fat and Vascular Disease',
     tuning:'pythagorean',
     form:'Eight Decades for Seven Voices and an Observer, in Pythagorean Tuning',
-    design:'a natural-history cohort, 1950–2020; simple fifths, stacked to a comma',
+    design:'a natural-history cohort, 1950–2020; cholesterol feeds coronary above and haemorrhage below',
     sub:'1950–2020',
     disc:'DATA v1 · PubMed esearch カウント（2026-07-11 採取）· 強度=Dice係数 / 状態=強いデザインの占有率 / 撤回=実数。概念→MeSHの対応・因果の向き・係争と逆転の注釈は作者のモデルである。',
     concepts:[
-      { id:'SFA',  jp:'飽和脂肪',       en:'Saturated Fat', partial:1, band: 0, col:'232,224,204' },
-      { id:'SUGR', jp:'糖',             en:'Sugar',         partial:6, band: 1, col:'230,215,180' },
-      { id:'SMOK', jp:'喫煙',           en:'Smoking',       partial:5, band: 2, col:'200,200,190' },
+      { id:'SFA',  jp:'飽和脂肪',       en:'Saturated Fat', partial:1, band: 1, col:'232,224,204' },
+      { id:'SUGR', jp:'糖',             en:'Sugar',         partial:6, band: 2, col:'230,215,180' },
       { id:'CHOL', jp:'コレステロール', en:'Cholesterol',   partial:3, band: 0, col:'210,220,232' },
-      { id:'TG',   jp:'中性脂肪',       en:'Triglycerides', partial:7, band:-1, col:'225,205,180' },
+      { id:'TG',   jp:'中性脂肪',       en:'Triglycerides', partial:7, band: 0, col:'225,205,180' },
       { id:'STAT', jp:'スタチン',       en:'Statins',       partial:4, band: 1, col:'190,220,205' },
-      { id:'CVD',  jp:'心疾患',         en:'Heart Disease', partial:2, band:-2, col:'232,190,180' } ],
+      { id:'CHD',  jp:'冠動脈疾患',     en:'Coronary Disease', partial:2, band:-1, col:'232,190,180' },
+      { id:'ICH',  jp:'脳出血',         en:'Cerebral Hemorrhage', partial:5, band:-3, col:'205,150,175' } ],
         // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted]
     // STAT は薬剤が存在しない年代には辺を持たない（co=0 の辺は落ちる）
         // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted]
     // 中性脂肪(TG)を媒介層に追加し塩分を外した（7声を保つ）。TG→CVD は独立危険因子論争の辺
+        // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted, inv]
+    // inv=1 は逆相関（低コレステロール→脳出血増、Iso NEJM 1989）。同じ媒介が冠動脈へ正・脳出血へ負
     decades:[
-      { year:1950, root:'CVD', edges:[['SFA','CHOL',0.72,'establishing',388,0,0],['SFA','TG',0.37,'establishing',45,0,0],['SFA','CVD',0.25,'establishing',22,0,0],['SUGR','CHOL',0.24,'establishing',6,0,0],['SMOK','CVD',0.28,'establishing',18,0,0],['CHOL','CVD',0.43,'establishing',108,0,0],['TG','CVD',0.19,'establishing',2,0,0]] },
-      { year:1960, root:'CHOL', edges:[['SFA','CHOL',0.95,'establishing',2927,10,0],['SFA','TG',0.82,'establishing',1636,3,0],['SFA','CVD',0.43,'establishing',516,7,0],['SUGR','TG',0.45,'establishing',104,0,0],['SUGR','CHOL',0.44,'establishing',201,3,0],['SUGR','CVD',0.31,'establishing',98,2,0],['SMOK','CVD',0.51,'establishing',417,1,0],['CHOL','CVD',0.63,'establishing',914,8,0],['TG','CVD',0.40,'establishing',202,1,0]] },
-      { year:1970, root:'SFA', edges:[['SFA','CHOL',0.90,'establishing',5896,37,0],['SFA','TG',0.87,'establishing',4931,34,0],['SFA','CVD',0.43,'establishing',1220,11,0],['SUGR','TG',0.60,'establishing',606,12,0],['SUGR','CHOL',0.54,'establishing',663,11,0],['SUGR','CVD',0.31,'establishing',219,2,0],['SMOK','CVD',0.60,'establishing',1399,11,0],['CHOL','CVD',0.63,'establishing',1952,27,0],['TG','CVD',0.52,'establishing',1001,17,0],['STAT','CHOL',0.24,'establishing',31,0,0],['STAT','TG',0.20,'establishing',6,0,0]] },
-      { year:1980, root:'SFA', edges:[['SFA','CHOL',0.76,'establishing',5030,127,1],['SFA','TG',0.67,'establishing',3264,115,0],['SFA','CVD',0.47,'establishing',2085,53,1],['SUGR','TG',0.50,'established',389,38,0],['SUGR','CHOL',0.51,'established',631,55,0],['SUGR','CVD',0.27,'establishing',179,10,1],['SMOK','CVD',0.54,'establishing',1643,61,2],['CHOL','CVD',0.64,'establishing',2616,82,0],['TG','CVD',0.45,'contested',919,32,0],['STAT','CHOL',0.36,'establishing',174,2,0],['STAT','TG',0.25,'establishing',20,1,0],['STAT','CVD',0.18,'establishing',13,1,0]] },
-      { year:1990, root:'STAT', edges:[['SFA','CHOL',0.76,'established',6122,622,0],['SFA','TG',0.69,'established',4386,509,0],['SFA','CVD',0.43,'established',1927,207,0],['SUGR','TG',0.49,'established',464,106,0],['SUGR','CHOL',0.51,'established',792,151,0],['SUGR','CVD',0.25,'establishing',134,22,0],['SMOK','CVD',0.49,'established',1547,94,3],['CHOL','CVD',0.68,'established',3649,344,0],['TG','CVD',0.47,'contested',1254,100,0],['STAT','CHOL',0.54,'established',686,109,0],['STAT','TG',0.42,'established',179,52,0],['STAT','CVD',0.30,'establishing',259,50,0]] },
-      { year:2000, root:'STAT', edges:[['SFA','CHOL',0.70,'established',7027,1101,6],['SFA','TG',0.69,'established',5855,799,4],['SFA','CVD',0.42,'contested',2516,463,2],['SUGR','TG',0.46,'established',612,161,0],['SUGR','CHOL',0.51,'established',1185,180,1],['SUGR','CVD',0.24,'establishing',165,33,0],['SMOK','CVD',0.47,'establishing',2139,103,0],['CHOL','CVD',0.64,'established',4511,512,0],['TG','CVD',0.45,'contested',1579,188,0],['STAT','CHOL',0.81,'established',2987,579,1],['STAT','TG',0.51,'established',647,201,0],['STAT','CVD',0.55,'established',2504,381,1]] },
-      { year:2010, root:'SUGR', edges:[['SFA','CHOL',0.60,'established',5614,943,15],['SFA','TG',0.64,'established',6039,810,11],['SFA','CVD',0.36,'reversed',1835,433,5],['SUGR','TG',0.43,'established',769,182,2],['SUGR','CHOL',0.47,'established',1273,219,3],['SUGR','CVD',0.21,'establishing',105,18,0],['SMOK','CVD',0.40,'established',1663,102,1],['CHOL','CVD',0.51,'established',3002,398,3],['TG','CVD',0.36,'established',1014,118,0],['STAT','CHOL',0.80,'established',3448,688,2],['STAT','TG',0.46,'established',640,153,0],['STAT','CVD',0.51,'established',2376,498,2]] },
-      { year:2020, root:'SUGR', edges:[['SFA','CHOL',0.47,'established',1817,306,4],['SFA','TG',0.54,'established',2330,286,3],['SFA','CVD',0.30,'reversed',565,124,3],['SUGR','TG',0.32,'establishing',210,54,0],['SUGR','CHOL',0.36,'established',387,48,0],['SUGR','CVD',0.19,'establishing',34,9,0],['SMOK','CVD',0.31,'establishing',368,26,1],['CHOL','CVD',0.49,'established',1561,180,3],['TG','CVD',0.38,'established',696,53,2],['STAT','CHOL',0.82,'established',2012,338,2],['STAT','TG',0.40,'established',248,54,0],['STAT','CVD',0.44,'established',917,188,0]] }
+      { year:1950, root:'CHD', edges:[['SFA','CHOL',0.72,'establishing',388,0,0,0],['SFA','TG',0.37,'establishing',45,0,0,0],['SFA','CHD',0.25,'establishing',22,0,0,0],['CHOL','CHD',0.43,'establishing',108,0,0,0],['TG','CHD',0.19,'establishing',2,0,0,0]] },
+      { year:1960, root:'CHOL', edges:[['SFA','CHOL',0.95,'establishing',2927,10,0,0],['SFA','TG',0.82,'establishing',1636,3,0,0],['SFA','CHD',0.43,'establishing',516,7,0,0],['SFA','ICH',0.18,'establishing',7,0,0,1],['SUGR','TG',0.45,'establishing',104,0,0,0],['SUGR','CHD',0.31,'establishing',98,2,0,0],['CHOL','CHD',0.63,'establishing',914,8,0,0],['TG','CHD',0.40,'establishing',202,1,0,0],['CHOL','ICH',0.21,'establishing',10,0,0,1],['TG','ICH',0.19,'establishing',2,0,0,0]] },
+      { year:1970, root:'SFA', edges:[['SFA','CHOL',0.90,'establishing',5896,37,0,0],['SFA','TG',0.87,'establishing',4931,34,0,0],['SFA','CHD',0.43,'establishing',1220,11,0,0],['SFA','ICH',0.20,'establishing',37,0,0,1],['SUGR','TG',0.60,'establishing',606,12,0,0],['SUGR','CHD',0.31,'establishing',219,2,0,0],['CHOL','CHD',0.63,'establishing',1952,27,0,0],['TG','CHD',0.52,'establishing',1001,17,0,0],['CHOL','ICH',0.22,'establishing',27,0,0,1],['TG','ICH',0.19,'establishing',7,0,0,0],['STAT','CHOL',0.24,'establishing',31,0,0,0]] },
+      { year:1980, root:'SFA', edges:[['SFA','CHOL',0.76,'establishing',5030,127,1,0],['SFA','TG',0.67,'establishing',3264,115,0,0],['SFA','CHD',0.47,'establishing',2085,53,1,0],['SFA','ICH',0.22,'establishing',95,1,0,1],['SUGR','TG',0.50,'established',389,38,0,0],['SUGR','CHD',0.27,'establishing',179,10,1,0],['CHOL','CHD',0.64,'establishing',2616,82,0,0],['TG','CHD',0.45,'contested',919,32,0,0],['CHOL','ICH',0.19,'establishing',13,0,0,1],['TG','ICH',0.19,'establishing',6,0,0,0],['STAT','CHOL',0.36,'establishing',174,2,0,0],['STAT','CHD',0.18,'establishing',13,1,0,0]] },
+      { year:1990, root:'STAT', edges:[['SFA','CHOL',0.76,'established',6122,622,0,0],['SFA','TG',0.69,'established',4386,509,0,0],['SFA','CHD',0.43,'established',1927,207,0,0],['SFA','ICH',0.22,'establishing',91,3,0,1],['SUGR','TG',0.49,'established',464,106,0,0],['SUGR','CHD',0.25,'establishing',134,22,0,0],['CHOL','CHD',0.68,'established',3649,344,0,0],['TG','CHD',0.47,'contested',1254,100,0,0],['CHOL','ICH',0.21,'establishing',29,0,0,1],['TG','ICH',0.18,'establishing',5,0,0,0],['STAT','CHOL',0.54,'established',686,109,0,0],['STAT','CHD',0.30,'establishing',259,50,0,0]] },
+      { year:2000, root:'STAT', edges:[['SFA','CHOL',0.70,'established',7027,1101,6,0],['SFA','TG',0.69,'established',5855,799,4,0],['SFA','CHD',0.42,'contested',2516,463,2,0],['SFA','ICH',0.21,'establishing',99,2,0,1],['SUGR','TG',0.46,'established',612,161,0,0],['SUGR','CHD',0.24,'establishing',165,33,0,0],['CHOL','CHD',0.64,'established',4511,512,0,0],['TG','CHD',0.45,'contested',1579,188,0,0],['CHOL','ICH',0.24,'establishing',80,7,0,1],['TG','ICH',0.20,'establishing',17,0,0,0],['STAT','CHOL',0.81,'established',2987,579,1,0],['STAT','CHD',0.55,'established',2504,381,1,0],['STAT','ICH',0.29,'establishing',103,15,0,0]] },
+      { year:2010, root:'SUGR', edges:[['SFA','CHOL',0.60,'established',5614,943,15,0],['SFA','TG',0.64,'established',6039,810,11,0],['SFA','CHD',0.36,'reversed',1835,433,5,0],['SFA','ICH',0.22,'establishing',154,18,0,1],['SUGR','TG',0.43,'established',769,182,2,0],['SUGR','CHD',0.21,'establishing',105,18,0,0],['CHOL','CHD',0.51,'established',3002,398,3,0],['TG','CHD',0.36,'established',1014,118,0,0],['CHOL','ICH',0.23,'establishing',81,5,0,1],['TG','ICH',0.20,'establishing',29,1,0,0],['STAT','CHOL',0.80,'established',3448,688,2,0],['STAT','CHD',0.51,'established',2376,498,2,0],['STAT','ICH',0.31,'establishing',200,36,1,0]] },
+      { year:2020, root:'SUGR', edges:[['SFA','CHOL',0.47,'established',1817,306,4,0],['SFA','TG',0.54,'established',2330,286,3,0],['SFA','CHD',0.30,'reversed',565,124,3,0],['SFA','ICH',0.22,'establishing',108,7,1,1],['SUGR','TG',0.32,'establishing',210,54,0,0],['SUGR','CHD',0.19,'establishing',34,9,0,0],['CHOL','CHD',0.49,'established',1561,180,3,0],['TG','CHD',0.38,'established',696,53,2,0],['CHOL','ICH',0.25,'establishing',75,6,1,1],['TG','ICH',0.22,'establishing',31,2,0,0],['STAT','CHOL',0.82,'established',2012,338,2,0],['STAT','CHD',0.44,'established',917,188,0,0],['STAT','ICH',0.31,'establishing',109,21,0,0]] }
     ] },
 
   { // ---- II. 消えゆくJカーブ: 偽りの保護 → 「安全な量はない」 ----
@@ -200,7 +202,8 @@ const SUITE = [
 
 // 各相を代表する実在の文献（模型の典拠。音になった主張の出典として静かに現れる）
 const CITES = [
-  { 1970:'Keys A. Seven Countries Study. Circulation 1970',
+  { 1960:'Keys A. Seven Countries Study. Circulation 1970',
+    1970:'Iso H, et al. N Engl J Med 1989 — low cholesterol, intracerebral haemorrhage (MRFIT)',
     1980:'Lipid Research Clinics. CPPT. JAMA 1984',
     1990:'Scandinavian Simvastatin Survival Study. Lancet 1994',
     2000:'Heart Protection Study. Lancet 2002',
@@ -223,7 +226,7 @@ const CITES = [
 // 時代が進むと窪みは浅くなり、やがて消える = 消えゆく J カーブ
 // 因果の向き（DAG）: 曝露 → 治療 → 媒介 → アウトカム。エッジは常に前方向に走る
 const ROLE = {
-  SFA:'exposure', SMOK:'exposure', SUGR:'exposure', CHOL:'mediator', TG:'mediator', STAT:'treatment', CVD:'outcome',
+  SFA:'exposure', SUGR:'exposure', CHOL:'mediator', TG:'mediator', STAT:'treatment', CHD:'outcome', ICH:'outcome',
   ALC:'exposure', DOSE:'exposure', BP:'mediator', HDL:'mediator', MI:'outcome', ISCH:'outcome', ICH:'outcome',
   ONSET:'exposure', TPA:'treatment', EVT:'treatment', REPERF:'mediator', INF:'mediator', SICH:'outcome', MRS:'outcome',
 };
@@ -319,7 +322,7 @@ function buildField(dec){
     const d = status === 'reversed' ? 2 : status === 'contested' ? 1 : 0;
     detune[ai] = Math.max(detune[ai], d); detune[bi] = Math.max(detune[bi], d);
     edges.push({ ai, bi, w, status, nextT: 0, litAt: -99,
-                 co: e[4] || 0, strong: e[5] || 0, retr: e[6] || 0 });
+                 co: e[4] || 0, strong: e[5] || 0, retr: e[6] || 0, inv: e[7] || 0 });
   }
   const rootIx = IX[dec.root];
   const ranked = CONCEPTS.map((c,i)=>i)
@@ -1092,11 +1095,13 @@ function drawGraph(now){
     g2.fillStyle = 'rgba(220,220,220,0.16)';
     g2.fillText(LAYER_LABEL[L], x0 + (L / 3) * w, yTop - 16);
   }
-  // 有向辺
+  // 有向辺（因果の向き）。逆相関の辺は寒色の破線で描く＝符号が逆であることを示す
   for (const e of field.edges){
     const lit = clamp(1 - (now - e.litAt) / 0.8, 0, 1);
-    const col = STATUS_COL[e.status];
+    const col = e.inv ? '120,175,205' : STATUS_COL[e.status];
+    if (e.inv){ g2.save(); g2.setLineDash([3, 3]); }
     arrow(pos[e.ai], pos[e.bi], `rgba(${col},${0.10 + e.w * 0.26 + lit * 0.5})`, 0.4 + e.w * 1.8 + lit * 1.1);
+    if (e.inv){ g2.restore(); }
   }
   // ノード（＝凡例。発音で点灯し、対応が学習される）
   g2.textAlign = 'center';
