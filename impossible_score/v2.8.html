@@ -118,35 +118,39 @@ let DISCLOSURE = '';
 const SUITE = [
   { // ---- I. 遁走する定説: 確立 → 崩壊 ----
     no:'I', title:'Saturated Fat and Coronary Heart Disease',
-    form:'Eight Decades for Seven Voices and an Observer, in Chromatic Consonance-Rank',
-    design:'a natural-history cohort, 1950–2020; with one reversal',
+    tuning:'pythagorean',
+    form:'Eight Decades for Seven Voices and an Observer, in Pythagorean Tuning',
+    design:'a natural-history cohort, 1950–2020; simple fifths, stacked to a comma',
     sub:'1950–2020',
     disc:'DATA v1 · PubMed esearch カウント（2026-07-11 採取）· 強度=Dice係数 / 状態=強いデザインの占有率 / 撤回=実数。概念→MeSHの対応・因果の向き・係争と逆転の注釈は作者のモデルである。',
     concepts:[
       { id:'SFA',  jp:'飽和脂肪',       en:'Saturated Fat', partial:1, band: 0, col:'232,224,204' },
-      { id:'CHOL', jp:'コレステロール', en:'Cholesterol',   partial:3, band: 1, col:'210,220,232' },
-      { id:'CVD',  jp:'心疾患',         en:'Heart Disease', partial:2, band:-2, col:'232,190,180' },
+      { id:'SUGR', jp:'糖',             en:'Sugar',         partial:6, band: 1, col:'230,215,180' },
       { id:'SMOK', jp:'喫煙',           en:'Smoking',       partial:5, band: 2, col:'200,200,190' },
+      { id:'CHOL', jp:'コレステロール', en:'Cholesterol',   partial:3, band: 0, col:'210,220,232' },
+      { id:'TG',   jp:'中性脂肪',       en:'Triglycerides', partial:7, band:-1, col:'225,205,180' },
       { id:'STAT', jp:'スタチン',       en:'Statins',       partial:4, band: 1, col:'190,220,205' },
-      { id:'SALT', jp:'塩分',           en:'Sodium',        partial:7, band:-1, col:'225,215,225' },
-      { id:'SUGR', jp:'糖',             en:'Sugar',         partial:6, band: 0, col:'230,215,180' } ],
+      { id:'CVD',  jp:'心疾患',         en:'Heart Disease', partial:2, band:-2, col:'232,190,180' } ],
         // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted]
     // STAT は薬剤が存在しない年代には辺を持たない（co=0 の辺は落ちる）
+        // 関係史は PubMed 実カウントから導出。辺 = [a, b, w, status, co, strong, retracted]
+    // 中性脂肪(TG)を媒介層に追加し塩分を外した（7声を保つ）。TG→CVD は独立危険因子論争の辺
     decades:[
-      { year:1950, root:'CVD', edges:[['SFA','CHOL',0.72,'establishing',388,0,0],['SFA','CVD',0.25,'establishing',22,0,0],['CHOL','CVD',0.43,'establishing',108,0,0],['SMOK','CVD',0.28,'establishing',18,0,0],['SALT','CVD',0.22,'establishing',7,0,0]] },
-      { year:1960, root:'CHOL', edges:[['SFA','CHOL',0.95,'establishing',2927,10,0],['SFA','CVD',0.43,'establishing',516,7,0],['CHOL','CVD',0.63,'establishing',914,8,0],['SMOK','CVD',0.51,'establishing',417,1,0],['SALT','CVD',0.20,'establishing',11,0,0],['SUGR','CVD',0.31,'establishing',98,2,0]] },
-      { year:1970, root:'SFA', edges:[['SFA','CHOL',0.90,'establishing',5896,37,0],['SFA','CVD',0.43,'establishing',1220,11,0],['CHOL','CVD',0.63,'establishing',1952,27,0],['SMOK','CVD',0.60,'establishing',1399,11,0],['SUGR','CVD',0.31,'establishing',219,2,0],['STAT','CHOL',0.24,'establishing',31,0,0]] },
-      { year:1980, root:'SFA', edges:[['SFA','CHOL',0.76,'establishing',5030,127,1],['SFA','CVD',0.47,'establishing',2085,53,1],['CHOL','CVD',0.64,'establishing',2616,82,0],['SMOK','CVD',0.54,'establishing',1643,61,2],['SALT','CVD',0.16,'establishing',2,0,0],['SUGR','CVD',0.27,'establishing',179,10,1],['STAT','CHOL',0.36,'establishing',174,2,0],['STAT','CVD',0.18,'establishing',13,1,0]] },
-      { year:1990, root:'STAT', edges:[['SFA','CHOL',0.76,'established',6122,622,0],['SFA','CVD',0.43,'established',1927,207,0],['CHOL','CVD',0.68,'established',3649,344,0],['SMOK','CVD',0.49,'established',1547,94,3],['SALT','CVD',0.18,'contested',18,1,0],['SUGR','CVD',0.25,'establishing',134,22,0],['STAT','CHOL',0.54,'established',686,109,0],['STAT','CVD',0.30,'establishing',259,50,0]] },
-      { year:2000, root:'STAT', edges:[['SFA','CHOL',0.70,'established',7027,1101,6],['SFA','CVD',0.42,'contested',2516,463,2],['CHOL','CVD',0.64,'established',4511,512,0],['SMOK','CVD',0.47,'establishing',2139,103,0],['SALT','CVD',0.18,'establishing',25,2,0],['SUGR','CVD',0.24,'establishing',165,33,0],['STAT','CHOL',0.81,'established',2987,579,1],['STAT','CVD',0.55,'established',2504,381,1]] },
-      { year:2010, root:'SUGR', edges:[['SFA','CHOL',0.60,'established',5614,943,15],['SFA','CVD',0.36,'reversed',1835,433,5],['CHOL','CVD',0.51,'established',3002,398,3],['SMOK','CVD',0.40,'established',1663,102,1],['SALT','CVD',0.19,'establishing',43,1,0],['SUGR','CVD',0.21,'establishing',105,18,0],['STAT','CHOL',0.80,'established',3448,688,2],['STAT','CVD',0.51,'established',2376,498,2]] },
-      { year:2020, root:'SUGR', edges:[['SFA','CHOL',0.47,'established',1817,306,4],['SFA','CVD',0.30,'reversed',565,124,3],['CHOL','CVD',0.49,'established',1561,180,3],['SMOK','CVD',0.31,'establishing',368,26,1],['SALT','CVD',0.18,'establishing',12,0,0],['SUGR','CVD',0.19,'establishing',34,9,0],['STAT','CHOL',0.82,'established',2012,338,2],['STAT','CVD',0.44,'established',917,188,0]] }
+      { year:1950, root:'CVD', edges:[['SFA','CHOL',0.72,'establishing',388,0,0],['SFA','TG',0.37,'establishing',45,0,0],['SFA','CVD',0.25,'establishing',22,0,0],['SUGR','CHOL',0.24,'establishing',6,0,0],['SMOK','CVD',0.28,'establishing',18,0,0],['CHOL','CVD',0.43,'establishing',108,0,0],['TG','CVD',0.19,'establishing',2,0,0]] },
+      { year:1960, root:'CHOL', edges:[['SFA','CHOL',0.95,'establishing',2927,10,0],['SFA','TG',0.82,'establishing',1636,3,0],['SFA','CVD',0.43,'establishing',516,7,0],['SUGR','TG',0.45,'establishing',104,0,0],['SUGR','CHOL',0.44,'establishing',201,3,0],['SUGR','CVD',0.31,'establishing',98,2,0],['SMOK','CVD',0.51,'establishing',417,1,0],['CHOL','CVD',0.63,'establishing',914,8,0],['TG','CVD',0.40,'establishing',202,1,0]] },
+      { year:1970, root:'SFA', edges:[['SFA','CHOL',0.90,'establishing',5896,37,0],['SFA','TG',0.87,'establishing',4931,34,0],['SFA','CVD',0.43,'establishing',1220,11,0],['SUGR','TG',0.60,'establishing',606,12,0],['SUGR','CHOL',0.54,'establishing',663,11,0],['SUGR','CVD',0.31,'establishing',219,2,0],['SMOK','CVD',0.60,'establishing',1399,11,0],['CHOL','CVD',0.63,'establishing',1952,27,0],['TG','CVD',0.52,'establishing',1001,17,0],['STAT','CHOL',0.24,'establishing',31,0,0],['STAT','TG',0.20,'establishing',6,0,0]] },
+      { year:1980, root:'SFA', edges:[['SFA','CHOL',0.76,'establishing',5030,127,1],['SFA','TG',0.67,'establishing',3264,115,0],['SFA','CVD',0.47,'establishing',2085,53,1],['SUGR','TG',0.50,'established',389,38,0],['SUGR','CHOL',0.51,'established',631,55,0],['SUGR','CVD',0.27,'establishing',179,10,1],['SMOK','CVD',0.54,'establishing',1643,61,2],['CHOL','CVD',0.64,'establishing',2616,82,0],['TG','CVD',0.45,'contested',919,32,0],['STAT','CHOL',0.36,'establishing',174,2,0],['STAT','TG',0.25,'establishing',20,1,0],['STAT','CVD',0.18,'establishing',13,1,0]] },
+      { year:1990, root:'STAT', edges:[['SFA','CHOL',0.76,'established',6122,622,0],['SFA','TG',0.69,'established',4386,509,0],['SFA','CVD',0.43,'established',1927,207,0],['SUGR','TG',0.49,'established',464,106,0],['SUGR','CHOL',0.51,'established',792,151,0],['SUGR','CVD',0.25,'establishing',134,22,0],['SMOK','CVD',0.49,'established',1547,94,3],['CHOL','CVD',0.68,'established',3649,344,0],['TG','CVD',0.47,'contested',1254,100,0],['STAT','CHOL',0.54,'established',686,109,0],['STAT','TG',0.42,'established',179,52,0],['STAT','CVD',0.30,'establishing',259,50,0]] },
+      { year:2000, root:'STAT', edges:[['SFA','CHOL',0.70,'established',7027,1101,6],['SFA','TG',0.69,'established',5855,799,4],['SFA','CVD',0.42,'contested',2516,463,2],['SUGR','TG',0.46,'established',612,161,0],['SUGR','CHOL',0.51,'established',1185,180,1],['SUGR','CVD',0.24,'establishing',165,33,0],['SMOK','CVD',0.47,'establishing',2139,103,0],['CHOL','CVD',0.64,'established',4511,512,0],['TG','CVD',0.45,'contested',1579,188,0],['STAT','CHOL',0.81,'established',2987,579,1],['STAT','TG',0.51,'established',647,201,0],['STAT','CVD',0.55,'established',2504,381,1]] },
+      { year:2010, root:'SUGR', edges:[['SFA','CHOL',0.60,'established',5614,943,15],['SFA','TG',0.64,'established',6039,810,11],['SFA','CVD',0.36,'reversed',1835,433,5],['SUGR','TG',0.43,'established',769,182,2],['SUGR','CHOL',0.47,'established',1273,219,3],['SUGR','CVD',0.21,'establishing',105,18,0],['SMOK','CVD',0.40,'established',1663,102,1],['CHOL','CVD',0.51,'established',3002,398,3],['TG','CVD',0.36,'established',1014,118,0],['STAT','CHOL',0.80,'established',3448,688,2],['STAT','TG',0.46,'established',640,153,0],['STAT','CVD',0.51,'established',2376,498,2]] },
+      { year:2020, root:'SUGR', edges:[['SFA','CHOL',0.47,'established',1817,306,4],['SFA','TG',0.54,'established',2330,286,3],['SFA','CVD',0.30,'reversed',565,124,3],['SUGR','TG',0.32,'establishing',210,54,0],['SUGR','CHOL',0.36,'established',387,48,0],['SUGR','CVD',0.19,'establishing',34,9,0],['SMOK','CVD',0.31,'establishing',368,26,1],['CHOL','CVD',0.49,'established',1561,180,3],['TG','CVD',0.38,'established',696,53,2],['STAT','CHOL',0.82,'established',2012,338,2],['STAT','TG',0.40,'established',248,54,0],['STAT','CVD',0.44,'established',917,188,0]] }
     ] },
 
   { // ---- II. 消えゆくJカーブ: 偽りの保護 → 「安全な量はない」 ----
     no:'II', title:'Alcohol and Cardiovascular Disease',
-    form:'Six Epochs for Seven Voices and an Observer, upon a Vanishing J-Curve',
-    design:'a dose–response study, 1970–2020; the protective nadir effaced',
+    tuning:'meantone',
+    form:'Six Epochs for Seven Voices and an Observer, in Quarter-Comma Meantone',
+    design:'a dose–response study, 1970–2020; the sweet third turns wolf',
     sub:'1970–2020',
     disc:'DATA v1 · PubMed esearch カウント（2026-07-11 採取）· 強度=Dice係数 / 状態=強いデザインの占有率 / 撤回=実数。概念→MeSHの対応・因果の向き・係争と逆転の注釈は作者のモデルである。',
     concepts:[
@@ -219,7 +223,7 @@ const CITES = [
 // 時代が進むと窪みは浅くなり、やがて消える = 消えゆく J カーブ
 // 因果の向き（DAG）: 曝露 → 治療 → 媒介 → アウトカム。エッジは常に前方向に走る
 const ROLE = {
-  SFA:'exposure', SMOK:'exposure', SALT:'exposure', SUGR:'exposure', CHOL:'mediator', STAT:'treatment', CVD:'outcome',
+  SFA:'exposure', SMOK:'exposure', SUGR:'exposure', CHOL:'mediator', TG:'mediator', STAT:'treatment', CVD:'outcome',
   ALC:'exposure', DOSE:'exposure', BP:'mediator', HDL:'mediator', MI:'outcome', ISCH:'outcome', ICH:'outcome',
   ONSET:'exposure', TPA:'treatment', EVT:'treatment', REPERF:'mediator', INF:'mediator', SICH:'outcome', MRS:'outcome',
 };
@@ -282,6 +286,26 @@ const SLOTS = [0, 7, 5, 4, 9, 3, 8, 2, 10, 1, 6, 11];
 const PARTIALS_ORDER = [8, 12, 16, 10, 6, 9, 14, 11, 13, 7, 5, 15];
 const INHARMONICITY = [0, 0.010, 0.022];   // 確立 / 係争 / 逆転
 
+// 各曲に固有の音律世界。溶け合いと微分音の揺らぎは、この「音律＋ドローン＋パルスを
+// 曲ごとに切り替える」形から生まれる。すべて純正律の族（平均律格子を離れる）。
+//   I  ピタゴラス音律: 完全5度(3/2)の積み重ね。単純な線形の因果の積み上げ。
+//       12回積むと閉じない「ピタゴラスコンマ」= 逆転の傷が唸る
+//   II 中全音律(1/4comma): 長3度(5/4)を純正にする甘い妥協。だが範囲を外れると
+//       「ウルフ5度」という耐えがたい不協和が出る = Jカーブの逆転
+//   III スペクトル(倍音列): 上の PARTIALS_ORDER。自然への回帰と純正な達成
+const PYTH_CENTS = [0, 702, 498, 204, 906, 294, 996, 408, 90, 792, 588, 1110];  // 5度圏順
+const PYTH_COMMA = 23.46;                                        // ピタゴラスコンマ(cents)
+const MEAN_CENTS = [0, 696.6, 503.4, 386.3, 889.7, 310.3, 1082.9, 193.2, 1006.8, 579.5, 772.6, 96.6];
+const MEAN_WOLF  = 737.6;                                        // ウルフ5度(cents)
+const CENTS_TO_STEP = c => c / 25;                              // 48EDO: 1 step = 25 cents
+const droneRatios = () => {
+  const t = movement && movement.tuning;
+  if (t === 'spectral')    return { 1: 1.0, 3: 0.42, 5: 0.20 };          // 第1·3·5倍音
+  if (t === 'pythagorean') return { 1: 1.0, 1.5: 0.5, 2: 0.28 };         // 根音·純正5度·8度
+  if (t === 'meantone')    return { 1: 1.0, 1.25: 0.34, 1.5: 0.42 };     // 根音·純正長3度·5度
+  return { 1: 1.0, 1.5: 0.5, 2: 0.28 };
+};
+
 let epochIx = 0, epochT = 0, field = null;
 
 // 場の構築: 結合の強い概念ほど根音に協和し、係争・逆転は微分音の傷を負う
@@ -302,7 +326,8 @@ function buildField(dec){
     .filter(i => i !== rootIx)
     .sort((x,y) => score[y] - score[x]);
   const order = [rootIx, ...ranked];
-  const spectral = movement && movement.tuning === 'spectral';
+  const tuning = (movement && movement.tuning) || 'chromatic';
+  const spectral = tuning === 'spectral';
   const pcs = CONCEPTS.map(()=>0);
   let steps;
   if (spectral){
@@ -315,13 +340,26 @@ function buildField(dec){
       return 48 * Math.log2(ratio) + c.band * 48;   // 端数のまま = 純正律（記譜は近似する）
     });
     order.forEach((ci, k) => { pcs[ci] = parts[ci]; });   // 表示用に倍音番号を持つ
+  } else if (tuning === 'pythagorean' || tuning === 'meantone'){
+    const table = tuning === 'pythagorean' ? PYTH_CENTS : MEAN_CENTS;
+    const comma = tuning === 'pythagorean' ? PYTH_COMMA : -Math.abs(PYTH_COMMA);
+    steps = CONCEPTS.map(()=>0);
+    order.forEach((ci, k) => {
+      let cents = table[k % table.length];
+      // 中全音律: 逆転した概念はウルフ5度に落ちる（耐えがたい不協和）
+      if (tuning === 'meantone' && detune[ci] === 2) cents = MEAN_WOLF;
+      // それ以外の傷はコンマぶんデチューン → ドローンに対して唸る
+      else cents += detune[ci] * comma * 0.7 * (ci % 2 ? 1 : -1);
+      steps[ci] = CENTS_TO_STEP(cents) + CONCEPTS[ci].band * 48;
+      pcs[ci] = Math.round(cents);   // 表示用
+    });
   } else {
     order.forEach((ci, k) => { pcs[ci] = SLOTS[k % SLOTS.length]; });
     // 48EDO steps: 半音=4。identity の音域帯 band と、係争の微分音の傷
     steps = CONCEPTS.map((c,i) =>
       pcs[i] * 4 + c.band * 48 + detune[i] * (i % 2 ? 1 : -1));
   }
-  return { dec, edges, score, detune, steps, rootIx, spectral, pcs,
+  return { dec, edges, score, detune, steps, rootIx, spectral, tuning, pcs,
            gravity: steps[rootIx] - 48 };
 }
 const conceptSteps = i => field.steps[i];
@@ -660,7 +698,7 @@ function bendGravity(now, amp){
 // 相が変わると setTargetAtTime でなめらかに移る（スラー）= 和声の連続性
 let bed = [];
 function startDroneBed(){
-  for (const mul of [1, 1.5, 2, 3, 5]){    // 根音·5度·8度（旋法） / 第1·3·5倍音（スペクトル）
+  for (const mul of [1, 1.25, 1.5, 2, 3, 5]){  // 各音律のドローン比を網羅（純正3度1.25含む）
     const o = ctx.createOscillator(); o.type = 'sine';
     const g = ctx.createGain(); g.gain.value = 0;
     o.connect(g).connect(master); o.start();
@@ -670,9 +708,7 @@ function startDroneBed(){
 function updateDroneBed(now){
   if (!field || !bed.length) return;
   const baseF = clamp(stepFreq(field.gravity), 28, 220);
-  const sp = field.spectral;
-  // スペクトル: 第1・3・5倍音の開いた響き（血流の自然な共鳴）/ 旋法: 根音・5度・8度
-  const use = sp ? { 1: 1.0, 3: 0.42, 5: 0.20 } : { 1: 1.0, 1.5: 0.5, 2: 0.28 };
+  const use = droneRatios();   // 曲ごとの音律に合ったドローン比（III倍音列/Iピタゴラス5度/II純正3度）
   for (const b of bed){
     const g = use[b.mul];
     b.o.frequency.setTargetAtTime(baseF * b.mul, now, 1.6);
@@ -1089,7 +1125,8 @@ function drawGraph(now){
   g2.fillText(epochCaption(), 14, fieldTop() - 25);
   g2.font = '8px monospace';
   g2.fillStyle = 'rgba(220,220,220,0.22)';
-  const tune = field.spectral ? 'just intonation · 8th partial' : 'chromatic consonance-rank';
+  const tune = { spectral:'just intonation · 8th partial', pythagorean:'Pythagorean · stacked fifths',
+                 meantone:'¼-comma meantone · pure thirds' }[field.tuning] || 'chromatic consonance-rank';
   g2.fillText(`${tune} — establishing · established · contested · reversed`, 14, fieldTop() - 12);
 }
 

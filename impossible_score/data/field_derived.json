@@ -16,6 +16,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.37,
+     "status": "establishing",
+     "co": 45,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.25,
      "status": "establishing",
@@ -25,11 +35,11 @@
      "share": 0.0
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.43,
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.24,
      "status": "establishing",
-     "co": 108,
+     "co": 6,
      "strong": 0,
      "retr": 0,
      "share": 0.0
@@ -45,11 +55,21 @@
      "share": 0.0
     },
     {
-     "a": "SALT",
+     "a": "CHOL",
      "b": "CVD",
-     "w": 0.22,
+     "w": 0.43,
      "status": "establishing",
-     "co": 7,
+     "co": 108,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0
+    },
+    {
+     "a": "TG",
+     "b": "CVD",
+     "w": 0.19,
+     "status": "establishing",
+     "co": 2,
      "strong": 0,
      "retr": 0,
      "share": 0.0
@@ -73,6 +93,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.82,
+     "status": "establishing",
+     "co": 1636,
+     "strong": 3,
+     "retr": 0,
+     "share": 0.002
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.43,
      "status": "establishing",
@@ -82,14 +112,34 @@
      "share": 0.014
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.63,
+     "a": "SUGR",
+     "b": "TG",
+     "w": 0.45,
      "status": "establishing",
-     "co": 914,
-     "strong": 8,
+     "co": 104,
+     "strong": 0,
      "retr": 0,
-     "share": 0.009
+     "share": 0.0
+    },
+    {
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.44,
+     "status": "establishing",
+     "co": 201,
+     "strong": 3,
+     "retr": 0,
+     "share": 0.015
+    },
+    {
+     "a": "SUGR",
+     "b": "CVD",
+     "w": 0.31,
+     "status": "establishing",
+     "co": 98,
+     "strong": 2,
+     "retr": 0,
+     "share": 0.02
     },
     {
      "a": "SMOK",
@@ -102,24 +152,24 @@
      "share": 0.002
     },
     {
-     "a": "SALT",
+     "a": "CHOL",
      "b": "CVD",
-     "w": 0.2,
+     "w": 0.63,
      "status": "establishing",
-     "co": 11,
-     "strong": 0,
+     "co": 914,
+     "strong": 8,
      "retr": 0,
-     "share": 0.0
+     "share": 0.009
     },
     {
-     "a": "SUGR",
+     "a": "TG",
      "b": "CVD",
-     "w": 0.31,
+     "w": 0.4,
      "status": "establishing",
-     "co": 98,
-     "strong": 2,
+     "co": 202,
+     "strong": 1,
      "retr": 0,
-     "share": 0.02
+     "share": 0.005
     }
    ],
    "retr": 0
@@ -140,6 +190,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.87,
+     "status": "establishing",
+     "co": 4931,
+     "strong": 34,
+     "retr": 0,
+     "share": 0.007
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.43,
      "status": "establishing",
@@ -149,24 +209,24 @@
      "share": 0.009
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.63,
-     "status": "establishing",
-     "co": 1952,
-     "strong": 27,
-     "retr": 0,
-     "share": 0.014
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
+     "a": "SUGR",
+     "b": "TG",
      "w": 0.6,
      "status": "establishing",
-     "co": 1399,
+     "co": 606,
+     "strong": 12,
+     "retr": 0,
+     "share": 0.02
+    },
+    {
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.54,
+     "status": "establishing",
+     "co": 663,
      "strong": 11,
      "retr": 0,
-     "share": 0.008
+     "share": 0.017
     },
     {
      "a": "SUGR",
@@ -179,11 +239,51 @@
      "share": 0.009
     },
     {
+     "a": "SMOK",
+     "b": "CVD",
+     "w": 0.6,
+     "status": "establishing",
+     "co": 1399,
+     "strong": 11,
+     "retr": 0,
+     "share": 0.008
+    },
+    {
+     "a": "CHOL",
+     "b": "CVD",
+     "w": 0.63,
+     "status": "establishing",
+     "co": 1952,
+     "strong": 27,
+     "retr": 0,
+     "share": 0.014
+    },
+    {
+     "a": "TG",
+     "b": "CVD",
+     "w": 0.52,
+     "status": "establishing",
+     "co": 1001,
+     "strong": 17,
+     "retr": 0,
+     "share": 0.017
+    },
+    {
      "a": "STAT",
      "b": "CHOL",
      "w": 0.24,
      "status": "establishing",
      "co": 31,
+     "strong": 0,
+     "retr": 0,
+     "share": 0.0
+    },
+    {
+     "a": "STAT",
+     "b": "TG",
+     "w": 0.2,
+     "status": "establishing",
+     "co": 6,
      "strong": 0,
      "retr": 0,
      "share": 0.0
@@ -207,6 +307,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.67,
+     "status": "establishing",
+     "co": 3264,
+     "strong": 115,
+     "retr": 0,
+     "share": 0.035
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.47,
      "status": "establishing",
@@ -216,34 +326,24 @@
      "share": 0.025
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.64,
-     "status": "establishing",
-     "co": 2616,
-     "strong": 82,
+     "a": "SUGR",
+     "b": "TG",
+     "w": 0.5,
+     "status": "established",
+     "co": 389,
+     "strong": 38,
      "retr": 0,
-     "share": 0.031
+     "share": 0.098
     },
     {
-     "a": "SMOK",
-     "b": "CVD",
-     "w": 0.54,
-     "status": "establishing",
-     "co": 1643,
-     "strong": 61,
-     "retr": 2,
-     "share": 0.037
-    },
-    {
-     "a": "SALT",
-     "b": "CVD",
-     "w": 0.16,
-     "status": "establishing",
-     "co": 2,
-     "strong": 0,
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.51,
+     "status": "established",
+     "co": 631,
+     "strong": 55,
      "retr": 0,
-     "share": 0.0
+     "share": 0.087
     },
     {
      "a": "SUGR",
@@ -256,6 +356,36 @@
      "share": 0.056
     },
     {
+     "a": "SMOK",
+     "b": "CVD",
+     "w": 0.54,
+     "status": "establishing",
+     "co": 1643,
+     "strong": 61,
+     "retr": 2,
+     "share": 0.037
+    },
+    {
+     "a": "CHOL",
+     "b": "CVD",
+     "w": 0.64,
+     "status": "establishing",
+     "co": 2616,
+     "strong": 82,
+     "retr": 0,
+     "share": 0.031
+    },
+    {
+     "a": "TG",
+     "b": "CVD",
+     "w": 0.45,
+     "status": "contested",
+     "co": 919,
+     "strong": 32,
+     "retr": 0,
+     "share": 0.035
+    },
+    {
      "a": "STAT",
      "b": "CHOL",
      "w": 0.36,
@@ -264,6 +394,16 @@
      "strong": 2,
      "retr": 0,
      "share": 0.011
+    },
+    {
+     "a": "STAT",
+     "b": "TG",
+     "w": 0.25,
+     "status": "establishing",
+     "co": 20,
+     "strong": 1,
+     "retr": 0,
+     "share": 0.05
     },
     {
      "a": "STAT",
@@ -294,6 +434,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.69,
+     "status": "established",
+     "co": 4386,
+     "strong": 509,
+     "retr": 0,
+     "share": 0.116
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.43,
      "status": "established",
@@ -303,34 +453,24 @@
      "share": 0.107
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.68,
-     "status": "established",
-     "co": 3649,
-     "strong": 344,
-     "retr": 0,
-     "share": 0.094
-    },
-    {
-     "a": "SMOK",
-     "b": "CVD",
+     "a": "SUGR",
+     "b": "TG",
      "w": 0.49,
      "status": "established",
-     "co": 1547,
-     "strong": 94,
-     "retr": 3,
-     "share": 0.061
+     "co": 464,
+     "strong": 106,
+     "retr": 0,
+     "share": 0.228
     },
     {
-     "a": "SALT",
-     "b": "CVD",
-     "w": 0.18,
-     "status": "contested",
-     "co": 18,
-     "strong": 1,
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.51,
+     "status": "established",
+     "co": 792,
+     "strong": 151,
      "retr": 0,
-     "share": 0.056
+     "share": 0.191
     },
     {
      "a": "SUGR",
@@ -343,6 +483,36 @@
      "share": 0.164
     },
     {
+     "a": "SMOK",
+     "b": "CVD",
+     "w": 0.49,
+     "status": "established",
+     "co": 1547,
+     "strong": 94,
+     "retr": 3,
+     "share": 0.061
+    },
+    {
+     "a": "CHOL",
+     "b": "CVD",
+     "w": 0.68,
+     "status": "established",
+     "co": 3649,
+     "strong": 344,
+     "retr": 0,
+     "share": 0.094
+    },
+    {
+     "a": "TG",
+     "b": "CVD",
+     "w": 0.47,
+     "status": "contested",
+     "co": 1254,
+     "strong": 100,
+     "retr": 0,
+     "share": 0.08
+    },
+    {
      "a": "STAT",
      "b": "CHOL",
      "w": 0.54,
@@ -351,6 +521,16 @@
      "strong": 109,
      "retr": 0,
      "share": 0.159
+    },
+    {
+     "a": "STAT",
+     "b": "TG",
+     "w": 0.42,
+     "status": "established",
+     "co": 179,
+     "strong": 52,
+     "retr": 0,
+     "share": 0.291
     },
     {
      "a": "STAT",
@@ -381,6 +561,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.69,
+     "status": "established",
+     "co": 5855,
+     "strong": 799,
+     "retr": 4,
+     "share": 0.136
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.42,
      "status": "contested",
@@ -390,14 +580,34 @@
      "share": 0.184
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.64,
+     "a": "SUGR",
+     "b": "TG",
+     "w": 0.46,
      "status": "established",
-     "co": 4511,
-     "strong": 512,
+     "co": 612,
+     "strong": 161,
      "retr": 0,
-     "share": 0.114
+     "share": 0.263
+    },
+    {
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.51,
+     "status": "established",
+     "co": 1185,
+     "strong": 180,
+     "retr": 1,
+     "share": 0.152
+    },
+    {
+     "a": "SUGR",
+     "b": "CVD",
+     "w": 0.24,
+     "status": "establishing",
+     "co": 165,
+     "strong": 33,
+     "retr": 0,
+     "share": 0.2
     },
     {
      "a": "SMOK",
@@ -410,24 +620,24 @@
      "share": 0.048
     },
     {
-     "a": "SALT",
+     "a": "CHOL",
      "b": "CVD",
-     "w": 0.18,
-     "status": "establishing",
-     "co": 25,
-     "strong": 2,
+     "w": 0.64,
+     "status": "established",
+     "co": 4511,
+     "strong": 512,
      "retr": 0,
-     "share": 0.08
+     "share": 0.114
     },
     {
-     "a": "SUGR",
+     "a": "TG",
      "b": "CVD",
-     "w": 0.24,
-     "status": "establishing",
-     "co": 165,
-     "strong": 33,
+     "w": 0.45,
+     "status": "contested",
+     "co": 1579,
+     "strong": 188,
      "retr": 0,
-     "share": 0.2
+     "share": 0.119
     },
     {
      "a": "STAT",
@@ -441,6 +651,16 @@
     },
     {
      "a": "STAT",
+     "b": "TG",
+     "w": 0.51,
+     "status": "established",
+     "co": 647,
+     "strong": 201,
+     "retr": 0,
+     "share": 0.311
+    },
+    {
+     "a": "STAT",
      "b": "CVD",
      "w": 0.55,
      "status": "established",
@@ -450,7 +670,7 @@
      "share": 0.152
     }
    ],
-   "retr": 10
+   "retr": 15
   },
   {
    "year": 2010,
@@ -468,6 +688,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.64,
+     "status": "established",
+     "co": 6039,
+     "strong": 810,
+     "retr": 11,
+     "share": 0.134
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.36,
      "status": "reversed",
@@ -477,14 +707,34 @@
      "share": 0.236
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.51,
+     "a": "SUGR",
+     "b": "TG",
+     "w": 0.43,
      "status": "established",
-     "co": 3002,
-     "strong": 398,
+     "co": 769,
+     "strong": 182,
+     "retr": 2,
+     "share": 0.237
+    },
+    {
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.47,
+     "status": "established",
+     "co": 1273,
+     "strong": 219,
      "retr": 3,
-     "share": 0.133
+     "share": 0.172
+    },
+    {
+     "a": "SUGR",
+     "b": "CVD",
+     "w": 0.21,
+     "status": "establishing",
+     "co": 105,
+     "strong": 18,
+     "retr": 0,
+     "share": 0.171
     },
     {
      "a": "SMOK",
@@ -497,24 +747,24 @@
      "share": 0.061
     },
     {
-     "a": "SALT",
+     "a": "CHOL",
      "b": "CVD",
-     "w": 0.19,
-     "status": "establishing",
-     "co": 43,
-     "strong": 1,
-     "retr": 0,
-     "share": 0.023
+     "w": 0.51,
+     "status": "established",
+     "co": 3002,
+     "strong": 398,
+     "retr": 3,
+     "share": 0.133
     },
     {
-     "a": "SUGR",
+     "a": "TG",
      "b": "CVD",
-     "w": 0.21,
-     "status": "establishing",
-     "co": 105,
-     "strong": 18,
+     "w": 0.36,
+     "status": "established",
+     "co": 1014,
+     "strong": 118,
      "retr": 0,
-     "share": 0.171
+     "share": 0.116
     },
     {
      "a": "STAT",
@@ -528,6 +778,16 @@
     },
     {
      "a": "STAT",
+     "b": "TG",
+     "w": 0.46,
+     "status": "established",
+     "co": 640,
+     "strong": 153,
+     "retr": 0,
+     "share": 0.239
+    },
+    {
+     "a": "STAT",
      "b": "CVD",
      "w": 0.51,
      "status": "established",
@@ -537,7 +797,7 @@
      "share": 0.21
     }
    ],
-   "retr": 28
+   "retr": 44
   },
   {
    "year": 2020,
@@ -555,6 +815,16 @@
     },
     {
      "a": "SFA",
+     "b": "TG",
+     "w": 0.54,
+     "status": "established",
+     "co": 2330,
+     "strong": 286,
+     "retr": 3,
+     "share": 0.123
+    },
+    {
+     "a": "SFA",
      "b": "CVD",
      "w": 0.3,
      "status": "reversed",
@@ -564,14 +834,34 @@
      "share": 0.219
     },
     {
-     "a": "CHOL",
-     "b": "CVD",
-     "w": 0.49,
+     "a": "SUGR",
+     "b": "TG",
+     "w": 0.32,
+     "status": "establishing",
+     "co": 210,
+     "strong": 54,
+     "retr": 0,
+     "share": 0.257
+    },
+    {
+     "a": "SUGR",
+     "b": "CHOL",
+     "w": 0.36,
      "status": "established",
-     "co": 1561,
-     "strong": 180,
-     "retr": 3,
-     "share": 0.115
+     "co": 387,
+     "strong": 48,
+     "retr": 0,
+     "share": 0.124
+    },
+    {
+     "a": "SUGR",
+     "b": "CVD",
+     "w": 0.19,
+     "status": "establishing",
+     "co": 34,
+     "strong": 9,
+     "retr": 0,
+     "share": 0.265
     },
     {
      "a": "SMOK",
@@ -584,24 +874,24 @@
      "share": 0.071
     },
     {
-     "a": "SALT",
+     "a": "CHOL",
      "b": "CVD",
-     "w": 0.18,
-     "status": "establishing",
-     "co": 12,
-     "strong": 0,
-     "retr": 0,
-     "share": 0.0
+     "w": 0.49,
+     "status": "established",
+     "co": 1561,
+     "strong": 180,
+     "retr": 3,
+     "share": 0.115
     },
     {
-     "a": "SUGR",
+     "a": "TG",
      "b": "CVD",
-     "w": 0.19,
-     "status": "establishing",
-     "co": 34,
-     "strong": 9,
-     "retr": 0,
-     "share": 0.265
+     "w": 0.38,
+     "status": "established",
+     "co": 696,
+     "strong": 53,
+     "retr": 2,
+     "share": 0.076
     },
     {
      "a": "STAT",
@@ -615,6 +905,16 @@
     },
     {
      "a": "STAT",
+     "b": "TG",
+     "w": 0.4,
+     "status": "established",
+     "co": 248,
+     "strong": 54,
+     "retr": 0,
+     "share": 0.218
+    },
+    {
+     "a": "STAT",
      "b": "CVD",
      "w": 0.44,
      "status": "established",
@@ -624,7 +924,7 @@
      "share": 0.205
     }
    ],
-   "retr": 13
+   "retr": 18
   }
  ],
  "alcohol": [

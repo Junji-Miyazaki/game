@@ -33,17 +33,22 @@ MOVEMENTS = [
   {
     'no': 'I', 'key': 'fat',
     'context': None,
+    # 中性脂肪(TG)を媒介層に追加し、ほぼ無音だった塩分を外して7声を保つ。
+    # 媒介が2ノード（LDL/総コレsteroールと中性脂肪）になりDAGが見やすくなる。
+    # TG→CVD は「独立した危険因子か否か」で長く係争された辺（音楽的にも生きる）
     'concepts': {
       'SFA':  OR('Dietary Fats', 'Fatty Acids'),
-      'CHOL': OR('Cholesterol'),
-      'CVD':  OR('Coronary Disease', 'Myocardial Infarction'),
-      'SMOK': OR('Smoking'),
-      'STAT': OR('Hydroxymethylglutaryl-CoA Reductase Inhibitors'),
-      'SALT': OR('Sodium, Dietary'),
       'SUGR': OR('Dietary Sucrose', 'Dietary Carbohydrates'),
+      'SMOK': OR('Smoking'),
+      'CHOL': OR('Cholesterol'),
+      'TG':   OR('Triglycerides', 'Hypertriglyceridemia'),
+      'STAT': OR('Hydroxymethylglutaryl-CoA Reductase Inhibitors'),
+      'CVD':  OR('Coronary Disease', 'Myocardial Infarction'),
     },
-    'pairs': [('SFA','CHOL'), ('SFA','CVD'), ('CHOL','CVD'), ('SMOK','CVD'),
-              ('SALT','CVD'), ('SUGR','CVD'), ('STAT','CHOL'), ('STAT','CVD')],
+    'pairs': [('SFA','CHOL'), ('SFA','TG'), ('SFA','CVD'),
+              ('SUGR','TG'), ('SUGR','CHOL'), ('SUGR','CVD'),
+              ('SMOK','CVD'), ('CHOL','CVD'), ('TG','CVD'),
+              ('STAT','CHOL'), ('STAT','TG'), ('STAT','CVD')],
     'epochs': [(1950,'1950:1959'), (1960,'1960:1969'), (1970,'1970:1979'), (1980,'1980:1989'),
                (1990,'1990:1999'), (2000,'2000:2009'), (2010,'2010:2019'), (2020,'2020:2026')],
   },

@@ -9,28 +9,33 @@
   "context": null,
   "concepts": {
    "SFA": "(\"Dietary Fats\"[MeSH] OR \"Fatty Acids\"[MeSH])",
-   "CHOL": "(\"Cholesterol\"[MeSH])",
-   "CVD": "(\"Coronary Disease\"[MeSH] OR \"Myocardial Infarction\"[MeSH])",
+   "SUGR": "(\"Dietary Sucrose\"[MeSH] OR \"Dietary Carbohydrates\"[MeSH])",
    "SMOK": "(\"Smoking\"[MeSH])",
+   "CHOL": "(\"Cholesterol\"[MeSH])",
+   "TG": "(\"Triglycerides\"[MeSH] OR \"Hypertriglyceridemia\"[MeSH])",
    "STAT": "(\"Hydroxymethylglutaryl-CoA Reductase Inhibitors\"[MeSH])",
-   "SALT": "(\"Sodium, Dietary\"[MeSH])",
-   "SUGR": "(\"Dietary Sucrose\"[MeSH] OR \"Dietary Carbohydrates\"[MeSH])"
+   "CVD": "(\"Coronary Disease\"[MeSH] OR \"Myocardial Infarction\"[MeSH])"
   },
   "epochs": {
    "1950": {
     "dp": "1950:1959",
     "singles": {
      "SFA": 5310,
-     "CHOL": 3029,
-     "CVD": 5190,
+     "SUGR": 796,
      "SMOK": 719,
+     "CHOL": 3029,
+     "TG": 124,
      "STAT": 0,
-     "SALT": 2181,
-     "SUGR": 796
+     "CVD": 5190
     },
     "pairs": {
      "SFA-CHOL": {
       "co": 388,
+      "strong": 0,
+      "retracted": 0
+     },
+     "SFA-TG": {
+      "co": 45,
       "strong": 0,
       "retracted": 0
      },
@@ -39,18 +44,13 @@
       "strong": 0,
       "retracted": 0
      },
-     "CHOL-CVD": {
-      "co": 108,
+     "SUGR-TG": {
+      "co": 0,
       "strong": 0,
       "retracted": 0
      },
-     "SMOK-CVD": {
-      "co": 18,
-      "strong": 0,
-      "retracted": 0
-     },
-     "SALT-CVD": {
-      "co": 7,
+     "SUGR-CHOL": {
+      "co": 6,
       "strong": 0,
       "retracted": 0
      },
@@ -59,7 +59,27 @@
       "strong": 0,
       "retracted": 0
      },
+     "SMOK-CVD": {
+      "co": 18,
+      "strong": 0,
+      "retracted": 0
+     },
+     "CHOL-CVD": {
+      "co": 108,
+      "strong": 0,
+      "retracted": 0
+     },
+     "TG-CVD": {
+      "co": 2,
+      "strong": 0,
+      "retracted": 0
+     },
      "STAT-CHOL": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-TG": {
       "co": 0,
       "strong": 0,
       "retracted": 0
@@ -75,12 +95,12 @@
     "dp": "1960:1969",
     "singles": {
      "SFA": 23189,
-     "CHOL": 10347,
-     "CVD": 16661,
+     "SUGR": 4232,
      "SMOK": 3504,
+     "CHOL": 10347,
+     "TG": 2862,
      "STAT": 0,
-     "SALT": 1520,
-     "SUGR": 4232
+     "CVD": 16661
     },
     "pairs": {
      "SFA-CHOL": {
@@ -88,24 +108,24 @@
       "strong": 10,
       "retracted": 0
      },
+     "SFA-TG": {
+      "co": 1636,
+      "strong": 3,
+      "retracted": 0
+     },
      "SFA-CVD": {
       "co": 516,
       "strong": 7,
       "retracted": 0
      },
-     "CHOL-CVD": {
-      "co": 914,
-      "strong": 8,
-      "retracted": 0
-     },
-     "SMOK-CVD": {
-      "co": 417,
-      "strong": 1,
-      "retracted": 0
-     },
-     "SALT-CVD": {
-      "co": 11,
+     "SUGR-TG": {
+      "co": 104,
       "strong": 0,
+      "retracted": 0
+     },
+     "SUGR-CHOL": {
+      "co": 201,
+      "strong": 3,
       "retracted": 0
      },
      "SUGR-CVD": {
@@ -113,7 +133,27 @@
       "strong": 2,
       "retracted": 0
      },
+     "SMOK-CVD": {
+      "co": 417,
+      "strong": 1,
+      "retracted": 0
+     },
+     "CHOL-CVD": {
+      "co": 914,
+      "strong": 8,
+      "retracted": 0
+     },
+     "TG-CVD": {
+      "co": 202,
+      "strong": 1,
+      "retracted": 0
+     },
      "STAT-CHOL": {
+      "co": 0,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-TG": {
       "co": 0,
       "strong": 0,
       "retracted": 0
@@ -129,12 +169,12 @@
     "dp": "1970:1979",
     "singles": {
      "SFA": 56813,
-     "CHOL": 19655,
-     "CVD": 36276,
+     "SUGR": 8584,
      "SMOK": 9377,
+     "CHOL": 19655,
+     "TG": 10946,
      "STAT": 51,
-     "SALT": 3,
-     "SUGR": 8584
+     "CVD": 36276
     },
     "pairs": {
      "SFA-CHOL": {
@@ -142,8 +182,33 @@
       "strong": 37,
       "retracted": 0
      },
+     "SFA-TG": {
+      "co": 4931,
+      "strong": 34,
+      "retracted": 0
+     },
      "SFA-CVD": {
       "co": 1220,
+      "strong": 11,
+      "retracted": 0
+     },
+     "SUGR-TG": {
+      "co": 606,
+      "strong": 12,
+      "retracted": 0
+     },
+     "SUGR-CHOL": {
+      "co": 663,
+      "strong": 11,
+      "retracted": 0
+     },
+     "SUGR-CVD": {
+      "co": 219,
+      "strong": 2,
+      "retracted": 0
+     },
+     "SMOK-CVD": {
+      "co": 1399,
       "strong": 11,
       "retracted": 0
      },
@@ -152,23 +217,18 @@
       "strong": 27,
       "retracted": 0
      },
-     "SMOK-CVD": {
-      "co": 1399,
-      "strong": 11,
-      "retracted": 0
-     },
-     "SALT-CVD": {
-      "co": 0,
-      "strong": 0,
-      "retracted": 0
-     },
-     "SUGR-CVD": {
-      "co": 219,
-      "strong": 2,
+     "TG-CVD": {
+      "co": 1001,
+      "strong": 17,
       "retracted": 0
      },
      "STAT-CHOL": {
       "co": 31,
+      "strong": 0,
+      "retracted": 0
+     },
+     "STAT-TG": {
+      "co": 6,
       "strong": 0,
       "retracted": 0
      },
@@ -183,12 +243,12 @@
     "dp": "1980:1989",
     "singles": {
      "SFA": 72913,
-     "CHOL": 21646,
-     "CVD": 52646,
+     "SUGR": 9292,
      "SMOK": 15337,
+     "CHOL": 21646,
+     "TG": 10327,
      "STAT": 339,
-     "SALT": 562,
-     "SUGR": 9292
+     "CVD": 52646
     },
     "pairs": {
      "SFA-CHOL": {
@@ -196,24 +256,24 @@
       "strong": 127,
       "retracted": 1
      },
+     "SFA-TG": {
+      "co": 3264,
+      "strong": 115,
+      "retracted": 0
+     },
      "SFA-CVD": {
       "co": 2085,
       "strong": 53,
       "retracted": 1
      },
-     "CHOL-CVD": {
-      "co": 2616,
-      "strong": 82,
+     "SUGR-TG": {
+      "co": 389,
+      "strong": 38,
       "retracted": 0
      },
-     "SMOK-CVD": {
-      "co": 1643,
-      "strong": 61,
-      "retracted": 2
-     },
-     "SALT-CVD": {
-      "co": 2,
-      "strong": 0,
+     "SUGR-CHOL": {
+      "co": 631,
+      "strong": 55,
       "retracted": 0
      },
      "SUGR-CVD": {
@@ -221,9 +281,29 @@
       "strong": 10,
       "retracted": 1
      },
+     "SMOK-CVD": {
+      "co": 1643,
+      "strong": 61,
+      "retracted": 2
+     },
+     "CHOL-CVD": {
+      "co": 2616,
+      "strong": 82,
+      "retracted": 0
+     },
+     "TG-CVD": {
+      "co": 919,
+      "strong": 32,
+      "retracted": 0
+     },
      "STAT-CHOL": {
       "co": 174,
       "strong": 2,
+      "retracted": 0
+     },
+     "STAT-TG": {
+      "co": 20,
+      "strong": 1,
       "retracted": 0
      },
      "STAT-CVD": {
@@ -237,12 +317,12 @@
     "dp": "1990:1999",
     "singles": {
      "SFA": 88980,
-     "CHOL": 27180,
-     "CVD": 61756,
+     "SUGR": 11598,
      "SMOK": 23480,
+     "CHOL": 27180,
+     "TG": 13253,
      "STAT": 1682,
-     "SALT": 2348,
-     "SUGR": 11598
+     "CVD": 61756
     },
     "pairs": {
      "SFA-CHOL": {
@@ -250,24 +330,24 @@
       "strong": 622,
       "retracted": 0
      },
+     "SFA-TG": {
+      "co": 4386,
+      "strong": 509,
+      "retracted": 0
+     },
      "SFA-CVD": {
       "co": 1927,
       "strong": 207,
       "retracted": 0
      },
-     "CHOL-CVD": {
-      "co": 3649,
-      "strong": 344,
+     "SUGR-TG": {
+      "co": 464,
+      "strong": 106,
       "retracted": 0
      },
-     "SMOK-CVD": {
-      "co": 1547,
-      "strong": 94,
-      "retracted": 3
-     },
-     "SALT-CVD": {
-      "co": 18,
-      "strong": 1,
+     "SUGR-CHOL": {
+      "co": 792,
+      "strong": 151,
       "retracted": 0
      },
      "SUGR-CVD": {
@@ -275,9 +355,29 @@
       "strong": 22,
       "retracted": 0
      },
+     "SMOK-CVD": {
+      "co": 1547,
+      "strong": 94,
+      "retracted": 3
+     },
+     "CHOL-CVD": {
+      "co": 3649,
+      "strong": 344,
+      "retracted": 0
+     },
+     "TG-CVD": {
+      "co": 1254,
+      "strong": 100,
+      "retracted": 0
+     },
      "STAT-CHOL": {
       "co": 686,
       "strong": 109,
+      "retracted": 0
+     },
+     "STAT-TG": {
+      "co": 179,
+      "strong": 52,
       "retracted": 0
      },
      "STAT-CVD": {
@@ -291,12 +391,12 @@
     "dp": "2000:2009",
     "singles": {
      "SFA": 119521,
-     "CHOL": 37443,
-     "CVD": 90883,
+     "SUGR": 19966,
      "SMOK": 40440,
+     "CHOL": 37443,
+     "TG": 19316,
      "STAT": 11784,
-     "SALT": 3263,
-     "SUGR": 19966
+     "CVD": 90883
     },
     "pairs": {
      "SFA-CHOL": {
@@ -304,14 +404,29 @@
       "strong": 1101,
       "retracted": 6
      },
+     "SFA-TG": {
+      "co": 5855,
+      "strong": 799,
+      "retracted": 4
+     },
      "SFA-CVD": {
       "co": 2516,
       "strong": 463,
       "retracted": 2
      },
-     "CHOL-CVD": {
-      "co": 4511,
-      "strong": 512,
+     "SUGR-TG": {
+      "co": 612,
+      "strong": 161,
+      "retracted": 0
+     },
+     "SUGR-CHOL": {
+      "co": 1185,
+      "strong": 180,
+      "retracted": 1
+     },
+     "SUGR-CVD": {
+      "co": 165,
+      "strong": 33,
       "retracted": 0
      },
      "SMOK-CVD": {
@@ -319,20 +434,25 @@
       "strong": 103,
       "retracted": 0
      },
-     "SALT-CVD": {
-      "co": 25,
-      "strong": 2,
+     "CHOL-CVD": {
+      "co": 4511,
+      "strong": 512,
       "retracted": 0
      },
-     "SUGR-CVD": {
-      "co": 165,
-      "strong": 33,
+     "TG-CVD": {
+      "co": 1579,
+      "strong": 188,
       "retracted": 0
      },
      "STAT-CHOL": {
       "co": 2987,
       "strong": 579,
       "retracted": 1
+     },
+     "STAT-TG": {
+      "co": 647,
+      "strong": 201,
+      "retracted": 0
      },
      "STAT-CVD": {
       "co": 2504,
@@ -345,12 +465,12 @@
     "dp": "2010:2019",
     "singles": {
      "SFA": 142600,
-     "CHOL": 41806,
-     "CVD": 102707,
+     "SUGR": 34335,
      "SMOK": 56050,
+     "CHOL": 41806,
+     "TG": 25038,
      "STAT": 16511,
-     "SALT": 5445,
-     "SUGR": 34335
+     "CVD": 102707
     },
     "pairs": {
      "SFA-CHOL": {
@@ -358,35 +478,55 @@
       "strong": 943,
       "retracted": 15
      },
+     "SFA-TG": {
+      "co": 6039,
+      "strong": 810,
+      "retracted": 11
+     },
      "SFA-CVD": {
       "co": 1835,
       "strong": 433,
       "retracted": 5
      },
-     "CHOL-CVD": {
-      "co": 3002,
-      "strong": 398,
+     "SUGR-TG": {
+      "co": 769,
+      "strong": 182,
+      "retracted": 2
+     },
+     "SUGR-CHOL": {
+      "co": 1273,
+      "strong": 219,
       "retracted": 3
-     },
-     "SMOK-CVD": {
-      "co": 1663,
-      "strong": 102,
-      "retracted": 1
-     },
-     "SALT-CVD": {
-      "co": 43,
-      "strong": 1,
-      "retracted": 0
      },
      "SUGR-CVD": {
       "co": 105,
       "strong": 18,
       "retracted": 0
      },
+     "SMOK-CVD": {
+      "co": 1663,
+      "strong": 102,
+      "retracted": 1
+     },
+     "CHOL-CVD": {
+      "co": 3002,
+      "strong": 398,
+      "retracted": 3
+     },
+     "TG-CVD": {
+      "co": 1014,
+      "strong": 118,
+      "retracted": 0
+     },
      "STAT-CHOL": {
       "co": 3448,
       "strong": 688,
       "retracted": 2
+     },
+     "STAT-TG": {
+      "co": 640,
+      "strong": 153,
+      "retracted": 0
      },
      "STAT-CVD": {
       "co": 2376,
@@ -399,12 +539,12 @@
     "dp": "2020:2026",
     "singles": {
      "SFA": 83209,
-     "CHOL": 24064,
-     "CVD": 59006,
+     "SUGR": 25682,
      "SMOK": 22741,
+     "CHOL": 24064,
+     "TG": 15626,
      "STAT": 7894,
-     "SALT": 3205,
-     "SUGR": 25682
+     "CVD": 59006
     },
     "pairs": {
      "SFA-CHOL": {
@@ -412,24 +552,24 @@
       "strong": 306,
       "retracted": 4
      },
+     "SFA-TG": {
+      "co": 2330,
+      "strong": 286,
+      "retracted": 3
+     },
      "SFA-CVD": {
       "co": 565,
       "strong": 124,
       "retracted": 3
      },
-     "CHOL-CVD": {
-      "co": 1561,
-      "strong": 180,
-      "retracted": 3
+     "SUGR-TG": {
+      "co": 210,
+      "strong": 54,
+      "retracted": 0
      },
-     "SMOK-CVD": {
-      "co": 368,
-      "strong": 26,
-      "retracted": 1
-     },
-     "SALT-CVD": {
-      "co": 12,
-      "strong": 0,
+     "SUGR-CHOL": {
+      "co": 387,
+      "strong": 48,
       "retracted": 0
      },
      "SUGR-CVD": {
@@ -437,10 +577,30 @@
       "strong": 9,
       "retracted": 0
      },
+     "SMOK-CVD": {
+      "co": 368,
+      "strong": 26,
+      "retracted": 1
+     },
+     "CHOL-CVD": {
+      "co": 1561,
+      "strong": 180,
+      "retracted": 3
+     },
+     "TG-CVD": {
+      "co": 696,
+      "strong": 53,
+      "retracted": 2
+     },
      "STAT-CHOL": {
       "co": 2012,
       "strong": 338,
       "retracted": 2
+     },
+     "STAT-TG": {
+      "co": 248,
+      "strong": 54,
+      "retracted": 0
      },
      "STAT-CVD": {
       "co": 917,

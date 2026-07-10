@@ -25,8 +25,9 @@ OVERLAY = {
   ('fat',   2010, 'SFA-CVD'):  'reversed',    # Siri-Tarino 2010 以降、定説が覆る
   ('fat',   2020, 'SFA-CVD'):  'reversed',
   ('fat',   2000, 'SFA-CVD'):  'contested',
-  ('fat',   1970, 'SALT-CVD'): 'contested',
-  ('fat',   1990, 'SALT-CVD'): 'contested',
+  ('fat',   1990, 'TG-CVD'):   'contested',   # 中性脂肪は独立危険因子か——長い論争
+  ('fat',   2000, 'TG-CVD'):   'contested',
+  ('fat',   1980, 'TG-CVD'):   'contested',
 
   ('alcohol', 2018, 'ALC-MI'):   'reversed',  # GBD 2018「安全な量はない」
   ('alcohol', 2020, 'ALC-MI'):   'reversed',
@@ -48,6 +49,7 @@ OVERLAY = {
 ROOTS = {
   'fat':        {1950:'CVD', 1960:'CHOL', 1970:'SFA', 1980:'SFA',
                  1990:'STAT', 2000:'STAT', 2010:'SUGR', 2020:'SUGR'},
+  # 注: 1950/60年代に SUGR が重心になることはない。SUGR は媒介 TG 経由で後年台頭
   'alcohol':    {1970:'MI', 1990:'ALC', 2000:'ALC', 2010:'BP', 2018:'ALC', 2020:'ALC'},
   'reperfusion':{1995:'TPA', 2005:'TPA', 2013:'ONSET', 2015:'EVT', 2018:'REPERF', 2020:'REPERF'},
 }
