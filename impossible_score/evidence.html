@@ -57,7 +57,7 @@
 </div>
 <div id="settings">
   <h4>Display</h4>
-  <div><span class="tog on" data-set="glow">glow</span> &nbsp; <span class="tog on" data-set="graph">map</span> &nbsp; <span class="tog on" data-set="sound">sound</span> &nbsp; <span class="tog" data-set="full">fullscreen</span></div>
+  <div><span class="tog on" data-set="glow">glow</span> &nbsp; <span class="tog on" data-set="graph">map</span> &nbsp; <span class="tog on" data-set="ribbon">score</span> &nbsp; <span class="tog on" data-set="sound">sound</span> &nbsp; <span class="tog" data-set="full">fullscreen</span></div>
   <label>volume <input type="range" id="sVol" min="0" max="100" value="85"></label>
   <h4>Bowing — <span class="mvname" id="sMvName">—</span></h4>
   <div><span class="tog on" data-set="bow">bowed / sustained</span></div>
@@ -128,7 +128,7 @@ let soundOn=true, glowOn=true, graphOn=true;
 
 // ---------- 設定（localStorageに記憶）----------
 const SET_DEFAULT = {
-  glow:true, graph:true, sound:true, suite:false,
+  glow:true, graph:true, sound:true, suite:false, ribbon:true,
   vol:0.85, epochSec:38,
   mv:[ {bow:true, bowLen:1.5, bowAtk:1.0},   // I
        {bow:true, bowLen:1.5, bowAtk:1.0},   // II
@@ -509,8 +509,10 @@ let ribbonCursor = 0, ribbonView = 0;   // 書き込みヘッド（紙の座標�
 let lastLabelX = -999;                    // Hz/ms ラベル間引き用
 let lastCiteAt = -99;
 let caught = 0, missedN = 0, droppedN = 0, retracted = 0;
+let papersProcessed = 0, papersSounded = 0;   // 積み上がる知: 走査した/音になった論文の実数
+let ribbonOn = (typeof SETTINGS!=='undefined') ? SETTINGS.ribbon !== false : true;
 let pulseGenT = 0, graveT = 0, pulseMarks = [], flashes = [];
-const RIBBON_VIEW_SPEED = 26;   // 紙のスクロール速度（読める一定の速さ）px/s
+const RIBBON_VIEW_SPEED = 13;   // 紙のスクロール速度（低速＝読影できる）px/s
 const PX_PER_SEC = 62, VL = 22;
 const speedOf = z => PX_PER_SEC * (0.6 + z * 0.8);
 const line = { x: -10, dir: 1, bornAt: 0 };
@@ -537,7 +539,7 @@ const pCatch = p => clamp((0.48 + p.z * 0.28) * (0.5 + st.conc * 0.5), 0.15, 0.9
 
 // 書き込みヘッド方式: 音符/休符はインデックス順に等間隔で紙に書かれ、紙全体が滑らかに
 // 左へスクロールする（観測のバーストに依らず自然に流れ、下の情報も重ならない）
-const RIBBON_GAP = 24;             // 音符間隔（圧縮＝密なファーニホウ的譜面）
+const RIBBON_GAP = 18;             // 音符間隔（密＝ファーニホウ的譜面）
 const RIBBON_MAXLEAD = 24 * 24;   // 待機できる音符数の上限（これを超えたら早送り）
 function rbPush(n){
   n.cx = ribbonCursor;
@@ -563,6 +565,7 @@ function observe(p, at){
   const note = notation(sounded, lenSec);
   note.dyn = p.dyn; note.at = at; note.col = p.serial ? '150,170,190' : C.col;   // 化石声部は寒色
   rbPush(note);
+  depositNote(sounded, note.col);   // 知の地層に沈殿(記録された観測=音になった論文)
   if (rng() < 0.10)
     floatEqs.push({ x: p.px, y: p.py, text: C.en, at, col: C.col });
 }
@@ -632,6 +635,8 @@ function utter(edge, now){
       crossed: false, px: undefined, py: undefined, sustained: true,
     });
   }
+  // 積み上がる知: 発話ごとに、その関係の共起論文(実カウント)を地層に降り積もらせる
+  depositPaper(edge);
   // 絶え間なく処理される論文: 発話のたびに、いま照合された関係が薄く明滅して消える
   if (rng() < 0.5){
     const A = CONCEPTS[ai], B = CONCEPTS[bi];
@@ -718,6 +723,7 @@ function advanceEpoch(now, announce){
   epochT = now;
   if (announce){
     const d = DECADES[epochIx];
+    palimpsest(d.year);   // 地層を薄れさせ境界と年号を刻む(重ね書き)。以後この相の論文が上に積もる
     const hasRev = d.edges.some(e => e[3] === 'reversed');
     // パラダイムの移動: 重心音がたわむ。定説が覆る相では深く長く崩れる
     bendGravity(now, hasRev ? 1 : 0.4);
@@ -1028,6 +1034,7 @@ function resize(){
   bloomB = document.createElement('canvas');
   bloomB.width = Math.max(1, W >> 3); bloomB.height = Math.max(1, H >> 3);
   bloomBx = bloomB.getContext('2d');
+  makeStrata();
 }
 window.addEventListener('resize', resize); resize();
 
@@ -1039,9 +1046,56 @@ const STATUS_COL = {
   reversed:     '200,64,42',
 };
 
+// ---------- 知の地層(strata): 消えずに堆積し、相ごとに薄れて重ね書きされるパランプセスト ----------
+let strata = null, strataCtx = null;
+function makeStrata(){
+  strata = document.createElement('canvas'); strata.width = Math.max(1,W); strata.height = Math.max(1,H);
+  strataCtx = strata.getContext('2d');
+}
+// 論文の可視化: 発話ごとに、その関係の共起数(実カウント)を対数スケールの点として降り積もらせる
+function depositPaper(edge){
+  if (!strataCtx || !field) return;
+  const co = edge.co || 0;
+  papersProcessed += co;
+  const pts = clamp(Math.round(Math.log10(co + 1) * 3.4), 1, 28);   // 対数: 100件≈7点, 1万件≈14点
+  const yA = stepY(conceptSteps(edge.ai)), yB = stepY(conceptSteps(edge.bi));
+  const col = STATUS_COL[edge.status] || '150,165,190';
+  for (let i = 0; i < pts; i++){
+    const x = 12 + rng() * (W - 24);
+    const y = clamp(lerp(yA, yB, rng()) + gauss() * 9, fieldTop(), fieldBottom());
+    strataCtx.fillStyle = `rgba(${col},${0.045 + rng() * 0.06})`;
+    strataCtx.fillRect(x, y, 1.2, 1.2);
+  }
+  for (let r = 0; r < (edge.retr || 0) && r < 8; r++){       // 撤回論文は赤い点で確実に混ぜる
+    strataCtx.fillStyle = 'rgba(200,64,42,0.16)';
+    strataCtx.fillRect(12 + rng()*(W-24), clamp(lerp(yA,yB,rng()), fieldTop(), fieldBottom()), 1.6, 1.6);
+  }
+}
+// 音になった論文=記録された観測。走査線の位置に薄い符頭を刻み、堆積が譜面の地層になる
+function depositNote(steps, col){
+  if (!strataCtx) return;
+  papersSounded++;
+  const x = clamp(line.x + gauss() * 3, 6, W - 6), y = stepY(steps);
+  strataCtx.fillStyle = `rgba(${col},0.13)`;
+  strataCtx.beginPath(); strataCtx.ellipse(x, y, 1.7, 1.1, -0.3, 0, 7); strataCtx.fill();
+}
+// パランプセスト: 相の交代で過去を薄れさせ、地層境界と年号を刻んでから、その上に現在が書かれる
+function palimpsest(year){
+  if (!strataCtx) return;
+  strataCtx.fillStyle = 'rgba(5,5,7,0.34)'; strataCtx.fillRect(0, 0, W, H);
+  const yb = fieldTop() + (fieldBottom() - fieldTop()) * (0.12 + rng() * 0.72);
+  strataCtx.strokeStyle = 'rgba(180,185,205,0.10)'; strataCtx.lineWidth = 1;
+  strataCtx.beginPath(); strataCtx.moveTo(0, yb); strataCtx.lineTo(W, yb); strataCtx.stroke();
+  strataCtx.font = '9px monospace'; strataCtx.fillStyle = 'rgba(180,185,205,0.16)';
+  strataCtx.textAlign = 'left'; strataCtx.fillText(String(year), 14, yb - 3);
+}
+
 function draw(now, tSec){
   g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
   const vb = st.vis;
+
+  // 知の地層(strata): 積み上がってきた全論文の堆積を背景に定着
+  if (strata) g2.drawImage(strata, 0, 0, W, H);
 
   // 背景: 巨大な年代
   if (field){
@@ -1179,7 +1233,7 @@ function draw(now, tSec){
 
   if (curMi === 1) drawCurve(now);
   if (graphOn) drawGraph(now);
-  drawRibbon(now);
+  if (ribbonOn) drawRibbon(now);
 
   // Fluxus / 開示
   if (fluxMsg){
@@ -1468,6 +1522,11 @@ function drawHUD(){
     `rec ${caught}·miss ${missedN}·drop ${droppedN}·retr ${retracted}   ` +
     `C ${st.conc.toFixed(2)}   X ${st.complexity.toFixed(2)}   A ${st.attn.toFixed(2)}   ` +
     `${line.dir > 0 ? '→' : '←'}${st.fermata ? ' hold' : ''}`, 14, 22);
+  // 積み上がる知の実数（音になった論文 / 走査された総論文）
+  g2.fillStyle = 'rgba(180,190,210,0.5)';
+  g2.textAlign = 'right';
+  g2.fillText(`${papersSounded.toLocaleString()} papers sounded · ${papersProcessed.toLocaleString()} processed`, W - 14, H - 8);
+  g2.textAlign = 'left';
 }
 
 // ---------- loop ----------
@@ -1516,6 +1575,7 @@ panel.querySelectorAll('.tog').forEach(el=>{
                      el.classList.toggle('on', !isFull()); return; }
     if (k==='glow'){ glowOn=!glowOn; SETTINGS.glow=glowOn; el.classList.toggle('on',glowOn); }
     else if (k==='graph'){ graphOn=!graphOn; SETTINGS.graph=graphOn; el.classList.toggle('on',graphOn); }
+    else if (k==='ribbon'){ ribbonOn=!ribbonOn; SETTINGS.ribbon=ribbonOn; el.classList.toggle('on',ribbonOn); }
     else if (k==='sound'){ soundOn=!soundOn; SETTINGS.sound=soundOn; el.classList.toggle('on',soundOn); }
     else if (k==='suite'){ suiteMode=!suiteMode; SETTINGS.suite=suiteMode; el.classList.toggle('on',suiteMode); }
     else if (k==='bow'){ SETTINGS.mv[curMi].bow=!SETTINGS.mv[curMi].bow; el.classList.toggle('on',SETTINGS.mv[curMi].bow); }
@@ -1539,6 +1599,7 @@ function applyMovementUI(){
 function applyGlobalUI(){
   panel.querySelector('.tog[data-set="glow"]').classList.toggle('on', glowOn);
   panel.querySelector('.tog[data-set="graph"]').classList.toggle('on', graphOn);
+  panel.querySelector('.tog[data-set="ribbon"]').classList.toggle('on', ribbonOn);
   panel.querySelector('.tog[data-set="sound"]').classList.toggle('on', soundOn);
   panel.querySelector('.tog[data-set="suite"]').classList.toggle('on', suiteMode);
   sVol.value = Math.round(SETTINGS.vol*100); sEpoch.value = EPOCH_SEC; sEpochV.textContent = EPOCH_SEC+'s';
