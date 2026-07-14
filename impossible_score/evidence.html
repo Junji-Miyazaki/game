@@ -1052,23 +1052,33 @@ function makeStrata(){
   strata = document.createElement('canvas'); strata.width = Math.max(1,W); strata.height = Math.max(1,H);
   strataCtx = strata.getContext('2d');
 }
+// 画面サイズが実寸になったら地層を作り直す（読み込み時 W/H=0 で 1×1 になる不具合の保険）。
+// 既存の堆積は引き継ぐ。毎フレーム draw() 冒頭で呼ぶ
+function ensureStrata(){
+  if (W < 2 || H < 2) return;
+  if (!strata || strata.width !== W || strata.height !== H){
+    const old = (strata && strata.width > 1) ? strata : null;
+    makeStrata();
+    if (old) strataCtx.drawImage(old, 0, 0, W, H);
+  }
+}
 // 論文の可視化: 発話ごとに、その関係の共起数(実カウント)を対数スケールの点として降り積もらせる
 function depositPaper(edge){
   if (!strataCtx || !field) return;
   const co = edge.co || 0;
   papersProcessed += co;
-  const pts = clamp(Math.round(Math.log10(co + 1) * 3.4), 1, 28);   // 対数: 100件≈7点, 1万件≈14点
+  const pts = clamp(Math.round(Math.log10(co + 1) * 4.0), 1, 34);   // 対数: 100件≈8点, 1万件≈16点
   const yA = stepY(conceptSteps(edge.ai)), yB = stepY(conceptSteps(edge.bi));
   const col = STATUS_COL[edge.status] || '150,165,190';
   for (let i = 0; i < pts; i++){
     const x = 12 + rng() * (W - 24);
-    const y = clamp(lerp(yA, yB, rng()) + gauss() * 9, fieldTop(), fieldBottom());
-    strataCtx.fillStyle = `rgba(${col},${0.045 + rng() * 0.06})`;
-    strataCtx.fillRect(x, y, 1.2, 1.2);
+    const y = clamp(lerp(yA, yB, rng()) + gauss() * 10, fieldTop(), fieldBottom());
+    strataCtx.fillStyle = `rgba(${col},${0.10 + rng() * 0.12})`;
+    strataCtx.fillRect(x, y, 1.5, 1.5);
   }
   for (let r = 0; r < (edge.retr || 0) && r < 8; r++){       // 撤回論文は赤い点で確実に混ぜる
-    strataCtx.fillStyle = 'rgba(200,64,42,0.16)';
-    strataCtx.fillRect(12 + rng()*(W-24), clamp(lerp(yA,yB,rng()), fieldTop(), fieldBottom()), 1.6, 1.6);
+    strataCtx.fillStyle = 'rgba(200,64,42,0.30)';
+    strataCtx.fillRect(12 + rng()*(W-24), clamp(lerp(yA,yB,rng()), fieldTop(), fieldBottom()), 2, 2);
   }
 }
 // 音になった論文=記録された観測。走査線の位置に薄い符頭を刻み、堆積が譜面の地層になる
@@ -1076,8 +1086,8 @@ function depositNote(steps, col){
   if (!strataCtx) return;
   papersSounded++;
   const x = clamp(line.x + gauss() * 3, 6, W - 6), y = stepY(steps);
-  strataCtx.fillStyle = `rgba(${col},0.13)`;
-  strataCtx.beginPath(); strataCtx.ellipse(x, y, 1.7, 1.1, -0.3, 0, 7); strataCtx.fill();
+  strataCtx.fillStyle = `rgba(${col},0.22)`;
+  strataCtx.beginPath(); strataCtx.ellipse(x, y, 2.0, 1.3, -0.3, 0, 7); strataCtx.fill();
 }
 // パランプセスト: 相の交代で過去を薄れさせ、地層境界と年号を刻んでから、その上に現在が書かれる
 function palimpsest(year){
@@ -1091,6 +1101,7 @@ function palimpsest(year){
 }
 
 function draw(now, tSec){
+  ensureStrata();
   g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
   const vb = st.vis;
 
