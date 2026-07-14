@@ -1023,6 +1023,7 @@ function updateParticles(dt, now){
 const cv = document.getElementById('cv');
 const g2 = cv.getContext('2d');
 let bloomA = null, bloomAx = null, bloomB = null, bloomBx = null;
+let strata = null, strataCtx = null;   // 知の地層（resize() が呼ぶ makeStrata より前に宣言）
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
@@ -1047,7 +1048,6 @@ const STATUS_COL = {
 };
 
 // ---------- 知の地層(strata): 消えずに堆積し、相ごとに薄れて重ね書きされるパランプセスト ----------
-let strata = null, strataCtx = null;
 function makeStrata(){
   strata = document.createElement('canvas'); strata.width = Math.max(1,W); strata.height = Math.max(1,H);
   strataCtx = strata.getContext('2d');
