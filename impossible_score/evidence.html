@@ -57,7 +57,7 @@
 </div>
 <div id="settings">
   <h4>Display</h4>
-  <div><span class="tog on" data-set="glow">glow</span> &nbsp; <span class="tog on" data-set="graph">map</span> &nbsp; <span class="tog on" data-set="ribbon">score</span> &nbsp; <span class="tog on" data-set="sound">sound</span> &nbsp; <span class="tog" data-set="full">fullscreen</span></div>
+  <div><span class="tog on" data-set="glow">glow</span> &nbsp; <span class="tog on" data-set="graph">map</span> &nbsp; <span class="tog" data-set="ribbon">score</span> &nbsp; <span class="tog on" data-set="sound">sound</span> &nbsp; <span class="tog" data-set="full">fullscreen</span></div>
   <label>volume <input type="range" id="sVol" min="0" max="100" value="85"></label>
   <h4>Bowing — <span class="mvname" id="sMvName">—</span></h4>
   <div><span class="tog on" data-set="bow">bowed / sustained</span></div>
@@ -128,7 +128,7 @@ let soundOn=true, glowOn=true, graphOn=true;
 
 // ---------- 設定（localStorageに記憶）----------
 const SET_DEFAULT = {
-  glow:true, graph:true, sound:true, suite:false, ribbon:true,
+  glow:true, graph:true, sound:true, suite:false, ribbon:false,
   vol:0.85, epochSec:38,
   mv:[ {bow:true, bowLen:1.5, bowAtk:1.0},   // I
        {bow:true, bowLen:1.5, bowAtk:1.0},   // II
@@ -138,6 +138,8 @@ let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
 catch(e){ SETTINGS = Object.assign({}, SET_DEFAULT); }
 if (!Array.isArray(SETTINGS.mv) || SETTINGS.mv.length!==3) SETTINGS.mv = SET_DEFAULT.mv.map(m=>Object.assign({},m));
+// 一度きりの移行: リボン(楽譜)は初期値OFF。過去に ON を保存済みでも一度だけ OFF に落とす
+try{ if(localStorage.getItem('evidence_ribbon_off_v1')!=='1'){ SETTINGS.ribbon=false; localStorage.setItem('evidence_ribbon_off_v1','1'); } }catch(e){}
 function saveSet(){ try{ localStorage.setItem('evidence_set_v1', JSON.stringify(SETTINGS)); }catch(e){} }
 let EPOCH_SEC = SETTINGS.epochSec;
 glowOn = SETTINGS.glow; graphOn = SETTINGS.graph; soundOn = SETTINGS.sound;
@@ -505,6 +507,7 @@ function notation(steps, lenSec){
 
 // ---------- state ----------
 let particles = [], ribbon = [], floatEqs = [], bonds = [], citations = [], ephem = [];
+let rising = [];   // 音になった論文のCitationが常時浮き上がる群れ（積み上がる知＝上昇する引用の海）
 let ribbonCursor = 0, ribbonView = 0;   // 書き込みヘッド（紙の座標）とその表示位置
 let lastLabelX = -999;                    // Hz/ms ラベル間引き用
 let lastCiteAt = -99;
@@ -565,7 +568,7 @@ function observe(p, at){
   const note = notation(sounded, lenSec);
   note.dyn = p.dyn; note.at = at; note.col = p.serial ? '150,170,190' : C.col;   // 化石声部は寒色
   rbPush(note);
-  depositNote(sounded, note.col);   // 知の地層に沈殿(記録された観測=音になった論文)
+  spawnRising(p, at);   // 音になった論文のCitationが浮き上がる（この観測=1本の論文）
   if (rng() < 0.10)
     floatEqs.push({ x: p.px, y: p.py, text: C.en, at, col: C.col });
 }
@@ -635,8 +638,8 @@ function utter(edge, now){
       crossed: false, px: undefined, py: undefined, sustained: true,
     });
   }
-  // 積み上がる知: 発話ごとに、その関係の共起論文(実カウント)を地層に降り積もらせる
-  depositPaper(edge);
+  // 積み上がる知: 発話ごとに、その関係の共起論文(実カウント)を走査済みに数える
+  papersProcessed += (edge.co || 0);
   // 絶え間なく処理される論文: 発話のたびに、いま照合された関係が薄く明滅して消える
   if (rng() < 0.5){
     const A = CONCEPTS[ai], B = CONCEPTS[bi];
@@ -711,6 +714,7 @@ function schedulerTick(){
   pulseMarks = pulseMarks.filter(m => !m.crossed && m.x !== undefined ? m.x > -20 : (now - m.t) < 40);
   flashes = flashes.filter(f => now - f.at < 0.6);
   floatEqs = floatEqs.filter(f => now - f.at < 3.2);
+  rising = rising.filter(r => now - r.at < r.life);
   bonds = bonds.filter(b => now - b.at < 0.5);
   citations = citations.filter(c => now - c.at < c.life);
   ephem = ephem.filter(e => now - e.at < e.life);
@@ -723,7 +727,6 @@ function advanceEpoch(now, announce){
   epochT = now;
   if (announce){
     const d = DECADES[epochIx];
-    palimpsest(d.year);   // 地層を薄れさせ境界と年号を刻む(重ね書き)。以後この相の論文が上に積もる
     const hasRev = d.edges.some(e => e[3] === 'reversed');
     // パラダイムの移動: 重心音がたわむ。定説が覆る相では深く長く崩れる
     bendGravity(now, hasRev ? 1 : 0.4);
@@ -1023,7 +1026,6 @@ function updateParticles(dt, now){
 const cv = document.getElementById('cv');
 const g2 = cv.getContext('2d');
 let bloomA = null, bloomAx = null, bloomB = null, bloomBx = null;
-let strata = null, strataCtx = null;   // 知の地層（resize() が呼ぶ makeStrata より前に宣言）
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
@@ -1035,7 +1037,6 @@ function resize(){
   bloomB = document.createElement('canvas');
   bloomB.width = Math.max(1, W >> 3); bloomB.height = Math.max(1, H >> 3);
   bloomBx = bloomB.getContext('2d');
-  makeStrata();
 }
 window.addEventListener('resize', resize); resize();
 
@@ -1047,66 +1048,49 @@ const STATUS_COL = {
   reversed:     '200,64,42',
 };
 
-// ---------- 知の地層(strata): 消えずに堆積し、相ごとに薄れて重ね書きされるパランプセスト ----------
-function makeStrata(){
-  strata = document.createElement('canvas'); strata.width = Math.max(1,W); strata.height = Math.max(1,H);
-  strataCtx = strata.getContext('2d');
+// ---------- 積み上がる知 = 浮遊するCitationの海 ----------
+// 音になった論文が1本ずつ引用として立ち上り、ゆっくり上昇しながら薄れて消える。
+// 大量に重なり合い、常時 数十件が漂う = 音化されてきた文献の総体
+const RISE_MAX = 96;
+function citePool(){
+  const m = CITES[curMi] || {};
+  return Object.values(m).map(v => (typeof v === 'string' ? v : v.r)).filter(Boolean);
 }
-// 画面サイズが実寸になったら地層を作り直す（読み込み時 W/H=0 で 1×1 になる不具合の保険）。
-// 既存の堆積は引き継ぐ。毎フレーム draw() 冒頭で呼ぶ
-function ensureStrata(){
-  if (W < 2 || H < 2) return;
-  if (!strata || strata.width !== W || strata.height !== H){
-    const old = (strata && strata.width > 1) ? strata : null;
-    makeStrata();
-    if (old) strataCtx.drawImage(old, 0, 0, W, H);
-  }
-}
-// 論文の可視化: 発話ごとに、その関係の共起数(実カウント)を対数スケールの点として降り積もらせる
-function depositPaper(edge){
-  if (!strataCtx || !field) return;
-  const co = edge.co || 0;
-  papersProcessed += co;
-  const pts = clamp(Math.round(Math.log10(co + 1) * 4.0), 1, 34);   // 対数: 100件≈8点, 1万件≈16点
-  const yA = stepY(conceptSteps(edge.ai)), yB = stepY(conceptSteps(edge.bi));
-  const col = STATUS_COL[edge.status] || '150,165,190';
-  for (let i = 0; i < pts; i++){
-    const x = 12 + rng() * (W - 24);
-    const y = clamp(lerp(yA, yB, rng()) + gauss() * 10, fieldTop(), fieldBottom());
-    strataCtx.fillStyle = `rgba(${col},${0.10 + rng() * 0.12})`;
-    strataCtx.fillRect(x, y, 1.5, 1.5);
-  }
-  for (let r = 0; r < (edge.retr || 0) && r < 8; r++){       // 撤回論文は赤い点で確実に混ぜる
-    strataCtx.fillStyle = 'rgba(200,64,42,0.30)';
-    strataCtx.fillRect(12 + rng()*(W-24), clamp(lerp(yA,yB,rng()), fieldTop(), fieldBottom()), 2, 2);
-  }
-}
-// 音になった論文=記録された観測。走査線の位置に薄い符頭を刻み、堆積が譜面の地層になる
-function depositNote(steps, col){
-  if (!strataCtx) return;
+function spawnRising(p, at){
   papersSounded++;
-  const x = clamp(line.x + gauss() * 3, 6, W - 6), y = stepY(steps);
-  strataCtx.fillStyle = `rgba(${col},0.22)`;
-  strataCtx.beginPath(); strataCtx.ellipse(x, y, 2.0, 1.3, -0.3, 0, 7); strataCtx.fill();
-}
-// パランプセスト: 相の交代で過去を薄れさせ、地層境界と年号を刻んでから、その上に現在が書かれる
-function palimpsest(year){
-  if (!strataCtx) return;
-  strataCtx.fillStyle = 'rgba(5,5,7,0.34)'; strataCtx.fillRect(0, 0, W, H);
-  const yb = fieldTop() + (fieldBottom() - fieldTop()) * (0.12 + rng() * 0.72);
-  strataCtx.strokeStyle = 'rgba(180,185,205,0.10)'; strataCtx.lineWidth = 1;
-  strataCtx.beginPath(); strataCtx.moveTo(0, yb); strataCtx.lineTo(W, yb); strataCtx.stroke();
-  strataCtx.font = '9px monospace'; strataCtx.fillStyle = 'rgba(180,185,205,0.16)';
-  strataCtx.textAlign = 'left'; strataCtx.fillText(String(year), 14, yb - 3);
+  const e = p.edge;
+  let text = '', sub = '', col = '198,206,220';
+  if (e && rng() < 0.14){                       // 一部は実在のランドマーク引用（本物の著者・誌・年）
+    const pool = citePool();
+    if (pool.length){ text = pool[rngi(pool.length)]; col = '224,214,190'; }
+  }
+  if (!text){
+    if (e && CONCEPTS[e.ai] && CONCEPTS[e.bi]){  // 大半は「関係」＋実共起数（実データ）
+      text = `${CONCEPTS[e.ai].en} – ${CONCEPTS[e.bi].en}`;
+      sub  = 'n=' + (e.co || 0).toLocaleString();
+      col  = STATUS_COL[e.status] || '198,206,220';
+      if (e.status === 'reversed' || e.status === 'contested') col = STATUS_COL[e.status];
+    } else {
+      const C = CONCEPTS[p.ci];
+      text = C ? C.en : '';
+      col  = C ? C.col : '170,178,196';
+    }
+  }
+  if (!text) return;
+  const bx = (p.px != null) ? p.px : (line.x >= 0 ? line.x : W * (0.12 + rng() * 0.76));
+  const by = (p.py != null) ? p.py : clamp((fieldTop() + fieldBottom()) / 2 + gauss() * 60, fieldTop(), fieldBottom());
+  rising.push({
+    text, sub, col, at,
+    x: clamp(bx + gauss() * 6, 8, W - 8), y: by,
+    vx: gauss() * 3.5, drift: 12 + rng() * 22,          // 上昇速度 px/s
+    life: 4.2 + rng() * 3.4, sz: 9 + (sub ? 1 : 0),
+  });
+  if (rising.length > RISE_MAX) rising.shift();
 }
 
 function draw(now, tSec){
-  ensureStrata();
   g2.fillStyle = '#050505'; g2.fillRect(0, 0, W, H);
   const vb = st.vis;
-
-  // 知の地層(strata): 積み上がってきた全論文の堆積を背景に定着
-  if (strata) g2.drawImage(strata, 0, 0, W, H);
 
   // 背景: 巨大な年代
   if (field){
@@ -1177,6 +1161,24 @@ function draw(now, tSec){
   if (st.fermata){
     g2.strokeStyle = 'rgba(220,220,220,0.8)'; g2.lineWidth = 1.5;
     g2.beginPath(); g2.arc(lx, fieldTop() + 6, 12, Math.PI, 0); g2.stroke();
+  }
+
+  // 積み上がる知: 音になった論文のCitationが立ち上り、上昇しながら薄れる（常時 数十件が漂う）
+  g2.textAlign = 'left';
+  for (const r of rising){
+    const age = now - r.at;
+    const k = age < 0.6 ? age / 0.6 : Math.max(0, (r.life - age) / (r.life - 0.6));
+    const a = k * 0.44;
+    if (a <= 0.01) continue;
+    const x = r.x + r.vx * age, y = r.y - age * r.drift;
+    g2.font = `${r.sz}px "Hiragino Mincho ProN", serif`;
+    g2.fillStyle = `rgba(${r.col},${a})`;
+    g2.fillText(r.text, x, y);
+    if (r.sub){
+      g2.font = '7px monospace';
+      g2.fillStyle = `rgba(${r.col},${a * 0.6})`;
+      g2.fillText(r.sub, x, y + 9);
+    }
   }
 
   // 浮上する概念名（ラベル同期の補強）
