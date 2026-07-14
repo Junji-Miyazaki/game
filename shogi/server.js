@@ -7,7 +7,7 @@ const PORT = 4195;
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".txt": "text/plain; charset=utf-8" };
 http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split("?")[0]);
-  if (p === "/") p = "/cyber-shogi-prototype-v1.html";
+  if (p === "/") p = "/cyber-shogi-prototype-v2.html";
   const file = path.join(ROOT, path.normalize(p));
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
