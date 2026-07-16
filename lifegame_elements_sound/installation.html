@@ -34,32 +34,35 @@
             background-color: #111;
         }
 
-        /* Installation mode: UI is hidden by default.
-           Press H to reveal/hide the info panel and controls panel. */
+        /* Installation mode: the gear stays faintly visible at all times as a
+           discreet toggle. Click it (or press H) to reveal/hide the panels.
+           The pointer only appears when hovering the gear itself. */
         #ui-toggle {
             position: absolute;
             bottom: 15px;
             right: 15px;
             width: 30px;
             height: 30px;
+            display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             z-index: 1000;
-            transition: transform 0.2s ease;
+            opacity: 0.16;
+            transition: opacity 0.35s ease, transform 0.2s ease;
             background: none;
             border-radius: 0;
             box-shadow: none;
             border: none;
-            display: none;
         }
 
         body.ui-visible #ui-toggle {
-            display: flex;
+            opacity: 0.9;
         }
 
         #ui-toggle:hover {
             transform: scale(1.1);
+            opacity: 0.9;
         }
 
         #ui-toggle svg {

@@ -465,7 +465,8 @@ function animate() {
 /* ============================ UI / lifecycle ============================ */
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
+  W = window.innerWidth || document.documentElement.clientWidth || 1280;
+  H = window.innerHeight || document.documentElement.clientHeight || 720;
   stage.width = W*DPR; stage.height = H*DPR;
   stage.style.width = W+'px'; stage.style.height = H+'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -477,9 +478,7 @@ function begin() {
   started = true;
   initAudio();
   document.getElementById('hint').classList.add('gone');
-  // seed a couple of chairs so the room isn't empty at the first breath
-  addImage(); setTimeout(addImage, 1200);
-  // seed a sparse pentatonic phrase so sound begins immediately
+  // seed a sparse pentatonic phrase so sound begins immediately on the first touch
   for (let k = 0; k < 4; k++) pattern[(Math.random()*TRACKS)|0][(Math.random()*STEPS)|0] = true;
   // a guaranteed slow trickle of text, so an aphorism is present even in stillness
   setInterval(() => { if (started && quotes.length === 0) spawnQuote(); }, 9000);
@@ -516,4 +515,12 @@ resize();
 loadImages();
 initCamera();
 requestAnimationFrame(animate);
+
+// The room self-populates immediately, so the piece is alive before (and
+// without) any touch — audio still waits for a user gesture per browser policy.
+// A webcam, when reachable (https/localhost), drives accumulation on top of this.
+const seedTimer = setInterval(() => {
+  if (images.length && active.length < 3) addImage();
+  if (active.length >= 3) clearInterval(seedTimer);
+}, 600);
 </script>
