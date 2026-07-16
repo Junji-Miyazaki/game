@@ -1,0 +1,519 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>DER LEERE STUHL — 空の椅子</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    cursor: none;
+  }
+  #stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  video { display: none; }
+
+  /* first-gesture hint — the only thing visible until the piece is touched */
+  #hint {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    z-index: 30; color: #cfcfcf; letter-spacing: .35em; font-weight: 300;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(13px, 2vw, 18px);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.2), #000 75%);
+    transition: opacity 2s ease; text-align: center; line-height: 2.2;
+  }
+  #hint .sub { display:block; font-size: .7em; letter-spacing:.25em; opacity:.55; margin-top:1.4em; }
+  #hint.gone { opacity: 0; pointer-events: none; }
+
+  /* hidden control panel — revealed only with the H key */
+  #panel {
+    position: fixed; left: 20px; bottom: 20px; z-index: 40;
+    display: none; flex-direction: column; gap: 12px;
+    padding: 18px 20px; min-width: 210px;
+    background: rgba(10,10,10,.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.10); border-radius: 4px;
+    font-family: 'Helvetica Neue', Arial, sans-serif; color: #d8d8d8;
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  }
+  #panel.show { display: flex; }
+  #panel h1 { margin: 0 0 4px; font-size: 10px; letter-spacing: .3em; font-weight: 400; opacity: .5; }
+  #panel .row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  #panel label { opacity: .75; }
+  #panel input[type=range] { -webkit-appearance: none; appearance: none; width: 96px; height: 1px; background: #666; outline: none; }
+  #panel input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; border-radius: 50%; background: #eee; cursor: pointer; }
+  #panel button {
+    background: transparent; border: 1px solid rgba(255,255,255,.22); color: #d8d8d8;
+    padding: 5px 9px; font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    border-radius: 2px; cursor: pointer; transition: .2s;
+  }
+  #panel button:hover { background: rgba(255,255,255,.10); }
+  #panel button.on { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.4); }
+  #panel .hintkey { opacity: .35; font-size: 9px; letter-spacing:.2em; margin-top:2px; }
+</style>
+
+<canvas id="stage"></canvas>
+<video id="cam" playsinline autoplay muted></video>
+
+<div id="hint">
+  DER LEERE STUHL
+  <span class="sub">空の椅子 &nbsp;·&nbsp; touch to enter</span>
+</div>
+
+<div id="panel">
+  <h1>Der leere Stuhl</h1>
+  <div class="row"><label>Sound</label><button id="bSound" class="on">On</button></div>
+  <div class="row"><label>Drone bed</label><button id="bDrone">Off</button></div>
+  <div class="row"><label>Camera</label><button id="bCam">Auto</button></div>
+  <div class="row"><label>Volume</label><input id="sVol" type="range" min="0" max="1" step="0.01" value="0.55"></div>
+  <div class="row"><label>Density</label><input id="sDens" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+  <div class="hintkey">press H to hide</div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   DER LEERE STUHL / 空の椅子
+   A sound & visual installation.
+   Presence (webcam motion, or an autonomous drift when no camera) lets
+   translucent, desaturated photographs of empty chairs accumulate, and writes
+   a slow pentatonic sequence. Each sounding note summons a bilingual aphorism
+   about chairs and sitting — German original with its Japanese translation.
+   Stillness lets both the chairs and the sound decay.
+   ========================================================================== */
+
+const CONFIG = {
+  imageDir: 'chair_oag/',
+  maxImages: 6,
+  fadeIn: 0.0016, fadeOut: 0.0012,     // per-frame opacity change (slow)
+  imgOpacity: 0.40,
+  grid: 6,                              // webcam analysis grid (coarse)
+  motionThreshold: 22,
+  bpm: 84,                              // meditative pulse
+  baseNotes: [220.00, 261.63, 293.66, 349.23, 392.00, 440.00, 523.25, 587.33], // A minor pentatonic
+  textEveryNotes: 3,
+  maxQuotes: 2,
+};
+
+/* ---- Bilingual quotations (German original · Japanese translation) --------
+   Curated from the artist's collected sources, chair / sitting centred.       */
+const QUOTES = [
+  { de:"Er setzte sich auf den breiten Lehnstuhl am Kamin.", ja:"彼は暖炉のそばの広い肘掛け椅子に腰を下ろした。", by:"Goethe, Faust II" },
+  { de:"Sie fand ihn auf dem Gartenstuhl, die Hände im Schoß gefaltet.", ja:"彼女は庭の椅子に座っている彼を見つけた。両手を膝の上で組んで。", by:"Fontane, Effi Briest" },
+  { de:"Er sank erschöpft auf einen Stuhl am Fenster.", ja:"彼は疲れ果てて窓際の椅子に崩れ落ちた。", by:"Thomas Mann, Der Zauberberg" },
+  { de:"In meinem Lehnstuhl sitz ich hier allein.", ja:"私は肘掛け椅子に一人でここに座っている。", by:"Hermann Hesse, Stufen" },
+  { de:"Sie rückte ihren Stuhl näher an den Tisch.", ja:"彼女は自分の椅子をテーブルの方へ引き寄せた。", by:"Kafka, Der Prozess" },
+  { de:"Auf dem Kanapee saßen sie nebeneinander, wortlos.", ja:"長椅子に彼らは言葉もなく並んで座っていた。", by:"Schnitzler, Der Weg ins Freie" },
+  { de:"Er stand auf, schob den Stuhl zurück und ging zur Tür.", ja:"彼は立ち上がり、椅子を後ろに押し、ドアの方へ行った。", by:"Heinrich Mann, Der Untertan" },
+  { de:"Die Kinder hockten auf kleinen Stühlchen um das Feuer.", ja:"子供たちは小さな腰掛けに座って火を囲んでいた。", by:"Stifter, Bunte Steine" },
+  { de:"Auf einem alten Schemel saß die Großmutter und spann.", ja:"古い踏み台に祖母が座って糸を紡いでいた。", by:"Hauptmann, Die Weber" },
+  { de:"Er zog einen Hocker heran und setzte sich dicht neben sie.", ja:"彼はスツールを引き寄せ、彼女のすぐ隣に座った。", by:"Döblin, Berlin Alexanderplatz" },
+  { de:"Sie lehnte sich im Sessel zurück und schloss die Augen.", ja:"彼女は肘掛け椅子に身を預けて目を閉じた。", by:"Anna Seghers, Das siebte Kreuz" },
+  { de:"Auf dem Diwan lag ein Buch, unaufgeschlagen.", ja:"長椅子には開かれていない本が置いてあった。", by:"Günter Grass, Die Blechtrommel" },
+  { de:"Er saß am Fenster und blickte in den Regen.", ja:"彼は窓際に座って雨を見つめていた。", by:"Siegfried Lenz, Deutschstunde" },
+  { de:"Er hockte auf dem Boden und malte.", ja:"彼は床に座り込んで絵を描いていた。", by:"Bernhard Schlink, Der Vorleser" },
+  { de:"Er verbrachte Stunden auf seinem Schreibtischstuhl.", ja:"彼は書斎の椅子で何時間も過ごした。", by:"Lion Feuchtwanger, Erfolg" },
+  { de:"Ich sitze und lese einen Dichter. Es sind viele Leute im Saal, aber man spürt sie nicht.", ja:"私は座って詩人の作品を読んでいる。ホールには多くの人がいるが、彼らの存在は感じられない。", by:"Rilke, Malte Laurids Brigge" },
+  { de:"Ich war der einzige, der am Tische sitzen geblieben war; mir schien, ich könnte nie wieder auf.", ja:"私だけがテーブルに座ったままだった。もう二度と立ち上がれないような気がした。", by:"Rilke, Malte Laurids Brigge" },
+  { de:"Der Vater schlief bald nach dem Nachtessen in seinem Sessel ein.", ja:"父は夕食後すぐに肘掛け椅子で眠りに落ちた。", by:"Kafka, Die Verwandlung" },
+  { de:"Wenn wir einen Menschen hassen, so hassen wir in seinem Bild etwas, was in uns selber sitzt.", ja:"人を憎むとき、私たちはその人の姿の中に、自分自身の中に座っているものを憎んでいる。", by:"Hermann Hesse" },
+  { de:"Dem Bedürfnis nach Einsamkeit genügt es nicht, dass man allein sitzt. Es müssen auch leere Sessel herumstehen.", ja:"孤独の欲求は、ただ一人で座っているだけでは満たされない。空の椅子も周りにあるべきなのだ。", by:"Alfred Polgar" },
+  { de:"Bekanntlich braucht man zum Denken einen Stuhl, auf dem man sitzt.", ja:"周知のように、思考するためには座るための椅子が必要だ。", by:"Ödön von Horváth" },
+  { de:"Es ist schwerer, einen guten Stuhl zu bauen als einen Wolkenkratzer.", ja:"良い椅子を作ることは、高層ビルを建てるよりも難しい。", by:"Mies van der Rohe" },
+  { de:"Zwischen den Stühlen zu sitzen, ist in Wahrheit der anständigste Platz, den es gibt.", ja:"椅子の間に座ることは、実のところ、存在する中で最も立派な場所である。", by:"Moritz Heimann" },
+  { de:"Auf dem höchsten Thron der Welt sitzen wir nur auf unserem Arsch.", ja:"世界の最も高い玉座の上にあっても、我々は自分の尻の上に座っているだけだ。", by:"Montaigne, Essais" },
+  { de:"In dem öden ausgestorbenen Himmel sitzt auf eisernem Stuhl die letzte Göttin, die Notwendigkeit.", ja:"荒涼と死に絶えた空に、最後の女神、必然が鉄の椅子に座っている。", by:"Heinrich Heine" },
+  { de:"Er sinkt auf einen Stuhl und verhüllt das Gesicht.", ja:"彼は椅子に崩れ落ち、顔を覆う。", by:"Wagner, Lohengrin" },
+  { de:"Hier sitz ich am Webstuhl und webe.", ja:"ここで私は機織り機に座って織っている。", by:"Wagner, Der fliegende Holländer" },
+  { de:"So sitze ich einsam in meiner Kammer.", ja:"こうして私は一人、自分の部屋に座っている。", by:"Wagner, Tannhäuser" },
+  { de:"Am Brunnen vor dem Tore, da steht ein Lindenbaum; ich träumt' in seinem Schatten so manchen süßen Traum.", ja:"門の前の泉のそばに一本の菩提樹が立っている。私はその木陰で、多くの甘い夢を見た。", by:"Müller / Schubert, Der Lindenbaum" },
+  { de:"Wenn ich sitze, will ich nicht sitzen, wie mein Sitz-Fleisch möchte, sondern wie mein Sitz-Geist sich den Stuhl flöchte.", ja:"座るとき、私は肉体が望むようにではなく、精神が座るなら編むであろう椅子のように座りたい。", by:"Christian Morgenstern" },
+];
+
+/* ============================ state ====================================== */
+const stage = document.getElementById('stage');
+const ctx = stage.getContext('2d');
+const video = document.getElementById('cam');
+let W = 0, H = 0, DPR = 1;
+
+const images = [];        // loaded HTMLImageElements
+const active = [];        // { img, opacity, target }
+const quotes = [];        // floating bilingual quotes
+
+let audioCtx = null, master = null, started = false;
+let soundOn = true, droneOn = false;
+let volume = 0.55, density = 0.5;
+let camMode = 'auto';      // 'auto' | 'on' | 'off'
+let camReady = false;
+let camCanvas, camCtx, prevFrame = null;
+
+let motionLevel = 0, brightness = 0.5;
+let lastActionAt = 0;
+let noteCount = 0;
+
+/* sequencer pattern: 8 tracks x 16 steps */
+const TRACKS = 8, STEPS = 16;
+const pattern = Array.from({length: TRACKS}, () => new Array(STEPS).fill(false));
+
+/* ============================ images ==================================== */
+function loadImages() {
+  const names = ['IMG_7378','IMG_7464','IMG_7793','IMG_8505','IMG_8506','IMG_8507',
+    'IMG_8538','IMG_8539','IMG_8540','IMG_8541','IMG_8542','IMG_8543','IMG_8544',
+    'IMG_8545','IMG_8546','IMG_8608','IMG_8609','IMG_8624','IMG_8634','IMG_8635',
+    'IMG_8636','IMG_8637'];
+  names.forEach(n => {
+    const img = new Image();
+    img.onload = () => images.push(img);
+    img.src = CONFIG.imageDir + n + '.png';
+  });
+}
+
+function addImage() {
+  if (!images.length) return;
+  if (active.length >= CONFIG.maxImages) {
+    // retire the oldest by fading it out
+    active[0].target = 0;
+  }
+  const img = images[(Math.random() * images.length) | 0];
+  active.push({ img, opacity: 0, target: CONFIG.imgOpacity * (0.7 + Math.random()*0.6) });
+}
+
+/* ============================ audio ===================================== */
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  master = audioCtx.createGain();
+  master.gain.value = volume;
+  master.connect(audioCtx.destination);
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  startScheduler();
+}
+
+// pentatonic note
+function playNote(track, time) {
+  if (!soundOn || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  const pan = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+  osc.type = 'sine';
+  osc.frequency.value = CONFIG.baseNotes[track % CONFIG.baseNotes.length];
+  osc.detune.value = (Math.random()*16) - 8;
+  const peak = 0.16 * (0.6 + density*0.6);
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.linearRampToValueAtTime(peak, time + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + 0.9);
+  osc.connect(g);
+  if (pan) { pan.pan.value = (track/(TRACKS-1))*1.4 - 0.7; g.connect(pan); pan.connect(master); }
+  else g.connect(master);
+  osc.start(time);
+  osc.stop(time + 0.95);
+
+  noteCount++;
+  if (noteCount % CONFIG.textEveryNotes === 0 && Math.random() < 0.8) spawnQuote();
+}
+
+/* precise look-ahead scheduler (no setInterval drift on the notes themselves) */
+let nextNoteTime = 0, step16 = 0, schedTimer = null;
+function startScheduler() {
+  nextNoteTime = audioCtx.currentTime + 0.1;
+  step16 = 0;
+  if (schedTimer) clearInterval(schedTimer);
+  schedTimer = setInterval(scheduler, 25);
+}
+function scheduler() {
+  if (!audioCtx) return;
+  const secPerBeat = 60 / CONFIG.bpm;
+  const secPer16 = secPerBeat / 4;
+  // if the tab was backgrounded, setInterval throttles while currentTime keeps
+  // advancing — don't flush all the missed steps at once as a cluster
+  if (nextNoteTime < audioCtx.currentTime - 0.2) nextNoteTime = audioCtx.currentTime + 0.1;
+  while (nextNoteTime < audioCtx.currentTime + 0.12) {
+    for (let t = 0; t < TRACKS; t++) if (pattern[t][step16]) playNote(t, nextNoteTime);
+    // slow, probabilistic decay of the written pattern
+    for (let t = 0; t < TRACKS; t++)
+      if (pattern[t][step16] && Math.random() < 0.05) pattern[t][step16] = false;
+    nextNoteTime += secPer16;
+    step16 = (step16 + 1) % STEPS;
+  }
+}
+
+/* soft drone bed */
+let drone = null;
+function setDrone(on) {
+  droneOn = on;
+  if (!audioCtx) return;
+  if (on && !drone) {
+    const freqs = [110.00, 146.83, 174.61];
+    const types = ['triangle','sine','sine'];
+    drone = freqs.map((f, i) => {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      const pan = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+      const lfo = audioCtx.createOscillator();
+      const lfoGain = audioCtx.createGain();
+      osc.type = types[i]; osc.frequency.value = f; osc.detune.value = (i-1)*20;
+      lfo.frequency.value = 0.05 + i*0.03; lfoGain.gain.value = 1.5;
+      lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+      g.gain.value = 0.0;
+      g.gain.linearRampToValueAtTime(0.05, audioCtx.currentTime + 3);
+      osc.connect(g);
+      if (pan) { pan.pan.value = [-0.6,0,0.6][i]; g.connect(pan); pan.connect(master); }
+      else g.connect(master);
+      osc.start(); lfo.start();
+      return { osc, g, lfo };
+    });
+  } else if (!on && drone) {
+    drone.forEach(d => {
+      d.g.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 1.5);
+      d.osc.stop(audioCtx.currentTime + 1.6); d.lfo.stop(audioCtx.currentTime + 1.6);
+    });
+    drone = null;
+  }
+}
+function updateDrone() {
+  if (!drone) return;
+  drone.forEach((d, i) => {
+    d.osc.detune.setTargetAtTime((i-1)*20 + (brightness-0.5)*40, audioCtx.currentTime, 0.5);
+    d.g.gain.setTargetAtTime(0.035 + motionLevel*0.05, audioCtx.currentTime, 0.5);
+  });
+}
+
+/* ============================ camera / drive ============================ */
+function initCamera() {
+  camCanvas = document.createElement('canvas');
+  camCanvas.width = CONFIG.grid * 4; camCanvas.height = CONFIG.grid * 4;
+  camCtx = camCanvas.getContext('2d', { willReadFrequently: true });
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camReady = false; return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(stream => { video.srcObject = stream; camReady = true; })
+    .catch(() => { camReady = false; });   // no camera → autonomous drive takes over
+}
+
+function analyzeCamera() {
+  if (!camReady || video.readyState < 2) return null;
+  const g = CONFIG.grid;
+  camCtx.drawImage(video, 0, 0, camCanvas.width, camCanvas.height);
+  let data;
+  try { data = camCtx.getImageData(0, 0, camCanvas.width, camCanvas.height).data; }
+  catch (e) { return null; }
+  const cells = new Array(g*g).fill(0);
+  const cw = camCanvas.width / g, ch = camCanvas.height / g;
+  let totalLuma = 0;
+  for (let gy = 0; gy < g; gy++) for (let gx = 0; gx < g; gx++) {
+    let sum = 0, cnt = 0;
+    for (let y = (gy*ch)|0; y < ((gy+1)*ch)|0; y++)
+      for (let x = (gx*cw)|0; x < ((gx+1)*cw)|0; x++) {
+        const i = (y*camCanvas.width + x) * 4;
+        sum += data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114; cnt++;
+      }
+    const luma = cnt ? sum/cnt : 0;
+    cells[gy*g + gx] = luma; totalLuma += luma;
+  }
+  brightness = (totalLuma / (g*g)) / 255;
+  // motion = mean abs diff vs previous frame
+  let motion = 0;
+  if (prevFrame) for (let i = 0; i < cells.length; i++) motion += Math.abs(cells[i]-prevFrame[i]);
+  motion /= cells.length;
+  prevFrame = cells;
+  return motion;
+}
+
+/* autonomous drive when no camera — a slow breathing field */
+let autoT = 0;
+function autoDrive() {
+  autoT += 0.016;
+  brightness = 0.5 + 0.15*Math.sin(autoT*0.11);
+  // a slow, sparse generative pulse so the room keeps breathing without a camera
+  const base = 12 + 8*Math.sin(autoT*0.23) + 8*Math.sin(autoT*0.07);
+  const spike = (Math.random() < 0.02) ? 30 + Math.random()*50 : 0;
+  return base + spike;
+}
+
+function drive() {
+  let motion = 0;
+  const useCam = camReady && (camMode === 'auto' || camMode === 'on');
+  if (useCam) { const m = analyzeCamera(); motion = (m == null) ? autoDrive() : m; }
+  else motion = autoDrive();
+  motionLevel = motionLevel*0.9 + Math.min(1, motion/60)*0.1;
+
+  const now = performance.now();
+  if (motion > CONFIG.motionThreshold && now - lastActionAt > 700) {
+    lastActionAt = now;
+    addImage();
+    // write a few sequencer cells proportional to motion & density
+    const writes = 1 + Math.floor(density*3);
+    for (let k = 0; k < writes; k++) {
+      pattern[(Math.random()*TRACKS)|0][(Math.random()*STEPS)|0] = true;
+    }
+  }
+  // stillness slowly empties the room
+  if (motion < CONFIG.motionThreshold*0.4 && now - lastActionAt > 4000 && active.length) {
+    active[0].target = 0; lastActionAt = now - 2000;
+  }
+}
+
+/* ============================ quotes ==================================== */
+let lastQuoteIdx = -1;
+function spawnQuote() {
+  if (quotes.length >= CONFIG.maxQuotes) return;
+  let idx; do { idx = (Math.random()*QUOTES.length)|0; } while (idx === lastQuoteIdx && QUOTES.length > 1);
+  lastQuoteIdx = idx;
+  // place in the vertical band furthest from any existing quote, to avoid collisions
+  const bands = [0.30, 0.50, 0.70];
+  let best = bands[0], bestD = -1;
+  for (const b of bands) {
+    let d = Infinity;
+    for (const s of quotes) d = Math.min(d, Math.abs(s.y - b*H));
+    if (d > bestD) { bestD = d; best = b; }
+  }
+  quotes.push({
+    q: QUOTES[idx], opacity: 0, target: 0.85, life: 0,
+    maxLife: 2600 + Math.random()*1800,
+    x: W*(0.30 + Math.random()*0.40),
+    y: best*H + (Math.random()-0.5)*0.06*H,
+    drift: (Math.random()-0.5)*0.12,
+    size: Math.min(W, H) < 700 ? 19 : 25 + Math.random()*7,
+  });
+}
+
+function wrap(text, font, maxW) {
+  ctx.font = font;
+  const words = text.split(' '); const lines = []; let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawQuotes() {
+  const maxW = Math.min(W*0.62, 620);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  for (const s of quotes) {
+    s.life++;
+    if (s.life > s.maxLife) s.target = 0;
+    s.opacity += (s.target - s.opacity) * 0.012;
+    s.y -= s.drift * 0.15;
+
+    const a = s.opacity;
+    if (a < 0.004) continue;
+    const deFont = `italic ${s.size}px Georgia, 'Times New Roman', serif`;
+    const jaFont = `${Math.round(s.size*0.62)}px 'Hiragino Mincho ProN', 'Yu Mincho', serif`;
+    const byFont = `${Math.round(s.size*0.5)}px Georgia, serif`;
+
+    const deLines = wrap(s.q.de, deFont, maxW);
+    const jaLines = wrap(s.q.ja, jaFont, maxW*0.92);
+    const deLH = s.size*1.32, jaLH = s.size*0.62*1.55;
+    const totalH = deLines.length*deLH + 10 + jaLines.length*jaLH + s.size*0.9;
+    let y = s.y - totalH/2;
+
+    // German original
+    ctx.font = deFont; ctx.fillStyle = `rgba(238,238,238,${a})`;
+    ctx.shadowColor = `rgba(0,0,0,${a*0.7})`; ctx.shadowBlur = 12;
+    for (const l of deLines) { y += deLH; ctx.fillText(l, s.x, y); }
+    // Japanese translation
+    y += 12;
+    ctx.font = jaFont; ctx.fillStyle = `rgba(178,178,178,${a*0.9})`; ctx.shadowBlur = 8;
+    for (const l of jaLines) { y += jaLH; ctx.fillText(l, s.x, y); }
+    // author
+    y += s.size*0.9;
+    ctx.font = byFont; ctx.fillStyle = `rgba(140,140,140,${a*0.8})`; ctx.shadowBlur = 4;
+    ctx.fillText('— ' + s.q.by, s.x, y);
+    ctx.shadowBlur = 0;
+  }
+  for (let i = quotes.length-1; i >= 0; i--)
+    if (quotes[i].target === 0 && quotes[i].opacity < 0.004) quotes.splice(i, 1);
+}
+
+/* ============================ render ==================================== */
+function coverRect(iw, ih) {
+  const s = Math.max(W/iw, H/ih);
+  const w = iw*s, h = ih*s;
+  return { x: (W-w)/2, y: (H-h)/2, w, h };
+}
+
+function drawImages() {
+  // single visual language: translucent, desaturated chairs, slow breathing luminance
+  const breathe = 0.9 + motionLevel*0.35;
+  for (const a of active) {
+    a.opacity += (a.target - a.opacity) * (a.target > a.opacity ? CONFIG.fadeIn : CONFIG.fadeOut) * 60;
+    a.opacity = Math.max(0, Math.min(a.target > 0 ? 1 : a.opacity, a.opacity));
+    if (a.opacity < 0.003) continue;
+    const r = coverRect(a.img.naturalWidth || 400, a.img.naturalHeight || 400);
+    ctx.globalAlpha = a.opacity;
+    ctx.filter = `grayscale(1) brightness(${(0.82*breathe).toFixed(3)}) contrast(1.06)`;
+    ctx.drawImage(a.img, r.x, r.y, r.w, r.h);
+  }
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+  for (let i = active.length-1; i >= 0; i--)
+    if (active[i].target === 0 && active[i].opacity < 0.003) active.splice(i, 1);
+}
+
+function animate() {
+  drive();
+  updateDrone();
+  // trails: gentle fade to black rather than hard clear → images ghost into each other
+  ctx.globalAlpha = 1; ctx.filter = 'none';
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  ctx.fillRect(0, 0, W, H);
+  drawImages();
+  drawQuotes();
+  requestAnimationFrame(animate);
+}
+
+/* ============================ UI / lifecycle ============================ */
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  stage.width = W*DPR; stage.height = H*DPR;
+  stage.style.width = W+'px'; stage.style.height = H+'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+}
+
+function begin() {
+  if (started) return;
+  started = true;
+  initAudio();
+  document.getElementById('hint').classList.add('gone');
+  // seed a couple of chairs so the room isn't empty at the first breath
+  addImage(); setTimeout(addImage, 1200);
+  // seed a sparse pentatonic phrase so sound begins immediately
+  for (let k = 0; k < 4; k++) pattern[(Math.random()*TRACKS)|0][(Math.random()*STEPS)|0] = true;
+  // a guaranteed slow trickle of text, so an aphorism is present even in stillness
+  setInterval(() => { if (started && quotes.length === 0) spawnQuote(); }, 9000);
+}
+
+/* panel wiring */
+const panel = document.getElementById('panel');
+const bSound = document.getElementById('bSound');
+const bDrone = document.getElementById('bDrone');
+const bCam = document.getElementById('bCam');
+const sVol = document.getElementById('sVol');
+const sDens = document.getElementById('sDens');
+
+bSound.onclick = () => { soundOn = !soundOn; bSound.textContent = soundOn?'On':'Off'; bSound.classList.toggle('on', soundOn); };
+bDrone.onclick = () => { const on = !droneOn; setDrone(on); bDrone.textContent = on?'On':'Off'; bDrone.classList.toggle('on', on); };
+bCam.onclick = () => {
+  camMode = camMode === 'auto' ? 'off' : (camMode === 'off' ? 'on' : 'auto');
+  bCam.textContent = camMode.charAt(0).toUpperCase()+camMode.slice(1);
+  bCam.classList.toggle('on', camMode !== 'off');
+};
+sVol.oninput = () => { volume = parseFloat(sVol.value); if (master) master.gain.setTargetAtTime(volume, audioCtx.currentTime, 0.1); };
+sDens.oninput = () => { density = parseFloat(sDens.value); };
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'h' || e.key === 'H') panel.classList.toggle('show');
+});
+
+window.addEventListener('resize', resize);
+['click','touchstart','keydown'].forEach(ev =>
+  window.addEventListener(ev, () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); begin(); }, { passive: true }));
+
+/* boot */
+resize();
+loadImages();
+initCamera();
+requestAnimationFrame(animate);
+</script>

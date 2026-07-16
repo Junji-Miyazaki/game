@@ -1,0 +1,3122 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Five Elements Life Game — Installation</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            color: #eee;
+            width: 100vw;
+            height: 100vh;
+            cursor: none;               /* gallery mode: hide the pointer */
+        }
+
+        body.ui-visible {
+            cursor: auto;               /* pointer returns when controls are shown */
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+        }
+
+        /* Installation mode: UI is hidden by default.
+           Press H to reveal/hide the info panel and controls panel. */
+        #ui-toggle {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 30px;
+            height: 30px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            transition: transform 0.2s ease;
+            background: none;
+            border-radius: 0;
+            box-shadow: none;
+            border: none;
+            display: none;
+        }
+
+        body.ui-visible #ui-toggle {
+            display: flex;
+        }
+
+        #ui-toggle:hover {
+            transform: scale(1.1);
+        }
+
+        #ui-toggle svg {
+            width: 25px;
+            height: 25px;
+            fill: rgba(180, 180, 180, 0.7);
+            transition: fill 0.2s ease;
+            filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
+        }
+
+        #ui-toggle:hover svg {
+            fill: rgba(220, 220, 220, 0.9);
+        }
+
+        #controls-panel {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background-color: rgba(40, 40, 40, 0.85);
+            border-radius: 10px;
+            padding: 15px;
+            width: 280px;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 900;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        body.ui-visible #controls-panel {
+            display: flex;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+        }
+
+        button {
+            background-color: #444;
+            color: #eee;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 5px;
+            flex: 1;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        button.active {
+            background-color: #2a6c8f;
+        }
+
+        input[type="range"] {
+            width: 150px;
+            accent-color: #2a6c8f;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-width: 250px;
+            backdrop-filter: blur(3px);
+            transition: opacity 0.3s ease;
+            display: none;
+        }
+
+        body.ui-visible #info-panel {
+            display: block;
+        }
+
+        .info-row {
+            margin-bottom: 5px;
+        }
+
+        .population-bar {
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 2px;
+            display: flex;
+        }
+
+        .population-segment {
+            height: 100%;
+        }
+
+        #seasonDisplay {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .section-header {
+            font-weight: bold;
+            margin-top: 5px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #666;
+            padding-bottom: 5px;
+        }
+
+        select {
+            background-color: #333;
+            color: #eee;
+            border: none;
+            padding: 5px;
+            border-radius: 4px;
+            width: 150px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 5px;
+        }
+
+        .opacity-toggle {
+            transition: transform 0.2s ease;
+        }
+
+        .opacity-toggle:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <canvas id="lifeCanvas"></canvas>
+        <div id="info-panel">
+            <div class="info-row" id="seasonDisplay">Season: Spring (Wood)</div>
+            <div class="info-row" id="turnCounter">Turn: 0</div>
+            <div class="info-row" id="virusCount">Viruses: 0</div>
+            <div class="info-row">Population:</div>
+            <div id="populationBars"></div>
+        </div>
+
+        <div id="ui-toggle">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12,15.5c1.9,0,3.5-1.6,3.5-3.5s-1.6-3.5-3.5-3.5S8.5,10.1,8.5,12S10.1,15.5,12,15.5z M20,11h-2.3
+                    c-0.2-0.8-0.5-1.5-1-2.1l1.6-1.6l-1.4-1.4l-1.6,1.6C14.5,7,13.8,6.7,13,6.5V4h-2v2.5c-0.8,0.2-1.5,0.5-2.1,1l-1.6-1.6
+                    l-1.4,1.4l1.6,1.6c-0.5,0.7-0.8,1.4-1,2.1H4v2h2.3c0.2,0.8,0.5,1.5,1,2.1l-1.6,1.6l1.4,1.4l1.6-1.6c0.7,0.5,1.4,0.8,2.1,1
+                    V20h2v-2.5c0.8-0.2,1.5-0.5,2.1-1l1.6,1.6l1.4-1.4l-1.6-1.6c0.5-0.7,0.8-1.4,1-2.1H20V11z"/>
+            </svg>
+        </div>
+
+        <div id="controls-panel">
+            <div class="buttons-row">
+                <button id="startButton">Start</button>
+                <button id="pauseButton">Pause</button>
+                <button id="resetButton">Reset</button>
+            </div>
+            <div class="control-group">
+                <label for="speedSlider">Speed:</label>
+                <div>
+                    <input type="range" id="speedSlider" min="1" max="100" value="5">
+                    <span id="speedValue">x5</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="cellSizeSlider">Grid Scale:</label>
+                <div>
+                    <input type="range" id="cellSizeSlider" min="2" max="10" value="5">
+                    <span id="cellSizeValue">x5</span>
+                </div>
+            </div>
+
+            <div class="section-header">Sound Settings</div>
+            <div class="control-group">
+                <label>Enable Sound:</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="soundToggle" checked>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="soundVolumeSlider">Volume:</label>
+                <div>
+                    <input type="range" id="soundVolumeSlider" min="0" max="100" value="50">
+                    <span id="soundVolumeValue">50%</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="waveformSelect">Waveform:</label>
+                <div>
+                    <select id="waveformSelect">
+                        <option value="pure">Pure Sine Wave</option>
+                        <option value="mixed">Mixed Waveforms</option>
+                        <option value="square">Square Wave</option>
+                        <option value="sawtooth">Sawtooth Wave</option>
+                        <option value="triangle">Triangle Wave</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control-group">
+                <label>Modulation:</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="modulationToggle">
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="modulationIntensitySlider">Mod Intensity:</label>
+                <div>
+                    <input type="range" id="modulationIntensitySlider" min="0" max="100" value="50" disabled>
+                    <span id="modulationIntensityValue">50%</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="modulationRateSlider">Mod Speed:</label>
+                <div>
+                    <input type="range" id="modulationRateSlider" min="1" max="20" value="5" disabled>
+                    <span id="modulationRateValue">5 Hz</span>
+                </div>
+            </div>
+            <div class="buttons-row">
+                <button id="testSoundButton">Test Sounds</button>
+            </div>
+
+            <div class="section-header">Disaster Settings</div>
+            <div class="control-group">
+                <label for="disasterFrequencySlider">Occurrence (years):</label>
+                <div>
+                    <input type="range" id="disasterFrequencySlider" min="1" max="5" value="2" step="1">
+                    <span id="disasterFrequencyValue">2</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="disasterProbabilitySlider">Probability:</label>
+                <div>
+                    <input type="range" id="disasterProbabilitySlider" min="0.1" max="1" value="0.8" step="0.1">
+                    <span id="disasterProbabilityValue">0.8</span>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="disasterDurationSlider">Duration:</label>
+                <div>
+                    <input type="range" id="disasterDurationSlider" min="100" max="5000" value="300" step="50">
+                    <span id="disasterDurationValue">300</span>
+                </div>
+            </div>
+            <div class="buttons-row">
+                <button id="triggerDisasterBtn">Trigger Disaster</button>
+            </div>
+
+            <div class="section-header">Settings</div>
+            <div class="buttons-row">
+                <button id="saveSettingsBtn">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================================================
+    // Five Elements Life Game — definitive installation build.
+    // Consolidated from five-elements-life-game-sig_sound.js + life-game-improvements.js.
+    // UI is hidden by default; press H to reveal/hide the info + controls panels.
+    // The simulation auto-starts on load.
+    // ============================================================================
+
+    // ---- DOM element references ----
+    const canvas = document.getElementById('lifeCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('container');
+    const startButton = document.getElementById('startButton');
+    const pauseButton = document.getElementById('pauseButton');
+    const resetButton = document.getElementById('resetButton');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedValueDisplay = document.getElementById('speedValue');
+    const turnCounterDisplay = document.getElementById('turnCounter');
+    const populationBarsDisplay = document.getElementById('populationBars');
+    const virusCountDisplay = document.getElementById('virusCount');
+    const uiToggle = document.getElementById('ui-toggle');
+    const controlsPanel = document.getElementById('controls-panel');
+    const cellSizeSlider = document.getElementById('cellSizeSlider');
+    const cellSizeValueDisplay = document.getElementById('cellSizeValue');
+    const seasonDisplay = document.getElementById('seasonDisplay');
+
+    // ---- Audio state ----
+    let audioContext;
+    let isAudioInitialized = false;
+    let isSoundEnabled = true;
+    let soundVolume = 0.5;
+
+    let useModulation = false;
+    let modulationIntensity = 0.5;
+    let modulationRate = 5;
+
+    // Waveform presets
+    const WAVE_PRESETS = {
+        pure: {
+            wood: { frequency: 1864.66, type: 'sine' },
+            fire: { frequency: 2217.46, type: 'sine' },
+            earth: { frequency: 2489.02, type: 'sine' },
+            metal: { frequency: 2959.96, type: 'sine' },
+            water: { frequency: 3322.44, type: 'sine' }
+        },
+        mixed: {
+            wood: { frequency: 1864.66, type: 'sine' },
+            fire: { frequency: 2217.46, type: 'sawtooth' },
+            earth: { frequency: 2489.02, type: 'triangle' },
+            metal: { frequency: 2959.96, type: 'square' },
+            water: { frequency: 3322.44, type: 'triangle' }
+        },
+        square: {
+            wood: { frequency: 1864.66, type: 'square' },
+            fire: { frequency: 2217.46, type: 'square' },
+            earth: { frequency: 2489.02, type: 'square' },
+            metal: { frequency: 2959.96, type: 'square' },
+            water: { frequency: 3322.44, type: 'square' }
+        },
+        sawtooth: {
+            wood: { frequency: 1864.66, type: 'sawtooth' },
+            fire: { frequency: 2217.46, type: 'sawtooth' },
+            earth: { frequency: 2489.02, type: 'sawtooth' },
+            metal: { frequency: 2959.96, type: 'sawtooth' },
+            water: { frequency: 3322.44, type: 'sawtooth' }
+        },
+        triangle: {
+            wood: { frequency: 1864.66, type: 'triangle' },
+            fire: { frequency: 2217.46, type: 'triangle' },
+            earth: { frequency: 2489.02, type: 'triangle' },
+            metal: { frequency: 2959.96, type: 'triangle' },
+            water: { frequency: 3322.44, type: 'triangle' }
+        }
+    };
+
+    let SOUND_PARAMS = WAVE_PRESETS.pure;
+
+    // Randomized detune/pan so sounds feel spatial. (Fixed: previously always returned 0.)
+    function getRandomDetune() {
+        return (Math.random() * 50) - 25; // roughly +/-25 cents
+    }
+
+    function getRandomPan() {
+        return (Math.random() * 1.6) - 0.8; // roughly -0.8..0.8
+    }
+
+    function initAudio() {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            isAudioInitialized = true;
+        } catch (e) {
+            console.error("Web Audio API is not supported in this browser", e);
+            isAudioInitialized = false;
+        }
+    }
+
+    // Basic death-tone player, with an optional modulation envelope.
+    function playDeathSound(cellType) {
+        if (!isAudioInitialized || !audioContext || !isSoundEnabled) {
+            return;
+        }
+
+        const params = SOUND_PARAMS[cellType] || SOUND_PARAMS.wood;
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        const panNode = audioContext.createStereoPanner();
+
+        panNode.pan.value = useModulation ? getRandomPan() : 0;
+
+        let stopTime;
+        if (useModulation) {
+            gainNode.gain.setValueAtTime(0.01 * soundVolume, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.2 * soundVolume, audioContext.currentTime + 0.05);
+            gainNode.gain.exponentialRampToValueAtTime(0.1 * soundVolume, audioContext.currentTime + 0.2);
+            gainNode.gain.exponentialRampToValueAtTime(0.001 * soundVolume, audioContext.currentTime + 0.6);
+            stopTime = 0.6;
+        } else {
+            // Fixed: previously jumped straight to soundVolume with a near-zero ramp
+            // and stopped at 50ms, producing an audible click. Now: short attack,
+            // then an exponential decay tail, and the oscillator stops after the decay.
+            const attackTime = 0.008;
+            const decayTime = 0.3;
+            gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(soundVolume, audioContext.currentTime + attackTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + attackTime + decayTime);
+            stopTime = attackTime + decayTime + 0.02;
+        }
+
+        oscillator.type = params.type;
+        oscillator.frequency.setValueAtTime(params.frequency, audioContext.currentTime);
+
+        if (useModulation) {
+            const detune = getRandomDetune() * modulationIntensity * 2;
+            oscillator.detune.setValueAtTime(detune, audioContext.currentTime);
+
+            const vibratoAmount = modulationIntensity * 15;
+            for (let i = 0; i < 10; i++) {
+                const time = audioContext.currentTime + (i * 0.05);
+                const vibratoCents = vibratoAmount * Math.sin(time * modulationRate * Math.PI * 2);
+                oscillator.detune.linearRampToValueAtTime(detune + vibratoCents, time);
+            }
+        }
+
+        oscillator.connect(gainNode);
+        gainNode.connect(panNode);
+        panNode.connect(audioContext.destination);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + stopTime);
+    }
+
+    // Multiple slightly-offset tones (jazzy cluster effect).
+    function playDeathSoundsCluster(cellType, count = 3) {
+        if (!isAudioInitialized || !audioContext || !isSoundEnabled) {
+            return;
+        }
+
+        const jazzDelays = [0, 30, 70, 120, 180];
+
+        for (let i = 0; i < count; i++) {
+            const delay = jazzDelays[i % jazzDelays.length];
+
+            setTimeout(() => {
+                // Fixed: Math.random()*1 always floored to index 0, so only the
+                // first pitch offset (-1) was ever reachable. Now all five are.
+                const pitchShift = [-1, 0, 1, 2, 3][Math.floor(Math.random() * 5)];
+                playDeathSoundWithCustomPitch(cellType, pitchShift);
+            }, delay);
+        }
+    }
+
+    function playDeathSoundWithCustomPitch(cellType, pitchShift) {
+        if (!isAudioInitialized || !audioContext || !isSoundEnabled) {
+            return;
+        }
+
+        const params = SOUND_PARAMS[cellType] || SOUND_PARAMS.wood;
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        const panNode = audioContext.createStereoPanner();
+
+        panNode.pan.value = getRandomPan();
+
+        gainNode.gain.setValueAtTime(0.01 * soundVolume, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01 * soundVolume, audioContext.currentTime + 0.01 + Math.random() * 1);
+        gainNode.gain.exponentialRampToValueAtTime(0.001 * soundVolume, audioContext.currentTime + 0.01 + Math.random() * 1);
+
+        oscillator.type = params.type;
+        oscillator.frequency.setValueAtTime(params.frequency, audioContext.currentTime);
+        oscillator.detune.setValueAtTime(getRandomDetune() + pitchShift, audioContext.currentTime);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(panNode);
+        panNode.connect(audioContext.destination);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.05 + Math.random() * 0.05);
+    }
+
+    // Small chime on season change.
+    function playSeasonChangeSound(seasonType) {
+        if (!isAudioInitialized || !audioContext || !isSoundEnabled) {
+            return;
+        }
+
+        const params = SOUND_PARAMS[seasonType] || SOUND_PARAMS.wood;
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        const panNode = audioContext.createStereoPanner();
+
+        panNode.pan.value = 0;
+
+        const seasonChangeVolume = soundVolume * 0.1;
+        gainNode.gain.setValueAtTime(seasonChangeVolume, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(seasonChangeVolume, audioContext.currentTime);
+
+        oscillator.type = params.type;
+        oscillator.frequency.setValueAtTime(params.frequency, audioContext.currentTime);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(panNode);
+        panNode.connect(audioContext.destination);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.05);
+    }
+
+    // Plays all five elements in sequence — used by the Test Sounds button.
+    function testAllSounds() {
+        if (!isAudioInitialized) {
+            initAudio();
+        }
+
+        if (!isAudioInitialized || !audioContext) {
+            return;
+        }
+
+        const types = ['wood', 'fire', 'earth', 'metal', 'water'];
+
+        types.forEach((type, index) => {
+            setTimeout(() => {
+                playDeathSoundsCluster(type, 3);
+            }, index * 500);
+        });
+    }
+
+    // ---- Global simulation state ----
+    let BASE_CELL_SIZE = 5;
+    let GRID_SIZE_X;
+    let GRID_SIZE_Y;
+    let CELL_SIZE;
+    let grid;
+    let turn = 0;
+    let isRunning = false;
+    let baseInterval = 50;
+    let disasterActive = false;
+    let disasterTimer = 0;
+    let yearTimer = 0;
+
+    let disasterFrequency = 2;
+    let disasterProbability = 0.8;
+    let disasterDuration = 300;
+    let disasterVirusInitialCount = 30;
+    let disasterMessage = '';
+
+    let deathSoundCounter = 0;
+    let deathSoundThreshold = 10;
+    let deathSoundCooldown = 0;
+
+    let lastUpdateTime = 0;
+    let updateInterval = 50;
+    let animationFrameId = null;
+    let infoPanelUpdateCounter = 0;
+
+    let currentSeason = 'wood';
+    let seasonTimer = 0;
+    let yearTotalTime = 100;
+    let seasonTime = 20;
+    let lastSeasonUpdateTime = 0;
+    let disasterYearCounter = 0;
+
+    const VIRUS_SIZE = 2;
+    const CELL_SIZES = {
+        wood: 7,
+        fire: 4,
+        earth: 8,
+        metal: 6,
+        water: 5
+    };
+
+    const VIRUS_TYPES = ['yin', 'yang', 'lethal'];
+    const VIRUS_COLORS = {
+        yin: '#9370DB',
+        yang: '#4682B4',
+        lethal: '#FF0000'
+    };
+    const VIRUS_COUNT = 100;
+
+    const CELL_TYPES = ['wood', 'fire', 'earth', 'metal', 'water'];
+
+    const ELEMENT_SEASONS = {
+        wood: 'Spring (Wood)',
+        fire: 'Summer (Fire)',
+        earth: 'Late Summer (Earth)',
+        metal: 'Autumn (Metal)',
+        water: 'Winter (Water)'
+    };
+
+    const CELL_COLORS = {
+        wood: '#66BB6A',
+        fire: '#FF5722',
+        earth: '#FFC107',
+        metal: '#B0BEC5',
+        water: '#29B6F6'
+    };
+
+    const CELL_SHAPES = { wood: 'rect', fire: 'triangle', earth: 'rect', metal: 'circle', water: 'wave' };
+    const CELL_COUNT = 50;
+
+    let entities = [];
+    let viruses = [];
+    let cells = [];
+    let corpses = [];
+
+    const CARRYING_CAPACITY = 10000;
+
+    // ---- Settings persistence ----
+    const SETTINGS_KEY = 'fiveElementsGameSettings';
+
+    const defaultSettings = {
+        speed: 5,
+        cellSize: 5,
+        soundEnabled: true,
+        soundVolume: 50,
+        waveformType: 'pure',
+        modulationEnabled: false,
+        modulationIntensity: 50,
+        modulationRate: 5,
+        disasterFrequency: 2,
+        disasterProbability: 0.8,
+        disasterDuration: 300,
+        infoPanelOpacity: 0.7
+    };
+
+    function loadSettings() {
+        try {
+            const savedSettings = localStorage.getItem(SETTINGS_KEY);
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings);
+                return { ...defaultSettings, ...settings };
+            }
+        } catch (e) {
+            console.error("Error loading settings:", e);
+        }
+        return { ...defaultSettings };
+    }
+
+    function saveSettings() {
+        try {
+            const settings = {
+                speed: parseInt(speedSlider.value),
+                cellSize: parseInt(cellSizeSlider.value),
+                soundEnabled: isSoundEnabled,
+                soundVolume: Math.round(soundVolume * 100),
+                waveformType: getSelectedWaveformType(),
+                modulationEnabled: useModulation,
+                modulationIntensity: Math.round(modulationIntensity * 100),
+                modulationRate: modulationRate,
+                disasterFrequency: disasterFrequency,
+                disasterProbability: disasterProbability,
+                disasterDuration: disasterDuration,
+                infoPanelOpacity: parseFloat(getComputedStyle(document.getElementById('info-panel')).opacity)
+            };
+
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        } catch (e) {
+            console.error("Error saving settings:", e);
+        }
+    }
+
+    function getSelectedWaveformType() {
+        const waveformSelect = document.getElementById('waveformSelect');
+        return waveformSelect ? waveformSelect.value : 'pure';
+    }
+
+    function applySettings(settings) {
+        if (speedSlider) {
+            speedSlider.value = settings.speed;
+            speedValueDisplay.textContent = `x${settings.speed}`;
+            updateInterval = baseInterval / settings.speed;
+        }
+
+        if (cellSizeSlider) {
+            cellSizeSlider.value = settings.cellSize;
+            cellSizeValueDisplay.textContent = `x${settings.cellSize}`;
+            BASE_CELL_SIZE = settings.cellSize;
+        }
+
+        isSoundEnabled = settings.soundEnabled;
+        soundVolume = settings.soundVolume / 100;
+
+        if (document.getElementById('soundToggle')) {
+            document.getElementById('soundToggle').checked = settings.soundEnabled;
+        }
+
+        if (document.getElementById('soundVolumeSlider')) {
+            document.getElementById('soundVolumeSlider').value = settings.soundVolume;
+            document.getElementById('soundVolumeValue').textContent = `${settings.soundVolume}%`;
+        }
+
+        if (document.getElementById('waveformSelect')) {
+            document.getElementById('waveformSelect').value = settings.waveformType;
+            SOUND_PARAMS = WAVE_PRESETS[settings.waveformType] || WAVE_PRESETS.pure;
+        }
+
+        useModulation = settings.modulationEnabled;
+        modulationIntensity = settings.modulationIntensity / 100;
+        modulationRate = settings.modulationRate;
+
+        if (document.getElementById('modulationToggle')) {
+            document.getElementById('modulationToggle').checked = settings.modulationEnabled;
+        }
+
+        if (document.getElementById('modulationIntensitySlider')) {
+            document.getElementById('modulationIntensitySlider').value = settings.modulationIntensity;
+            document.getElementById('modulationIntensitySlider').disabled = !settings.modulationEnabled;
+            document.getElementById('modulationIntensityValue').textContent = `${settings.modulationIntensity}%`;
+        }
+
+        if (document.getElementById('modulationRateSlider')) {
+            document.getElementById('modulationRateSlider').value = settings.modulationRate;
+            document.getElementById('modulationRateSlider').disabled = !settings.modulationEnabled;
+            document.getElementById('modulationRateValue').textContent = `${settings.modulationRate} Hz`;
+        }
+
+        disasterFrequency = settings.disasterFrequency;
+        disasterProbability = settings.disasterProbability;
+        disasterDuration = settings.disasterDuration;
+
+        if (document.getElementById('disasterFrequencySlider')) {
+            document.getElementById('disasterFrequencySlider').value = settings.disasterFrequency;
+            document.getElementById('disasterFrequencyValue').textContent = settings.disasterFrequency;
+        }
+
+        if (document.getElementById('disasterProbabilitySlider')) {
+            document.getElementById('disasterProbabilitySlider').value = settings.disasterProbability;
+            document.getElementById('disasterProbabilityValue').textContent = settings.disasterProbability.toFixed(1);
+        }
+
+        if (document.getElementById('disasterDurationSlider')) {
+            document.getElementById('disasterDurationSlider').value = settings.disasterDuration;
+            document.getElementById('disasterDurationValue').textContent = settings.disasterDuration;
+        }
+
+        const infoPanel = document.getElementById('info-panel');
+        if (infoPanel) {
+            infoPanel.style.opacity = settings.infoPanelOpacity;
+        }
+    }
+
+    // Adds a small opacity-cycling toggle to the corner of the info panel.
+    function addInfoPanelOpacityControl() {
+        const infoPanel = document.getElementById('info-panel');
+        if (!infoPanel) return;
+
+        const opacityToggle = document.createElement('div');
+        opacityToggle.id = 'opacity-toggle';
+        opacityToggle.className = 'opacity-toggle';
+        opacityToggle.innerHTML = `
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+        `;
+
+        opacityToggle.style.position = 'absolute';
+        opacityToggle.style.top = '5px';
+        opacityToggle.style.right = '5px';
+        opacityToggle.style.width = '20px';
+        opacityToggle.style.height = '20px';
+        opacityToggle.style.display = 'flex';
+        opacityToggle.style.alignItems = 'center';
+        opacityToggle.style.justifyContent = 'center';
+        opacityToggle.style.backgroundColor = 'rgba(60, 60, 60, 0.5)';
+        opacityToggle.style.borderRadius = '50%';
+        opacityToggle.style.cursor = 'pointer';
+        opacityToggle.style.pointerEvents = 'auto';
+
+        infoPanel.style.position = 'relative';
+
+        let opacityState = 0; // 0: normal, 1: translucent, 2: hidden
+        opacityToggle.addEventListener('click', function () {
+            opacityState = (opacityState + 1) % 3;
+
+            switch (opacityState) {
+                case 0:
+                    infoPanel.style.opacity = '0.7';
+                    break;
+                case 1:
+                    infoPanel.style.opacity = '0.3';
+                    break;
+                case 2:
+                    infoPanel.style.opacity = '0';
+                    break;
+            }
+
+            saveSettings();
+        });
+
+        infoPanel.appendChild(opacityToggle);
+    }
+
+    // Binds the single static "Save Settings" button already present in the HTML.
+    function bindSaveSettingsButton() {
+        const saveButton = document.getElementById('saveSettingsBtn');
+        if (!saveButton) return;
+
+        saveButton.addEventListener('click', function () {
+            saveSettings();
+
+            const savedMsg = document.createElement('div');
+            savedMsg.textContent = 'Settings saved!';
+            savedMsg.style.textAlign = 'center';
+            savedMsg.style.marginTop = '5px';
+            savedMsg.style.color = '#4CAF50';
+
+            saveButton.parentElement.appendChild(savedMsg);
+
+            setTimeout(() => {
+                savedMsg.remove();
+            }, 3000);
+        });
+    }
+
+    function calculateCrowdingFactor() {
+        const currentPopulation = cells.length;
+        const logisticFactor = 1 / (1 + Math.exp(0.02 * (currentPopulation - CARRYING_CAPACITY * 0.7)));
+        return logisticFactor;
+    }
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth || document.documentElement.clientWidth || 800;
+        canvas.height = window.innerHeight || document.documentElement.clientHeight || 600;
+
+        CELL_SIZE = BASE_CELL_SIZE;
+        // Guard against a 0x0 grid (e.g. if 'load' fires before layout has a size) —
+        // an empty grid would make init()'s placement loops throw and abort startup.
+        GRID_SIZE_X = Math.max(1, Math.floor(canvas.width / CELL_SIZE));
+        GRID_SIZE_Y = Math.max(1, Math.floor(canvas.height / CELL_SIZE));
+
+        initGrid();
+    }
+
+    function initGrid() {
+        grid = Array(GRID_SIZE_Y).fill(null).map(() => Array(GRID_SIZE_X).fill(null));
+    }
+
+    // ---- Entities ----
+    class Entity {
+        constructor(x, y, type) {
+            this.x = x;
+            this.y = y;
+            this.type = type;
+        }
+
+        draw() {
+            const drawX = this.x * CELL_SIZE;
+            const drawY = this.y * CELL_SIZE;
+            ctx.fillStyle = this.color;
+            ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
+        }
+    }
+
+    class Corpse extends Entity {
+        constructor(x, y, cellType, virusType) {
+            super(x, y, cellType);
+            this.color = 'rgba(50, 50, 50, 0.7)';
+            this.virusType = virusType;
+            this.decayTime = 60;
+
+            let infectiousnessModifier = 1.0;
+            if (currentSeason === cellType) {
+                infectiousnessModifier = 0.5;
+            } else if (getOverridingElement(cellType) === currentSeason) {
+                infectiousnessModifier = 1.5;
+            }
+
+            this.infectiousness = virusType === 'lethal' ? 0.3 * infectiousnessModifier : 0.1 * infectiousnessModifier;
+        }
+
+        update() {
+            this.decayTime--;
+
+            const neighborCells = getNeighboringCells(this.x, this.y);
+            for (const neighbor of neighborCells) {
+                if (neighbor instanceof Cell && !neighbor.immunity) {
+                    let infectionChance = this.infectiousness * 0.5;
+
+                    if (neighbor.type === currentSeason) {
+                        infectionChance *= 0.5;
+                    } else if (getOverridingElement(neighbor.type) === currentSeason) {
+                        infectionChance *= 1.5;
+                    }
+
+                    if (Math.random() < infectionChance) {
+                        let resistanceChance = getCellResistance(neighbor.type);
+
+                        if (neighbor.type === currentSeason) {
+                            resistanceChance *= 1.5;
+                        } else if (getOverridingElement(neighbor.type) === currentSeason) {
+                            resistanceChance *= 0.5;
+                        }
+
+                        if (Math.random() < resistanceChance) {
+                            continue;
+                        }
+
+                        neighbor.infected = 20;
+                        neighbor.infectedBy = this.virusType;
+                    }
+                }
+            }
+
+            if (this.type === currentSeason) {
+                return this.decayTime > 0 && Math.random() > 0.05;
+            } else {
+                return this.decayTime > 0;
+            }
+        }
+
+        draw() {
+            const drawX = this.x * CELL_SIZE;
+            const drawY = this.y * CELL_SIZE;
+
+            const size = (CELL_SIZES[this.type] / 10) * CELL_SIZE * 0.8;
+
+            const offsetX = (CELL_SIZE - size) / 2;
+            const offsetY = (CELL_SIZE - size) / 2;
+
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+
+            switch (CELL_SHAPES[this.type]) {
+                case 'rect':
+                    ctx.fillRect(drawX + offsetX, drawY + offsetY, size, size);
+                    break;
+                case 'circle':
+                    ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, size / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+                case 'triangle':
+                    ctx.moveTo(drawX + CELL_SIZE / 2, drawY + offsetY);
+                    ctx.lineTo(drawX + CELL_SIZE / 2 + size / 2, drawY + offsetY + size);
+                    ctx.lineTo(drawX + CELL_SIZE / 2 - size / 2, drawY + offsetY + size);
+                    ctx.closePath();
+                    ctx.fill();
+                    break;
+                case 'wave':
+                    ctx.beginPath();
+                    for (let i = 0; i < 2; i++) {
+                        ctx.arc(
+                            drawX + CELL_SIZE / 2 + (i % 2 === 0 ? size / 4 : -size / 4),
+                            drawY + CELL_SIZE / 2 + (i * size / 4),
+                            size / 3,
+                            i % 2 === 0 ? Math.PI : 0,
+                            i % 2 === 0 ? 0 : Math.PI,
+                            true
+                        );
+                    }
+                    ctx.fill();
+                    break;
+            }
+
+            if (this.virusType) {
+                const virusColor = VIRUS_COLORS[this.virusType] || 'rgba(255, 0, 255, 0.3)';
+                ctx.fillStyle = virusColor;
+                ctx.globalAlpha = 0.2;
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, size * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+    }
+
+    class Virus extends Entity {
+        constructor(x, y, type) {
+            super(x, y, type);
+            this.color = VIRUS_COLORS[type];
+            this.size = VIRUS_SIZE;
+
+            this.baseLifespan = 120;
+
+            let lifespanModifier = 1.0;
+            let infectionRateModifier = 1.0;
+            let lethalityRateModifier = 1.0;
+
+            if (type === 'lethal') {
+                infectionRateModifier = 1.5;
+                lethalityRateModifier = 1.5;
+                lifespanModifier = 1.0;
+            } else if (type === 'yin') {
+                if (currentSeason === 'water' || currentSeason === 'metal') {
+                    infectionRateModifier = 1.5;
+                    lifespanModifier = 1.3;
+                } else if (currentSeason === 'fire' || currentSeason === 'wood') {
+                    infectionRateModifier = 0.7;
+                    lifespanModifier = 0.8;
+                }
+            } else if (type === 'yang') {
+                if (currentSeason === 'fire' || currentSeason === 'wood') {
+                    infectionRateModifier = 1.5;
+                    lifespanModifier = 1.3;
+                } else if (currentSeason === 'water' || currentSeason === 'metal') {
+                    infectionRateModifier = 0.7;
+                    lifespanModifier = 0.8;
+                }
+            }
+
+            this.requiresHost = true;
+            this.hostDepletionRate = 0.15;
+
+            if (type === 'yin') {
+                this.infectionRate = 0.2 * infectionRateModifier;
+                this.groupingFactor = 0.5;
+                this.energyDrainFactor = 0.3;
+                this.activitySuppression = 0.7;
+                this.lethalityRate = 0.015 * lethalityRateModifier;
+                this.lifespan = this.baseLifespan * lifespanModifier + Math.floor(Math.random() * 20);
+            } else if (type === 'yang') {
+                this.infectionRate = 0.18 * infectionRateModifier;
+                this.groupingFactor = 0.1;
+                this.energyDrainFactor = 1.0;
+                this.activityBoost = 0.8;
+                this.lethalityRate = 0.01 * lethalityRateModifier;
+                this.lifespan = this.baseLifespan * lifespanModifier * 0.85 + Math.floor(Math.random() * 15);
+            } else if (type === 'lethal') {
+                this.infectionRate = 0.7 * infectionRateModifier;
+                this.groupingFactor = 0.6;
+                this.energyDrainFactor = 0.8;
+                this.activitySuppression = 0.5;
+                this.lethalityRate = 0.5 * lethalityRateModifier;
+                this.lifespan = this.baseLifespan * 0.2 * lifespanModifier;
+                this.requiresHost = true;
+                this.hostDependency = 0.7;
+            }
+
+            this.mutationChance = 0.00001;
+        }
+
+        move() {
+            if (this.requiresHost) {
+                const hasNearbyHost = getNeighboringCells(this.x, this.y).some(entity => entity instanceof Cell);
+
+                if (!hasNearbyHost) {
+                    let depletionRate = this.hostDepletionRate;
+
+                    if (this.type === 'lethal') {
+                        depletionRate = this.hostDependency || 0.5;
+
+                        if (cells.length < 200) {
+                            depletionRate *= 4.0;
+                        }
+                        if (!disasterActive) {
+                            depletionRate *= 2.0;
+                        }
+                    }
+
+                    this.lifespan -= depletionRate;
+                } else {
+                    let recoveryAmount = 0.05;
+                    if (this.type === 'lethal') {
+                        recoveryAmount = 0.02;
+                    }
+                    this.lifespan += recoveryAmount;
+                }
+            }
+
+            let dx = 0;
+            let dy = 0;
+            const random = Math.random();
+
+            let moveFactor = disasterActive ? 1.3 : 1.0;
+
+            if ((this.type === 'yin' && (currentSeason === 'water' || currentSeason === 'metal')) ||
+                (this.type === 'yang' && (currentSeason === 'fire' || currentSeason === 'wood'))) {
+                moveFactor *= 1.2;
+            }
+
+            if (this.type === 'yin') {
+                dx = Math.floor(Math.random() * 3) - 1;
+                dy = Math.floor(Math.random() * 3) - 1;
+
+                const nearbyViruses = getNearbyViruses(this.x, this.y, 5);
+                if (nearbyViruses.length > 0 && random < this.groupingFactor) {
+                    let avgX = 0, avgY = 0;
+                    for (const virus of nearbyViruses) {
+                        avgX += virus.x;
+                        avgY += virus.y;
+                    }
+                    avgX /= nearbyViruses.length;
+                    avgY /= nearbyViruses.length;
+
+                    dx = Math.sign(avgX - this.x);
+                    dy = Math.sign(avgY - this.y);
+                } else if (random < 0.5) {
+                    dx += Math.floor(Math.random() * 3) - 1;
+                    dy += Math.floor(Math.random() * 3) - 1;
+                }
+            } else if (this.type === 'yang') {
+                dx = Math.floor(Math.random() * 3) - 1;
+                dy = Math.floor(Math.random() * 3) - 1;
+
+                if (random < 0.7) {
+                    dx = Math.floor(Math.random() * 5) - 2;
+                    dy = Math.floor(Math.random() * 5) - 2;
+                }
+            } else if (this.type === 'lethal') {
+                const nearbyRadius = 10;
+                let nearestCell = null;
+                let minDistance = nearbyRadius * nearbyRadius;
+
+                for (let searchY = Math.max(0, this.y - nearbyRadius); searchY < Math.min(GRID_SIZE_Y, this.y + nearbyRadius); searchY++) {
+                    for (let searchX = Math.max(0, this.x - nearbyRadius); searchX < Math.min(GRID_SIZE_X, this.x + nearbyRadius); searchX++) {
+                        if (grid[searchY][searchX] instanceof Cell) {
+                            const distance = (searchX - this.x) * (searchX - this.x) + (searchY - this.y) * (searchY - this.y);
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                nearestCell = { x: searchX, y: searchY };
+                            }
+                        }
+                    }
+                }
+                if (nearestCell) {
+                    dx = Math.sign(nearestCell.x - this.x);
+                    dy = Math.sign(nearestCell.y - this.y);
+
+                    if (random < 0.3) {
+                        dx += Math.floor(Math.random() * 3) - 1;
+                        dy += Math.floor(Math.random() * 3) - 1;
+                    }
+                } else {
+                    dx = Math.floor(Math.random() * 5) - 2;
+                    dy = Math.floor(Math.random() * 5) - 2;
+                }
+
+                moveFactor *= 1.8;
+            }
+
+            dx = Math.round(dx * moveFactor);
+            dy = Math.round(dy * moveFactor);
+
+            const newX = Math.max(0, Math.min(GRID_SIZE_X - 1, this.x + dx));
+            const newY = Math.max(0, Math.min(GRID_SIZE_Y - 1, this.y + dy));
+
+            if (grid[newY][newX] === null) {
+                grid[this.y][this.x] = null;
+                this.x = newX;
+                this.y = newY;
+                grid[this.y][this.x] = this;
+            }
+
+            this.tryInfection();
+
+            let lifespanDecreaseRate = 0.2;
+
+            if ((this.type === 'yin' && (currentSeason === 'water' || currentSeason === 'metal')) ||
+                (this.type === 'yang' && (currentSeason === 'fire' || currentSeason === 'wood'))) {
+                lifespanDecreaseRate = 0.15;
+            } else if ((this.type === 'yin' && (currentSeason === 'fire' || currentSeason === 'wood')) ||
+                (this.type === 'yang' && (currentSeason === 'water' || currentSeason === 'metal'))) {
+                lifespanDecreaseRate = 0.5;
+            }
+
+            this.lifespan -= lifespanDecreaseRate;
+
+            let reproductionChance = 0.007;
+
+            if (disasterActive && this.type === 'lethal') {
+                reproductionChance *= 2.0;
+            }
+
+            if ((this.type === 'yin' && (currentSeason === 'water' || currentSeason === 'metal')) ||
+                (this.type === 'yang' && (currentSeason === 'fire' || currentSeason === 'wood'))) {
+                reproductionChance *= 1.5;
+            } else if ((this.type === 'yin' && (currentSeason === 'fire' || currentSeason === 'wood')) ||
+                (this.type === 'yang' && (currentSeason === 'water' || currentSeason === 'metal'))) {
+                reproductionChance *= 0.5;
+            }
+
+            if (this.requiresHost) {
+                const nearbyHosts = getNeighboringCells(this.x, this.y).filter(entity => entity instanceof Cell).length;
+                if (nearbyHosts === 0) {
+                    reproductionChance = 0;
+                } else {
+                    reproductionChance *= Math.min(2, nearbyHosts / 3);
+                }
+            }
+
+            if (Math.random() < reproductionChance) {
+                this.reproduce();
+            }
+
+            return this.lifespan > 0;
+        }
+
+        tryInfection() {
+            const neighborCells = getNeighboringCells(this.x, this.y);
+
+            if (this.type === 'lethal') {
+                const extendedNeighbors = getExtendedNeighborCells(this.x, this.y, 2);
+                for (const neighbor of extendedNeighbors) {
+                    if (neighbor instanceof Cell) {
+                        neighborCells.push(neighbor);
+                    }
+                }
+
+                if (Math.random() < 0.15) {
+                    const jumpRadius = 10;
+                    const jumpX = this.x + Math.floor(Math.random() * jumpRadius * 2) - jumpRadius;
+                    const jumpY = this.y + Math.floor(Math.random() * jumpRadius * 2) - jumpRadius;
+
+                    if (jumpX >= 0 && jumpX < GRID_SIZE_X && jumpY >= 0 && jumpY < GRID_SIZE_Y) {
+                        const targetCell = grid[jumpY][jumpX];
+                        if (targetCell instanceof Cell && !targetCell.immunity) {
+                            const jumpInfectionChance = 0.4;
+
+                            if (Math.random() < jumpInfectionChance) {
+                                targetCell.infected = 20;
+                                targetCell.infectedBy = this.type;
+                                this.lifespan += 5;
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (const neighbor of neighborCells) {
+                const canBypassImmunity = this.type === 'lethal' && Math.random() < 0.25;
+
+                if (neighbor instanceof Cell && (!neighbor.immunity || canBypassImmunity)) {
+                    let infectionChance = this.infectionRate;
+
+                    if (neighbor.immunity && canBypassImmunity) {
+                        infectionChance *= 1.5;
+                    }
+
+                    if (disasterActive) {
+                        infectionChance *= 2.2;
+                    }
+
+                    if (this.type === 'lethal') {
+                        infectionChance *= 1.5;
+                    }
+
+                    if (neighbor.type === currentSeason) {
+                        infectionChance *= 0.6;
+                    } else if (getOverridingElement(neighbor.type) === currentSeason) {
+                        infectionChance *= 1.7;
+                    }
+
+                    let resistanceChance = getCellResistance(neighbor.type);
+
+                    if (neighbor.type === currentSeason) {
+                        resistanceChance *= 1.3;
+                    } else if (getOverridingElement(neighbor.type) === currentSeason) {
+                        resistanceChance *= 0.6;
+                    }
+
+                    if (Math.random() < resistanceChance) {
+                        continue;
+                    }
+
+                    if (Math.random() < infectionChance) {
+                        if (!neighbor.infected) {
+                            neighbor.infected = 20;
+                            neighbor.infectedBy = this.type;
+
+                            if (neighbor.type === 'wood' || neighbor.type === 'water') {
+                                const secondaryNeighbors = getNeighboringCells(neighbor.x, neighbor.y);
+                                for (const secNeighbor of secondaryNeighbors) {
+                                    if (secNeighbor instanceof Cell && !secNeighbor.immunity &&
+                                        secNeighbor.type === neighbor.type && !secNeighbor.infected) {
+                                        let spreadChance = 0.7;
+
+                                        if (neighbor.type === currentSeason) {
+                                            spreadChance = 0.4;
+                                        } else if (getOverridingElement(neighbor.type) === currentSeason) {
+                                            spreadChance = 0.9;
+                                        }
+
+                                        if (Math.random() < spreadChance) {
+                                            secNeighbor.infected = 20;
+                                            secNeighbor.infectedBy = this.type;
+                                        }
+                                    }
+                                }
+                            }
+
+                            this.lifespan += 10;
+                        }
+                    }
+                }
+            }
+        }
+
+        reproduce() {
+            const neighbors = getNeighboringEmptyCells(this.x, this.y);
+            if (neighbors.length > 0) {
+                const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)];
+                const newVirus = new Virus(nx, ny, this.type);
+                grid[ny][nx] = newVirus;
+                entities.push(newVirus);
+                viruses.push(newVirus);
+
+                this.lifespan -= 1;
+            }
+        }
+
+        draw() {
+            const drawX = this.x * CELL_SIZE;
+            const drawY = this.y * CELL_SIZE;
+
+            const size = this.size * (CELL_SIZE / 5);
+            let finalSize = size;
+
+            if (this.type === 'lethal') {
+                finalSize = size * 1.4;
+            }
+
+            ctx.fillStyle = this.color;
+
+            if (this.type === 'lethal') {
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+
+                const spikes = 8;
+                for (let i = 0; i < spikes; i++) {
+                    const angle = (Math.PI * 2 * i) / spikes;
+                    const innerX = drawX + CELL_SIZE / 2 + Math.cos(angle) * finalSize * 0.7;
+                    const innerY = drawY + CELL_SIZE / 2 + Math.sin(angle) * finalSize * 0.7;
+                    const outerX = drawX + CELL_SIZE / 2 + Math.cos(angle) * finalSize * 1.3;
+                    const outerY = drawY + CELL_SIZE / 2 + Math.sin(angle) * finalSize * 1.3;
+
+                    ctx.beginPath();
+                    ctx.moveTo(innerX, innerY);
+                    ctx.lineTo(outerX, outerY);
+                    ctx.lineWidth = finalSize * 0.2;
+                    ctx.strokeStyle = this.color;
+                    ctx.stroke();
+                }
+            } else {
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.globalAlpha = 0.3;
+            ctx.beginPath();
+            ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+
+            if (disasterActive && this.type === 'lethal' && Math.random() < 0.3) {
+                ctx.globalAlpha = 0.4;
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 1.8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+    }
+
+    // Finds up to 5 dense clusters of cells (used to seed a disaster near population centers).
+    // Fixed: this used to be declared twice — an unsafe version (no bounds clamp, could
+    // throw if a cell's grid cell fell exactly on the edge) shadowed the safe one. Kept
+    // the safe, bounds-checked version with the "always return at least one cluster" fallback.
+    function findCellClusters() {
+        const clusters = [];
+        const gridSize = 10;
+
+        const gridSizeY = Math.max(1, Math.ceil(GRID_SIZE_Y / gridSize));
+        const gridSizeX = Math.max(1, Math.ceil(GRID_SIZE_X / gridSize));
+
+        const cellCountGrid = Array(gridSizeY)
+            .fill(0)
+            .map(() => Array(gridSizeX).fill(0));
+
+        for (const cell of cells) {
+            const gridX = Math.min(gridSizeX - 1, Math.floor(cell.x / gridSize));
+            const gridY = Math.min(gridSizeY - 1, Math.floor(cell.y / gridSize));
+
+            if (gridY >= 0 && gridY < cellCountGrid.length &&
+                gridX >= 0 && gridX < cellCountGrid[gridY].length) {
+                cellCountGrid[gridY][gridX]++;
+            }
+        }
+
+        for (let i = 0; i < 5; i++) {
+            let maxCount = 0;
+            let maxX = 0;
+            let maxY = 0;
+
+            for (let y = 0; y < cellCountGrid.length; y++) {
+                for (let x = 0; x < cellCountGrid[y].length; x++) {
+                    if (cellCountGrid[y][x] > maxCount) {
+                        maxCount = cellCountGrid[y][x];
+                        maxX = x;
+                        maxY = y;
+                    }
+                }
+            }
+
+            if (maxCount > 0) {
+                const centerX = maxX * gridSize + gridSize / 2;
+                const centerY = maxY * gridSize + gridSize / 2;
+                clusters.push({ x: centerX, y: centerY, count: maxCount });
+
+                cellCountGrid[maxY][maxX] = 0;
+            }
+        }
+
+        if (clusters.length === 0 && cells.length > 0) {
+            const randomCell = cells[Math.floor(Math.random() * cells.length)];
+            clusters.push({ x: randomCell.x, y: randomCell.y, count: 1 });
+        }
+
+        return clusters;
+    }
+
+    class Cell extends Entity {
+        constructor(x, y, type) {
+            super(x, y, type);
+            this.color = CELL_COLORS[type];
+            this.shape = CELL_SHAPES[type];
+            this.size = CELL_SIZES[type];
+            this.energy = 100;
+
+            let lifespanModifier = 1.0;
+            if (type === currentSeason) {
+                lifespanModifier = 1.5;
+            } else if (getGeneratedElement(currentSeason) === type) {
+                lifespanModifier = 1.3;
+            } else if (getOverridingElement(currentSeason) === type) {
+                lifespanModifier = 0.7;
+            }
+
+            this.maxLifespan = Math.floor(Math.random() * (300 - 100 + 1) + 100) * lifespanModifier;
+            this.pulsePhase = Math.random() * Math.PI * 2;
+
+            this.infected = 0;
+            this.infectedBy = null;
+            this.immunity = false;
+            this.immunityTimer = 0;
+
+            this.activity = getActivityByType(type);
+            this.energyToReproduce = getEnergyToReproduceByType(type);
+            this.reproductionRate = getReproductionRateByType(type);
+
+            if (type === currentSeason) {
+                this.reproductionRate *= 1.5;
+            } else if (getGeneratedElement(currentSeason) === type) {
+                this.reproductionRate *= 1.3;
+            } else if (getOverridingElement(currentSeason) === type) {
+                this.reproductionRate *= 0.7;
+            }
+
+            this.lifespan = this.maxLifespan;
+        }
+
+        move() {
+            if (this.infected > 0) {
+                let energyDrainModifier = 1.0;
+                let lifespanDrainModifier = 1.0;
+
+                if (this.type === currentSeason) {
+                    energyDrainModifier = 0.8;
+                    lifespanDrainModifier = 0.7;
+                } else if (getOverridingElement(currentSeason) === this.type) {
+                    energyDrainModifier = 1.8;
+                    lifespanDrainModifier = 1.8;
+                }
+
+                if (this.infectedBy === 'yin') {
+                    this.activity *= 0.6;
+                    this.energy -= 0.7 * energyDrainModifier;
+                } else if (this.infectedBy === 'yang') {
+                    this.activity *= 1.5;
+                    this.energy -= 0.85 * energyDrainModifier;
+                } else if (this.infectedBy === 'lethal') {
+                    this.activity *= 0.3;
+                    this.energy -= 1.8 * energyDrainModifier;
+                    this.lifespan -= 0.7 * lifespanDrainModifier;
+                }
+
+                this.infected--;
+
+                if (this.infected > 0 && (this.type === 'wood' || this.type === 'water')) {
+                    const secondaryNeighbors = getNeighboringCells(this.x, this.y);
+                    for (const neighbor of secondaryNeighbors) {
+                        if (neighbor instanceof Cell && !neighbor.immunity &&
+                            neighbor.type === this.type && !neighbor.infected) {
+                            let spreadChance = 0.2;
+
+                            if (this.type === currentSeason) {
+                                spreadChance = 0.1;
+                            } else if (getOverridingElement(currentSeason) === this.type) {
+                                spreadChance = 0.3;
+                            }
+
+                            if (Math.random() < spreadChance) {
+                                neighbor.infected = 20;
+                                neighbor.infectedBy = this.infectedBy;
+                            }
+                        }
+                    }
+                }
+
+                if (this.infectedBy === 'yin' || this.infectedBy === 'yang') {
+                    const neighborCells = getNeighboringCells(this.x, this.y);
+                    for (const cell of neighborCells) {
+                        if (cell instanceof Cell) {
+                            const relation = getFiveElementsRelation(this.type, cell.type);
+
+                            let effectModifier = 1.0;
+                            if (this.type === currentSeason) {
+                                effectModifier = 1.5;
+                            } else if (getOverridingElement(currentSeason) === this.type) {
+                                effectModifier = 0.7;
+                            }
+
+                            if (this.infectedBy === 'yin' && relation === 'overrides') {
+                                this.energy += 0.2 * effectModifier;
+                                cell.energy -= 0.3 * effectModifier;
+                            }
+
+                            if (this.infectedBy === 'yang' && relation === 'generates') {
+                                this.energy += 0.2 * effectModifier;
+                                cell.energy += 0.1 * effectModifier;
+                            }
+                        }
+                    }
+                }
+
+                let recoveryChance = 0.04;
+
+                if (this.infectedBy === 'lethal') {
+                    recoveryChance = 0.01;
+                }
+
+                if (this.type === currentSeason) {
+                    recoveryChance *= 1.3;
+                } else if (getOverridingElement(currentSeason) === this.type) {
+                    recoveryChance *= 0.6;
+                }
+
+                recoveryChance *= getCellRecoveryMultiplier(this.type);
+
+                if (Math.random() < recoveryChance) {
+                    this.infected = 0;
+                    this.immunity = true;
+
+                    if (this.type === currentSeason) {
+                        this.immunityTimer = 150;
+                    } else if (getOverridingElement(currentSeason) === this.type) {
+                        this.immunityTimer = 60;
+                    } else {
+                        this.immunityTimer = 100;
+                    }
+                }
+
+                if (this.infected <= 1) {
+                    let deathChance = 0;
+
+                    if (this.infectedBy === 'yin') deathChance = 0.08;
+                    else if (this.infectedBy === 'yang') deathChance = 0.04;
+                    else if (this.infectedBy === 'lethal') deathChance = 0.5;
+
+                    if (this.type === currentSeason) {
+                        deathChance *= 0.5;
+                    } else if (getOverridingElement(currentSeason) === this.type) {
+                        deathChance *= 1.5;
+                    }
+
+                    deathChance *= getCellDeathChanceMultiplier(this.type);
+
+                    if (this.energy < 30) deathChance *= 1.5;
+
+                    if (Math.random() < deathChance) {
+                        if (isAudioInitialized && isSoundEnabled && deathSoundCounter < deathSoundThreshold && deathSoundCooldown <= 0) {
+                            playDeathSoundsCluster(this.type, 4);
+                            deathSoundCounter++;
+
+                            if (deathSoundCounter >= deathSoundThreshold) {
+                                deathSoundCooldown = 5;
+                            }
+                        }
+
+                        const corpse = new Corpse(this.x, this.y, this.type, this.infectedBy);
+                        grid[this.y][this.x] = corpse;
+                        entities.push(corpse);
+                        corpses.push(corpse);
+                        return false;
+                    }
+                }
+            }
+
+            if (this.immunityTimer > 0) {
+                let immunityDecayRate = 1.0;
+
+                if (this.type === currentSeason) {
+                    immunityDecayRate = 0.7;
+                } else if (getOverridingElement(currentSeason) === this.type) {
+                    immunityDecayRate = 1.5;
+                }
+
+                if (this.type === 'metal') {
+                    immunityDecayRate *= 0.8;
+                } else if (this.type === 'wood' || this.type === 'water') {
+                    immunityDecayRate *= 1.2;
+                }
+
+                let decrease = Math.max(1, Math.floor(immunityDecayRate));
+                this.immunityTimer -= decrease;
+
+                if (this.immunityTimer <= 0) {
+                    this.immunity = false;
+                    this.immunityTimer = 0;
+                }
+            }
+
+            if (Math.random() < this.activity) {
+                let moveRange = 1;
+                if (this.type === currentSeason) {
+                    moveRange = Math.random() < 0.3 ? 2 : 1;
+                } else if (getOverridingElement(currentSeason) === this.type) {
+                    moveRange = Math.random() < 0.7 ? 1 : 0;
+                }
+
+                const dx = Math.floor(Math.random() * (moveRange * 2 + 1)) - moveRange;
+                const dy = Math.floor(Math.random() * (moveRange * 2 + 1)) - moveRange;
+                const newX = Math.max(0, Math.min(GRID_SIZE_X - 1, this.x + dx));
+                const newY = Math.max(0, Math.min(GRID_SIZE_Y - 1, this.y + dy));
+
+                const neighborCells = getNeighboringCells(this.x, this.y);
+                for (const cell of neighborCells) {
+                    if (cell instanceof Cell) {
+                        const relation = getFiveElementsRelation(this.type, cell.type);
+
+                        let interactionModifier = 1.0;
+                        if (this.type === currentSeason) {
+                            interactionModifier = 1.5;
+                        } else if (getGeneratedElement(currentSeason) === this.type) {
+                            interactionModifier = 1.3;
+                        } else if (getOverridingElement(currentSeason) === this.type) {
+                            interactionModifier = 0.7;
+                        }
+
+                        if (relation === 'generates') {
+                            this.energy += 0.3 * interactionModifier;
+                            this.lifespan += 0.1 * interactionModifier;
+                        } else if (relation === 'overrides') {
+                            cell.energy -= 0.2 * interactionModifier;
+                            cell.lifespan -= 0.05 * interactionModifier;
+                        }
+                    }
+                }
+
+                if (grid[newY][newX] === null) {
+                    grid[this.y][this.x] = null;
+                    this.x = newX;
+                    this.y = newY;
+                    grid[this.y][this.x] = this;
+                } else if (grid[newY][newX] instanceof Corpse) {
+                    const corpse = grid[newY][newX];
+
+                    if (!this.immunity && Math.random() < corpse.infectiousness) {
+                        this.infected = 20;
+                        this.infectedBy = corpse.virusType;
+                    }
+
+                    const corpseIndex = corpses.indexOf(corpse);
+                    if (corpseIndex > -1) {
+                        corpses.splice(corpseIndex, 1);
+                    }
+
+                    const entityIndex = entities.indexOf(corpse);
+                    if (entityIndex > -1) {
+                        entities.splice(entityIndex, 1);
+                    }
+
+                    grid[this.y][this.x] = null;
+                    this.x = newX;
+                    this.y = newY;
+                    grid[this.y][this.x] = this;
+                }
+            }
+
+            applyElementSpecialAbility(this);
+
+            let energyDecayRate = Math.floor(Math.random() * 2 + 1) / 100;
+            let lifespanDecayRate = 0.05;
+
+            if (this.type === currentSeason) {
+                energyDecayRate *= 0.7;
+                lifespanDecayRate *= 0.7;
+            } else if (getOverridingElement(currentSeason) === this.type) {
+                energyDecayRate *= 1.5;
+                lifespanDecayRate *= 1.5;
+            }
+
+            this.energy -= energyDecayRate;
+            this.lifespan -= lifespanDecayRate;
+
+            let pulseSpeed = 0.1;
+            if (this.type === currentSeason) {
+                pulseSpeed = 0.15;
+            } else if (getOverridingElement(currentSeason) === this.type) {
+                pulseSpeed = 0.07;
+            }
+
+            this.pulsePhase += pulseSpeed;
+            if (this.pulsePhase > Math.PI * 2) {
+                this.pulsePhase = 0;
+            }
+
+            if (this.energy < 0 || this.lifespan < 0) {
+                if (isAudioInitialized && isSoundEnabled && deathSoundCounter < deathSoundThreshold && deathSoundCooldown <= 0) {
+                    playDeathSoundsCluster(this.type, 3);
+                    deathSoundCounter++;
+
+                    if (deathSoundCounter >= deathSoundThreshold) {
+                        deathSoundCooldown = 5;
+                    }
+                }
+
+                if (Math.random() < 0.5) {
+                    const corpse = new Corpse(this.x, this.y, this.type, null);
+                    grid[this.y][this.x] = corpse;
+                    entities.push(corpse);
+                    corpses.push(corpse);
+                } else {
+                    grid[this.y][this.x] = null;
+                }
+                return false;
+            }
+
+            let reproductionThreshold = this.energyToReproduce;
+            let reproductionProbability = this.reproductionRate;
+
+            if (this.type === currentSeason) {
+                reproductionThreshold *= 0.85;
+                reproductionProbability *= 1.3;
+            } else if (getOverridingElement(currentSeason) === this.type) {
+                reproductionThreshold *= 1.2;
+                reproductionProbability *= 0.7;
+            }
+
+            if (this.energy > reproductionThreshold) {
+                const crowdingFactor = calculateCrowdingFactor();
+                const adjustedProbability = reproductionProbability * crowdingFactor;
+
+                if (Math.random() < adjustedProbability) {
+                    this.reproduce();
+                }
+            }
+
+            return true;
+        }
+
+        reproduce() {
+            const neighbors = getNeighboringEmptyCells(this.x, this.y);
+
+            const emptyNeighborRatio = neighbors.length / 8;
+
+            if (neighbors.length > 0 && Math.random() < emptyNeighborRatio * 0.8 + 0.2) {
+                const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)];
+
+                let mutationChance = 0.1;
+
+                if (this.type === currentSeason) {
+                    mutationChance = 0.05;
+                } else if (getOverridingElement(currentSeason) === this.type) {
+                    mutationChance = 0.15;
+                }
+
+                if (this.type === 'wood') {
+                    mutationChance *= 1.5;
+                } else if (this.type === 'metal') {
+                    mutationChance *= 0.7;
+                }
+
+                const childType = Math.random() < (1 - mutationChance) ? this.type : CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+                const newCell = new Cell(nx, ny, childType);
+
+                if (this.generation !== undefined) {
+                    newCell.generation = this.generation + 1;
+                } else {
+                    newCell.generation = 1;
+                }
+
+                let immunityTransferChance = 0.3;
+
+                if (this.type === currentSeason) {
+                    immunityTransferChance = 0.5;
+                } else if (getOverridingElement(currentSeason) === this.type) {
+                    immunityTransferChance = 0.2;
+                }
+
+                if (this.immunity && Math.random() < immunityTransferChance) {
+                    newCell.immunity = true;
+                    newCell.immunityTimer = 40;
+                }
+
+                grid[ny][nx] = newCell;
+                entities.push(newCell);
+                cells.push(newCell);
+
+                this.energy -= 30;
+            }
+        }
+
+        draw() {
+            const drawX = this.x * CELL_SIZE;
+            const drawY = this.y * CELL_SIZE;
+
+            const size = (this.size / 10) * CELL_SIZE;
+
+            let pulseAmplitude = 0.1;
+
+            if (this.type === currentSeason) {
+                pulseAmplitude = 0.2;
+            } else if (getOverridingElement(currentSeason) === this.type) {
+                pulseAmplitude = 0.05;
+            }
+
+            const pulseFactor = 1 + pulseAmplitude * Math.sin(this.pulsePhase);
+            const finalSize = size * pulseFactor;
+
+            const offsetX = (CELL_SIZE - finalSize) / 2;
+            const offsetY = (CELL_SIZE - finalSize) / 2;
+
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+
+            switch (this.type) {
+                case 'wood': {
+                    ctx.beginPath();
+                    const woodSegments = 5;
+                    for (let i = 0; i < woodSegments; i++) {
+                        const angle = (Math.PI * 2 * i) / woodSegments + this.pulsePhase * 0.1;
+                        const innerRadius = finalSize * 0.4;
+                        const outerRadius = finalSize * 0.7;
+
+                        const ix = drawX + CELL_SIZE / 2 + Math.cos(angle) * innerRadius;
+                        const iy = drawY + CELL_SIZE / 2 + Math.sin(angle) * innerRadius;
+                        const ox = drawX + CELL_SIZE / 2 + Math.cos(angle) * outerRadius;
+                        const oy = drawY + CELL_SIZE / 2 + Math.sin(angle) * outerRadius;
+
+                        if (i === 0) {
+                            ctx.moveTo(ix, iy);
+                        } else {
+                            ctx.lineTo(ix, iy);
+                        }
+                        ctx.lineTo(ox, oy);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.globalAlpha = 0.4;
+                    ctx.fillStyle = '#A5D6A7';
+                    ctx.beginPath();
+                    ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                    break;
+                }
+
+                case 'fire': {
+                    ctx.beginPath();
+                    const flameSegments = 7;
+                    for (let i = 0; i < flameSegments; i++) {
+                        const angle = (Math.PI * 2 * i) / flameSegments + this.pulsePhase * 0.3;
+                        const flameHeight = finalSize * (0.6 + Math.random() * 0.4);
+
+                        const fx = drawX + CELL_SIZE / 2 + Math.cos(angle) * flameHeight;
+                        const fy = drawY + CELL_SIZE / 2 + Math.sin(angle) * flameHeight;
+
+                        if (i === 0) {
+                            ctx.moveTo(fx, fy);
+                        } else {
+                            ctx.bezierCurveTo(
+                                drawX + CELL_SIZE / 2 + Math.cos(angle - 0.2) * flameHeight * 0.7,
+                                drawY + CELL_SIZE / 2 + Math.sin(angle - 0.2) * flameHeight * 0.7,
+                                drawX + CELL_SIZE / 2 + Math.cos(angle + 0.2) * flameHeight * 0.7,
+                                drawY + CELL_SIZE / 2 + Math.sin(angle + 0.2) * flameHeight * 0.7,
+                                fx, fy
+                            );
+                        }
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.globalAlpha = 0.7;
+                    const fireGradient = ctx.createRadialGradient(
+                        drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, 0,
+                        drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.8
+                    );
+                    fireGradient.addColorStop(0, '#FFEB3B');
+                    fireGradient.addColorStop(1, '#FF5722');
+                    ctx.fillStyle = fireGradient;
+                    ctx.beginPath();
+                    ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                    break;
+                }
+
+                case 'earth': {
+                    ctx.beginPath();
+                    const earthSegments = 6;
+                    for (let i = 0; i < earthSegments; i++) {
+                        const angle = (Math.PI * 2 * i) / earthSegments;
+                        const ex = drawX + CELL_SIZE / 2 + Math.cos(angle) * finalSize * 0.7;
+                        const ey = drawY + CELL_SIZE / 2 + Math.sin(angle) * finalSize * 0.7;
+
+                        if (i === 0) {
+                            ctx.moveTo(ex, ey);
+                        } else {
+                            ctx.lineTo(ex, ey);
+                        }
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.strokeStyle = '#FFD54F';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FFD54F';
+                    ctx.fill();
+                    break;
+                }
+
+                case 'metal': {
+                    ctx.beginPath();
+                    const metalSegments = 8;
+                    for (let i = 0; i < metalSegments; i++) {
+                        const angle = (Math.PI * 2 * i) / metalSegments + Math.PI / metalSegments;
+                        const mx = drawX + CELL_SIZE / 2 + Math.cos(angle) * finalSize * 0.7;
+                        const my = drawY + CELL_SIZE / 2 + Math.sin(angle) * finalSize * 0.7;
+
+                        if (i === 0) {
+                            ctx.moveTo(mx, my);
+                        } else {
+                            ctx.lineTo(mx, my);
+                        }
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+
+                    const metalGradient = ctx.createLinearGradient(
+                        drawX, drawY,
+                        drawX + CELL_SIZE, drawY + CELL_SIZE
+                    );
+                    metalGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+                    metalGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+                    metalGradient.addColorStop(1, 'rgba(255, 255, 255, 0.5)');
+
+                    ctx.fillStyle = metalGradient;
+                    ctx.fill();
+                    break;
+                }
+
+                case 'water': {
+                    ctx.beginPath();
+                    const waterSegments = 12;
+                    for (let i = 0; i < waterSegments; i++) {
+                        const angle = (Math.PI * 2 * i) / waterSegments + this.pulsePhase * 0.2;
+                        const waveHeight = finalSize * (0.5 + Math.sin(angle * 3) * 0.2);
+
+                        const wx = drawX + CELL_SIZE / 2 + Math.cos(angle) * waveHeight;
+                        const wy = drawY + CELL_SIZE / 2 + Math.sin(angle) * waveHeight;
+
+                        if (i === 0) {
+                            ctx.moveTo(wx, wy);
+                        } else {
+                            ctx.bezierCurveTo(
+                                drawX + CELL_SIZE / 2 + Math.cos(angle - 0.2) * (waveHeight + Math.sin(angle * 5 + this.pulsePhase) * finalSize * 0.1),
+                                drawY + CELL_SIZE / 2 + Math.sin(angle - 0.2) * (waveHeight + Math.sin(angle * 5 + this.pulsePhase) * finalSize * 0.1),
+                                drawX + CELL_SIZE / 2 + Math.cos(angle + 0.2) * (waveHeight + Math.sin(angle * 5 + this.pulsePhase) * finalSize * 0.1),
+                                drawY + CELL_SIZE / 2 + Math.sin(angle + 0.2) * (waveHeight + Math.sin(angle * 5 + this.pulsePhase) * finalSize * 0.1),
+                                wx, wy
+                            );
+                        }
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.globalAlpha = 0.4;
+                    ctx.fillStyle = '#81D4FA';
+                    ctx.beginPath();
+                    ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                    break;
+                }
+            }
+
+            if (this.infected > 0) {
+                ctx.globalAlpha = Math.min(0.7, this.infected / 15);
+                ctx.fillStyle = VIRUS_COLORS[this.infectedBy] || 'rgba(255, 0, 255, 0.3)';
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+
+            if (this.immunity) {
+                ctx.globalAlpha = 0.3;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.8, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
+
+            const energyRatio = this.energy / 100;
+            if (energyRatio > 0.7) {
+                ctx.globalAlpha = 0.3 * energyRatio;
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+
+            if (this.type === currentSeason) {
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = CELL_COLORS[this.type];
+                ctx.beginPath();
+                ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, finalSize * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+    }
+
+    function getSeasonColor() {
+        return CELL_COLORS[currentSeason];
+    }
+
+    function drawBackground() {
+        const innerColor = '#1a1a1a';
+        const outerColor = '#101010';
+
+        const gradient = ctx.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, 0,
+            canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 2
+        );
+
+        gradient.addColorStop(0, innerColor);
+        gradient.addColorStop(1, outerColor);
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ---- Five elements relations ----
+    function getFiveElementsRelation(type1, type2) {
+        const relations = {
+            wood: { generates: 'fire', overrides: 'earth' },
+            fire: { generates: 'earth', overrides: 'metal' },
+            earth: { generates: 'metal', overrides: 'water' },
+            metal: { generates: 'water', overrides: 'wood' },
+            water: { generates: 'wood', overrides: 'fire' }
+        };
+
+        if (relations[type1].generates === type2) {
+            return 'generates';
+        } else if (relations[type1].overrides === type2) {
+            return 'overrides';
+        } else {
+            return 'neutral';
+        }
+    }
+
+    function getGeneratedElement(type1) {
+        const generatedElements = {
+            wood: 'fire',
+            fire: 'earth',
+            earth: 'metal',
+            metal: 'water',
+            water: 'wood'
+        };
+
+        return generatedElements[type1];
+    }
+
+    function getOverridingElement(type1) {
+        const overridingElements = {
+            wood: 'metal',
+            fire: 'water',
+            earth: 'wood',
+            metal: 'fire',
+            water: 'earth'
+        };
+
+        return overridingElements[type1];
+    }
+
+    function getActivityByType(type) {
+        switch (type) {
+            case 'wood': return 0.7;
+            case 'fire': return 0.9;
+            case 'earth': return 0.4;
+            case 'metal': return 0.5;
+            case 'water': return 0.8;
+            default: return 0.6;
+        }
+    }
+
+    function getEnergyToReproduceByType(type) {
+        switch (type) {
+            case 'wood': return 65;
+            case 'fire': return 70;
+            case 'earth': return 75;
+            case 'metal': return 85;
+            case 'water': return 80;
+            default: return 75;
+        }
+    }
+
+    function getReproductionRateByType(type) {
+        switch (type) {
+            case 'wood': return 0.008;
+            case 'fire': return 0.006;
+            case 'earth': return 0.005;
+            case 'metal': return 0.004;
+            case 'water': return 0.007;
+            default: return 0.006;
+        }
+    }
+
+    function getCellResistance(type) {
+        switch (type) {
+            case 'metal': return 0.65;
+            case 'wood': return 0.2;
+            case 'water': return 0.25;
+            case 'fire': return 0.45;
+            case 'earth': return 0.55;
+            default: return 0.35;
+        }
+    }
+
+    function getCellRecoveryMultiplier(type) {
+        switch (type) {
+            case 'metal': return 1.5;
+            case 'wood': return 0.8;
+            case 'water': return 0.7;
+            case 'fire': return 1.2;
+            case 'earth': return 1.0;
+            default: return 1.0;
+        }
+    }
+
+    function getCellDeathChanceMultiplier(type) {
+        switch (type) {
+            case 'metal': return 0.5;
+            case 'wood': return 1.5;
+            case 'water': return 1.5;
+            case 'fire': return 0.7;
+            case 'earth': return 0.6;
+            default: return 1.0;
+        }
+    }
+
+    function applyElementSpecialAbility(cell) {
+        switch (cell.type) {
+            case 'wood': {
+                const emptySpaces = getNeighboringEmptyCells(cell.x, cell.y).length;
+                let growthModifier = 1.0;
+
+                if (currentSeason === 'wood') {
+                    growthModifier = 2.0;
+                } else if (currentSeason === 'metal') {
+                    growthModifier = 0.5;
+                }
+
+                if (emptySpaces > 3) {
+                    cell.energy += 0.01 * growthModifier;
+                }
+                break;
+            }
+
+            case 'fire': {
+                let burnModifier = 1.0;
+
+                if (currentSeason === 'fire') {
+                    burnModifier = 0.7;
+                } else if (currentSeason === 'water') {
+                    burnModifier = 1.5;
+                }
+
+                cell.energy -= 0.01 * burnModifier;
+
+                const nearbyEntities = getNeighboringCells(cell.x, cell.y);
+                for (const entity of nearbyEntities) {
+                    if (entity instanceof Cell && entity.type === 'wood') {
+                        let effectStrength = currentSeason === 'fire' ? 0.02 : 0.01;
+                        entity.energy -= effectStrength;
+                    }
+                }
+                break;
+            }
+
+            case 'earth': {
+                let recoveryModifier = 1.0;
+                let recoveryChance = 0.1;
+
+                if (currentSeason === 'earth') {
+                    recoveryModifier = 1.5;
+                } else if (currentSeason === 'wood') {
+                    recoveryModifier = 0.7;
+                }
+
+                if (Math.random() < recoveryChance) {
+                    cell.energy += 0.008 * recoveryModifier;
+                }
+                break;
+            }
+
+            case 'metal': {
+                let resistanceModifier = 1.0;
+
+                if (currentSeason === 'metal') {
+                    resistanceModifier = 1.5;
+                } else if (currentSeason === 'fire') {
+                    resistanceModifier = 0.6;
+                }
+
+                if (Math.random() < 0.3 * resistanceModifier) {
+                    cell.energy += 0.005 * resistanceModifier;
+                }
+                break;
+            }
+
+            case 'water': {
+                let adaptabilityModifier = 1.0;
+
+                if (currentSeason === 'water') {
+                    adaptabilityModifier = 1.5;
+                } else if (currentSeason === 'earth') {
+                    adaptabilityModifier = 0.7;
+                }
+
+                const surroundingCount = getNeighboringCells(cell.x, cell.y).length;
+                if (surroundingCount > 4) {
+                    let consumptionRate = 0.01;
+                    cell.energy -= consumptionRate;
+                } else {
+                    cell.energy += 0.01 * adaptabilityModifier * (4 - surroundingCount);
+                }
+                break;
+            }
+        }
+    }
+
+    function getNeighboringCells(x, y) {
+        const neighbors = [];
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y && grid[ny][nx] !== null) {
+                    neighbors.push(grid[ny][nx]);
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    function getNeighboringEmptyCells(x, y) {
+        const neighbors = [];
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y && grid[ny][nx] === null) {
+                    neighbors.push([nx, ny]);
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    function getExtendedNeighborCells(x, y, radius) {
+        const neighbors = [];
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue;
+
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y && grid[ny][nx] !== null) {
+                    if (grid[ny][nx] instanceof Cell) {
+                        neighbors.push(grid[ny][nx]);
+                    }
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    function getNearbyViruses(x, y, radius) {
+        const nearbyViruses = [];
+
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                const nx = x + dx;
+                const ny = y + dy;
+
+                if (nx >= 0 && nx < GRID_SIZE_X && ny >= 0 && ny < GRID_SIZE_Y &&
+                    grid[ny][nx] !== null && grid[ny][nx] instanceof Virus) {
+                    nearbyViruses.push(grid[ny][nx]);
+                }
+            }
+        }
+
+        return nearbyViruses;
+    }
+
+    // ---- Disasters (kept the English-message versions from the improvements layer) ----
+    function startDisaster() {
+        if (!disasterActive) {
+            disasterActive = true;
+
+            disasterTimer = disasterDuration;
+
+            const disasterVirusCount = disasterVirusInitialCount;
+
+            let cellClusters = findCellClusters();
+            let placedAroundClusters = 0;
+
+            for (let i = 0; i < Math.min(cellClusters.length, Math.floor(disasterVirusCount / 2)); i++) {
+                const cluster = cellClusters[i];
+
+                const offset = 3;
+                const x = Math.max(0, Math.min(GRID_SIZE_X - 1, cluster.x + Math.floor(Math.random() * offset * 2) - offset));
+                const y = Math.max(0, Math.min(GRID_SIZE_Y - 1, cluster.y + Math.floor(Math.random() * offset * 2) - offset));
+
+                if (grid[y][x] === null) {
+                    const newVirus = new Virus(x, y, 'lethal');
+                    grid[y][x] = newVirus;
+                    entities.push(newVirus);
+                    viruses.push(newVirus);
+                    placedAroundClusters++;
+                }
+            }
+
+            for (let i = 0; i < disasterVirusCount - placedAroundClusters; i++) {
+                const x = Math.floor(Math.random() * GRID_SIZE_X);
+                const y = Math.floor(Math.random() * GRID_SIZE_Y);
+
+                if (grid[y][x] === null) {
+                    const newVirus = new Virus(x, y, 'lethal');
+                    grid[y][x] = newVirus;
+                    entities.push(newVirus);
+                    viruses.push(newVirus);
+                }
+            }
+
+            disasterMessage = '! Disaster Active !';
+        }
+    }
+
+    function updateDisaster() {
+        if (disasterActive) {
+            disasterTimer--;
+
+            if (disasterTimer % 50 === 0 && disasterTimer > 0) {
+                for (let i = 0; i < 5; i++) {
+                    const x = Math.floor(Math.random() * GRID_SIZE_X);
+                    const y = Math.floor(Math.random() * GRID_SIZE_Y);
+
+                    if (grid[y][x] === null) {
+                        const newVirus = new Virus(x, y, 'lethal');
+                        grid[y][x] = newVirus;
+                        entities.push(newVirus);
+                        viruses.push(newVirus);
+                    }
+                }
+            }
+
+            if (disasterTimer <= 0) {
+                disasterActive = false;
+                disasterMessage = 'Disaster Ended';
+
+                setTimeout(() => {
+                    disasterMessage = '';
+                    updateInfoPanel();
+                }, 5000);
+
+                let deletedCount = 0;
+                const lethalViruses = viruses.filter(v => v.type === 'lethal');
+                const maxDeleteCount = Math.floor(lethalViruses.length * 0.9);
+
+                for (let i = viruses.length - 1; i >= 0; i--) {
+                    if (viruses[i].type === 'lethal') {
+                        if (deletedCount < maxDeleteCount) {
+                            grid[viruses[i].y][viruses[i].x] = null;
+
+                            const indexInEntities = entities.indexOf(viruses[i]);
+                            if (indexInEntities > -1) {
+                                entities.splice(indexInEntities, 1);
+                            }
+
+                            viruses.splice(i, 1);
+                            deletedCount++;
+                        } else {
+                            viruses[i].lifespan *= 0.3;
+                            viruses[i].infectionRate *= 0.1;
+                            viruses[i].lethalityRate *= 0.1;
+                            viruses[i].hostDependency = 0.1;
+                        }
+                    }
+                }
+
+                for (const cell of cells) {
+                    if (Math.random() < 0.5) {
+                        cell.immunity = true;
+                        cell.immunityTimer = 200;
+                    }
+                }
+
+                for (const cell of cells) {
+                    cell.energy = Math.min(100, cell.energy + 30);
+                }
+            }
+        }
+    }
+
+    function updateInfoPanel() {
+        const yinCount = viruses.filter(virus => virus.type === 'yin').length;
+        const yangCount = viruses.filter(virus => virus.type === 'yang').length;
+        const lethalCount = viruses.filter(virus => virus.type === 'lethal').length;
+
+        virusCountDisplay.textContent = `Viruses: ${viruses.length} (Yin: ${yinCount}, Yang: ${yangCount}, Lethal: ${lethalCount})`;
+
+        seasonDisplay.textContent = `Season: ${ELEMENT_SEASONS[currentSeason]} (${Math.floor(seasonTimer)}s / ${seasonTime}s)`;
+        seasonDisplay.style.color = CELL_COLORS[currentSeason];
+
+        const population = {};
+        CELL_TYPES.forEach(type => population[type] = cells.filter(cell => cell.type === type).length);
+
+        const infectedCount = cells.filter(cell => cell.infected > 0).length;
+        const immuneCount = cells.filter(cell => cell.immunity).length;
+        const corpseCount = corpses.length;
+
+        let populationBarsHTML = '';
+        const totalPopulation = cells.length;
+
+        if (totalPopulation > 0) {
+            populationBarsHTML += '<div class="population-bar">';
+
+            for (const type of CELL_TYPES) {
+                const percentage = (population[type] / totalPopulation) * 100;
+                if (percentage > 0) {
+                    populationBarsHTML += `<div class="population-segment" style="width: ${percentage}%; background-color: ${CELL_COLORS[type]};"></div>`;
+                }
+            }
+
+            populationBarsHTML += '</div>';
+
+            for (const type of CELL_TYPES) {
+                populationBarsHTML += `<div style="display: flex; align-items: center; margin-top: 2px;">
+                    <div style="width: 10px; height: 10px; background-color: ${CELL_COLORS[type]}; margin-right: 5px;"></div>
+                    <span>${type}: ${population[type]}</span>
+                </div>`;
+            }
+
+            populationBarsHTML += `<div style="margin-top: 10px;">
+                <div>Infected: ${infectedCount} cells (${Math.round(infectedCount / totalPopulation * 100)}%)</div>
+                <div>Immune: ${immuneCount} cells (${Math.round(immuneCount / totalPopulation * 100)}%)</div>
+                <div>Corpses: ${corpseCount}</div>
+            </div>`;
+
+            if (disasterActive) {
+                populationBarsHTML += `<div style="margin-top: 5px; color: red; font-weight: bold;">
+                    ${disasterMessage || '! Disaster Active !'}: ${disasterTimer} turns remaining
+                </div>`;
+            } else if (disasterMessage) {
+                populationBarsHTML += `<div style="margin-top: 5px; color: green; font-weight: bold;">
+                    ${disasterMessage}
+                </div>`;
+            }
+
+            populationBarsHTML += `<div style="margin-top: 5px;">
+                Year progress: ${Math.floor(yearTimer)}s / ${yearTotalTime}s
+            </div>`;
+
+            populationBarsHTML += `<div style="margin-top: 5px;">
+                Sound: ${isSoundEnabled ? 'ON' : 'OFF'} (Volume: ${Math.round(soundVolume * 100)}%)
+            </div>`;
+        } else {
+            populationBarsHTML = '<div>No cells alive</div>';
+        }
+
+        populationBarsDisplay.innerHTML = populationBarsHTML;
+    }
+
+    function updateSeason() {
+        const currentTime = performance.now() / 1000;
+        const deltaTime = currentTime - lastSeasonUpdateTime;
+        lastSeasonUpdateTime = currentTime;
+
+        seasonTimer += deltaTime;
+        yearTimer += deltaTime;
+
+        if (yearTimer >= yearTotalTime) {
+            yearTimer = 0;
+            disasterYearCounter++;
+
+            if (disasterYearCounter >= disasterFrequency && Math.random() < disasterProbability) {
+                startDisaster();
+                disasterYearCounter = 0;
+            }
+        }
+
+        if (seasonTimer >= seasonTime) {
+            seasonTimer = 0;
+
+            const seasonOrder = ['wood', 'fire', 'earth', 'metal', 'water'];
+            const currentIndex = seasonOrder.indexOf(currentSeason);
+            const nextIndex = (currentIndex + 1) % seasonOrder.length;
+            currentSeason = seasonOrder[nextIndex];
+
+            if (isAudioInitialized && isSoundEnabled) {
+                playSeasonChangeSound(currentSeason);
+            }
+        }
+    }
+
+    // ---- Disaster settings controls (bound exactly once, at startup) ----
+    function setupDisasterControls() {
+        const disasterFrequencySlider = document.getElementById('disasterFrequencySlider');
+        const disasterFrequencyValue = document.getElementById('disasterFrequencyValue');
+        const disasterProbabilitySlider = document.getElementById('disasterProbabilitySlider');
+        const disasterProbabilityValue = document.getElementById('disasterProbabilityValue');
+        const disasterDurationSlider = document.getElementById('disasterDurationSlider');
+        const disasterDurationValue = document.getElementById('disasterDurationValue');
+        const triggerDisasterBtn = document.getElementById('triggerDisasterBtn');
+
+        if (disasterFrequencySlider && disasterFrequencyValue) {
+            disasterFrequencySlider.value = disasterFrequency;
+            disasterFrequencyValue.textContent = disasterFrequency;
+
+            disasterFrequencySlider.addEventListener('input', function () {
+                disasterFrequency = parseInt(this.value);
+                disasterFrequencyValue.textContent = disasterFrequency;
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (disasterProbabilitySlider && disasterProbabilityValue) {
+            disasterProbabilitySlider.value = disasterProbability;
+            disasterProbabilityValue.textContent = disasterProbability.toFixed(1);
+
+            disasterProbabilitySlider.addEventListener('input', function () {
+                disasterProbability = parseFloat(this.value);
+                disasterProbabilityValue.textContent = disasterProbability.toFixed(1);
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (disasterDurationSlider && disasterDurationValue) {
+            disasterDurationSlider.value = disasterDuration;
+            disasterDurationValue.textContent = disasterDuration;
+
+            disasterDurationSlider.addEventListener('input', function () {
+                disasterDuration = parseInt(this.value);
+                disasterDurationValue.textContent = disasterDuration;
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (triggerDisasterBtn) {
+            triggerDisasterBtn.addEventListener('click', function () {
+                startDisaster();
+            });
+        }
+    }
+
+    // ---- Sound settings controls (kept the improvements-layer version, which persists settings) ----
+    function setupSoundControls() {
+        const soundToggle = document.getElementById('soundToggle');
+        const soundVolumeSlider = document.getElementById('soundVolumeSlider');
+        const soundVolumeValue = document.getElementById('soundVolumeValue');
+        const waveformSelect = document.getElementById('waveformSelect');
+        const modulationToggle = document.getElementById('modulationToggle');
+        const modulationIntensitySlider = document.getElementById('modulationIntensitySlider');
+        const modulationIntensityValue = document.getElementById('modulationIntensityValue');
+        const modulationRateSlider = document.getElementById('modulationRateSlider');
+        const modulationRateValue = document.getElementById('modulationRateValue');
+        const testSoundButton = document.getElementById('testSoundButton');
+
+        if (soundToggle) {
+            soundToggle.checked = isSoundEnabled;
+            soundToggle.addEventListener('change', function () {
+                isSoundEnabled = this.checked;
+
+                if (isSoundEnabled && !isAudioInitialized) {
+                    initAudio();
+                }
+
+                saveSettings();
+            });
+        }
+
+        if (soundVolumeSlider && soundVolumeValue) {
+            soundVolumeSlider.value = soundVolume * 100;
+            soundVolumeValue.textContent = Math.round(soundVolume * 100) + '%';
+
+            soundVolumeSlider.addEventListener('input', function () {
+                soundVolume = parseInt(this.value) / 100;
+                soundVolumeValue.textContent = this.value + '%';
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (waveformSelect) {
+            for (const [key, value] of Object.entries(WAVE_PRESETS)) {
+                if (SOUND_PARAMS === value) {
+                    waveformSelect.value = key;
+                    break;
+                }
+            }
+
+            waveformSelect.addEventListener('change', function () {
+                const selected = this.value;
+                if (WAVE_PRESETS[selected]) {
+                    SOUND_PARAMS = WAVE_PRESETS[selected];
+
+                    if (isSoundEnabled) {
+                        playDeathSound('wood');
+                    }
+
+                    saveSettings();
+                }
+            });
+        }
+
+        if (modulationToggle) {
+            modulationToggle.checked = useModulation;
+
+            modulationToggle.addEventListener('change', function () {
+                useModulation = this.checked;
+
+                if (modulationIntensitySlider) modulationIntensitySlider.disabled = !useModulation;
+                if (modulationRateSlider) modulationRateSlider.disabled = !useModulation;
+
+                if (isSoundEnabled) {
+                    playDeathSound('fire');
+                }
+
+                saveSettings();
+            });
+        }
+
+        if (modulationIntensitySlider && modulationIntensityValue) {
+            modulationIntensitySlider.value = modulationIntensity * 100;
+            modulationIntensityValue.textContent = Math.round(modulationIntensity * 100) + '%';
+
+            modulationIntensitySlider.addEventListener('input', function () {
+                modulationIntensity = parseInt(this.value) / 100;
+                modulationIntensityValue.textContent = this.value + '%';
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (modulationRateSlider && modulationRateValue) {
+            modulationRateSlider.value = modulationRate;
+            modulationRateValue.textContent = modulationRate + ' Hz';
+
+            modulationRateSlider.addEventListener('input', function () {
+                modulationRate = parseInt(this.value);
+                modulationRateValue.textContent = modulationRate + ' Hz';
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (testSoundButton) {
+            testSoundButton.addEventListener('click', function () {
+                if (!isAudioInitialized && isSoundEnabled) {
+                    initAudio();
+                }
+                testAllSounds();
+            });
+        }
+    }
+
+    // ---- Game controls (bound exactly once) ----
+    function setupGameControls() {
+        if (startButton) {
+            startButton.addEventListener('click', startGame);
+        }
+
+        if (pauseButton) {
+            pauseButton.addEventListener('click', pauseGame);
+        }
+
+        if (resetButton) {
+            resetButton.addEventListener('click', () => {
+                pauseGame();
+                init();
+                draw();
+                startGame();
+            });
+        }
+
+        if (speedSlider && speedValueDisplay) {
+            speedSlider.addEventListener('input', () => {
+                const speed = parseInt(speedSlider.value);
+                speedValueDisplay.textContent = `x${speed}`;
+                updateInterval = baseInterval / speed;
+
+                if (isRunning) {
+                    lastUpdateTime = performance.now();
+                }
+
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        if (cellSizeSlider && cellSizeValueDisplay) {
+            cellSizeSlider.addEventListener('input', () => {
+                cellSizeValueDisplay.textContent = `x${cellSizeSlider.value}`;
+                BASE_CELL_SIZE = parseInt(cellSizeSlider.value);
+
+                const wasRunning = isRunning;
+                pauseGame();
+                resizeCanvas();
+                init();
+                draw();
+                if (wasRunning) startGame();
+
+                setTimeout(saveSettings, 300);
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            const wasRunning = isRunning;
+            pauseGame();
+            resizeCanvas();
+            init();
+            draw();
+            if (wasRunning) startGame();
+        });
+    }
+
+    // ---- UI visibility toggle (H key) ----
+    function toggleUI() {
+        document.body.classList.toggle('ui-visible');
+    }
+
+    function setupUIToggle() {
+        if (uiToggle) {
+            uiToggle.addEventListener('click', toggleUI);
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'h' || e.key === 'H') {
+                toggleUI();
+            }
+        });
+    }
+
+    // ---- Simulation init / update / draw / loop ----
+    function init() {
+        resizeCanvas();
+        entities = [];
+        viruses = [];
+        cells = [];
+        corpses = [];
+        disasterActive = false;
+        disasterTimer = 0;
+        yearTimer = 0;
+        disasterYearCounter = 0;
+        infoPanelUpdateCounter = 0;
+        disasterMessage = '';
+
+        deathSoundCounter = 0;
+        deathSoundCooldown = 0;
+
+        currentSeason = 'wood';
+        seasonTimer = 0;
+        lastSeasonUpdateTime = performance.now() / 1000;
+
+        for (let i = 0; i < VIRUS_COUNT; i++) {
+            let x = Math.floor(Math.random() * GRID_SIZE_X);
+            let y = Math.floor(Math.random() * GRID_SIZE_Y);
+            const type = VIRUS_TYPES[Math.floor(Math.random() * 2)];
+            const newVirus = new Virus(x, y, type);
+            if (grid[y][x] === null) {
+                grid[y][x] = newVirus;
+                entities.push(newVirus);
+                viruses.push(newVirus);
+            }
+        }
+
+        for (let i = 0; i < CELL_COUNT; i++) {
+            let x = Math.floor(GRID_SIZE_X / 2 + (Math.random() - 0.5) * GRID_SIZE_X * 0.6);
+            let y = Math.floor(GRID_SIZE_Y / 2 + (Math.random() - 0.5) * GRID_SIZE_Y * 0.6);
+            x = Math.max(0, Math.min(GRID_SIZE_X - 1, x));
+            y = Math.max(0, Math.min(GRID_SIZE_Y - 1, y));
+
+            const type = CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+            const newCell = new Cell(x, y, type);
+            if (grid[y][x] === null) {
+                grid[y][x] = newCell;
+                entities.push(newCell);
+                cells.push(newCell);
+            }
+        }
+
+        turn = 0;
+        turnCounterDisplay.textContent = `Turn: ${turn}`;
+        updateInfoPanel();
+        isRunning = false;
+    }
+
+    function update() {
+        updateSeason();
+        updateDisaster();
+
+        if (deathSoundCooldown > 0) {
+            deathSoundCooldown--;
+        }
+
+        deathSoundCounter = 0;
+
+        const currentPopulation = cells.length;
+        if (currentPopulation > CARRYING_CAPACITY * 0.8) {
+            const stressFactor = Math.pow((currentPopulation - CARRYING_CAPACITY * 0.8) / (CARRYING_CAPACITY * 0.2), 2) * 0.01;
+
+            const stressCount = Math.floor(currentPopulation * stressFactor);
+            for (let i = 0; i < stressCount; i++) {
+                if (cells.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * cells.length);
+                    cells[randomIndex].energy -= 0.5;
+                    cells[randomIndex].lifespan -= 0.2;
+                }
+            }
+        }
+
+        for (let i = viruses.length - 1; i >= 0; i--) {
+            const isAlive = viruses[i].move();
+            if (!isAlive || viruses[i].lifespan <= 0) {
+                grid[viruses[i].y][viruses[i].x] = null;
+
+                const indexInEntities = entities.indexOf(viruses[i]);
+                if (indexInEntities > -1) {
+                    entities.splice(indexInEntities, 1);
+                }
+
+                viruses.splice(i, 1);
+            }
+        }
+
+        for (let i = cells.length - 1; i >= 0; i--) {
+            const isAlive = cells[i].move();
+            if (!isAlive) {
+                const indexInEntities = entities.indexOf(cells[i]);
+                if (indexInEntities > -1) {
+                    entities.splice(indexInEntities, 1);
+                }
+                cells.splice(i, 1);
+            }
+        }
+
+        for (let i = corpses.length - 1; i >= 0; i--) {
+            const isPresent = corpses[i].update();
+            if (!isPresent) {
+                grid[corpses[i].y][corpses[i].x] = null;
+
+                const indexInEntities = entities.indexOf(corpses[i]);
+                if (indexInEntities > -1) {
+                    entities.splice(indexInEntities, 1);
+                }
+
+                corpses.splice(i, 1);
+            }
+        }
+
+        let baseVirusGenerationChance = 0.03;
+
+        const yinGeneration = (currentSeason === 'water' || currentSeason === 'metal') ? 1.5 : 0.8;
+        const yangGeneration = (currentSeason === 'fire' || currentSeason === 'wood') ? 1.5 : 0.8;
+
+        let adjustedChance = baseVirusGenerationChance;
+
+        const cellToVirusRatio = cells.length / Math.max(1, viruses.length);
+        if (cellToVirusRatio < 0.5) {
+            adjustedChance *= 0.2;
+        } else if (cellToVirusRatio < 1) {
+            adjustedChance *= 0.5;
+        } else if (cellToVirusRatio > 5) {
+            adjustedChance *= 1.5;
+        }
+
+        const maxViruses = Math.max(VIRUS_COUNT, cells.length * 2);
+
+        const crowdingFactor = calculateCrowdingFactor();
+
+        if (viruses.length < maxViruses && Math.random() < adjustedChance * crowdingFactor) {
+            let x, y;
+            if (Math.random() < 0.5) {
+                const side = Math.floor(Math.random() * 4);
+                switch (side) {
+                    case 0: x = Math.floor(Math.random() * GRID_SIZE_X); y = 0; break;
+                    case 1: x = GRID_SIZE_X - 1; y = Math.floor(Math.random() * GRID_SIZE_Y); break;
+                    case 2: x = Math.floor(Math.random() * GRID_SIZE_X); y = GRID_SIZE_Y - 1; break;
+                    case 3: x = 0; y = Math.floor(Math.random() * GRID_SIZE_Y); break;
+                }
+            } else {
+                x = Math.floor(Math.random() * GRID_SIZE_X);
+                y = Math.floor(Math.random() * GRID_SIZE_Y);
+            }
+
+            if (grid[y][x] === null) {
+                let virusType = 'yin';
+                const rand = Math.random();
+
+                if ((currentSeason === 'water' || currentSeason === 'metal') && rand < 0.7) {
+                    virusType = 'yin';
+                } else if ((currentSeason === 'fire' || currentSeason === 'wood') && rand < 0.7) {
+                    virusType = 'yang';
+                } else if (rand < 0.5) {
+                    virusType = 'yin';
+                } else {
+                    virusType = 'yang';
+                }
+
+                if (disasterActive && Math.random() < 0.2) {
+                    virusType = 'lethal';
+                }
+
+                const newVirus = new Virus(x, y, virusType);
+                grid[y][x] = newVirus;
+                entities.push(newVirus);
+                viruses.push(newVirus);
+            }
+        }
+
+        turn++;
+
+        if (cells.length < 100 && !disasterActive) {
+            const recoveryChance = 0.7 - cells.length * 0.05;
+
+            if (Math.random() < recoveryChance) {
+                const x = Math.floor(Math.random() * GRID_SIZE_X);
+                const y = Math.floor(Math.random() * GRID_SIZE_Y);
+
+                if (grid[y][x] === null) {
+                    let cellType;
+                    if (Math.random() < 0.6) {
+                        cellType = currentSeason;
+                    } else {
+                        cellType = CELL_TYPES[Math.floor(Math.random() * CELL_TYPES.length)];
+                    }
+
+                    const newCell = new Cell(x, y, cellType);
+                    newCell.energy = 100;
+
+                    if (Math.random() < 0.5) {
+                        newCell.immunity = true;
+                        newCell.immunityTimer = 150;
+                    }
+
+                    grid[y][x] = newCell;
+                    entities.push(newCell);
+                    cells.push(newCell);
+                }
+            }
+        }
+
+        infoPanelUpdateCounter++;
+        if (infoPanelUpdateCounter >= 10) {
+            updateInfoPanel();
+            infoPanelUpdateCounter = 0;
+        } else {
+            turnCounterDisplay.textContent = `Turn: ${turn}`;
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const speed = parseInt(speedSlider.value);
+        if (speed < 100) {
+            drawBackground();
+        }
+
+        for (let entity of entities) {
+            entity.draw();
+        }
+    }
+
+    function startGame() {
+        if (!isRunning) {
+            isRunning = true;
+            startButton.classList.add('active');
+            pauseButton.classList.remove('active');
+            lastUpdateTime = performance.now();
+            lastSeasonUpdateTime = performance.now() / 1000;
+            updateInterval = baseInterval / parseInt(speedSlider.value);
+            animationLoop();
+        }
+    }
+
+    function pauseGame() {
+        if (isRunning) {
+            isRunning = false;
+            startButton.classList.remove('active');
+            pauseButton.classList.add('active');
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+    }
+
+    function animationLoop(timestamp) {
+        if (!isRunning) return;
+
+        animationFrameId = requestAnimationFrame(animationLoop);
+
+        const elapsed = timestamp - lastUpdateTime;
+
+        if (elapsed >= updateInterval) {
+            const updateCount = Math.min(10, Math.floor(elapsed / updateInterval));
+
+            for (let i = 0; i < updateCount; i++) {
+                update();
+            }
+
+            draw();
+            lastUpdateTime = timestamp - (elapsed % updateInterval);
+        }
+    }
+
+    // ---- Startup: everything runs exactly once, on 'load' ----
+    window.addEventListener('load', () => {
+        // Unlock the AudioContext on the first user gesture anywhere (autoplay policy).
+        // Registered exactly once; works even while the UI is hidden.
+        document.addEventListener('click', () => {
+            if (!isAudioInitialized && isSoundEnabled) {
+                initAudio();
+            }
+        }, { once: true });
+
+        const settings = loadSettings();
+        applySettings(settings);
+
+        init();
+        draw();
+
+        setupGameControls();
+        setupSoundControls();
+        setupDisasterControls();
+        setupUIToggle();
+        addInfoPanelOpacityControl();
+        bindSaveSettingsButton();
+
+        // Auto-start: this is an unattended installation piece, not a demo you press play on.
+        startGame();
+    });
+    </script>
+</body>
+
+</html>
