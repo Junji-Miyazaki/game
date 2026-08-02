@@ -215,8 +215,10 @@ class Engine {
   _setupInput() {
     const dispatch = (action, data) => {
       this.audio.unlock();
-      // BACKボタンのタップはゲームに渡さず、メニューへ戻す（メニュー画面では無効）
-      if (action === 'tap' && data && this.scene && !this.scene.isRoot && this._inBack(data)) {
+      // BACKボタンのタップはゲームに渡さず、メニューへ戻す（メニュー画面では無効）。
+      // ただしシーンが blocksBack()=true を返す間（例: アップグレードカード選択中）は無効化し誤タップ退出を防ぐ。
+      if (action === 'tap' && data && this.scene && !this.scene.isRoot && this._inBack(data)
+          && !(this.scene.blocksBack && this.scene.blocksBack())) {
         this.audio.select();
         if (this.toMenu) this.toMenu();
         return;
@@ -3338,6 +3340,41 @@ const STAGE_TYPES = [
 // 'RAPID'  : 時間限定 連射強化（1都市2発・上限10、RAPID_DURATIONs）
 const ITEM_TYPES = ['MULTI', 'POWER', 'WIDE', 'SCATTER', 'RAPID'];
 
+// ---- ランアップグレード（ステージクリア時の3択カード / Falltopia式）----
+// ラン内永続。this.run[id] がスタック数。定数は変更せず、使用箇所で補正を掛ける。
+// rarity: COMMON は RARE の3倍出やすい。
+// descPlain + descKey の2セグメント描画（キーワードのみ着色）。
+const UPGRADES = [
+  { id: 'dmg',    name: 'DAMAGE+',      icon: '+', rarity: 'COMMON', descPlain: '爆発ダメージ ',     descKey: '+1' },
+  { id: 'radius', name: 'RADIUS+',      icon: '◎', rarity: 'COMMON', descPlain: '爆発半径 ',         descKey: '+18%' },
+  { id: 'mspd',   name: 'MISSILE SPD+', icon: '»', rarity: 'COMMON', descPlain: 'ミサイル速度 ',     descKey: '+22%' },
+  { id: 'cd',     name: 'COOLDOWN-',    icon: '-', rarity: 'COMMON', descPlain: '発射クールダウン ', descKey: '-15%' },
+  { id: 'multi',  name: 'CAP+',         icon: '≡', rarity: 'COMMON', descPlain: '同時飛翔ミサイル ', descKey: '+1' },
+  { id: 'coin',   name: 'COIN',         icon: '$', rarity: 'COMMON', descPlain: '撃破ごとにスコア ', descKey: '+5' },
+  { id: 'slots',  name: 'SLOTS+',       icon: '⬡', rarity: 'RARE',   descPlain: '発射台都市 ',       descKey: '+1' },
+  { id: 'chain',  name: 'CHAIN',        icon: 'ϟ', rarity: 'RARE',   descPlain: '隕石撃破で ',       descKey: '連鎖爆発' },
+  { id: 'shock',  name: 'SHOCKWAVE',    icon: '◉', rarity: 'RARE',   descPlain: '巨大隕石撃破で ',   descKey: '衝撃波' },
+  { id: 'shield', name: 'SHIELD',       icon: '□', rarity: 'RARE',   descPlain: '都市被弾を1回 ',    descKey: '無効化' },
+];
+
+// カードUIレイアウト（W=360, H=640 に収まる縦3枚スタック）
+const CARD_W   = 330;
+const CARD_H   = 92;
+const CARD_GAP = 12;
+const CARD_X   = Math.floor((W - CARD_W) / 2);
+const CARD_Y0  = 190;
+
+// 効果チューニング
+const RUN_RADIUS_PER_STACK = 0.18;  // 爆発半径 +18%/枚
+const RUN_MSPD_PER_STACK   = 0.22;  // ミサイル速度 +22%/枚
+const RUN_CD_MULT          = 0.85;  // クールダウン ×0.85/枚（下限 0.2s）
+const RUN_CD_MIN           = 0.2;
+const RUN_COIN_PER_STACK   = 5;     // 撃破ボーナススコア/枚
+const CHAIN_BASE_R         = 26;    // 連鎖爆発の基本半径
+const CHAIN_R_PER_STACK    = 8;
+const SHOCK_BASE_R         = 140;   // 衝撃波の基本半径
+const SHOCK_R_PER_STACK    = 20;
+
 // ---- HP計算 ----
 function calcMeteorHP(r) {
   if (r < SMALL_R_THRESH)  return 1;
@@ -3628,6 +3665,23 @@ class Game extends Scene {
     // ステージクリア演出（非停止：フロート表示のみ）
     this._clearOverlay  = null; // { timer, stage, bonus } | null
 
+    // ---- ラン内永続アップグレード（3択カードで獲得、値=スタック数）----
+    this.run = {
+      dmg: 0,     // 爆発ダメージ +1/枚
+      radius: 0,  // 爆発半径 +18%/枚
+      mspd: 0,    // ミサイル速度 +22%/枚
+      cd: 0,      // クールダウン -15%/枚（下限0.2s）
+      multi: 0,   // 同時飛翔ミサイル +1/枚（全体上限10）
+      slots: 0,   // 発射台都市 +1/枚（上限5）
+      chain: 0,   // 撃破時に連鎖小爆発
+      shock: 0,   // 巨大隕石撃破で画面規模の弱衝撃波
+      coin: 0,    // 撃破ごとにスコア +5/枚
+      shield: 0,  // 都市被弾を1回無効化（消費型、枚数分）
+    };
+
+    // 3択カード画面（open中はゲームプレイ凍結）
+    this._cardChoice = null; // { cards:[...], t, stage } | null
+
     // 都市: alive flag + バフスタック
     this.cities = Array.from({ length: CITY_COUNT }, () => ({
       alive: true,
@@ -3658,6 +3712,69 @@ class Game extends Scene {
   }
 
   _bigBtnRect() { return { x: W / 2 - 48, y: 44, w: 112, h: 28 }; }
+
+  // カード選択中はエンジンのBACKボタンを無効化（誤タップでメニューに戻らない）
+  blocksBack() { return !!this._cardChoice; }
+
+  // ---- ランアップグレード補正（定数は不変、使用箇所でこれらを掛ける）----
+  _runDmgBonus() {
+    return this.run ? (this.run.dmg | 0) : 0;
+  }
+
+  _runRadiusMult() {
+    const n = this.run ? (this.run.radius | 0) : 0;
+    return 1 + RUN_RADIUS_PER_STACK * n;
+  }
+
+  _runMissileSpd() {
+    const n = this.run ? (this.run.mspd | 0) : 0;
+    return MISSILE_SPD * (1 + RUN_MSPD_PER_STACK * n);
+  }
+
+  _runCooldown(base) {
+    const n = this.run ? (this.run.cd | 0) : 0;
+    return Math.max(RUN_CD_MIN, base * Math.pow(RUN_CD_MULT, n));
+  }
+
+  // ---- 3択カード：重み付きサンプリング（COMMON=3, RARE=1、重複なし3枚）----
+  _pick3Upgrades() {
+    // 発射台が既に最大ならSLOTS+は候補から外す（死にカード防止）
+    const avail = UPGRADES.filter(u => !(u.id === 'slots' && this._launcherSlots >= 5));
+    const picked = [];
+    while (picked.length < 3 && avail.length > 0) {
+      let total = 0;
+      for (const u of avail) total += (u.rarity === 'RARE' ? 1 : 3);
+      let r = Math.random() * total;
+      let idx = avail.length - 1;
+      for (let i = 0; i < avail.length; i++) {
+        r -= (avail[i].rarity === 'RARE' ? 1 : 3);
+        if (r <= 0) { idx = i; break; }
+      }
+      picked.push(avail[idx]);
+      avail.splice(idx, 1);
+    }
+    return picked;
+  }
+
+  // ---- カード適用：run スタック加算（SLOTS+ は即時に発射台を増やす）----
+  _applyUpgrade(card) {
+    if (!card || !this.run) return;
+    if (this.run[card.id] == null) this.run[card.id] = 0;
+    this.run[card.id]++;
+    if (card.id === 'slots') {
+      this._launcherSlots = Math.min(this._launcherSlots + 1, 5);
+    }
+  }
+
+  // ---- カードのタップ判定（当たれば 0..2、外れは -1）----
+  _cardHitTest(x, y) {
+    if (!this._cardChoice || !this._cardChoice.cards) return -1;
+    for (let i = 0; i < this._cardChoice.cards.length && i < 3; i++) {
+      const cy = CARD_Y0 + i * (CARD_H + CARD_GAP);
+      if (x >= CARD_X && x <= CARD_X + CARD_W && y >= cy && y <= cy + CARD_H) return i;
+    }
+    return -1;
+  }
 
   _calcNormalSpd() {
     const frac   = clamp(this._stage / 6, 0, 1);
@@ -3704,6 +3821,21 @@ class Game extends Scene {
       if (action === 'tap' || action === 'confirm') { this.enter(); return; }
       return;
     }
+    // ---- 3択カード選択中：入力はカードのみが受ける（backも無効＝誤脱出防止）----
+    if (this._cardChoice) {
+      if (action === 'tap' && data) {
+        // 開いた直後の誤タップ（撃ち漏らし連打）を無視
+        if (this._cardChoice.t < 0.25) return;
+        const idx = this._cardHitTest(data.x, data.y);
+        if (idx >= 0 && this._cardChoice.cards[idx]) {
+          this._applyUpgrade(this._cardChoice.cards[idx]);
+          this.engine.audio.good();
+          this._cardChoice = null; // 閉じて再開
+        }
+      }
+      return;
+    }
+
     if (action === 'back') { this.engine.toMenu(); return; }
 
     if (action === 'tap' && data) {
@@ -3735,11 +3867,13 @@ class Game extends Scene {
 
   // ---- 同時飛翔上限計算 ----
   _getMissileCap() {
+    // CAP+ アップグレード：同時飛翔上限 +1/枚（全体上限10は維持）
+    const extra   = this.run ? (this.run.multi | 0) : 0;
     const isRapid = this._rapidTimer > 0;
     if (isRapid) {
-      return Math.min(this._launcherSlots * RAPID_SHOTS_CITY, MISSILES_CAP_RAPID);
+      return Math.min(Math.min(this._launcherSlots * RAPID_SHOTS_CITY, MISSILES_CAP_RAPID) + extra, 10);
     }
-    return Math.min(this._launcherSlots, MISSILES_CAP_NORMAL);
+    return Math.min(Math.min(this._launcherSlots, MISSILES_CAP_NORMAL) + extra, 10);
   }
 
   // ---- 発射（クールダウン＋上限チェック） ----
@@ -3778,25 +3912,42 @@ class Game extends Scene {
     const useScatter = !big && this._scatterAmmo > 0;
     if (useScatter) this._scatterAmmo = Math.max(0, this._scatterAmmo - 1);
 
+    // MISSILE SPD+ アップグレード適用（+22%/枚）
+    const spd = this._runMissileSpd();
     this.missiles.push({
       x: launchX, y: launchY,
       tx, ty,
-      vx: (dx / dist) * MISSILE_SPD,
-      vy: (dy / dist) * MISSILE_SPD,
+      vx: (dx / dist) * spd,
+      vy: (dy / dist) * spd,
+      spd, // 到達判定用に実速度を保持
       done: false,
       big: !!big,
       scatter: useScatter,
       cityIdx,   // 発射元都市（バフ参照用）
     });
 
-    // RAPIDバフ中はクールダウン短縮
-    this._fireCooldown = this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN;
+    // RAPIDバフ中はクールダウン短縮、COOLDOWN- アップグレード適用（-15%/枚、下限0.2s）
+    this._fireCooldown = this._runCooldown(this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN);
     this.engine.audio.move();
   }
 
   // ---- update ----
   update(dt) {
     if (this.dead) return;
+
+    // ---- 3択カード選択中：ゲームプレイ凍結（演出タイマー・パーティクルのみ進行）----
+    // スポーン・隕石・ミサイル・爆発・バフ・_elapsed はすべて停止。
+    // _frameCount は render 側で毎フレーム進むためフリッカーは継続する。
+    if (this._cardChoice) {
+      this._cardChoice.t += dt;
+      if (this._clearOverlay) {
+        this._clearOverlay.timer -= dt;
+        if (this._clearOverlay.timer <= 0) this._clearOverlay = null;
+      }
+      this._updateCityBlasts(dt);
+      this._updateDebris(dt);
+      return;
+    }
 
     if (this._fireCooldown > 0) {
       this._fireCooldown = Math.max(0, this._fireCooldown - dt);
@@ -3877,8 +4028,14 @@ class Game extends Scene {
       this._bossIdx     = -1;
       // ミサイル/爆発は引き継ぎ（シームレス）
 
-      // クリアオーバーレイ表示（ゲームは止まらない）
+      // クリアオーバーレイ表示（フロート演出はカード背後で継続）
       this._clearOverlay = { timer: 2.8, stage: clearedStage + 1, bonus };
+
+      // ---- 3択アップグレードカードを開く（開いている間ゲームプレイは凍結）----
+      const cards = this._pick3Upgrades();
+      if (cards.length > 0) {
+        this._cardChoice = { cards, t: 0, stage: clearedStage + 1 };
+      }
 
       // クリア音
       this.engine.audio.sequence([
@@ -3945,7 +4102,7 @@ class Game extends Scene {
       ms.y += ms.vy * dt;
       const ddx = ms.tx - ms.x;
       const ddy = ms.ty - ms.y;
-      if (Math.hypot(ddx, ddy) < MISSILE_SPD * dt * 1.5 + 4) {
+      if (Math.hypot(ddx, ddy) < (ms.spd || MISSILE_SPD) * dt * 1.5 + 4) {
         this._spawnBlast(ms.tx, ms.ty, ms.big, false, ms.scatter, ms.cityIdx);
         ms.done = true;
       }
@@ -4000,6 +4157,12 @@ class Game extends Scene {
             // ボス破壊演出
             this._spawnBossShatter(m.x, m.y, m.r);
             m.flashTimer = 0; // 破壊時はフラッシュ不要
+            // COIN: 撃破ボーナススコア
+            if (this.run && this.run.coin > 0) this.score += RUN_COIN_PER_STACK * this.run.coin;
+            // SHOCKWAVE: ボス撃破でも広域弱衝撃波（ダメージ1）
+            if (this.run && this.run.shock > 0) {
+              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true);
+            }
             // ボス破壊音（壮大な降下音）
             this.engine.audio.sequence([
               { freq: 880, dur: 0.09, type: 'sawtooth', vol: 0.20 },
@@ -4013,6 +4176,17 @@ class Game extends Scene {
           } else {
             const sizeBonus = Math.ceil(m.maxHp);
             this.score += METEOR_SCORE_BASE * sizeBonus;
+            // COIN: 撃破ごとにボーナススコア（+5/枚）
+            if (this.run && this.run.coin > 0) this.score += RUN_COIN_PER_STACK * this.run.coin;
+            // CHAIN: 撃破地点に小さな連鎖爆発（ダメージ1）
+            // 新しい爆発は配列末尾に push され、この下方向ループでは今フレーム再訪しない（安全）
+            if (this.run && this.run.chain > 0) {
+              this._spawnExtraBlast(m.x, m.y, CHAIN_BASE_R + CHAIN_R_PER_STACK * this.run.chain, 1, false);
+            }
+            // SHOCKWAVE: 巨大隕石（GIANT閾値以上）撃破で広域弱衝撃波（ダメージ1）
+            if (this.run && this.run.shock > 0 && m.r >= GIANT_R_THRESH) {
+              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true);
+            }
             this.engine.audio.good();
           }
           if (this._bossIdx > j) this._bossIdx--;
@@ -4022,6 +4196,21 @@ class Game extends Scene {
     }
 
     // 都市爆発エフェクト更新
+    this._updateCityBlasts(dt);
+
+    // デブリ更新
+    this._updateDebris(dt);
+
+    // ゲームオーバー判定
+    if (this.cities.every(c => !c.alive)) {
+      this.dead = true;
+      this.engine.audio.bad();
+      if (this.engine.storage.setHigh(meta.id, this.score)) this.high = this.score;
+    }
+  }
+
+  // ---- 都市爆発エフェクト更新（通常時・カード選択中の両方から呼ぶ）----
+  _updateCityBlasts(dt) {
     for (let i = this.cityBlasts.length - 1; i >= 0; i--) {
       const cb = this.cityBlasts[i];
       if (!cb) { this.cityBlasts.splice(i, 1); continue; }
@@ -4029,8 +4218,10 @@ class Game extends Scene {
       cb.r += 60 * dt;
       if (cb.t <= 0) this.cityBlasts.splice(i, 1);
     }
+  }
 
-    // デブリ更新
+  // ---- デブリ更新（通常時・カード選択中の両方から呼ぶ）----
+  _updateDebris(dt) {
     for (let i = this.debris.length - 1; i >= 0; i--) {
       const d = this.debris[i];
       if (!d) { this.debris.splice(i, 1); continue; }
@@ -4040,13 +4231,6 @@ class Game extends Scene {
       d.rot  += d.rotSpd * dt;
       d.life -= dt;
       if (d.life <= 0) { this.debris.splice(i, 1); }
-    }
-
-    // ゲームオーバー判定
-    if (this.cities.every(c => !c.alive)) {
-      this.dead = true;
-      this.engine.audio.bad();
-      if (this.engine.storage.setHigh(meta.id, this.score)) this.high = this.score;
     }
   }
 
@@ -4219,6 +4403,24 @@ class Game extends Scene {
     ]);
   }
 
+  // ---- 連鎖・衝撃波用の追加爆発（既存の爆発システムを再利用、音・散弾なし）----
+  // maxR/damage をカスタム指定。都市バフやランのDMG+は適用しない（意図的に弱い）。
+  _spawnExtraBlast(x, y, maxR, damage, big) {
+    this.blasts.push({
+      x: clamp(x, 0, W),
+      y: clamp(y, 0, GROUND_Y - 2),
+      r: 4,
+      maxR: Math.max(6, maxR || 6),
+      growing: true,
+      fadeTimer: BLAST_FADE_SEC,
+      big: !!big,
+      id: _nextBlastId++,
+      damage: Math.max(1, damage | 0),
+      isScatter: false,
+      cityIdx: -1,
+    });
+  }
+
   // ---- 爆発スポーン ----
   // cityIdx: 発射元都市インデックス（バフ参照、-1=不明）
   _spawnBlast(x, y, big, isScatter, isScatterShot, cityIdx) {
@@ -4226,11 +4428,14 @@ class Game extends Scene {
     const city   = (cityIdx >= 0 && this.cities[cityIdx]) ? this.cities[cityIdx] : null;
     const buffs  = city ? city.buffs : makeCityBuffs();
 
+    // RADIUS+ アップグレード（+18%/枚）— 基本半径に乗算、WIDEバフの加算はその後
+    const radMult = this._runRadiusMult();
     const baseR = big
-      ? BLAST_GROW_BIG
-      : (BLAST_GROW + cityBuffRadiusAdd(buffs));
+      ? BLAST_GROW_BIG * radMult
+      : (BLAST_GROW * radMult + cityBuffRadiusAdd(buffs));
     const maxR  = Math.max(6, baseR);
-    const dmg   = big ? BLAST_DAMAGE_BIG : cityBuffPower(buffs);
+    // DAMAGE+ アップグレード（+1/枚）— 通常もビッグも加算
+    const dmg   = (big ? BLAST_DAMAGE_BIG : cityBuffPower(buffs)) + this._runDmgBonus();
     const id    = _nextBlastId++;
 
     this.blasts.push({
@@ -4279,6 +4484,18 @@ class Game extends Scene {
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
     if (bestIdx >= 0 && bestDist < CITY_W * 2.5) {
+      // SHIELD アップグレード：被弾を1回無効化（スタック消費）
+      if (this.run && this.run.shield > 0) {
+        this.run.shield--;
+        this.engine.audio.select();
+        // シールド発動の小フラッシュ（都市爆発エフェクトを弱く流用）
+        this.cityBlasts.push({
+          x: CITY_XS[bestIdx] + CITY_W / 2,
+          y: GROUND_Y - CITY_H / 2,
+          r: 6, t: 0.3,
+        });
+        return;
+      }
       this.cities[bestIdx].alive = false;
       // 選択都市が破壊されたらリセット
       if (this._selectedCity === bestIdx) this._selectedCity = -1;
@@ -4546,7 +4763,7 @@ class Game extends Scene {
 
     // ---- クールダウンインジケータ（選択都市付近に表示）----
     if (this._fireCooldown > 0 && !this.dead) {
-      const coolRef = this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN;
+      const coolRef = this._runCooldown(this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN);
       const frac    = clamp(1 - this._fireCooldown / coolRef, 0, 1);
       const barW    = 28;
       // 選択都市がある場合はその上、なければ画面中央下
@@ -4565,6 +4782,131 @@ class Game extends Scene {
       ctx.fillRect(barX, barY, Math.max(0, barW * frac), 3);
       ctx.restore();
     }
+
+    // ---- 3択アップグレードカード（最前面）----
+    if (this._cardChoice && !this.dead) {
+      this._drawCardChoice(ctx, p);
+    }
+  }
+
+  // ---- 3択アップグレードカード画面（Falltopia式）----
+  _drawCardChoice(ctx, p) {
+    const cc = this._cardChoice;
+    if (!cc || !cc.cards || cc.cards.length === 0) return;
+    const fadeIn = clamp(cc.t / 0.25, 0, 1);
+
+    // フィールドを暗く（クリア演出のフロートは背後で継続して見える）
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = clamp(0.75 * fadeIn, 0, 1);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = clamp(fadeIn, 0, 1);
+
+    // タイトル＋ステージラベル
+    this.engine.text('CHOOSE UPGRADE', W / 2, 132, 22, p.hi, 'center');
+    this.engine.text('STAGE ' + (cc.stage || 1) + ' CLEAR - REWARD x1', W / 2, 162, 11, p.mid, 'center');
+
+    for (let i = 0; i < cc.cards.length && i < 3; i++) {
+      const card = cc.cards[i];
+      if (!card) continue;
+      this._drawUpgradeCard(ctx, p, card, CARD_X, CARD_Y0 + i * (CARD_H + CARD_GAP));
+    }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- カード1枚の描画：角落としフレーム＋内側グロー＋六角バッジ＋2セグメント説明 ----
+  _drawUpgradeCard(ctx, p, card, x, y) {
+    const w = CARD_W, h = CARD_H;
+    const cut = 9; // 角落とし量
+    const rare = card.rarity === 'RARE';
+    const rarityColor = rare ? p.warn : p.mid;
+
+    // 8点の角落としポリゴンパス
+    const chamferPath = (ox, oy, ww, hh, cc2) => {
+      ctx.beginPath();
+      ctx.moveTo(ox + cc2, oy);
+      ctx.lineTo(ox + ww - cc2, oy);
+      ctx.lineTo(ox + ww, oy + cc2);
+      ctx.lineTo(ox + ww, oy + hh - cc2);
+      ctx.lineTo(ox + ww - cc2, oy + hh);
+      ctx.lineTo(ox + cc2, oy + hh);
+      ctx.lineTo(ox, oy + hh - cc2);
+      ctx.lineTo(ox, oy + cc2);
+      ctx.closePath();
+    };
+
+    ctx.save();
+    // ベース塗り（背景色でフィールドを遮る）
+    chamferPath(x, y, w, h, cut);
+    ctx.fillStyle = p.bg;
+    ctx.globalAlpha = 0.92;
+    ctx.fill();
+
+    // 外枠（細線、レアリティ色）
+    ctx.globalAlpha = 1;
+    chamferPath(x, y, w, h, cut);
+    ctx.strokeStyle = rarityColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // 内側グロー（インセットした太い低アルファ線）
+    chamferPath(x + 3, y + 3, w - 6, h - 6, Math.max(2, cut - 3));
+    ctx.strokeStyle = rarityColor;
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 左：六角バッジ（アウトラインのみ）
+    const bx = x + 34, by = y + h / 2, br = 19;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 6 + (i / 6) * Math.PI * 2;
+      const hx = bx + Math.cos(a) * br;
+      const hy = by + Math.sin(a) * br;
+      if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = rarityColor;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    ctx.restore();
+
+    // バッジ内アイコングリフ
+    this.engine.text(card.icon || '?', bx, by - 9, 18, p.fg, 'center');
+
+    // 左上レアリティタグ／右上 NEW!（未取得）または Lv.n（取得済み）
+    this.engine.text(card.rarity || 'COMMON', x + 62, y + 8, 9, rarityColor, 'left');
+    const stacks = (this.run && this.run[card.id]) ? this.run[card.id] : 0;
+    if (stacks === 0) {
+      this.engine.text('NEW!', x + w - 12, y + 8, 9, p.warn, 'right');
+    } else {
+      this.engine.text('Lv.' + stacks, x + w - 12, y + 8, 9, p.dim, 'right');
+    }
+
+    // 名前（明るく）
+    this.engine.text(card.name || '?', x + 62, y + 24, 16, p.hi, 'left');
+
+    // 説明（2セグメント：地の文=fg、キーワード=レアリティ色）
+    ctx.save();
+    ctx.font = '12px "DotGothic16", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const dx0 = x + 62, dy0 = y + 52;
+    const plain = card.descPlain || '';
+    const key   = card.descKey || '';
+    ctx.fillStyle = p.fg;
+    ctx.fillText(plain, dx0, dy0);
+    const plainW = ctx.measureText(plain).width;
+    ctx.fillStyle = rare ? p.warn : p.mid;
+    ctx.fillText(key, dx0 + plainW, dy0);
+    ctx.restore();
   }
 
   // ---- ボスHPバー（トップHUDストリップ内） ----
@@ -4964,6 +5306,14 @@ class Game extends Scene {
       ctx.fill();
       ctx.restore();
       dotX += 7;
+    }
+
+    // SHIELDアップグレード有効中：都市上に小さなシールドグリフ
+    if (this.run && this.run.shield > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      this.engine.text('□', ox + CITY_W - 1, oy - 16, 9, p.hi, 'right');
+      ctx.restore();
     }
 
     // 発射位置マーカー（小三角形）

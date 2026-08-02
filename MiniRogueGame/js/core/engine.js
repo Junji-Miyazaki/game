@@ -99,8 +99,10 @@ export class Engine {
   _setupInput() {
     const dispatch = (action, data) => {
       this.audio.unlock();
-      // BACKボタンのタップはゲームに渡さず、メニューへ戻す（メニュー画面では無効）
-      if (action === 'tap' && data && this.scene && !this.scene.isRoot && this._inBack(data)) {
+      // BACKボタンのタップはゲームに渡さず、メニューへ戻す（メニュー画面では無効）。
+      // ただしシーンが blocksBack()=true を返す間（例: アップグレードカード選択中）は無効化し誤タップ退出を防ぐ。
+      if (action === 'tap' && data && this.scene && !this.scene.isRoot && this._inBack(data)
+          && !(this.scene.blocksBack && this.scene.blocksBack())) {
         this.audio.select();
         if (this.toMenu) this.toMenu();
         return;
