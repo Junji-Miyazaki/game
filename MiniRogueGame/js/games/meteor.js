@@ -69,6 +69,11 @@ const BOSS_HP_PER_STAGE = 3; // HP増加（旧6→3）
 const METEOR_SCORE_BASE = 10;
 const BOSS_SCORE_BASE   = 250;
 
+// コンボ（連続撃破）— 撃破ごとにウィンドウをリセット、切れたらコンボ0に戻る
+// スコア倍率 = 1 + COMBO_SCORE_STEP * combo（四捨五入して加算）
+const COMBO_WINDOW     = 2.0;  // 秒
+const COMBO_SCORE_STEP = 0.10; // コンボ1につき+10%
+
 // スキャッター特殊弾 弾数上限
 const SCATTER_AMMO_PER_PICKUP = 3;
 
@@ -423,6 +428,13 @@ export class Game extends Scene {
     // ステージクリア演出（非停止：フロート表示のみ）
     this._clearOverlay  = null; // { timer, stage, bonus } | null
 
+    // ---- 浮遊数値（撃破スコア/コンボ/CITY LOST等）----
+    this.floaters = []; // [{x,y,txt,color,size,t,dur}]
+
+    // ---- コンボ（2秒ウィンドウ内の連続撃破）----
+    this.combo       = 0;
+    this._comboTimer = 0;
+
     // ---- ラン内永続アップグレード（3択カードで獲得、値=スタック数）----
     this.run = {
       dmg: 0,     // 爆発ダメージ +1/枚
@@ -692,6 +704,7 @@ export class Game extends Scene {
   // ---- update ----
   update(dt) {
     if (this.dead) return;
+    const p = P(); // 撃破フロート・コンボ表示の色参照用
 
     // ---- 3択カード選択中：ゲームプレイ凍結（演出タイマー・パーティクルのみ進行）----
     // スポーン・隕石・ミサイル・爆発・バフ・_elapsed はすべて停止。
@@ -906,17 +919,30 @@ export class Game extends Scene {
         // ダメージを受けたが破壊されない場合はヒットフラッシュを起動
         if (m.hp > 0) {
           m.flashTimer = 0.13; // ~0.13秒間白くフラッシュ
+          // ボス「チャンク」フロート：撃破に至らない被弾でも被ダメージを小さくポップ
+          if (m.boss) {
+            this._float(b.x, b.y, '-' + b.damage, p.warn, 15);
+          }
         }
         if (m.hp <= 0) {
+          // ---- コンボ更新（2秒ウィンドウ内の連続撃破。このキル自身も1カウント）----
+          this._comboTimer = COMBO_WINDOW;
+          this.combo = (this.combo | 0) + 1;
+          const comboMult = 1 + COMBO_SCORE_STEP * this.combo;
+
           if (m.boss) {
-            this.score += BOSS_SCORE_BASE * (this._stage + 1);
+            let gain = BOSS_SCORE_BASE * (this._stage + 1);
+            // COIN: 撃破ボーナススコア
+            if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
+            gain = Math.round(gain * comboMult);
+            this.score += gain;
             this._bossAlive = false;
             this._bossIdx   = -1;
             // ボス破壊演出
             this._spawnBossShatter(m.x, m.y, m.r);
             m.flashTimer = 0; // 破壊時はフラッシュ不要
-            // COIN: 撃破ボーナススコア
-            if (this.run && this.run.coin > 0) this.score += RUN_COIN_PER_STACK * this.run.coin;
+            // 撃破フロート（ボス死は大きく表示）
+            this._float(m.x, m.y, '+' + gain, p.warn, 22);
             // SHOCKWAVE: ボス撃破でも広域弱衝撃波（ダメージ1）
             if (this.run && this.run.shock > 0) {
               this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true);
@@ -933,9 +959,14 @@ export class Game extends Scene {
             this.engine.audio.bad();
           } else {
             const sizeBonus = Math.ceil(m.maxHp);
-            this.score += METEOR_SCORE_BASE * sizeBonus;
+            let gain = METEOR_SCORE_BASE * sizeBonus;
             // COIN: 撃破ごとにボーナススコア（+5/枚）
-            if (this.run && this.run.coin > 0) this.score += RUN_COIN_PER_STACK * this.run.coin;
+            if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
+            gain = Math.round(gain * comboMult);
+            this.score += gain;
+            // 隕石の役割色（通常=赤/高速=明色/巨大=警告色）で撃破フロート
+            const floatColor = m.fast ? p.hi : (m.r >= GIANT_R_THRESH ? p.warn : p.bad);
+            this._float(m.x, m.y, '+' + gain, floatColor, 12);
             // CHAIN: 撃破地点に小さな連鎖爆発（ダメージ1）
             // 新しい爆発は配列末尾に push され、この下方向ループでは今フレーム再訪しない（安全）
             if (this.run && this.run.chain > 0) {
@@ -959,11 +990,50 @@ export class Game extends Scene {
     // デブリ更新
     this._updateDebris(dt);
 
+    // ---- コンボウィンドウ更新（切れたら0に戻す）----
+    if (this.combo > 0) {
+      this._comboTimer -= dt;
+      if (this._comboTimer <= 0) {
+        this.combo       = 0;
+        this._comboTimer = 0;
+      }
+    }
+
+    // ---- 浮遊数値の更新 ----
+    this._updateFloaters(dt);
+
     // ゲームオーバー判定
     if (this.cities.every(c => !c.alive)) {
       this.dead = true;
       this.engine.audio.bad();
       if (this.engine.storage.setHigh(meta.id, this.score)) this.high = this.score;
+    }
+  }
+
+  // ---- 浮遊数値（フロート）----
+  // 撃破スコア・コンボ・CITY LOST/SHIELD等を対象色でポップさせて消すための軽量パーティクル。
+  // カード選択中はupdate()が早期returnするため呼ばれず、演出は自然に凍結する（描画は継続）。
+  _float(x, y, txt, color, size = 12) {
+    if (!this.floaters) this.floaters = [];
+    this.floaters.push({
+      x, y,
+      txt: String(txt),
+      color: color || P().fg,
+      size,
+      t: 0,
+      dur: 0.8,
+    });
+  }
+
+  _updateFloaters(dt) {
+    if (!this.floaters) { this.floaters = []; return; }
+    for (let i = this.floaters.length - 1; i >= 0; i--) {
+      const f = this.floaters[i];
+      if (!f) { this.floaters.splice(i, 1); continue; }
+      f.t += dt;
+      if (f.t >= f.dur) { this.floaters.splice(i, 1); continue; }
+      // 寿命中に約26px上へドリフト（フレームレート非依存）
+      f.y -= (26 / f.dur) * dt;
     }
   }
 
@@ -1242,10 +1312,13 @@ export class Game extends Scene {
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
     if (bestIdx >= 0 && bestDist < CITY_W * 2.5) {
+      const floatX = CITY_XS[bestIdx] + CITY_W / 2;
+      const floatY = GROUND_Y - CITY_H - 6;
       // SHIELD アップグレード：被弾を1回無効化（スタック消費）
       if (this.run && this.run.shield > 0) {
         this.run.shield--;
         this.engine.audio.select();
+        this._float(floatX, floatY, 'SHIELD', P().mid, 11);
         // シールド発動の小フラッシュ（都市爆発エフェクトを弱く流用）
         this.cityBlasts.push({
           x: CITY_XS[bestIdx] + CITY_W / 2,
@@ -1258,6 +1331,7 @@ export class Game extends Scene {
       // 選択都市が破壊されたらリセット
       if (this._selectedCity === bestIdx) this._selectedCity = -1;
       this.engine.audio.bad();
+      this._float(floatX, floatY, 'CITY LOST', P().bad, 11);
       this.cityBlasts.push({
         x: CITY_XS[bestIdx] + CITY_W / 2,
         y: GROUND_Y - CITY_H / 2,
@@ -1270,21 +1344,13 @@ export class Game extends Scene {
   render(ctx) {
     const p = P();
 
-    // ---- HUD（x>=52 でBACKボタンを避ける） ----
-    const stageLabel = 'ST' + (this._stage + 1);
-    this.engine.text(stageLabel, 52, 8, 14, p.mid, 'left');
+    // ---- TOP HUD：ピクトグラフ圧縮ストリップ（x:52..W-8, y:8..44, BACKボタンを避ける） ----
+    this._drawTopHud(ctx, p);
 
-    if (this._stage >= 1 && this._stageType !== 'NORMAL') {
-      this.engine.text(this._stageType, 52, 24, 11, p.warn, 'left');
-    }
+    // コンボ表示（combo>=3 のときのみ、HUDストリップ上部中央）
+    this._drawComboHud(ctx, p);
 
-    this.engine.text('SCORE ' + this.score, W - 12, 8, 14, p.fg, 'right');
-    this.engine.text('BEST  ' + this.high,  W - 12, 26, 11, p.dim, 'right');
-
-    const aliveCount = this.cities.filter(c => c.alive).length;
-    this.engine.text('CITY ' + aliveCount, 52, 38, 11, p.warn, 'left');
-
-    // ボスHPバー（トップHUDストリップ内、ボスが画面内に入ったときのみ表示）
+    // ボスHPバー（トップHUDストリップ下のスリムな第2行、ボスが画面内に入ったときのみ表示）
     this._drawBossHPHud(ctx, p);
 
     // ビッグブラスト HUD
@@ -1484,6 +1550,9 @@ export class Game extends Scene {
       }
     }
 
+    // ---- 浮遊数値（撃破スコア/コンボ/CITY LOST等。爆発の上・パネルの下）----
+    this._drawFloaters(ctx, p);
+
     // ---- 左端アクティブアイテムパネル ----
     this._drawActiveItemsPanel(ctx, p);
 
@@ -1667,8 +1736,152 @@ export class Game extends Scene {
     ctx.restore();
   }
 
-  // ---- ボスHPバー（トップHUDストリップ内） ----
-  // ボスが画面内に入ったとき（boss.y + boss.r > 0）のみ表示
+  // ---- ピクトグラム：旗（ステージ）----
+  // (x,y) = ポール下端基準、s = サイズ。ポール+ペナントの2ストローク。
+  _drawIconFlag(ctx, x, y, s, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(x, y + s);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + s * 0.9, y + s * 0.28);
+    ctx.lineTo(x, y + s * 0.56);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- ピクトグラム：家（都市）----
+  // (x,y) = 地面基準の左下、s = サイズ。屋根三角+壁+地面線。
+  _drawIconHouse(ctx, x, y, s, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - s * 0.5);
+    ctx.lineTo(x + s * 0.5, y - s);
+    ctx.lineTo(x + s, y - s * 0.5);
+    ctx.lineTo(x + s, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.15, y);
+    ctx.lineTo(x + s * 1.15, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- ピクトグラム：ダイヤ（スコア）----
+  // (x,y) = 中心、s = 半径。4辺の菱形アウトライン。
+  _drawIconDiamond(ctx, x, y, s, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(x, y - s);
+    ctx.lineTo(x + s, y);
+    ctx.lineTo(x, y + s);
+    ctx.lineTo(x - s, y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- ヘキサピップ（BIG充填/未充填表示用。円塗りの代わりに細線ヘキサ）----
+  _drawHexPip(ctx, cx, cy, r, color, filled) {
+    ctx.save();
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 6 + (i / 6) * Math.PI * 2;
+      const hx = cx + Math.cos(a) * r;
+      const hy = cy + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+    }
+    ctx.closePath();
+    if (filled) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- TOP HUD：ピクトグラフ圧縮ストリップ（Falltopia式・一列圧縮） ----
+  // x:52..W-8（BACKボタンを避ける）、y<=48 に収める。左→右：ステージ／都市／スコア＋BEST。
+  _drawTopHud(ctx, p) {
+    const hudX0 = 52;
+    const hudX1 = W - 8;
+    const rowY  = 8;
+
+    // ---- 左：ステージ（旗アイコン＋S番号／非NORMALはタイプ名を小さく下に）----
+    this._drawIconFlag(ctx, hudX0 + 2, rowY + 2, 11, p.mid);
+    this.engine.text('S' + (this._stage + 1), hudX0 + 17, rowY, 14, p.mid, 'left');
+    if (this._stage >= 1 && this._stageType !== 'NORMAL') {
+      this.engine.text(this._stageType, hudX0 + 2, rowY + 19, 9, p.warn, 'left');
+    }
+
+    // ---- 中央：都市（家アイコン＋生存数）----
+    const cityX = hudX0 + 96;
+    const aliveCount = this.cities.filter(c => c.alive).length;
+    this._drawIconHouse(ctx, cityX, rowY + 13, 11, p.warn);
+    this.engine.text(String(aliveCount), cityX + 16, rowY + 2, 14, p.warn, 'left');
+
+    // ---- 右：スコア（ダイヤアイコン＋スコア、右寄せ）／その下に小さくBEST ----
+    const scoreStr = 'SCORE ' + this.score;
+    ctx.save();
+    ctx.font = '13px "DotGothic16", monospace';
+    const scoreW = ctx.measureText(scoreStr).width;
+    ctx.restore();
+    const diamondX = hudX1 - scoreW - 12;
+    this._drawIconDiamond(ctx, diamondX, rowY + 7, 5, p.fg);
+    this.engine.text(scoreStr, hudX1, rowY, 13, p.fg, 'right');
+    this.engine.text('BEST ' + this.high, hudX1, rowY + 17, 9, p.dim, 'right');
+  }
+
+  // ---- コンボ表示（combo>=3 のときのみ、HUDストリップ上部中央）----
+  // "xN" ＋ 残りウィンドウ時間を示す細い横バー。
+  _drawComboHud(ctx, p) {
+    if (!this.combo || this.combo < 3) return;
+    const frac = clamp(this._comboTimer / COMBO_WINDOW, 0, 1);
+    const cx   = W / 2;
+
+    this.engine.text('x' + this.combo, cx, 8, 13, p.hi, 'center');
+
+    const barW = 30, barH = 3;
+    const barX = cx - barW / 2;
+    const barY = 24;
+    ctx.save();
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = p.hi;
+    ctx.fillRect(barX, barY, Math.max(0, barW * frac), barH);
+    ctx.restore();
+  }
+
+  // ---- 浮遊数値の描画（撃破スコア/コンボ/CITY LOST等。凍結中も描画は継続） ----
+  _drawFloaters(ctx, p) {
+    if (!this.floaters || this.floaters.length === 0) return;
+    for (const f of this.floaters) {
+      if (!f) continue;
+      const alpha = clamp(1 - f.t / f.dur, 0, 1);
+      if (alpha <= 0) continue;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      this.engine.text(f.txt, f.x, f.y, f.size || 12, f.color || p.fg, 'center');
+      ctx.restore();
+    }
+  }
+
+  // ---- ボスHPバー（トップHUDストリップ下のスリムな第2行） ----
+  // ボスが画面内に入ったとき（boss.y + boss.r > 0）のみ表示。細線アウトラインのみ、太字なし。
   _drawBossHPHud(ctx, p) {
     if (!this._bossAlive || this._bossIdx < 0) return;
     const boss = this.meteors[this._bossIdx];
@@ -1680,29 +1893,22 @@ export class Game extends Scene {
     const hpFrac     = clamp(boss.hp / boss.maxHp, 0, 1);
     const damageFrac = 1 - hpFrac;
 
-    // トップHUDストリップ内に細いバーを引く（y=52〜58 あたり）
+    // トップHUDストリップ下の第2行（y=51〜55）に細線バーのみ
     const barX = 52;
-    const barY = 52;
+    const barY = 51;
     const barW = W - barX - 8;
-    const barH = 5;
+    const barH = 4;
 
     ctx.save();
-    // 背景
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(barX, barY, barW, barH);
-    // HP残量
-    const fillColor = damageFrac > 0.6 ? p.bad : p.warn;
-    ctx.fillStyle = fillColor;
-    ctx.fillRect(barX, barY, Math.max(0, barW * hpFrac), barH);
-    // 枠
     ctx.strokeStyle = p.dim;
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = damageFrac > 0.6 ? p.bad : p.warn;
+    ctx.fillRect(barX + 1, barY + 1, Math.max(0, (barW - 2) * hpFrac), Math.max(0, barH - 2));
     ctx.restore();
 
-    // "BOSS" ラベル + HP数値
-    this.engine.text('BOSS', barX, barY - 14, 11, p.warn, 'left');
-    this.engine.text(boss.hp + '/' + boss.maxHp, barX + barW, barY - 14, 11, p.dim, 'right');
+    // 小さな1行ラベル（太字なし）
+    this.engine.text('BOSS ' + boss.hp + '/' + boss.maxHp, barX, barY - 9, 8, p.dim, 'left');
   }
 
   // ---- ボスクラック描画（ダメージ可視化） ----
@@ -1796,6 +2002,29 @@ export class Game extends Scene {
 
     const labelX  = panelX;
     const barX    = panelX;
+
+    // ---- 背景の細線アウトラインパネル（情報内容は変更せず、見た目だけ薄く囲む）----
+    let visibleRows = 0;
+    if (this._scatterAmmo > 0) visibleRows++;
+    if (this._launcherSlots > 2) visibleRows++;
+    if (this._rapidTimer > 0) visibleRows++;
+    for (let ci = 0; ci < CITY_COUNT; ci++) {
+      const c = this.cities[ci];
+      if (c && c.alive && c.buffs.power.length) visibleRows++;
+    }
+    for (let ci = 0; ci < CITY_COUNT; ci++) {
+      const c = this.cities[ci];
+      if (c && c.alive && c.buffs.wide.length) visibleRows++;
+    }
+    if (visibleRows > 0) {
+      const panelH = Math.min(visibleRows, 10) * rowH + 6;
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = p.dim;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(panelX - 2, rowY - 6, 92, panelH);
+      ctx.restore();
+    }
 
     // ---- SCATTERの残弾 ----
     if (this._scatterAmmo > 0) {
@@ -1921,21 +2150,12 @@ export class Game extends Scene {
       this.engine.text('TAP SKY', b.x + b.w + 6, baseY, 11, p.hi, 'left');
     }
     this.engine.text('BIG:', baseX, baseY, 13, this._bigArmed ? p.hi : p.dim, 'left');
+    // 充填=細線ヘキサ+薄塗り／未充填=細線ヘキサのみ（塗り円から差し替え）
     for (let i = 0; i < BIG_CHARGES_MAX; i++) {
       const cx = baseX + 44 + i * 18;
       const cy = baseY + 6;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-      if (i < this._bigCharges) {
-        ctx.fillStyle = p.warn;
-        ctx.fill();
-      } else {
-        ctx.strokeStyle = p.dim;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-      ctx.restore();
+      const charged = i < this._bigCharges;
+      this._drawHexPip(ctx, cx, cy, 6, charged ? p.warn : p.dim, charged);
     }
     if (this._bigCharges < BIG_CHARGES_MAX) {
       const gaugeX = baseX;
