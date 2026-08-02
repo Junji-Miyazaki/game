@@ -3316,6 +3316,21 @@ const BOSS_SCORE_BASE   = 250;
 const COMBO_WINDOW     = 2.0;  // 秒
 const COMBO_SCORE_STEP = 0.10; // コンボ1につき+10%
 
+// ---- REROLL / BANISH（腕前で稼ぐ選択権。広告リワードは採らない方針）----
+// REROLL: コンボが10に「到達」するたびに+1（上限3）。BANISH: 都市ノーダメでステージ
+// クリアすると+1（上限3）。banned に入れたアップグレードidはラン中二度と抽選されない。
+const REROLL_CAP          = 3;
+const BANISH_CAP          = 3;
+const REROLL_COMBO_THRESH = 10;
+const MIN_DRAWABLE_POOL   = 3;  // BANISHでドロー可能idを3未満にしない（POOL LIMIT）
+
+// ---- OVERDRIVE（残り1都市の背水モード）----
+// 発射クールダウン×0.5（下限は通常のRUN_CD_MINより深い0.12sまで許可＝劇的に）、
+// スコア獲得×2（コンボ倍率適用後に乗算）。都市は復活しないため実質ゲームオーバーまで持続。
+const OVERDRIVE_CD_MULT    = 0.5;
+const OVERDRIVE_CD_FLOOR   = 0.12;
+const OVERDRIVE_SCORE_MULT = 2;
+
 // スキャッター特殊弾 弾数上限
 const SCATTER_AMMO_PER_PICKUP = 3;
 
@@ -3368,6 +3383,12 @@ const CARD_H   = 92;
 const CARD_GAP = 12;
 const CARD_X   = Math.floor((W - CARD_W) / 2);
 const CARD_Y0  = 190;
+
+// カード3枚の下に並ぶ REROLL / BANISH 小ボタン（横並び2個）
+const CARD_BTN_W   = 150;
+const CARD_BTN_H   = 34;
+const CARD_BTN_Y   = 505;
+const CARD_BTN_GAP = 14;
 
 // 効果チューニング
 const RUN_RADIUS_PER_STACK = 0.18;  // 爆発半径 +18%/枚
@@ -3677,6 +3698,17 @@ class Game extends Scene {
     this.combo       = 0;
     this._comboTimer = 0;
 
+    // ---- REROLL / BANISH（腕前で獲得する選択権。ラン内のみ、保存しない）----
+    this.rerolls  = 1;         // カード引き直し残数（初期1、上限3）
+    this.banishes = 0;         // カード永久除外残数（上限3）
+    this.banned   = new Set(); // 以後の抽選から除外するアップグレードid（ラン内永続）
+    this._comboRewarded     = false; // コンボ10到達報酬の付与済みフラグ（コンボ0でリセット）
+    this._cityLostThisStage = false; // このステージ中に都市を失ったか（BANISH獲得条件）
+    this._banishShake       = 0;     // POOL LIMIT 拒否時のシェイクタイマー（秒）
+
+    // ---- OVERDRIVE（残り1都市の背水モード）----
+    this.overdrive = false;
+
     // ---- ラン内永続アップグレード（3択カードで獲得、値=スタック数）----
     this.run = {
       dmg: 0,     // 爆発ダメージ +1/枚
@@ -3748,10 +3780,23 @@ class Game extends Scene {
     return Math.max(RUN_CD_MIN, base * Math.pow(RUN_CD_MULT, n));
   }
 
+  // ---- 実効クールダウン：RAPID/ランCD補正の後に OVERDRIVE 半減を適用 ----
+  // OVERDRIVE中は通常の下限(0.2s)を超えて0.12sまで下がる（背水の劇的さを優先）。
+  _effectiveCooldown() {
+    let cd = this._runCooldown(this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN);
+    if (this.overdrive) cd = Math.max(OVERDRIVE_CD_FLOOR, cd * OVERDRIVE_CD_MULT);
+    return cd;
+  }
+
   // ---- 3択カード：重み付きサンプリング（COMMON=3, RARE=1、重複なし3枚）----
+  // BANISH済みのid（this.banned）は候補から永久除外。
   _pick3Upgrades() {
+    const banned = this.banned || null;
     // 発射台が既に最大ならSLOTS+は候補から外す（死にカード防止）
-    const avail = UPGRADES.filter(u => !(u.id === 'slots' && this._launcherSlots >= 5));
+    const avail = UPGRADES.filter(u =>
+      !(u.id === 'slots' && this._launcherSlots >= 5) &&
+      !(banned && banned.has(u.id))
+    );
     const picked = [];
     while (picked.length < 3 && avail.length > 0) {
       let total = 0;
@@ -3776,6 +3821,64 @@ class Game extends Scene {
     if (card.id === 'slots') {
       this._launcherSlots = Math.min(this._launcherSlots + 1, 5);
     }
+  }
+
+  // ---- REROLL/BANISH ボタン矩形（ヒットテストと描画で共用）----
+  _rerollBtnRect() {
+    return { x: W / 2 - CARD_BTN_GAP / 2 - CARD_BTN_W, y: CARD_BTN_Y, w: CARD_BTN_W, h: CARD_BTN_H };
+  }
+
+  _banishBtnRect() {
+    return { x: W / 2 + CARD_BTN_GAP / 2, y: CARD_BTN_Y, w: CARD_BTN_W, h: CARD_BTN_H };
+  }
+
+  // ---- BANISH実行：カードidxのアップグレードidを以後の抽選から永久除外し、
+  //      その1枚だけを新しいカード（他2枚と重複せず・banned外）に差し替える。----
+  // ガード：BAN後にドロー可能なidが MIN_DRAWABLE_POOL(3) 未満になるなら拒否
+  //（シェイク＋'POOL LIMIT'フロート、banishesは消費しない）。
+  _banishCard(idx) {
+    const cc = this._cardChoice;
+    if (!cc || !cc.cards || !cc.cards[idx]) return;
+    if (this.banishes <= 0) { cc.banishing = false; return; }
+    const target = cc.cards[idx];
+
+    // ドロー可能プール（BAN対象を除外した後）を数える。SLOTS+最大化の除外も反映。
+    const drawableAfter = UPGRADES.filter(u =>
+      u.id !== target.id &&
+      !this.banned.has(u.id) &&
+      !(u.id === 'slots' && this._launcherSlots >= 5)
+    );
+    if (drawableAfter.length < MIN_DRAWABLE_POOL) {
+      this._banishShake = 0.3;
+      this._float(W / 2, CARD_BTN_Y - 10, 'POOL LIMIT', P().bad, 12);
+      this.engine.audio.bad();
+      cc.banishing = false;
+      return;
+    }
+
+    this.banned.add(target.id);
+    this.banishes = Math.max(0, this.banishes - 1);
+
+    // 差し替え候補：banned外・他2枚と重複しない・SLOTS+最大なら除外
+    const otherIds = cc.cards.filter((c, i) => i !== idx && c).map(c => c.id);
+    const pool = drawableAfter.filter(u => !otherIds.includes(u.id));
+    if (pool.length > 0) {
+      // 重み付き抽選（COMMON=3 : RARE=1）
+      let total = 0;
+      for (const u of pool) total += (u.rarity === 'RARE' ? 1 : 3);
+      let r = Math.random() * total;
+      let pickIdx = pool.length - 1;
+      for (let i = 0; i < pool.length; i++) {
+        r -= (pool[i].rarity === 'RARE' ? 1 : 3);
+        if (r <= 0) { pickIdx = i; break; }
+      }
+      cc.cards[idx] = pool[pickIdx];
+    } else {
+      // 理論上のフォールバック：差し替え候補が無ければその枠を落とす（2枚でも選択可能）
+      cc.cards.splice(idx, 1);
+    }
+    cc.banishing = false;
+    this.engine.audio.select();
   }
 
   // ---- カードのタップ判定（当たれば 0..2、外れは -1）----
@@ -3833,13 +3936,47 @@ class Game extends Scene {
       if (action === 'tap' || action === 'confirm') { this.enter(); return; }
       return;
     }
-    // ---- 3択カード選択中：入力はカードのみが受ける（backも無効＝誤脱出防止）----
+    // ---- 3択カード選択中：入力はカード/ボタンのみが受ける（backも無効＝誤脱出防止）----
     if (this._cardChoice) {
       if (action === 'tap' && data) {
         // 開いた直後の誤タップ（撃ち漏らし連打）を無視
         if (this._cardChoice.t < 0.25) return;
+
+        const inRect = (r) =>
+          data.x >= r.x && data.x <= r.x + r.w && data.y >= r.y && data.y <= r.y + r.h;
+
+        // REROLLボタン：3枚まるごと引き直し（banned除外の抽選を再実行）
+        const rb = this._rerollBtnRect();
+        if (inRect(rb)) {
+          if (this.rerolls > 0) {
+            this.rerolls--;
+            this._cardChoice.banishing = false;
+            this._cardChoice.cards = this._pick3Upgrades();
+            this.engine.audio.select();
+          }
+          return; // 残数0は無反応（ボタンはdim表示）
+        }
+
+        // BANISHボタン：バニッシュモードのトグル（再タップでキャンセル）
+        const bb = this._banishBtnRect();
+        if (inRect(bb)) {
+          if (this._cardChoice.banishing) {
+            this._cardChoice.banishing = false;
+            this.engine.audio.select();
+          } else if (this.banishes > 0) {
+            this._cardChoice.banishing = true;
+            this.engine.audio.select();
+          }
+          return;
+        }
+
         const idx = this._cardHitTest(data.x, data.y);
         if (idx >= 0 && this._cardChoice.cards[idx]) {
+          if (this._cardChoice.banishing) {
+            // バニッシュモード中のカードタップ＝そのidを永久除外して1枚差し替え
+            this._banishCard(idx);
+            return;
+          }
           this._applyUpgrade(this._cardChoice.cards[idx]);
           this.engine.audio.good();
           this._cardChoice = null; // 閉じて再開
@@ -3938,8 +4075,9 @@ class Game extends Scene {
       cityIdx,   // 発射元都市（バフ参照用）
     });
 
-    // RAPIDバフ中はクールダウン短縮、COOLDOWN- アップグレード適用（-15%/枚、下限0.2s）
-    this._fireCooldown = this._runCooldown(this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN);
+    // RAPIDバフ中はクールダウン短縮、COOLDOWN- アップグレード適用（-15%/枚、下限0.2s）、
+    // OVERDRIVE中はさらに×0.5（下限0.12s）— _effectiveCooldown に集約
+    this._fireCooldown = this._effectiveCooldown();
     this.engine.audio.move();
   }
 
@@ -3957,8 +4095,12 @@ class Game extends Scene {
         this._clearOverlay.timer -= dt;
         if (this._clearOverlay.timer <= 0) this._clearOverlay = null;
       }
+      // POOL LIMIT 拒否シェイクの減衰
+      if (this._banishShake > 0) this._banishShake = Math.max(0, this._banishShake - dt);
       this._updateCityBlasts(dt);
       this._updateDebris(dt);
+      // カード画面上のフロート（POOL LIMIT / BANISH +1）を進行させる
+      this._updateFloaters(dt);
       return;
     }
 
@@ -4044,10 +4186,19 @@ class Game extends Scene {
       // クリアオーバーレイ表示（フロート演出はカード背後で継続）
       this._clearOverlay = { timer: 2.8, stage: clearedStage + 1, bonus };
 
+      // ---- BANISH獲得：このステージ中に都市を1つも失っていなければ+1（上限3）----
+      let banishEarned = false;
+      if (!this._cityLostThisStage && this.banishes < BANISH_CAP) {
+        this.banishes++;
+        banishEarned = true;
+        this._float(W / 2, H / 2 + 64, 'BANISH +1', p.hi, 14);
+      }
+      this._cityLostThisStage = false; // 次ステージ用にリセット
+
       // ---- 3択アップグレードカードを開く（開いている間ゲームプレイは凍結）----
       const cards = this._pick3Upgrades();
       if (cards.length > 0) {
-        this._cardChoice = { cards, t: 0, stage: clearedStage + 1 };
+        this._cardChoice = { cards, t: 0, stage: clearedStage + 1, banishing: false, banishEarned };
       }
 
       // クリア音
@@ -4104,6 +4255,24 @@ class Game extends Scene {
         const swayX = swayAmp * Math.sin(this._elapsed * swayFreq * Math.PI * 2);
         m.x = clamp(m.x + swayX * dt, m.r * 0.5, W - m.r * 0.5);
       }
+    }
+
+    // ---- OVERDRIVE 判定（残り1都市でアクティブ）----
+    // 隕石の着弾処理（都市破壊）後・爆発スコア処理前に評価するので、
+    // 「最後の1都市になったフレーム」からCT半減とスコア×2が効く。
+    {
+      const aliveCities = this.cities.reduce((n, c) => n + (c.alive ? 1 : 0), 0);
+      const odNow = (aliveCities === 1);
+      if (odNow && !this.overdrive) {
+        // 発動エッジ：中央に大きくポップ＋短い上昇シーケンス
+        this._float(W / 2, H / 2 - 60, 'OVERDRIVE', p.warn, 24);
+        this.engine.audio.sequence([
+          { freq: 220, dur: 0.08, type: 'square', vol: 0.20 },
+          { freq: 330, dur: 0.08, type: 'square', vol: 0.20 },
+          { freq: 550, dur: 0.18, type: 'square', vol: 0.22 },
+        ]);
+      }
+      this.overdrive = odNow;
     }
 
     // ミサイル移動
@@ -4172,11 +4341,25 @@ class Game extends Scene {
           this.combo = (this.combo | 0) + 1;
           const comboMult = 1 + COMBO_SCORE_STEP * this.combo;
 
+          // ---- REROLL獲得：コンボが10に「到達」した瞬間に+1（上限3）----
+          // ≥10 の間は再付与しない（_comboRewarded、コンボが0に戻るとリセット）。
+          // ボスのチャンク被弾はキルではないためコンボに乗らず、ここには来ない（仕様）。
+          if (this.combo >= REROLL_COMBO_THRESH && !this._comboRewarded) {
+            this._comboRewarded = true;
+            if (this.rerolls < REROLL_CAP) {
+              this.rerolls++;
+              this._float(W / 2, 78, 'REROLL +1', p.mid, 12);
+              this.engine.audio.select();
+            }
+          }
+
           if (m.boss) {
             let gain = BOSS_SCORE_BASE * (this._stage + 1);
             // COIN: 撃破ボーナススコア
             if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
             gain = Math.round(gain * comboMult);
+            // OVERDRIVE: コンボ倍率適用後にスコア×2（フロートも倍後の数値を表示）
+            if (this.overdrive) gain *= OVERDRIVE_SCORE_MULT;
             this.score += gain;
             this._bossAlive = false;
             this._bossIdx   = -1;
@@ -4205,6 +4388,8 @@ class Game extends Scene {
             // COIN: 撃破ごとにボーナススコア（+5/枚）
             if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
             gain = Math.round(gain * comboMult);
+            // OVERDRIVE: コンボ倍率適用後にスコア×2（フロートも倍後の数値を表示）
+            if (this.overdrive) gain *= OVERDRIVE_SCORE_MULT;
             this.score += gain;
             // 隕石の役割色（通常=赤/高速=明色/巨大=警告色）で撃破フロート
             const floatColor = m.fast ? p.hi : (m.r >= GIANT_R_THRESH ? p.warn : p.bad);
@@ -4238,6 +4423,8 @@ class Game extends Scene {
       if (this._comboTimer <= 0) {
         this.combo       = 0;
         this._comboTimer = 0;
+        // コンボが切れたら次の「10到達」でまたREROLLを獲得できる
+        this._comboRewarded = false;
       }
     }
 
@@ -4253,8 +4440,9 @@ class Game extends Scene {
   }
 
   // ---- 浮遊数値（フロート）----
-  // 撃破スコア・コンボ・CITY LOST/SHIELD等を対象色でポップさせて消すための軽量パーティクル。
-  // カード選択中はupdate()が早期returnするため呼ばれず、演出は自然に凍結する（描画は継続）。
+  // 撃破スコア・コンボ・CITY LOST/SHIELD/REROLL +1/POOL LIMIT等を対象色でポップさせて
+  // 消すための軽量パーティクル。カード選択中も凍結ブランチ側で_updateFloatersを呼ぶため
+  // カード画面上のフロート（POOL LIMIT / BANISH +1）は進行する。
   _float(x, y, txt, color, size = 12) {
     if (!this.floaters) this.floaters = [];
     this.floaters.push({
@@ -4570,6 +4758,9 @@ class Game extends Scene {
         return;
       }
       this.cities[bestIdx].alive = false;
+      // BANISH獲得条件の追跡：このステージ中に都市を実際に失った
+      //（SHIELDで防いだ被弾は上のreturnで抜けるためカウントされない＝仕様）
+      this._cityLostThisStage = true;
       // 選択都市が破壊されたらリセット
       if (this._selectedCity === bestIdx) this._selectedCity = -1;
       this.engine.audio.bad();
@@ -4586,11 +4777,19 @@ class Game extends Scene {
   render(ctx) {
     const p = P();
 
+    // ---- OVERDRIVE：脈動する画面縁ビネット（最初に描く＝フィールドの上に見え、HUDテキストの下）----
+    this._drawOverdriveVignette(ctx, p);
+
     // ---- TOP HUD：ピクトグラフ圧縮ストリップ（x:52..W-8, y:8..44, BACKボタンを避ける） ----
     this._drawTopHud(ctx, p);
 
     // コンボ表示（combo>=3 のときのみ、HUDストリップ上部中央）
     this._drawComboHud(ctx, p);
+
+    // OVERDRIVE中はコンボ表示エリア直下に小さなタグ
+    if (this.overdrive && !this.dead) {
+      this.engine.text('OVERDRIVE x2', W / 2, 30, 9, p.warn, 'center');
+    }
 
     // ボスHPバー（トップHUDストリップ下のスリムな第2行、ボスが画面内に入ったときのみ表示）
     this._drawBossHPHud(ctx, p);
@@ -4832,7 +5031,8 @@ class Game extends Scene {
 
     // ---- クールダウンインジケータ（選択都市付近に表示）----
     if (this._fireCooldown > 0 && !this.dead) {
-      const coolRef = this._runCooldown(this._rapidTimer > 0 ? RAPID_COOLDOWN : FIRE_COOLDOWN);
+      // OVERDRIVE込みの実効クールダウンを基準にする（バーの進行率が正しくなる）
+      const coolRef = this._effectiveCooldown();
       const frac    = clamp(1 - this._fireCooldown / coolRef, 0, 1);
       const barW    = 28;
       // 選択都市がある場合はその上、なければ画面中央下
@@ -4858,6 +5058,24 @@ class Game extends Scene {
     }
   }
 
+  // ---- OVERDRIVE ビネット：画面縁のインセット矩形が~2Hzで脈動（alpha 0.15..0.45）----
+  _drawOverdriveVignette(ctx, p) {
+    if (!this.overdrive || this.dead) return;
+    // _elapsed基準の2Hz振動（カード凍結中は_elapsedが止まるので脈動も静止＝許容）
+    const osc   = 0.5 + 0.5 * Math.sin(this._elapsed * Math.PI * 2 * 2);
+    const alpha = 0.15 + 0.30 * osc; // 0.15..0.45
+    ctx.save();
+    ctx.strokeStyle = p.warn;
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.lineWidth = 5;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+    // 内側にもう1本、薄く太い線で「にじみ」を作る
+    ctx.globalAlpha = clamp(alpha * 0.45, 0, 1);
+    ctx.lineWidth = 10;
+    ctx.strokeRect(9, 9, W - 18, H - 18);
+    ctx.restore();
+  }
+
   // ---- 3択アップグレードカード画面（Falltopia式）----
   _drawCardChoice(ctx, p) {
     const cc = this._cardChoice;
@@ -4875,26 +5093,109 @@ class Game extends Scene {
     ctx.save();
     ctx.globalAlpha = clamp(fadeIn, 0, 1);
 
-    // タイトル＋ステージラベル
+    // POOL LIMIT 拒否時の小シェイク（減衰する水平オフセット）
+    if (this._banishShake > 0) {
+      const shakeX = Math.sin(this._banishShake * 55) * 4 * clamp(this._banishShake / 0.3, 0, 1);
+      ctx.translate(shakeX, 0);
+    }
+
+    // タイトル＋ステージラベル（バニッシュモード中はヒントに差し替え）
     this.engine.text('CHOOSE UPGRADE', W / 2, 132, 22, p.hi, 'center');
-    this.engine.text('STAGE ' + (cc.stage || 1) + ' CLEAR - REWARD x1', W / 2, 162, 11, p.mid, 'center');
+    if (cc.banishing) {
+      this.engine.text('TAP CARD TO BANISH', W / 2, 162, 11, p.bad, 'center');
+    } else {
+      this.engine.text('STAGE ' + (cc.stage || 1) + ' CLEAR - REWARD x1', W / 2, 162, 11, p.mid, 'center');
+    }
 
     for (let i = 0; i < cc.cards.length && i < 3; i++) {
       const card = cc.cards[i];
       if (!card) continue;
-      this._drawUpgradeCard(ctx, p, card, CARD_X, CARD_Y0 + i * (CARD_H + CARD_GAP));
+      this._drawUpgradeCard(ctx, p, card, CARD_X, CARD_Y0 + i * (CARD_H + CARD_GAP), !!cc.banishing);
+    }
+
+    // ---- カード下の REROLL / BANISH 小ボタン（残数0はdim＋無反応）----
+    this._drawCardBtn(ctx, p, this._rerollBtnRect(), 'reroll', this.rerolls, false);
+    this._drawCardBtn(ctx, p, this._banishBtnRect(), 'banish', this.banishes, !!cc.banishing);
+
+    // BANISH獲得ラベル（都市ノーダメクリア報酬。開いて最初の~1.6秒だけ表示）
+    if (cc.banishEarned && cc.t < 1.6) {
+      const la = clamp((1.6 - cc.t) / 0.4, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = clamp(fadeIn * la, 0, 1);
+      this.engine.text('BANISH +1 (NO CITY LOST)', W / 2, CARD_BTN_Y + CARD_BTN_H + 10, 10, p.hi, 'center');
+      ctx.restore();
     }
 
     ctx.restore();
     ctx.globalAlpha = 1;
   }
 
+  // ---- カード画面の小ボタン描画（角落としフレーム＋ストロークグリフ＋残数）----
+  // kind: 'reroll'（円弧矢印グリフ）| 'banish'（✕グリフ）。active=バニッシュモード中の強調。
+  _drawCardBtn(ctx, p, r, kind, count, active) {
+    const enabled = count > 0;
+    const col = active ? p.bad : (enabled ? p.mid : p.dim);
+    const cut = 6;
+
+    ctx.save();
+    ctx.globalAlpha = enabled ? 1 : 0.4; // 残数0はdim表示
+
+    // 角落としフレーム
+    ctx.beginPath();
+    ctx.moveTo(r.x + cut, r.y);
+    ctx.lineTo(r.x + r.w - cut, r.y);
+    ctx.lineTo(r.x + r.w, r.y + cut);
+    ctx.lineTo(r.x + r.w, r.y + r.h - cut);
+    ctx.lineTo(r.x + r.w - cut, r.y + r.h);
+    ctx.lineTo(r.x + cut, r.y + r.h);
+    ctx.lineTo(r.x, r.y + r.h - cut);
+    ctx.lineTo(r.x, r.y + cut);
+    ctx.closePath();
+    ctx.fillStyle = p.bg;
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = active ? 2 : 1.3;
+    ctx.stroke();
+
+    // ストロークグリフ（フォント任せにせず線で描く）
+    const gx = r.x + 19;
+    const gy = r.y + r.h / 2;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.6;
+    if (kind === 'reroll') {
+      // ⟳ 相当：3/4円弧＋矢じり
+      ctx.beginPath();
+      ctx.arc(gx, gy, 6, -Math.PI * 0.35, Math.PI * 1.15);
+      ctx.stroke();
+      const ax = gx + Math.cos(-Math.PI * 0.35) * 6;
+      const ay = gy + Math.sin(-Math.PI * 0.35) * 6;
+      ctx.beginPath();
+      ctx.moveTo(ax - 4.5, ay - 1);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(ax - 1, ay + 4.5);
+      ctx.stroke();
+    } else {
+      // ✕ 相当：2本のクロス線
+      ctx.beginPath();
+      ctx.moveTo(gx - 5, gy - 5); ctx.lineTo(gx + 5, gy + 5);
+      ctx.moveTo(gx + 5, gy - 5); ctx.lineTo(gx - 5, gy + 5);
+      ctx.stroke();
+    }
+
+    // ラベル（engine.textは現在のglobalAlphaを尊重する）
+    const label = (kind === 'reroll' ? 'REROLL x' : 'BANISH x') + count;
+    this.engine.text(label, r.x + 34, r.y + Math.floor(r.h / 2) - 7, 13, col, 'left');
+    ctx.restore();
+  }
+
   // ---- カード1枚の描画：角落としフレーム＋内側グロー＋六角バッジ＋2セグメント説明 ----
-  _drawUpgradeCard(ctx, p, card, x, y) {
+  // banishing=true（バニッシュモード中）はフレーム/バッジを p.bad にティントして
+  // 「タップ＝除外」であることを視覚的に示す。
+  _drawUpgradeCard(ctx, p, card, x, y, banishing) {
     const w = CARD_W, h = CARD_H;
     const cut = 9; // 角落とし量
     const rare = card.rarity === 'RARE';
-    const rarityColor = rare ? p.warn : p.mid;
+    const rarityColor = banishing ? p.bad : (rare ? p.warn : p.mid);
 
     // 8点の角落としポリゴンパス
     const chamferPath = (ox, oy, ww, hh, cc2) => {
