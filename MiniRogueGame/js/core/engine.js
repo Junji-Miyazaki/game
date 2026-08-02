@@ -87,7 +87,8 @@ export class Engine {
       try {
         this.scene.update(dt);
         this.scene.render(ctx);
-        if (!this.scene.isRoot) this._drawBack(); // メニュー以外はBACKボタンを上に重ねる
+        // メニュー以外はBACKボタンを上に重ねる（blocksBack中は機能しないため描画も消し、押せそうで押せないUX不整合を防ぐ）
+        if (!this.scene.isRoot && !(this.scene.blocksBack && this.scene.blocksBack())) this._drawBack();
       } catch (e) {
         console.error('[scene error]', e);
       }

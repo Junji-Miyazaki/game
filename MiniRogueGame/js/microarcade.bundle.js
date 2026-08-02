@@ -203,7 +203,8 @@ class Engine {
       try {
         this.scene.update(dt);
         this.scene.render(ctx);
-        if (!this.scene.isRoot) this._drawBack(); // メニュー以外はBACKボタンを上に重ねる
+        // メニュー以外はBACKボタンを上に重ねる（blocksBack中は機能しないため描画も消し、押せそうで押せないUX不整合を防ぐ）
+        if (!this.scene.isRoot && !(this.scene.blocksBack && this.scene.blocksBack())) this._drawBack();
       } catch (e) {
         console.error('[scene error]', e);
       }
@@ -3315,6 +3316,9 @@ const BOSS_SCORE_BASE   = 250;
 // スコア倍率 = 1 + COMBO_SCORE_STEP * combo（四捨五入して加算）
 const COMBO_WINDOW     = 2.0;  // 秒
 const COMBO_SCORE_STEP = 0.10; // コンボ1につき+10%
+// P4実測: 無上限だと通常プレイで40〜80倍に達し他のスコア源が誤差になるため上限を設ける。
+// 表示上の生コンボ数は伸び続けてよい（伸ばす快感は残す）。
+const COMBO_MULT_CAP   = 4;    // スコア倍率の上限（コンボ30で到達）
 
 // ---- REROLL / BANISH（腕前で稼ぐ選択権。広告リワードは採らない方針）----
 // REROLL: コンボが10に「到達」するたびに+1（上限3）。BANISH: 都市ノーダメでステージ
@@ -3322,14 +3326,19 @@ const COMBO_SCORE_STEP = 0.10; // コンボ1につき+10%
 const REROLL_CAP          = 3;
 const BANISH_CAP          = 3;
 const REROLL_COMBO_THRESH = 10;
-const MIN_DRAWABLE_POOL   = 3;  // BANISHでドロー可能idを3未満にしない（POOL LIMIT）
+// P4 X4対策: 3だとCOMMON全BAN→RARE固定3枚画面が作れてしまうため5に引き上げ
+//（最大BAN数が実質4回になり、抽選の多様性が常に残る）
+const MIN_DRAWABLE_POOL   = 5;  // BANISHでドロー可能idを5未満にしない（POOL LIMIT）
 
 // ---- OVERDRIVE（残り1都市の背水モード）----
-// 発射クールダウン×0.5（下限は通常のRUN_CD_MINより深い0.12sまで許可＝劇的に）、
-// スコア獲得×2（コンボ倍率適用後に乗算）。都市は復活しないため実質ゲームオーバーまで持続。
-const OVERDRIVE_CD_MULT    = 0.5;
-const OVERDRIVE_CD_FLOOR   = 0.12;
-const OVERDRIVE_SCORE_MULT = 2;
+// 発射クールダウン×0.5（下限は通常のRUN_CD_MINより深い0.12sまで許可＝劇的に）。
+// P4実測で「恒久スコア×2」は都市を開幕で捨てる支配戦略を生んだため廃止し、
+// 代わりに (a) ステージクリア時の生存都市ボーナス（都市＝資産化）と
+// (b) OVERDRIVE状態で耐え切ってクリアした時の一括ボーナス（逆転設計に忠実）に変更。
+const OVERDRIVE_CD_MULT      = 0.5;
+const OVERDRIVE_CD_FLOOR     = 0.12;
+const CITY_CLEAR_BONUS       = 150;  // ステージクリア時 生存都市1つあたり
+const OVERDRIVE_CLEAR_BONUS  = 300;  // OVERDRIVE状態でクリアした時の一括加算
 
 // スキャッター特殊弾 弾数上限
 const SCATTER_AMMO_PER_PICKUP = 3;
@@ -3842,11 +3851,13 @@ class Game extends Scene {
     if (this.banishes <= 0) { cc.banishing = false; return; }
     const target = cc.cards[idx];
 
-    // ドロー可能プール（BAN対象を除外した後）を数える。SLOTS+最大化の除外も反映。
+    // ドロー可能プール（BAN対象を除外した後）を数える。
+    // M2対策: slotsは「後で最大化してプールから消える」可能性があるため、現在の
+    // _launcherSlots に関わらず常に除外して保守的に数える（不変条件を厳密に守る）。
     const drawableAfter = UPGRADES.filter(u =>
       u.id !== target.id &&
       !this.banned.has(u.id) &&
-      !(u.id === 'slots' && this._launcherSlots >= 5)
+      u.id !== 'slots'
     );
     if (drawableAfter.length < MIN_DRAWABLE_POOL) {
       this._banishShake = 0.3;
@@ -4166,8 +4177,15 @@ class Game extends Scene {
     ) {
       // 次ステージ開始
       const clearedStage = this._stage;
-      const bonus = 100 + clearedStage * 50;
+      // 都市＝資産：生存都市1つごとにボーナス（開幕で都市を捨てる戦略を無効化・P4 D1対策）
+      const aliveCities = this.cities.filter(Boolean).length;
+      const cityBonus   = CITY_CLEAR_BONUS * aliveCities;
+      // OVERDRIVE（残り1都市）で耐え切ってクリアした時だけの一括報酬＝逆転設計
+      const odBonus     = this.overdrive ? OVERDRIVE_CLEAR_BONUS : 0;
+      const bonus = 100 + clearedStage * 50 + cityBonus + odBonus;
       this.score += bonus;
+      if (cityBonus > 0) this._float(W / 2, H / 2 + 44, 'CITIES +' + cityBonus, p.mid, 12);
+      if (odBonus > 0)   this._float(W / 2, H / 2 + 24, 'OVERDRIVE +' + odBonus, p.warn, 14);
 
       this._stage++;
       this._elapsed = 0;
@@ -4213,7 +4231,13 @@ class Game extends Scene {
     // 隕石移動
     for (let i = this.meteors.length - 1; i >= 0; i--) {
       const m = this.meteors[i];
-      if (!m || m.x == null) { this.meteors.splice(i, 1); continue; }
+      if (!m || m.x == null) {
+        // 防御的splice（現状の生成経路では到達不能）。他のsplice箇所と同様に _bossIdx を補正する。
+        this.meteors.splice(i, 1);
+        if (this._bossIdx === i) { this._bossAlive = false; this._bossIdx = -1; }
+        else if (this._bossIdx > i) this._bossIdx--;
+        continue;
+      }
       const dx   = m.tx - m.x;
       const dy   = m.ty - m.y;
       const dist = Math.hypot(dx, dy);
@@ -4339,7 +4363,7 @@ class Game extends Scene {
           // ---- コンボ更新（2秒ウィンドウ内の連続撃破。このキル自身も1カウント）----
           this._comboTimer = COMBO_WINDOW;
           this.combo = (this.combo | 0) + 1;
-          const comboMult = 1 + COMBO_SCORE_STEP * this.combo;
+          const comboMult = Math.min(1 + COMBO_SCORE_STEP * this.combo, COMBO_MULT_CAP);
 
           // ---- REROLL獲得：コンボが10に「到達」した瞬間に+1（上限3）----
           // ≥10 の間は再付与しない（_comboRewarded、コンボが0に戻るとリセット）。
@@ -4358,8 +4382,6 @@ class Game extends Scene {
             // COIN: 撃破ボーナススコア
             if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
             gain = Math.round(gain * comboMult);
-            // OVERDRIVE: コンボ倍率適用後にスコア×2（フロートも倍後の数値を表示）
-            if (this.overdrive) gain *= OVERDRIVE_SCORE_MULT;
             this.score += gain;
             this._bossAlive = false;
             this._bossIdx   = -1;
@@ -4388,8 +4410,6 @@ class Game extends Scene {
             // COIN: 撃破ごとにボーナススコア（+5/枚）
             if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
             gain = Math.round(gain * comboMult);
-            // OVERDRIVE: コンボ倍率適用後にスコア×2（フロートも倍後の数値を表示）
-            if (this.overdrive) gain *= OVERDRIVE_SCORE_MULT;
             this.score += gain;
             // 隕石の役割色（通常=赤/高速=明色/巨大=警告色）で撃破フロート
             const floatColor = m.fast ? p.hi : (m.r >= GIANT_R_THRESH ? p.warn : p.bad);
@@ -4788,7 +4808,7 @@ class Game extends Scene {
 
     // OVERDRIVE中はコンボ表示エリア直下に小さなタグ
     if (this.overdrive && !this.dead) {
-      this.engine.text('OVERDRIVE x2', W / 2, 30, 9, p.warn, 'center');
+      this.engine.text('OVERDRIVE', W / 2, 30, 9, p.warn, 'center');
     }
 
     // ボスHPバー（トップHUDストリップ下のスリムな第2行、ボスが画面内に入ったときのみ表示）
@@ -5127,6 +5147,11 @@ class Game extends Scene {
     }
 
     ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // M1対策: フロート（'POOL LIMIT'/'BANISH +1'等）は render() 冒頭で暗転の下に
+    // 描かれてしまうため、カード画面の最前面にもう一度描いてフィードバックを見せる。
+    this._drawFloaters(ctx, p);
     ctx.globalAlpha = 1;
   }
 
