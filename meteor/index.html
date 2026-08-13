@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="theme-color" content="#0a0e1c">
+  <title>METEOR // PROTOCOL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="stage">
+    <canvas id="screen"></canvas>
+    <div id="vignette"></div>
+  </div>
+  <!-- file:// でも動くようクラシックスクリプト（バンドル）を読み込む。
+       ソースは js/ のESモジュール。編集後は `node build.js` で再生成すること。 -->
+  <script src="js/meteor.bundle.js"></script>
+</body>
+</html>
