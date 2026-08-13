@@ -18,9 +18,9 @@ const CITY_W      = 28;
 const CITY_H      = 22;  // 少し高くして山シルエットに
 const GROUND_Y    = H - 40;
 
-// ミサイル
-const MISSILE_SPD    = 115;  // px/s
-const FIRE_COOLDOWN  = 0.55; // 発射間隔（秒）
+// ミサイル（P1: ペース+50% — 速く・軽快に）
+const MISSILE_SPD    = 170;  // px/s（旧115 ×~1.5）
+const FIRE_COOLDOWN  = 0.45; // 発射間隔（秒、旧0.55）
 
 // 同時飛翔上限（通常）
 const MISSILES_CAP_NORMAL = 4;
@@ -41,14 +41,14 @@ const BIG_RECHARGE_SEC = 14;
 const BLAST_DAMAGE_NORMAL_BASE = 1;
 const BLAST_DAMAGE_BIG         = 3;
 
-// ---- 隕石速度 ----
-const METEOR_SPD_MIN      = 2;
-const METEOR_SPD_MAX      = 5;
-const METEOR_SPD_MAX_LATE = 7;
+// ---- 隕石速度（P1: ペース+50% — 全ティア×1.5、遅速の比率は維持）----
+const METEOR_SPD_MIN      = 3;     // 旧2
+const METEOR_SPD_MAX      = 7.5;   // 旧5
+const METEOR_SPD_MAX_LATE = 10.5;  // 旧7
 
 const FAST_CHANCE  = 0.10;
-const FAST_SPD_MIN = 14;
-const FAST_SPD_MAX = 24;
+const FAST_SPD_MIN = 21;  // 旧14
+const FAST_SPD_MAX = 36;  // 旧24
 
 // 隕石サイズ
 const METEOR_R_MIN   = 7;
@@ -60,8 +60,8 @@ const LARGE_R_THRESH = 16;
 // ボス隕石 — 1.2倍スケール（r≒150-185）、画面幅に収まりつつ迫力を保つ
 const BOSS_R_MIN   = 150;  // 縮小（旧230→150）
 const BOSS_R_MAX   = 185;  // 縮小（旧255→185）
-const BOSS_SPD_MIN = 2.5;  // 速度を大幅増（旧0.7）→ ぐんぐん迫る
-const BOSS_SPD_MAX = 3.8;  // 速度を大幅増（旧1.2）
+const BOSS_SPD_MIN = 3.8;  // P1ペース+50%（旧2.5）
+const BOSS_SPD_MAX = 5.7;  // P1ペース+50%（旧3.8）
 const BOSS_HP_BASE = 16;   // HP削減（旧30→16）
 const BOSS_HP_PER_STAGE = 3; // HP増加（旧6→3）
 
@@ -167,6 +167,45 @@ const CHAIN_R_PER_STACK    = 8;
 const SHOCK_BASE_R         = 140;   // 衝撃波の基本半径
 const SHOCK_R_PER_STACK    = 20;
 
+// ---- CHAIN抑制（P1: 連鎖が盤面を全消ししないためのハードリミット）----
+// ・chainDepth>=2 の爆発によるキルは以後連鎖しない（最大カスケード深度2）
+// ・半径は深度ごとに×0.65で減衰（ダメージは1のまま）
+// ・1つのルート爆発から派生する連鎖爆発は合計3個まで（共有カウンタで管理）
+const CHAIN_MAX_DEPTH    = 2;
+const CHAIN_R_DECAY      = 0.65;
+const CHAIN_MAX_PER_ROOT = 3;
+
+// ---- $ エコノミー（P1: スコアと独立した通貨。ラン内のみ、保存しない）----
+const MONEY_SMALL  = 1;   // 小型隕石（HP1-2）
+const MONEY_MEDIUM = 2;   // 中型隕石（HP3）
+const MONEY_GIANT  = 4;   // 巨大隕石（HP4）
+const MONEY_BOSS   = 25;  // ボス
+const MONEY_ITEM   = 3;   // アイテム取得
+// ステージクリア: +10 + stage*2 $（使用箇所で計算）
+
+// ---- 自動タレット（P1: セミオート化の核。$で購入、ラン内のみ）----
+const TURRET_MAX           = 3;
+const TURRET_XS            = [70, 180, 290];
+const TURRET_Y             = GROUND_Y - CITY_H - 14; // 都市ラインの~14px上に浮くポッド
+const TURRET_CD_BASE       = 1.7;   // 秒
+const TURRET_CD_LEVEL_MULT = 0.88;  // レベルごと-12%
+const TURRET_CD_MIN        = 0.8;   // 下限
+const TURRET_MISSILE_SPD   = 200;
+const TURRET_BLAST_R       = BLAST_GROW * 0.8; // 固定小半径（WIDE/ラン補正なし）
+const TURRET_AIM_NOISE     = 12;    // 迎撃点の照準ノイズ±px
+// タレットキル: $は満額 / スコア半減 / コンボ・REROLL加算なし（精密操作の経済は手動専用）
+
+// ---- ライブショップ（P1: The Tower式、プレイ中に開く下部ドロワー）----
+const SHOP_PANEL_H       = 180;
+const SHOP_TAB_W         = 130;
+const SHOP_TAB_H         = 18;
+const SHOP_TURRET_PRICES = [60, 140, 300];
+const SHOP_TLV_BASE      = 45;   // ×(1+0.6×購入回数)
+const SHOP_RELOAD_BASE   = 35;   // ×1.6^n、効果: 手動CD×0.9
+const SHOP_RADIUS_BASE   = 40;   // ×1.6^n、効果: 手動爆発半径×1.1
+const SHOP_BIG_PRICE     = 50;   // フラット
+const SHOP_REPAIR_BASE   = 120;  // ×1.8^n
+
 // ---- HP計算 ----
 function calcMeteorHP(r) {
   if (r < SMALL_R_THRESH)  return 1;
@@ -178,13 +217,14 @@ function calcMeteorHP(r) {
 // ---- ステージスクリプト生成 ----
 function makeStageScript(stage, stageType) {
   const events = [];
-  let baseDelay  = Math.max(3.5 - stage * 0.25, 1.1);
-  let bossT      = 72 + stage * 4;
+  // P1ペース+50%: 波の間隔を~×0.75に圧縮（ボス到達も少し早く）
+  let baseDelay  = Math.max(3.5 - stage * 0.25, 1.1) * 0.75;
+  let bossT      = 58 + stage * 3;
   let itemChance = Math.min(0.08 + stage * 0.025, 0.22);
 
-  if (stageType === 'SWARM') { baseDelay *= 0.5; bossT = 55 + stage * 3; }
-  if (stageType === 'FAST')  { bossT = 60 + stage * 3; }
-  if (stageType === 'CHAOS') { baseDelay *= 0.65; bossT = 58 + stage * 3; }
+  if (stageType === 'SWARM') { baseDelay *= 0.5; bossT = 44 + stage * 2.5; }
+  if (stageType === 'FAST')  { bossT = 48 + stage * 2.5; }
+  if (stageType === 'CHAOS') { baseDelay *= 0.65; bossT = 46 + stage * 2.5; }
 
   let t = 0;
   events.push({ t, type: 'meteor', count: 1, forceSize: null, itemChance });
@@ -222,7 +262,7 @@ function makeStageScript(stage, stageType) {
       forceSize: giant ? 'giant' : (tiny ? 'tiny' : null),
       itemChance,
     });
-    const minGap = stageType === 'SWARM' ? 0.5 : 0.9;
+    const minGap = stageType === 'SWARM' ? 0.4 : 0.7; // P1: ×~0.75
     t += Math.max(baseDelay * (0.85 - stage * 0.04), minGap);
   }
 
@@ -519,6 +559,24 @@ export class Game extends Scene {
 
     // RAPIDバフ（時間制限、グローバル）
     this._rapidTimer = 0; // >0 = アクティブ（秒カウントダウン）
+
+    // ---- $ エコノミー（P1: スコアと独立。ラン内のみ）----
+    this.money = 0;
+
+    // ---- 自動タレット（P1: $で購入、最大3。ラン内のみ・保存しない）----
+    this.turrets = []; // [{x,y,cooldown,level,flash,lastTx,lastTy}]
+
+    // ---- ライブショップ（P1: プレイ中に開ける下部ドロワー）----
+    this.shopOpen   = false;
+    this._shopSlide = 0; // 0..1 スライドアニメーション
+    this.shop = {
+      lv: 0,      // TURRET LV+ 購入回数（価格計算用）
+      reload: 0,  // RELOAD- 購入回数
+      radius: 0,  // RADIUS+ 購入回数
+      repair: 0,  // REPAIR CITY 購入回数
+    };
+    this._shopCdMult     = 1; // RELOAD- の累積（手動CDに乗算）
+    this._shopRadiusMult = 1; // RADIUS+ の累積（手動爆発半径に乗算）
   }
 
   _bigBtnRect() { return { x: W / 2 - 48, y: 44, w: 112, h: 28 }; }
@@ -533,7 +591,8 @@ export class Game extends Scene {
 
   _runRadiusMult() {
     const n = this.run ? (this.run.radius | 0) : 0;
-    return 1 + RUN_RADIUS_PER_STACK * n;
+    // ショップの RADIUS+（×1.1/購入）も手動爆発半径に乗算（タレット爆発は固定半径で対象外）
+    return (1 + RUN_RADIUS_PER_STACK * n) * (this._shopRadiusMult || 1);
   }
 
   _runMissileSpd() {
@@ -543,7 +602,8 @@ export class Game extends Scene {
 
   _runCooldown(base) {
     const n = this.run ? (this.run.cd | 0) : 0;
-    return Math.max(RUN_CD_MIN, base * Math.pow(RUN_CD_MULT, n));
+    // ショップの RELOAD-（×0.9/購入）も乗算。下限 RUN_CD_MIN は据え置き。
+    return Math.max(RUN_CD_MIN, base * Math.pow(RUN_CD_MULT, n) * (this._shopCdMult || 1));
   }
 
   // ---- 実効クールダウン：RAPID/ランCD補正の後に OVERDRIVE 半減を適用 ----
@@ -756,6 +816,24 @@ export class Game extends Scene {
     if (action === 'back') { this.engine.toMenu(); return; }
 
     if (action === 'tap' && data) {
+      // ---- ショップタブ（開閉トグル。閉時は最下端、開時はパネル上端に張り付く）----
+      const tr = this._shopTabRect();
+      if (data.x >= tr.x && data.x <= tr.x + tr.w && data.y >= tr.y && data.y <= tr.y + tr.h) {
+        this.shopOpen = !this.shopOpen;
+        this.engine.audio.select();
+        return;
+      }
+
+      // ---- ショップ開時：パネル内タップはボタンのみ、外タップは閉じる（発射しない）----
+      if (this.shopOpen) {
+        if (data.y >= H - SHOP_PANEL_H) {
+          this._shopTap(data.x, data.y);
+        } else {
+          this.shopOpen = false; // 閉じるタップではミサイルを撃たない
+        }
+        return;
+      }
+
       // BIGボタン
       const b = this._bigBtnRect();
       if (data.x >= b.x && data.x <= b.x + b.w && data.y >= b.y && data.y <= b.y + b.h) {
@@ -797,7 +875,8 @@ export class Game extends Scene {
   _fireMissile(tx, ty, big) {
     if (ty >= GROUND_Y) return;
     if (this._fireCooldown > 0) return;
-    const activeCount = this.missiles.filter(m => !m.done).length;
+    // タレットの自動ミサイルは手動の同時飛翔上限を消費しない
+    const activeCount = this.missiles.filter(m => !m.done && !m.auto).length;
     const cap = this._getMissileCap();
     if (activeCount >= cap) return;
 
@@ -881,6 +960,16 @@ export class Game extends Scene {
       this._rapidTimer = Math.max(0, this._rapidTimer - dt);
     }
 
+    // ショップドロワーのスライド（dtベース、0..1へ収束）
+    {
+      const target = this.shopOpen ? 1 : 0;
+      const step   = clamp(target - this._shopSlide, -dt * 6, dt * 6);
+      this._shopSlide = clamp(this._shopSlide + step, 0, 1);
+    }
+
+    // ---- 自動タレット（ゲームは止まらない＝ショップ開放中も発射する）----
+    this._updateTurrets(dt);
+
     // ステージクリアオーバーレイのタイマー（ゲームは止まらない）
     if (this._clearOverlay) {
       this._clearOverlay.timer -= dt;
@@ -935,7 +1024,9 @@ export class Game extends Scene {
       // 次ステージ開始
       const clearedStage = this._stage;
       // 都市＝資産：生存都市1つごとにボーナス（開幕で都市を捨てる戦略を無効化・P4 D1対策）
-      const aliveCities = this.cities.filter(Boolean).length;
+      // P1修正: filter(Boolean)は常に5を返すバグだったため alive を数える
+      //（REPAIR CITYで生存数が変わる経済と正しく連動させる）
+      const aliveCities = this.cities.filter(c => c && c.alive).length;
       const cityBonus   = CITY_CLEAR_BONUS * aliveCities;
       // OVERDRIVE（残り1都市）で耐え切ってクリアした時だけの一括報酬＝逆転設計
       const odBonus     = this.overdrive ? OVERDRIVE_CLEAR_BONUS : 0;
@@ -943,6 +1034,11 @@ export class Game extends Scene {
       this.score += bonus;
       if (cityBonus > 0) this._float(W / 2, H / 2 + 44, 'CITIES +' + cityBonus, p.mid, 12);
       if (odBonus > 0)   this._float(W / 2, H / 2 + 24, 'OVERDRIVE +' + odBonus, p.warn, 14);
+
+      // ---- $ ステージクリアボーナス（+10 + stage*2）----
+      const moneyBonus = 10 + clearedStage * 2;
+      this.money += moneyBonus;
+      this._float(W / 2, H / 2 + 84, '+' + moneyBonus + '$', p.green, 12);
 
       this._stage++;
       this._elapsed = 0;
@@ -971,6 +1067,9 @@ export class Game extends Scene {
       this._cityLostThisStage = false; // 次ステージ用にリセット
 
       // ---- 3択アップグレードカードを開く（開いている間ゲームプレイは凍結）----
+      // カード中はショップを閉じる（凍結中に開いたままにしない）
+      this.shopOpen   = false;
+      this._shopSlide = 0;
       const cards = this._pick3Upgrades();
       if (cards.length > 0) {
         this._cardChoice = { cards, t: 0, stage: clearedStage + 1, banishing: false, banishEarned };
@@ -1066,7 +1165,12 @@ export class Game extends Scene {
       const ddx = ms.tx - ms.x;
       const ddy = ms.ty - ms.y;
       if (Math.hypot(ddx, ddy) < (ms.spd || MISSILE_SPD) * dt * 1.5 + 4) {
-        this._spawnBlast(ms.tx, ms.ty, ms.big, false, ms.scatter, ms.cityIdx);
+        if (ms.auto) {
+          // タレット弾：固定小半径・バフ非適用・auto印付き爆発
+          this._spawnTurretBlast(ms.tx, ms.ty, ms.dmg || 1);
+        } else {
+          this._spawnBlast(ms.tx, ms.ty, ms.big, false, ms.scatter, ms.cityIdx);
+        }
         ms.done = true;
       }
     }
@@ -1117,20 +1221,27 @@ export class Game extends Scene {
           }
         }
         if (m.hp <= 0) {
-          // ---- コンボ更新（2秒ウィンドウ内の連続撃破。このキル自身も1カウント）----
-          this._comboTimer = COMBO_WINDOW;
-          this.combo = (this.combo | 0) + 1;
-          const comboMult = Math.min(1 + COMBO_SCORE_STEP * this.combo, COMBO_MULT_CAP);
+          // ---- タレットキル判定（コンボ/REROLLは手動専用、スコア半減、$は満額）----
+          const isAuto = !!b.auto;
 
-          // ---- REROLL獲得：コンボが10に「到達」した瞬間に+1（上限3）----
-          // ≥10 の間は再付与しない（_comboRewarded、コンボが0に戻るとリセット）。
-          // ボスのチャンク被弾はキルではないためコンボに乗らず、ここには来ない（仕様）。
-          if (this.combo >= REROLL_COMBO_THRESH && !this._comboRewarded) {
-            this._comboRewarded = true;
-            if (this.rerolls < REROLL_CAP) {
-              this.rerolls++;
-              this._float(W / 2, 78, 'REROLL +1', p.mid, 12);
-              this.engine.audio.select();
+          // ---- コンボ更新（2秒ウィンドウ内の連続撃破。このキル自身も1カウント）----
+          // タレットキルはコンボを加算しない＝コンボ倍率も乗らない（手動精密の経済を守る）
+          let comboMult = 1;
+          if (!isAuto) {
+            this._comboTimer = COMBO_WINDOW;
+            this.combo = (this.combo | 0) + 1;
+            comboMult = Math.min(1 + COMBO_SCORE_STEP * this.combo, COMBO_MULT_CAP);
+
+            // ---- REROLL獲得：コンボが10に「到達」した瞬間に+1（上限3）----
+            // ≥10 の間は再付与しない（_comboRewarded、コンボが0に戻るとリセット）。
+            // ボスのチャンク被弾はキルではないためコンボに乗らず、ここには来ない（仕様）。
+            if (this.combo >= REROLL_COMBO_THRESH && !this._comboRewarded) {
+              this._comboRewarded = true;
+              if (this.rerolls < REROLL_CAP) {
+                this.rerolls++;
+                this._float(W / 2, 78, 'REROLL +1', p.mid, 12);
+                this.engine.audio.select();
+              }
             }
           }
 
@@ -1138,8 +1249,9 @@ export class Game extends Scene {
             let gain = BOSS_SCORE_BASE * (this._stage + 1);
             // COIN: 撃破ボーナススコア
             if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
-            gain = Math.round(gain * comboMult);
+            gain = Math.round(gain * comboMult * (isAuto ? 0.5 : 1));
             this.score += gain;
+            this._addMoney(MONEY_BOSS, m.x + 20, m.y + 16);
             this._bossAlive = false;
             this._bossIdx   = -1;
             // ボス破壊演出
@@ -1149,7 +1261,7 @@ export class Game extends Scene {
             this._float(m.x, m.y, '+' + gain, p.warn, 22);
             // SHOCKWAVE: ボス撃破でも広域弱衝撃波（ダメージ1）
             if (this.run && this.run.shock > 0) {
-              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true);
+              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true, { auto: isAuto });
             }
             // ボス破壊音（壮大な降下音）
             this.engine.audio.sequence([
@@ -1166,19 +1278,39 @@ export class Game extends Scene {
             let gain = METEOR_SCORE_BASE * sizeBonus;
             // COIN: 撃破ごとにボーナススコア（+5/枚）
             if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
-            gain = Math.round(gain * comboMult);
+            gain = Math.round(gain * comboMult * (isAuto ? 0.5 : 1));
             this.score += gain;
             // 隕石の役割色（通常=赤/高速=明色/巨大=警告色）で撃破フロート
             const floatColor = m.fast ? p.hi : (m.r >= GIANT_R_THRESH ? p.warn : p.bad);
             this._float(m.x, m.y, '+' + gain, floatColor, 12);
-            // CHAIN: 撃破地点に小さな連鎖爆発（ダメージ1）
+            // ---- $ 獲得（小=1/中=2/巨大=4。タレットキルでも満額）----
+            const moneyGain = m.r >= GIANT_R_THRESH ? MONEY_GIANT
+              : (m.r >= LARGE_R_THRESH ? MONEY_MEDIUM : MONEY_SMALL);
+            this._addMoney(moneyGain, m.x + 16, m.y + 12);
+            // CHAIN: 撃破地点に小さな連鎖爆発（ダメージ1）— P1ハード抑制付き
+            // ・深度>=2の爆発によるキルは連鎖しない
+            // ・半径は深度ごとに×0.65減衰
+            // ・1ルート爆発あたり連鎖は合計3個まで（共有カウンタ b.chainBudget）
             // 新しい爆発は配列末尾に push され、この下方向ループでは今フレーム再訪しない（安全）
             if (this.run && this.run.chain > 0) {
-              this._spawnExtraBlast(m.x, m.y, CHAIN_BASE_R + CHAIN_R_PER_STACK * this.run.chain, 1, false);
+              const depth = b.chainDepth | 0;
+              if (depth < CHAIN_MAX_DEPTH) {
+                const budget = b.chainBudget || (b.chainBudget = { left: CHAIN_MAX_PER_ROOT });
+                if (budget.left > 0) {
+                  budget.left--;
+                  const baseR = CHAIN_BASE_R + CHAIN_R_PER_STACK * this.run.chain;
+                  const r     = baseR * Math.pow(CHAIN_R_DECAY, depth);
+                  this._spawnExtraBlast(m.x, m.y, r, 1, false, {
+                    chainDepth: depth + 1,
+                    chainBudget: budget,
+                    auto: isAuto,
+                  });
+                }
+              }
             }
-            // SHOCKWAVE: 巨大隕石（GIANT閾値以上）撃破で広域弱衝撃波（ダメージ1）
+            // SHOCKWAVE: 巨大隕石（GIANT閾値以上）撃破で広域弱衝撃波（ダメージ1）— 従来通り
             if (this.run && this.run.shock > 0 && m.r >= GIANT_R_THRESH) {
-              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true);
+              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true, { auto: isAuto });
             }
             this.engine.audio.good();
           }
@@ -1430,6 +1562,9 @@ export class Game extends Scene {
       this._rapidTimer = RAPID_DURATION;
     }
 
+    // ---- $ アイテム取得ボーナス ----
+    this._addMoney(MONEY_ITEM, m.x + 16, m.y + 12);
+
     // 取得音
     this.engine.audio.sequence([
       { freq: 880, dur: 0.06, type: 'square', vol: 0.16 },
@@ -1440,7 +1575,10 @@ export class Game extends Scene {
 
   // ---- 連鎖・衝撃波用の追加爆発（既存の爆発システムを再利用、音・散弾なし）----
   // maxR/damage をカスタム指定。都市バフやランのDMG+は適用しない（意図的に弱い）。
-  _spawnExtraBlast(x, y, maxR, damage, big) {
+  // opts: { chainDepth, chainBudget, auto } — CHAIN抑制の深度/共有カウンタと
+  // タレット由来フラグ（連鎖キルでもコンボ非加算・スコア半減を伝播させる）。
+  _spawnExtraBlast(x, y, maxR, damage, big, opts) {
+    const o = opts || {};
     this.blasts.push({
       x: clamp(x, 0, W),
       y: clamp(y, 0, GROUND_Y - 2),
@@ -1453,7 +1591,119 @@ export class Game extends Scene {
       damage: Math.max(1, damage | 0),
       isScatter: false,
       cityIdx: -1,
+      auto: !!o.auto,
+      chainDepth: o.chainDepth | 0,
+      chainBudget: o.chainBudget || null,
     });
+  }
+
+  // ---- タレット爆発（固定小半径・WIDE/ラン半径補正なし・auto印）----
+  _spawnTurretBlast(x, y, dmg) {
+    this.blasts.push({
+      x: clamp(x, 0, W),
+      y: clamp(y, 0, GROUND_Y - 2),
+      r: 3,
+      maxR: TURRET_BLAST_R,
+      growing: true,
+      fadeTimer: BLAST_FADE_SEC,
+      big: false,
+      id: _nextBlastId++,
+      damage: Math.max(1, dmg | 0),
+      isScatter: false,
+      cityIdx: -1,
+      auto: true,
+    });
+  }
+
+  // ---- $ 加算＋緑フロート（スコアフロートとずらした位置に出す）----
+  _addMoney(amount, fx, fy) {
+    const a = Math.max(0, amount | 0);
+    if (a <= 0) return;
+    this.money = (this.money | 0) + a;
+    if (fx != null && fy != null) {
+      this._float(clamp(fx, 10, W - 10), clamp(fy, 12, H - 12), '+' + a + '$', P().green, 10);
+    }
+  }
+
+  // ---- タレット：クールダウン（レベルごと-12%、下限0.8s）----
+  _turretCd(level) {
+    return Math.max(TURRET_CD_MIN, TURRET_CD_BASE * Math.pow(TURRET_CD_LEVEL_MULT, Math.max(0, (level | 0) - 1)));
+  }
+
+  // ---- タレット：ダメージ（1 + floor(level/3)）----
+  _turretDmg(level) {
+    return 1 + Math.floor((level | 0) / 3);
+  }
+
+  // ---- タレットAI：残り着地時間が最短の隕石を狙う ----
+  // 他タレットの飛翔中ミサイルが既に狙っている隕石は避ける（可能なら）。
+  // アイテム隕石は狙わない（取得判断はプレイヤーに残す）。
+  _turretPickTarget() {
+    const targeted = new Set();
+    for (const ms of this.missiles) {
+      if (ms && !ms.done && ms.auto && ms.targetSeed != null) targeted.add(ms.targetSeed);
+    }
+    let best = null,  bestT = Infinity;   // 全体の最短着地
+    let bestU = null, bestUT = Infinity;  // 未ターゲットの最短着地
+    for (const m of this.meteors) {
+      if (!m || m.isItem) continue;
+      const dist = Math.hypot(m.tx - m.x, m.ty - m.y);
+      const tta  = dist / Math.max(m.spd, 0.001); // time-to-ground
+      if (tta < bestT) { bestT = tta; best = m; }
+      if (!targeted.has(m.seed) && tta < bestUT) { bestUT = tta; bestU = m; }
+    }
+    return bestU || best;
+  }
+
+  // ---- タレット発射：線形リード＋照準ノイズ±12px ----
+  _turretFire(t, m) {
+    // 隕石の速度ベクトル（tx,tyへ向かって等速）
+    const dm  = Math.hypot(m.tx - m.x, m.ty - m.y);
+    const mvx = dm > 0 ? (m.tx - m.x) / dm * m.spd : 0;
+    const mvy = dm > 0 ? (m.ty - m.y) / dm * m.spd : 0;
+    // 飛翔時間の1次近似で迎撃点を推定
+    const ft = Math.hypot(m.x - t.x, m.y - t.y) / TURRET_MISSILE_SPD;
+    let ix = m.x + mvx * ft + (Math.random() * 2 - 1) * TURRET_AIM_NOISE;
+    let iy = m.y + mvy * ft + (Math.random() * 2 - 1) * TURRET_AIM_NOISE;
+    ix = clamp(ix, 4, W - 4);
+    iy = clamp(iy, 8, GROUND_Y - 8);
+    const dx = ix - t.x, dy = iy - t.y;
+    const d  = Math.hypot(dx, dy);
+    if (d < 1) return false;
+    this.missiles.push({
+      x: t.x, y: t.y,
+      tx: ix, ty: iy,
+      vx: dx / d * TURRET_MISSILE_SPD,
+      vy: dy / d * TURRET_MISSILE_SPD,
+      spd: TURRET_MISSILE_SPD,
+      done: false,
+      big: false,
+      scatter: false,
+      cityIdx: -1,
+      auto: true,             // タレット弾（手動上限を消費しない・爆発にauto伝播）
+      ox: t.x, oy: t.y,       // 描画用の発射元
+      dmg: this._turretDmg(t.level),
+      targetSeed: m.seed,     // 二重ターゲット回避用
+    });
+    t.flash  = 0.08;
+    t.lastTx = ix;
+    t.lastTy = iy;
+    return true;
+  }
+
+  // ---- タレット更新（自動発射）----
+  _updateTurrets(dt) {
+    if (!this.turrets || this.turrets.length === 0) return;
+    for (const t of this.turrets) {
+      if (!t) continue;
+      if (t.flash > 0) t.flash = Math.max(0, t.flash - dt);
+      t.cooldown -= dt;
+      if (t.cooldown > 0) continue;
+      const target = this._turretPickTarget();
+      if (!target) { t.cooldown = 0.12; continue; } // 標的なし：少し待って再走査
+      this._turretFire(t, target);
+      t.cooldown = this._turretCd(t.level);
+    }
   }
 
   // ---- 爆発スポーン ----
@@ -1550,6 +1800,309 @@ export class Game extends Scene {
     }
   }
 
+  // ================= ライブショップ（P1）=================
+
+  // ---- ショップタブ矩形（閉時=最下端、開閉アニメに追従してパネル上端に張り付く）----
+  _shopTabRect() {
+    const slide = this._shopSlide || 0;
+    return {
+      x: Math.floor(W / 2 - SHOP_TAB_W / 2),
+      y: Math.floor(H - SHOP_TAB_H - SHOP_PANEL_H * slide),
+      w: SHOP_TAB_W,
+      h: SHOP_TAB_H,
+    };
+  }
+
+  // ---- ショップ価格（購入回数でエスカレーション。買えない状態は null で示さず enabled で判定）----
+  _shopPrice(id) {
+    const s = this.shop || { lv: 0, reload: 0, radius: 0, repair: 0 };
+    switch (id) {
+      case 'turret': {
+        const n = this.turrets ? this.turrets.length : 0;
+        return SHOP_TURRET_PRICES[Math.min(n, SHOP_TURRET_PRICES.length - 1)];
+      }
+      case 'tlv':    return Math.round(SHOP_TLV_BASE * (1 + 0.6 * s.lv));
+      case 'reload': return Math.round(SHOP_RELOAD_BASE * Math.pow(1.6, s.reload));
+      case 'radius': return Math.round(SHOP_RADIUS_BASE * Math.pow(1.6, s.radius));
+      case 'big':    return SHOP_BIG_PRICE;
+      case 'repair': return Math.round(SHOP_REPAIR_BASE * Math.pow(1.8, s.repair));
+    }
+    return 999999;
+  }
+
+  // ---- ショップ項目一覧（2列×3行。enabled=前提条件、afford=残金）----
+  _shopItems() {
+    const deadCity = this.cities.some(c => c && !c.alive);
+    const defs = [
+      { id: 'turret', name: 'AUTO TURRET', enabled: this.turrets.length < TURRET_MAX },
+      { id: 'tlv',    name: 'TURRET LV+',  enabled: this.turrets.length > 0 },
+      { id: 'reload', name: 'RELOAD-',     enabled: true },
+      { id: 'radius', name: 'RADIUS+',     enabled: true },
+      { id: 'big',    name: 'BIG CHARGE',  enabled: this._bigCharges < BIG_CHARGES_MAX },
+      { id: 'repair', name: 'REPAIR CITY', enabled: deadCity },
+    ];
+    for (const d of defs) {
+      d.price  = this._shopPrice(d.id);
+      d.afford = d.enabled && this.money >= d.price;
+    }
+    return defs;
+  }
+
+  // ---- ショップボタン矩形（パネル全開位置基準。col:0-1, row:0-2）----
+  _shopBtnRect(col, row) {
+    const panelY = H - SHOP_PANEL_H;
+    const bw = Math.floor((W - 24) / 2); // 8 + bw + 8 + bw + 8
+    const bh = 42;
+    return {
+      x: 8 + col * (bw + 8),
+      y: panelY + 26 + row * (bh + 7),
+      w: bw,
+      h: bh,
+    };
+  }
+
+  // ---- ショップパネル内タップ処理（ボタン外のパネル領域は何もしない＝閉じない）----
+  _shopTap(x, y) {
+    const items = this._shopItems();
+    for (let i = 0; i < items.length; i++) {
+      const r = this._shopBtnRect(i % 2, Math.floor(i / 2));
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        this._shopBuy(items[i], r);
+        return;
+      }
+    }
+  }
+
+  // ---- 購入適用（即時反映）----
+  _shopBuy(item, btnRect) {
+    if (!item || !item.enabled) return;
+    if (this.money < item.price) {
+      // 買えない：無反応（dim表示が既にヒントになっている）
+      return;
+    }
+    const fx = btnRect ? btnRect.x + btnRect.w / 2 : W / 2;
+    const fy = btnRect ? btnRect.y - 4 : H - SHOP_PANEL_H - 10;
+    const p  = P();
+
+    switch (item.id) {
+      case 'turret': {
+        if (this.turrets.length >= TURRET_MAX) return;
+        const idx = this.turrets.length;
+        this.money -= item.price;
+        this.turrets.push({
+          x: TURRET_XS[idx], y: TURRET_Y,
+          cooldown: 0.5, level: 1,
+          flash: 0, lastTx: TURRET_XS[idx], lastTy: TURRET_Y - 30,
+        });
+        this._float(TURRET_XS[idx], TURRET_Y - 16, 'TURRET ONLINE', p.mid, 11);
+        this.engine.audio.good();
+        return;
+      }
+      case 'tlv': {
+        if (this.turrets.length === 0) return;
+        this.money -= item.price;
+        this.shop.lv++;
+        for (const t of this.turrets) if (t) t.level++;
+        this._float(fx, fy, 'TURRET LV+', p.mid, 11);
+        this.engine.audio.good();
+        return;
+      }
+      case 'reload': {
+        this.money -= item.price;
+        this.shop.reload++;
+        this._shopCdMult *= 0.9;
+        this._float(fx, fy, 'RELOAD-', p.mid, 11);
+        this.engine.audio.select();
+        return;
+      }
+      case 'radius': {
+        this.money -= item.price;
+        this.shop.radius++;
+        this._shopRadiusMult *= 1.1;
+        this._float(fx, fy, 'RADIUS+', p.mid, 11);
+        this.engine.audio.select();
+        return;
+      }
+      case 'big': {
+        if (this._bigCharges >= BIG_CHARGES_MAX) return;
+        this.money -= item.price;
+        this._bigCharges = Math.min(BIG_CHARGES_MAX, this._bigCharges + 1);
+        this._float(fx, fy, 'BIG +1', p.warn, 11);
+        this.engine.audio.select();
+        return;
+      }
+      case 'repair': {
+        // 最初の破壊都市を復旧（価格は共通なので左から＝最安と同義）
+        let idx = -1;
+        for (let i = 0; i < CITY_COUNT; i++) {
+          if (this.cities[i] && !this.cities[i].alive) { idx = i; break; }
+        }
+        if (idx < 0) return;
+        this.money -= item.price;
+        this.shop.repair++;
+        this.cities[idx].alive = true;
+        this.cities[idx].buffs = makeCityBuffs();
+        // 復旧フラッシュ（緑の小爆発リング＋フロート）
+        this.cityBlasts.push({
+          x: CITY_XS[idx] + CITY_W / 2,
+          y: GROUND_Y - CITY_H / 2,
+          r: 4, t: 0.55,
+          color: p.green,
+        });
+        this._float(CITY_XS[idx] + CITY_W / 2, GROUND_Y - CITY_H - 12, 'REBUILT', p.green, 12);
+        // OVERDRIVE中に復旧すると生存数2で自然に解除される（update内で毎フレーム再計算）
+        this.engine.audio.good();
+        return;
+      }
+    }
+  }
+
+  // ---- ショップ描画（タブ＋スライドパネル。カード選択中と死亡時は呼ばれない）----
+  _drawShop(ctx, p) {
+    const slide = this._shopSlide || 0;
+    const tr = this._shopTabRect();
+
+    // ---- パネル（slide>0で下からスライドイン）----
+    if (slide > 0.01) {
+      const offset = SHOP_PANEL_H * (1 - slide); // 全開時0
+      ctx.save();
+      ctx.translate(0, offset);
+      const panelY = H - SHOP_PANEL_H;
+
+      // 背景
+      ctx.globalAlpha = 0.94;
+      ctx.fillStyle = p.dark;
+      ctx.fillRect(0, panelY, W, SHOP_PANEL_H);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = p.dim;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, panelY);
+      ctx.lineTo(W, panelY);
+      ctx.stroke();
+
+      // ヘッダ：SHOP + 残金
+      this.engine.text('SHOP', 10, panelY + 6, 13, p.mid, 'left');
+      this.engine.text('$' + this.money, W - 10, panelY + 6, 13, p.green, 'right');
+
+      // ボタン 2列×3行
+      const items = this._shopItems();
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const r  = this._shopBtnRect(i % 2, Math.floor(i / 2));
+        const usable = it.afford;
+        const col = usable ? p.mid : p.dim;
+        const cut = 5;
+
+        ctx.save();
+        ctx.globalAlpha = it.enabled ? (usable ? 1 : 0.6) : 0.3;
+        // 角落としフレーム
+        ctx.beginPath();
+        ctx.moveTo(r.x + cut, r.y);
+        ctx.lineTo(r.x + r.w - cut, r.y);
+        ctx.lineTo(r.x + r.w, r.y + cut);
+        ctx.lineTo(r.x + r.w, r.y + r.h - cut);
+        ctx.lineTo(r.x + r.w - cut, r.y + r.h);
+        ctx.lineTo(r.x + cut, r.y + r.h);
+        ctx.lineTo(r.x, r.y + r.h - cut);
+        ctx.lineTo(r.x, r.y + cut);
+        ctx.closePath();
+        ctx.fillStyle = p.bg;
+        ctx.fill();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // 名前＋価格（価格は緑）
+        this.engine.text(it.name, r.x + 8, r.y + 5, 12, usable ? p.fg : p.dim, 'left');
+        this.engine.text('$' + it.price, r.x + 8, r.y + 22, 12, usable ? p.green : p.dim, 'left');
+
+        // 補助表示（所持数・状態）
+        let sub = '';
+        if (it.id === 'turret') sub = this.turrets.length + '/' + TURRET_MAX;
+        else if (it.id === 'tlv' && this.turrets.length > 0) sub = 'Lv' + this.turrets[0].level;
+        else if (it.id === 'big') sub = this._bigCharges + '/' + BIG_CHARGES_MAX;
+        if (sub) this.engine.text(sub, r.x + r.w - 8, r.y + 22, 11, p.dim, 'right');
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // ---- タブ（常時表示。'▲/▼ SHOP $n'）----
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(tr.x, tr.y, tr.w, tr.h);
+    ctx.strokeStyle = this.shopOpen ? p.mid : p.dim;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tr.x, tr.y, tr.w, tr.h);
+    ctx.restore();
+    const arrow = this.shopOpen ? '▼' : '▲';
+    this.engine.text(arrow + ' SHOP ', tr.x + tr.w / 2 - 18, tr.y + 3, 11, this.shopOpen ? p.mid : p.fg, 'center');
+    this.engine.text('$' + this.money, tr.x + tr.w / 2 + 26, tr.y + 3, 11, p.green, 'center');
+  }
+
+  // ---- タレットポッド描画（ネオンアウトライン六角＋CDアーク＋マズルフラッシュ）----
+  _drawTurrets(ctx, p) {
+    if (!this.turrets || this.turrets.length === 0) return;
+    for (const t of this.turrets) {
+      if (!t) continue;
+      ctx.save();
+
+      // 六角ポッド（アウトラインのみ）
+      const r = 7;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 6 + (i / 6) * Math.PI * 2;
+        const hx = t.x + Math.cos(a) * r;
+        const hy = t.y + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = p.mid;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      // 中心の銃身ドット
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = p.mid;
+      ctx.fill();
+
+      // クールダウンアーク（リロード進行。満充填時は非表示）
+      const cdMax = this._turretCd(t.level);
+      const frac  = clamp(1 - t.cooldown / cdMax, 0, 1);
+      if (frac < 1) {
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, r + 3.5, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+        ctx.strokeStyle = p.dim;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
+      // マズルフラッシュ（発射直後の短い線）
+      if (t.flash > 0 && t.lastTx != null) {
+        const fa = clamp(t.flash / 0.08, 0, 1);
+        const dx = t.lastTx - t.x, dy = t.lastTy - t.y;
+        const d  = Math.hypot(dx, dy) || 1;
+        ctx.globalAlpha = fa;
+        ctx.strokeStyle = p.hi;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(t.x + dx / d * (r + 1), t.y + dy / d * (r + 1));
+        ctx.lineTo(t.x + dx / d * (r + 13), t.y + dy / d * (r + 13));
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // レベル表示（Lv2以上のみ小さく）
+      if (t.level > 1) {
+        this.engine.text('L' + t.level, t.x, t.y + r + 3, 8, p.dim, 'center');
+      }
+      ctx.restore();
+    }
+  }
+
   // ---- render ----
   render(ctx) {
     const p = P();
@@ -1586,14 +2139,17 @@ export class Game extends Scene {
       this._drawCity(ctx, p, i);
     }
 
-    // ---- 都市爆発エフェクト ----
+    // ---- 自動タレットポッド ----
+    this._drawTurrets(ctx, p);
+
+    // ---- 都市爆発エフェクト（REPAIR復旧フラッシュは緑）----
     for (const cb of this.cityBlasts) {
       if (!cb) continue;
       ctx.save();
       ctx.globalAlpha = clamp(cb.t / 0.7, 0, 1) * 0.9;
       ctx.beginPath();
       ctx.arc(cb.x, cb.y, Math.max(1, cb.r), 0, Math.PI * 2);
-      ctx.fillStyle = p.bad;
+      ctx.fillStyle = cb.color || p.bad;
       ctx.fill();
       ctx.restore();
     }
@@ -1601,11 +2157,17 @@ export class Game extends Scene {
     // ---- ミサイル ----
     for (const ms of this.missiles) {
       if (!ms || ms.done) continue;
-      const launchX = CITY_XS[ms.cityIdx] + CITY_W / 2;
-      const launchY = GROUND_Y - CITY_H;
+      // タレット弾は発射元ポッド座標・細く暗い描画（手動弾との視覚差別化）
+      const launchX = ms.auto ? ms.ox : CITY_XS[ms.cityIdx] + CITY_W / 2;
+      const launchY = ms.auto ? ms.oy : GROUND_Y - CITY_H;
       ctx.save();
-      ctx.strokeStyle = ms.big ? p.warn : (ms.scatter ? p.hi : p.fg);
-      ctx.lineWidth   = ms.big ? 2.5 : 1.5;
+      if (ms.auto) {
+        ctx.strokeStyle = p.dim;
+        ctx.lineWidth   = 1;
+      } else {
+        ctx.strokeStyle = ms.big ? p.warn : (ms.scatter ? p.hi : p.fg);
+        ctx.lineWidth   = ms.big ? 2.5 : 1.5;
+      }
       ctx.setLineDash(ms.big ? [6, 3] : (ms.scatter ? [3, 2] : []));
       ctx.beginPath();
       ctx.moveTo(launchX, launchY);
@@ -1613,8 +2175,8 @@ export class Game extends Scene {
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.arc(ms.x, ms.y, ms.big ? 4 : (ms.scatter ? 3 : 2.5), 0, Math.PI * 2);
-      ctx.fillStyle = ms.big ? p.warn : (ms.scatter ? p.hi : p.fg);
+      ctx.arc(ms.x, ms.y, ms.auto ? 2 : (ms.big ? 4 : (ms.scatter ? 3 : 2.5)), 0, Math.PI * 2);
+      ctx.fillStyle = ms.auto ? p.mid : (ms.big ? p.warn : (ms.scatter ? p.hi : p.fg));
       ctx.fill();
       ctx.restore();
     }
@@ -1793,6 +2355,11 @@ export class Game extends Scene {
       this.engine.text('BONUS +' + this._clearOverlay.bonus, W / 2, H / 2 - 16, 18, p.hi,   'center');
       this.engine.text('STAGE ' + (this._stage + 1) + ': ' + this._stageType, W / 2, H / 2 + 18, 14, p.mid, 'center');
       ctx.restore();
+    }
+
+    // ---- ライブショップ（タブ＋ドロワー。死亡時・カード選択中は非表示）----
+    if (!this.dead && !this._cardChoice) {
+      this._drawShop(ctx, p);
     }
 
     // ---- ゲームオーバーオーバーレイ ----
@@ -2158,6 +2725,11 @@ export class Game extends Scene {
     const aliveCount = this.cities.filter(c => c.alive).length;
     this._drawIconHouse(ctx, cityX, rowY + 13, 11, p.warn);
     this.engine.text(String(aliveCount), cityX + 16, rowY + 2, 14, p.warn, 'left');
+
+    // ---- 中央右：$（緑ダイヤ＋残金）----
+    const moneyX = cityX + 42;
+    this._drawIconDiamond(ctx, moneyX, rowY + 9, 5, p.green);
+    this.engine.text('$' + (this.money | 0), moneyX + 10, rowY + 2, 13, p.green, 'left');
 
     // ---- 右：スコア（ダイヤアイコン＋スコア、右寄せ）／その下に小さくBEST ----
     const scoreStr = 'SCORE ' + this.score;
