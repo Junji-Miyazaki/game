@@ -307,50 +307,52 @@ const CITY_XS = Array.from({ length: CITY_COUNT }, (_, i) =>
   Math.floor(CITY_SPACING + i * (CITY_W + CITY_SPACING))
 );
 
-// ---- 都市のシルエットポリゴン生成（山と街並み）----
-// 都市ごとに固定シードで生成、毎フレーム生成しないよう事前作成
+// ---- 背景の星（明滅ツインクル用の事前生成配列）----
+// enter() で1回だけ生成（毎フレーム生成しない）。alphaは render 側で sin 振動させる。
+const STAR_COUNT = 46;
+function makeStarfield() {
+  const stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * (GROUND_Y - 4),
+      r: 0.6 + Math.random() * 1.5,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.6 + Math.random() * 1.4,
+      baseA: 0.35 + Math.random() * 0.45,
+    });
+  }
+  return stars;
+}
+
+// ---- 都市のシルエット生成（ネオン・シティスカイライン）----
+// 都市ごとに固定シードでビル矩形クラスタ＋点灯窓を生成。毎フレーム生成しないよう
+// 事前作成する（都市ローカル座標、左上=0,0、右下=CITY_W,CITY_H）。
 function makeCityProfile(idx) {
-  // 山のシルエット + 街並みの屋根ライン（W=CITY_W, H=CITY_H）
-  // 返り値: [{x,y}] のポリゴン（都市ローカル座標、左下=0,CITY_H、右下=CITY_W,CITY_H）
   const seed = idx * 137 + 29;
-  const pts  = [];
-
-  // 地面の左端
-  pts.push({ x: 0, y: CITY_H });
-
-  // 左の山稜
-  const mh1 = 10 + (seed % 5);       // 山の高さ
-  pts.push({ x: 0, y: CITY_H - mh1 });
-  pts.push({ x: 4 + (seed % 3), y: CITY_H - mh1 - 3 });
-
-  // 中央ビルA（背の高い）
-  const bw1 = 5; const bh1 = 14 + ((seed * 7) % 5);
-  const bx1 = 5 + (seed % 3);
-  pts.push({ x: bx1, y: CITY_H - mh1 });
-  pts.push({ x: bx1, y: CITY_H - bh1 });
-  pts.push({ x: bx1 + bw1, y: CITY_H - bh1 });
-
-  // アンテナ塔（細い）
-  const tx = bx1 + Math.floor(bw1 / 2);
-  pts.push({ x: tx, y: CITY_H - bh1 - 4 });
-  pts.push({ x: tx, y: CITY_H - bh1 });
-
-  // 隣の小さいビルB
-  const bx2 = bx1 + bw1 + 1;
-  const bh2 = 8 + ((seed * 3) % 4);
-  pts.push({ x: bx2, y: CITY_H - bh2 });
-  pts.push({ x: bx2 + 4, y: CITY_H - bh2 });
-
-  // 右寄りの山稜
-  const mh2 = 7 + ((seed * 11) % 5);
-  pts.push({ x: CITY_W - 5, y: CITY_H - mh2 });
-  pts.push({ x: CITY_W - 2, y: CITY_H - mh2 - 5 });
-  pts.push({ x: CITY_W, y: CITY_H - mh2 });
-
-  // 地面右端
-  pts.push({ x: CITY_W, y: CITY_H });
-
-  return pts;
+  const n    = 3 + (seed % 2); // 3〜4棟のビルクラスタ
+  const pad  = 2;
+  const totalW = CITY_W - pad * 2;
+  const bw = totalW / n;
+  const buildings = [];
+  for (let i = 0; i < n; i++) {
+    const hSeed = (seed * 7 + i * 13 + i * i * 5) % (CITY_H - 6);
+    const h = 7 + hSeed;
+    buildings.push({
+      x: pad + i * bw,
+      y: CITY_H - h,
+      w: Math.max(3, bw - 2),
+      h,
+    });
+  }
+  // 点灯窓：1〜2棟の頂部近くに小さな輝点
+  const windows = [];
+  const wCount = 1 + (seed % 2);
+  for (let i = 0; i < wCount; i++) {
+    const b = buildings[(seed + i * 5) % buildings.length];
+    windows.push({ x: b.x + b.w * 0.5, y: b.y + Math.min(5, b.h * 0.35) });
+  }
+  return { buildings, windows };
 }
 
 // 都市プロファイルを事前生成
@@ -379,38 +381,16 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
-// ---- コース・ピクセルスペックル爆発（Missile Command 風）----
-// フラットな赤雲・XOR合成・月輪リムを廃止し、
-// 大きな正方形セル（~8px）を高速カラーサイクルで埋めるスペックルで置換。
-// セル色は毎1〜2フレームごとにランダム化されフラッシュ白に見える。
-// 円境界は大セルのブロックエッジで自然にガタガタになる（狙い通り）。
+// ---- ネオン・ブラストポップ（Falltopia / The Tower 風）----
+// 塗りつぶしスペックル方式（大セル色サイクル）を廃止し、拡張する薄いリング＋
+// 飛散パーティクル＋一瞬の明るいコアフラッシュに置き換える。
+// RADIUS/DAMAGE等の判定は既存の blast.r / blast.maxR / blast.growing / blast.fadeTimer
+// をそのまま使うため不変（描画だけが変わる）。色は blast.kind（描画専用フィールド：
+// 'manual'|'big'|'chain'|'shock'|'turret'）で決める。
 
-// スペックル色セット：ビビッド多色 + 約28%をブラック（ネガティブ）
-const _SPECKLE_COLORS = [
-  '#ffffff', // 白（最も多く出ることで「フラッシュ白」に見える）
-  '#ffffff',
-  '#ffffff',
-  '#00ff88', // 輝くグリーン
-  '#ff00ff', // マゼンタ
-  '#00ffff', // シアン
-  '#ffff00', // 黄
-  '#ff4400', // 赤オレンジ
-  '#ff9900', // オレンジ
-  '#4466ff', // ブルー
-  '#000000', // ブラック（ネガティブ）
-  '#000000', // ブラック
-  '#000000', // ブラック（全14色中3色 ≒ 21%、白3+ブラック3=43%でコントラスト）
-  '#ffffff',
-];
-const _SPECKLE_COLOR_COUNT = _SPECKLE_COLORS.length; // 14
-
-// セルサイズ（論理px）— 大きいほどブロッキーでレトロらしい
-const _CELL = 8;
-
-// 高速シードPRNG（xorshift32相当の整数ハッシュ）
-// 引数はすべて整数化済みと仮定。戻り値 0〜1 の float。
+// 高速シードPRNG（xorshift32相当の整数ハッシュ）。パーティクルの角度/速度を
+// 配列を持たず毎フレーム決定論的に算出するために使う（GC負荷なし）。
 function _speckleRand(cx, cy, blastId, tick) {
-  // Wang hash 風のビット混合
   let h = (cx * 2246822519) ^ (cy * 3266489917) ^ (blastId * 668265263) ^ (tick * 374761393);
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
@@ -418,11 +398,23 @@ function _speckleRand(cx, cy, blastId, tick) {
   return (h & 0xffff) / 0x10000; // 0〜0.9999...
 }
 
-// 全爆発をスペックルで描画（source-over のみ、XOR合成なし）
-// mainCtx: メインCanvas2Dコンテキスト（論理座標系）
-// blasts: アクティブ爆発オブジェクト配列
-// frameCount: インクリメントカウンタ（色フリッカー用、1フレームおきに更新）
-function drawAllBlastsSpeckle(mainCtx, blasts, frameCount) {
+// 爆発の種別→色（役割色）。kindが無い（旧データ・保険）場合は通常=シアン。
+function _blastColor(b, p) {
+  switch (b.kind) {
+    case 'big':    return p.warn;   // BIGブラスト＝琥珀の二重リング
+    case 'shock':  return p.violet; // SHOCKWAVE＝紫のリング
+    case 'chain':  return p.pink;   // CHAIN連鎖＝マゼンタ
+    case 'turret': return p.mid;    // 自動タレット＝控えめなシアン
+    default:       return p.mid;    // 手動ミサイル＝シアン
+  }
+}
+
+// 全爆発をネオンポップで描画（source-over のみ）。
+// mainCtx: メインCanvas2Dコンテキスト（論理座標系）。blasts: アクティブ爆発配列。p: パレット。
+function drawAllBlastsSpeckle(mainCtx, blasts, p) {
+  // 同時多発時の負荷対策：多すぎる場合はグローを省略（リング自体は必ず描く）
+  const glowOK = blasts.length <= 20;
+
   for (const b of blasts) {
     if (!b) continue;
     const r = Math.max(1, b.r);
@@ -432,41 +424,57 @@ function drawAllBlastsSpeckle(mainCtx, blasts, frameCount) {
       : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
     if (alpha <= 0) continue;
 
-    const bx = b.x;
-    const by = b.y;
-    const id = b.id | 0;
-
-    // ★全面を1色で塗る。フレームごとに色を高速サイクルさせ、爆発の「全面」が
-    //   白・カラフル・黒(ネガ)と明滅する。ドット単位ではなく面全体が点滅する。
-    const cidx = (_speckleRand(id, 7, 13, frameCount) * _SPECKLE_COLOR_COUNT) | 0;
-    const fillCol = _SPECKLE_COLORS[cidx];
-
-    // グリッドをブラスト中心から±r の矩形に限定（粗いセルで縁をガタガタに）
-    const x0 = Math.floor((bx - r) / _CELL);
-    const x1 = Math.ceil ((bx + r) / _CELL);
-    const y0 = Math.floor((by - r) / _CELL);
-    const y1 = Math.ceil ((by + r) / _CELL);
+    const color = _blastColor(b, p);
+    const dim   = b.kind === 'turret'; // 自動タレット弾は控えめな明度
+    const age   = b.age || 0;
 
     mainCtx.save();
     mainCtx.globalCompositeOperation = 'source-over';
-    mainCtx.globalAlpha = clamp(alpha, 0, 1);
-    mainCtx.fillStyle = fillCol;
 
-    for (let gy = y0; gy <= y1; gy++) {
-      const cy = gy * _CELL + _CELL * 0.5;
-      const dy = cy - by;
+    // ---- 拡張する薄いリング ----
+    mainCtx.globalAlpha = clamp(alpha * (dim ? 0.55 : 1), 0, 1);
+    mainCtx.strokeStyle = color;
+    mainCtx.lineWidth = b.kind === 'big' ? 2.6 : (dim ? 1.2 : 1.7);
+    if (glowOK) {
+      mainCtx.shadowBlur  = dim ? 4 : (b.kind === 'big' ? 12 : 8);
+      mainCtx.shadowColor = color;
+    }
+    mainCtx.beginPath();
+    mainCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    mainCtx.stroke();
 
-      for (let gx = x0; gx <= x1; gx++) {
-        const cx = gx * _CELL + _CELL * 0.5;
-        const dx = cx - bx;
+    // BIGブラストは二重リング（内側にもう一本、amber×2）
+    if (b.kind === 'big') {
+      mainCtx.globalAlpha = clamp(alpha * 0.55, 0, 1);
+      mainCtx.lineWidth = 1.4;
+      mainCtx.beginPath();
+      mainCtx.arc(b.x, b.y, Math.max(1, r * 0.68), 0, Math.PI * 2);
+      mainCtx.stroke();
+    }
+    mainCtx.shadowBlur = 0;
 
-        // セルごとに半径ジッターでエッジを粗く（綺麗な円にしない）
-        const jitter = 0.88 + 0.22 * _speckleRand(gx * 7 + 3, gy * 5 + 1, id, 0);
-        const effectiveR = r * jitter;
-        if (dx * dx + dy * dy > effectiveR * effectiveR) continue;
+    // ---- 明るいコアフラッシュ（発生直後の数フレームのみ） ----
+    if (age < 0.07) {
+      mainCtx.globalAlpha = clamp(alpha * (1 - age / 0.07), 0, 1);
+      mainCtx.fillStyle = '#ffffff';
+      mainCtx.beginPath();
+      mainCtx.arc(b.x, b.y, Math.max(2, r * 0.35), 0, Math.PI * 2);
+      mainCtx.fill();
+    }
 
-        mainCtx.fillRect(gx * _CELL, gy * _CELL, _CELL, _CELL);
-      }
+    // ---- 飛散パーティクル（決定論的な角度/速度で外へ流れフェード） ----
+    const pCount = dim ? 5 : (b.kind === 'big' ? 10 : 7);
+    mainCtx.fillStyle = color;
+    for (let i = 0; i < pCount; i++) {
+      const ang  = _speckleRand(b.id, i, 91, 0) * Math.PI * 2;
+      const spd  = 36 + _speckleRand(b.id, i, 173, 1) * 70;
+      const dist = spd * age;
+      const pAlpha = clamp(alpha * (1 - age / (BLAST_FADE_SEC * 0.7)), 0, 1) * (dim ? 0.6 : 1);
+      if (pAlpha <= 0) continue;
+      mainCtx.globalAlpha = pAlpha;
+      mainCtx.beginPath();
+      mainCtx.arc(b.x + Math.cos(ang) * dist, b.y + Math.sin(ang) * dist, 1.4, 0, Math.PI * 2);
+      mainCtx.fill();
     }
 
     mainCtx.restore();
@@ -485,6 +493,9 @@ export class Game extends Scene {
 
     this._elapsed    = 0;
     this._frameCount = 0; // フリッカー・アニメーション用フレームカウンタ
+
+    // 背景の明滅する星（事前生成、毎フレーム生成しない）
+    this._stars = makeStarfield();
 
     // ステージ
     this._stage         = 0;
@@ -1179,6 +1190,9 @@ export class Game extends Scene {
     for (let i = this.blasts.length - 1; i >= 0; i--) {
       const b = this.blasts[i];
       if (!b) { this.blasts.splice(i, 1); continue; }
+      // 描画専用：発生からの経過秒（ネオンポップのパーティクル/コアフラッシュ寿命に使用。
+      // ダメージ・半径・タイミング判定には一切使わない）
+      b.age = (b.age || 0) + dt;
 
       if (b.growing) {
         b.r += BLAST_GROW_RATE * dt;
@@ -1594,6 +1608,9 @@ export class Game extends Scene {
       auto: !!o.auto,
       chainDepth: o.chainDepth | 0,
       chainBudget: o.chainBudget || null,
+      // 描画専用：CHAIN=マゼンタ／SHOCKWAVE=紫（big=trueで呼ばれるのはSHOCKWAVEのみ）
+      kind: o.kind || (big ? 'shock' : 'chain'),
+      age: 0,
     });
   }
 
@@ -1612,6 +1629,8 @@ export class Game extends Scene {
       isScatter: false,
       cityIdx: -1,
       auto: true,
+      kind: 'turret', // 描画専用：控えめなシアン
+      age: 0,
     });
   }
 
@@ -1734,6 +1753,8 @@ export class Game extends Scene {
       damage: dmg,
       isScatter: !!isScatter,
       cityIdx: cityIdx >= 0 ? cityIdx : -1,
+      kind: big ? 'big' : 'manual', // 描画専用：手動=シアン／BIG=琥珀二重リング
+      age: 0,
     });
 
     if (!isScatter) {
@@ -1776,11 +1797,12 @@ export class Game extends Scene {
         this.run.shield--;
         this.engine.audio.select();
         this._float(floatX, floatY, 'SHIELD', P().mid, 11);
-        // シールド発動の小フラッシュ（都市爆発エフェクトを弱く流用）
+        // シールド発動の小フラッシュ（都市爆発エフェクトを弱く流用、色はシアン）
         this.cityBlasts.push({
           x: CITY_XS[bestIdx] + CITY_W / 2,
           y: GROUND_Y - CITY_H / 2,
           r: 6, t: 0.3,
+          color: P().mid,
         });
         return;
       }
@@ -1970,7 +1992,7 @@ export class Game extends Scene {
       const panelY = H - SHOP_PANEL_H;
 
       // 背景
-      ctx.globalAlpha = 0.94;
+      ctx.globalAlpha = 0.92;
       ctx.fillStyle = p.dark;
       ctx.fillRect(0, panelY, W, SHOP_PANEL_H);
       ctx.globalAlpha = 1;
@@ -2011,7 +2033,9 @@ export class Game extends Scene {
         ctx.fill();
         ctx.strokeStyle = col;
         ctx.lineWidth = 1.2;
+        if (usable) { ctx.shadowBlur = 5; ctx.shadowColor = col; } // 購入可能な項目は淡く発光
         ctx.stroke();
+        ctx.shadowBlur = 0;
 
         // 名前＋価格（価格は緑）
         this.engine.text(it.name, r.x + 8, r.y + 5, 12, usable ? p.fg : p.dim, 'left');
@@ -2049,7 +2073,7 @@ export class Game extends Scene {
       if (!t) continue;
       ctx.save();
 
-      // 六角ポッド（アウトラインのみ）
+      // 六角ポッド（アウトライン＋淡いネオングロー）
       const r = 7;
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
@@ -2061,7 +2085,10 @@ export class Game extends Scene {
       ctx.closePath();
       ctx.strokeStyle = p.mid;
       ctx.lineWidth = 1.4;
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = p.mid;
       ctx.stroke();
+      ctx.shadowBlur = 0;
 
       // 中心の銃身ドット
       ctx.beginPath();
@@ -2069,29 +2096,49 @@ export class Game extends Scene {
       ctx.fillStyle = p.mid;
       ctx.fill();
 
-      // クールダウンアーク（リロード進行。満充填時は非表示）
+      // 照準バレルライン（直前の狙点方向へ、控えめな発光の常設線）
+      if (t.lastTx != null) {
+        const bdx = t.lastTx - t.x, bdy = t.lastTy - t.y;
+        const bd  = Math.hypot(bdx, bdy) || 1;
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = p.mid;
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.moveTo(t.x + bdx / bd * (r + 1), t.y + bdy / bd * (r + 1));
+        ctx.lineTo(t.x + bdx / bd * (r + 6), t.y + bdy / bd * (r + 6));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // クールダウンアーク（リロード進行。満充填時は非表示、シアンで統一）
       const cdMax = this._turretCd(t.level);
       const frac  = clamp(1 - t.cooldown / cdMax, 0, 1);
       if (frac < 1) {
         ctx.beginPath();
         ctx.arc(t.x, t.y, r + 3.5, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-        ctx.strokeStyle = p.dim;
+        ctx.strokeStyle = p.mid;
+        ctx.globalAlpha = 0.55;
         ctx.lineWidth = 1.2;
         ctx.stroke();
+        ctx.globalAlpha = 1;
       }
 
-      // マズルフラッシュ（発射直後の短い線）
+      // マズルフラッシュ（発射直後の短く明るい線）
       if (t.flash > 0 && t.lastTx != null) {
         const fa = clamp(t.flash / 0.08, 0, 1);
         const dx = t.lastTx - t.x, dy = t.lastTy - t.y;
         const d  = Math.hypot(dx, dy) || 1;
         ctx.globalAlpha = fa;
         ctx.strokeStyle = p.hi;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 2.2;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = p.hi;
         ctx.beginPath();
         ctx.moveTo(t.x + dx / d * (r + 1), t.y + dy / d * (r + 1));
-        ctx.lineTo(t.x + dx / d * (r + 13), t.y + dy / d * (r + 13));
+        ctx.lineTo(t.x + dx / d * (r + 15), t.y + dy / d * (r + 15));
         ctx.stroke();
+        ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
       }
 
@@ -2106,6 +2153,9 @@ export class Game extends Scene {
   // ---- render ----
   render(ctx) {
     const p = P();
+
+    // ---- 背景（縦グラデーション＋惑星＋明滅する星。最初に描いて他要素の下に敷く）----
+    this._drawBackground(ctx, p);
 
     // ---- OVERDRIVE：脈動する画面縁ビネット（最初に描く＝フィールドの上に見え、HUDテキストの下）----
     this._drawOverdriveVignette(ctx, p);
@@ -2127,9 +2177,6 @@ export class Game extends Scene {
     // ビッグブラスト HUD
     this._drawBigChargeHUD(ctx, p);
 
-    // ---- 星空 ----
-    this._drawStarfield(ctx, p);
-
     // ---- 地面 ----
     this.engine.rect(0, GROUND_Y, W, H - GROUND_Y, p.dark);
     this.engine.rect(0, GROUND_Y, W, 2, p.dim);
@@ -2142,11 +2189,13 @@ export class Game extends Scene {
     // ---- 自動タレットポッド ----
     this._drawTurrets(ctx, p);
 
-    // ---- 都市爆発エフェクト（REPAIR復旧フラッシュは緑）----
+    // ---- 都市爆発エフェクト（REPAIR復旧フラッシュは緑、SHIELDはシアン）----
     for (const cb of this.cityBlasts) {
       if (!cb) continue;
       ctx.save();
       ctx.globalAlpha = clamp(cb.t / 0.7, 0, 1) * 0.9;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = cb.color || p.bad;
       ctx.beginPath();
       ctx.arc(cb.x, cb.y, Math.max(1, cb.r), 0, Math.PI * 2);
       ctx.fillStyle = cb.color || p.bad;
@@ -2181,7 +2230,9 @@ export class Game extends Scene {
       ctx.restore();
     }
 
-    // ---- 隕石（岩石ポリゴン） ----
+    // ---- 隕石（役割色ネオンワイヤーフレーム：白=通常/紫=高速/琥珀=巨大/赤桃=ボス）----
+    // Falltopia式：色=役割。グローは負荷対策で画面内の隕石数が多いときは省略する。
+    const meteorGlowOK = this.meteors.length <= 30;
     for (const m of this.meteors) {
       if (!m) continue;
 
@@ -2191,15 +2242,17 @@ export class Game extends Scene {
       }
 
       const damageFrac = m.maxHp > 1 ? clamp(1 - m.hp / m.maxHp, 0, 1) : 0;
-      const bodyColor  = m.boss ? p.warn : (m.fast ? p.hi : p.bad);
+      const isGiant    = !m.boss && m.r >= GIANT_R_THRESH;
+      const bodyColor  = m.boss ? p.bad : (m.fast ? p.violet : (isGiant ? p.warn : p.hi));
 
       // 軌跡のリング描画は廃止（隕石中央に輪が見える原因だったため）。
-      // 高速隕石だけ、細い尾を薄い線で表現する（中央に輪は出さない）。
+      // 高速隕石だけ、短いグローする尾を薄い線で表現する（中央に輪は出さない）。
       if (m.fast && m.trail.length >= 2) {
         ctx.save();
-        ctx.globalAlpha = 0.35;
+        ctx.globalAlpha = 0.4;
         ctx.strokeStyle = bodyColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.2;
+        if (meteorGlowOK) { ctx.shadowBlur = 5; ctx.shadowColor = bodyColor; }
         ctx.beginPath();
         ctx.moveTo(m.trail[0].x, m.trail[0].y);
         for (let t = 1; t < m.trail.length; t++) {
@@ -2209,9 +2262,9 @@ export class Game extends Scene {
         ctx.restore();
       }
 
-      // 岩石ポリゴン本体
+      // ネオンワイヤーフレーム本体（塗りはボスのみ質量感の薄いフィル、他はアウトラインのみ）
       if (m.verts && m.verts.length >= 3) {
-        const lineW    = clamp(1.8 - damageFrac * 0.8, 0.5, 2.5);
+        const lineW    = clamp((isGiant ? 2.2 : 1.8) - damageFrac * 0.8, 0.5, 2.6);
         const bodyAlpha = clamp(1 - damageFrac * 0.4, 0.3, 1);
 
         // ヒットフラッシュ：ダメージを受けたがまだ生きている場合、白く光らせる
@@ -2231,13 +2284,19 @@ export class Game extends Scene {
             ctx.lineTo(m.verts[vi].dx, m.verts[vi].dy);
           }
           ctx.closePath();
-          // フラッシュ中はボスの塗りも少し白くなる
+          // フラッシュ中はボスの塗りも少し白くなる（質量感のための薄いフィルのみ維持）
           ctx.fillStyle = flashing ? '#ffffff' : p.dark;
           ctx.globalAlpha = flashing
             ? clamp(flashStrength * 0.55, 0, 1)
-            : clamp(0.65 - damageFrac * 0.2, 0, 1);
+            : clamp(0.5 - damageFrac * 0.15, 0, 1);
           ctx.fill();
           ctx.globalAlpha = clamp(bodyAlpha, 0, 1);
+        }
+
+        // ネオングロー（隕石数が多い/フラッシュ中は負荷・視認性のためスキップ）
+        if (meteorGlowOK && !flashing) {
+          ctx.shadowBlur  = m.boss ? 12 : (isGiant ? 9 : 7);
+          ctx.shadowColor = bodyColor;
         }
 
         ctx.beginPath();
@@ -2259,6 +2318,21 @@ export class Game extends Scene {
           ctx.lineWidth   = m.boss ? clamp(lineW * 2, 1, 4) : lineW;
         }
         ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 関節の輝点（2〜3頂点。ネオンワイヤーの質感付け。ボスはクラックが主役なので省略）
+        if (!m.boss && !flashing) {
+          const n = m.verts.length;
+          const jointIdx = [0, Math.floor(n / 3), Math.floor(n * 2 / 3)];
+          ctx.fillStyle = bodyColor;
+          for (const ji of jointIdx) {
+            const v = m.verts[ji];
+            if (!v) continue;
+            ctx.beginPath();
+            ctx.arc(v.dx, v.dy, isGiant ? 1.8 : 1.4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
 
         // ---- ボスのダメージクラック表示 ----
         if (m.boss && damageFrac > 0 && m.verts.length >= 6) {
@@ -2326,7 +2400,7 @@ export class Game extends Scene {
       const activeBlasts = this.blasts.filter(b => b != null);
 
       if (activeBlasts.length > 0) {
-        drawAllBlastsSpeckle(ctx, activeBlasts, this._frameCount);
+        drawAllBlastsSpeckle(ctx, activeBlasts, p);
       }
     }
 
@@ -2567,12 +2641,15 @@ export class Game extends Scene {
     ctx.globalAlpha = 0.92;
     ctx.fill();
 
-    // 外枠（細線、レアリティ色）
+    // 外枠（細線、レアリティ色＋柔らかい外側グロー）
     ctx.globalAlpha = 1;
     chamferPath(x, y, w, h, cut);
     ctx.strokeStyle = rarityColor;
     ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = rarityColor;
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
     // 内側グロー（インセットした太い低アルファ線）
     chamferPath(x + 3, y + 3, w - 6, h - 6, Math.max(2, cut - 3));
@@ -2702,7 +2779,9 @@ export class Game extends Scene {
     }
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.3;
+    if (filled) { ctx.shadowBlur = 6; ctx.shadowColor = color; } // 充填時のみ淡く発光
     ctx.stroke();
+    ctx.shadowBlur = 0;
     ctx.restore();
   }
 
@@ -2714,11 +2793,22 @@ export class Game extends Scene {
     const rowY  = 8;
 
     // ---- 左：ステージ（旗アイコン＋S番号／非NORMALはタイプ名を小さく下に）----
-    this._drawIconFlag(ctx, hudX0 + 2, rowY + 2, 11, p.mid);
-    this.engine.text('S' + (this._stage + 1), hudX0 + 17, rowY, 14, p.mid, 'left');
+    this._drawIconFlag(ctx, hudX0 + 2, rowY + 1, 12, p.mid);
+    this.engine.text('S' + (this._stage + 1), hudX0 + 18, rowY - 1, 16, p.mid, 'left');
     if (this._stage >= 1 && this._stageType !== 'NORMAL') {
       this.engine.text(this._stageType, hudX0 + 2, rowY + 19, 9, p.warn, 'left');
     }
+
+    // 薄い縦セパレータ（区切りの視認性向上）
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = p.dim;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hudX0 + 90, rowY);
+    ctx.lineTo(hudX0 + 90, rowY + 20);
+    ctx.stroke();
+    ctx.restore();
 
     // ---- 中央：都市（家アイコン＋生存数）----
     const cityX = hudX0 + 96;
@@ -2738,6 +2828,15 @@ export class Game extends Scene {
     const scoreW = ctx.measureText(scoreStr).width;
     ctx.restore();
     const diamondX = hudX1 - scoreW - 12;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = p.dim;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(diamondX - 10, rowY);
+    ctx.lineTo(diamondX - 10, rowY + 20);
+    ctx.stroke();
+    ctx.restore();
     this._drawIconDiamond(ctx, diamondX, rowY + 7, 5, p.fg);
     this.engine.text(scoreStr, hudX1, rowY, 13, p.fg, 'right');
     this.engine.text('BEST ' + this.high, hudX1, rowY + 17, 9, p.dim, 'right');
@@ -2800,8 +2899,12 @@ export class Game extends Scene {
     ctx.strokeStyle = p.dim;
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, barY, barW, barH);
-    ctx.fillStyle = damageFrac > 0.6 ? p.bad : p.warn;
+    const bossBarCol = damageFrac > 0.6 ? p.bad : p.warn;
+    ctx.fillStyle = bossBarCol;
+    ctx.shadowBlur = 5;
+    ctx.shadowColor = bossBarCol;
     ctx.fillRect(barX + 1, barY + 1, Math.max(0, (barW - 2) * hpFrac), Math.max(0, barH - 2));
+    ctx.shadowBlur = 0;
     ctx.restore();
 
     // 小さな1行ラベル（太字なし）
@@ -3005,7 +3108,7 @@ export class Game extends Scene {
     }
   }
 
-  // ---- アイテム隕石の描画 ----
+  // ---- アイテム隕石の描画（緑のパルスするネオンカプセル＋アイコン） ----
   _drawItemMeteor(ctx, p, m) {
     if (!m.verts || m.verts.length < 3) return;
     const pulse = 0.75 + 0.25 * Math.sin(this._elapsed * 5.0);
@@ -3021,11 +3124,14 @@ export class Game extends Scene {
       ctx.lineTo(m.verts[vi].dx, m.verts[vi].dy);
     }
     ctx.closePath();
-    ctx.strokeStyle = p.hi;
+    ctx.strokeStyle = p.green;
     ctx.lineWidth = 2.5;
+    ctx.shadowBlur = 9;
+    ctx.shadowColor = p.green;
     ctx.stroke();
-    ctx.fillStyle = p.hi;
-    ctx.globalAlpha = clamp(pulse * 0.12, 0, 1);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = p.green;
+    ctx.globalAlpha = clamp(pulse * 0.14, 0, 1);
     ctx.fill();
 
     ctx.restore();
@@ -3033,7 +3139,7 @@ export class Game extends Scene {
     ctx.save();
     ctx.globalAlpha = clamp(pulse, 0, 1);
     const label = m.itemType ? m.itemType[0] : '?';
-    this.engine.text(label, m.x, m.y - 6, 13, p.warn, 'center');
+    this.engine.text(label, m.x, m.y - 6, 13, p.hi, 'center');
     ctx.restore();
   }
 
@@ -3064,19 +3170,42 @@ export class Game extends Scene {
     }
   }
 
-  // ---- 星空 ----
-  _drawStarfield(ctx, p) {
+  // ---- 背景：縦グラデーション＋淡い惑星2つ＋明滅する星（深宇宙、Falltopia式） ----
+  // 毎フレーム呼ばれるが軽量（グラデーション1回＋円2つ＋星N個、shadowBlurは使わない）。
+  _drawBackground(ctx, p) {
+    // 縦グラデーション：上=深宇宙の黒に近い紺 → 中=基準bg → 下=わずかにインディゴ
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0,    '#070a16');
+    grad.addColorStop(0.55, p.bg);
+    grad.addColorStop(1,    '#141031');
     ctx.save();
-    ctx.fillStyle = p.dim;
-    const stars = [
-      [30,80],[90,55],[150,100],[220,60],[280,90],[340,70],
-      [60,140],[130,170],[200,130],[260,155],[320,120],
-      [45,210],[110,240],[180,200],[250,220],[315,180],
-      [70,300],[160,280],[230,310],[300,290],
-    ];
-    for (const [sx, sy] of stars) {
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    // 淡い惑星シルエット（固定2個、低アルファ）
+    ctx.save();
+    ctx.fillStyle = p.violet;
+    ctx.globalAlpha = 0.16;
+    ctx.beginPath();
+    ctx.arc(52, 128, 92, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = p.mid;
+    ctx.globalAlpha = 0.13;
+    ctx.beginPath();
+    ctx.arc(W - 40, GROUND_Y - 90, 108, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 明滅する星（enter()で事前生成した配列。alphaをsinで振動させるだけの軽量処理）
+    if (!this._stars) this._stars = makeStarfield();
+    ctx.save();
+    ctx.fillStyle = p.fg;
+    for (const s of this._stars) {
+      const tw = 0.5 + 0.5 * Math.sin(this._elapsed * s.speed + s.phase);
+      ctx.globalAlpha = clamp(s.baseA * (0.5 + 0.5 * tw), 0, 1);
       ctx.beginPath();
-      ctx.arc(sx, sy, 1, 0, Math.PI * 2);
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -3090,11 +3219,11 @@ export class Game extends Scene {
     const isSelected = (this._selectedCity === idx && city.alive);
 
     if (!city.alive) {
-      // 瓦礫（ランダムな小石ブロック）
+      // 破壊済み：薄暗い破断アウトライン（塗りなし、瓦礫ブロック）＋煙の×印
       ctx.save();
+      ctx.globalAlpha = 0.6;
       ctx.strokeStyle = p.dim;
       ctx.lineWidth = 1;
-      // 瓦礫を簡易描画（固定パターン）
       const rubble = [
         [0, CITY_H - 4, 8, 4],
         [10, CITY_H - 6, 10, 6],
@@ -3102,13 +3231,14 @@ export class Game extends Scene {
         [4, CITY_H - 8, 6, 3],
         [16, CITY_H - 9, 8, 4],
       ];
-      ctx.fillStyle = p.dark;
       for (const [rx, ry, rw, rh] of rubble) {
-        ctx.fillRect(ox + rx, oy + ry, rw, rh);
         ctx.strokeRect(ox + rx, oy + ry, rw, rh);
       }
+      ctx.restore();
       // 煙（小さな×印）
+      ctx.save();
       ctx.strokeStyle = p.bad;
+      ctx.globalAlpha = 0.75;
       ctx.lineWidth = 1.5;
       const mx = ox + CITY_W / 2, my = oy + CITY_H / 2 - 4;
       ctx.beginPath(); ctx.moveTo(mx - 5, my - 5); ctx.lineTo(mx + 5, my + 5); ctx.stroke();
@@ -3122,41 +3252,36 @@ export class Game extends Scene {
       ctx.save();
       ctx.strokeStyle = p.hi;
       ctx.lineWidth = 2;
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = p.hi;
       ctx.setLineDash([4, 2]);
       ctx.strokeRect(ox - 3, oy - 3, CITY_W + 6, CITY_H + 3);
       ctx.setLineDash([]);
+      ctx.shadowBlur = 0;
       ctx.restore();
     }
 
-    // 山と街並みシルエット（ワイヤーフレーム）
+    // ネオン・シティスカイライン：ビル矩形アウトライン＋点灯窓（1〜2）
     const profile = CITY_PROFILES[idx];
-    if (profile && profile.length >= 3) {
+    if (profile && profile.buildings) {
+      const col = isSelected ? p.hi : p.mid;
       ctx.save();
       ctx.translate(ox, oy);
-
-      // フィル（薄暗く）
-      ctx.beginPath();
-      ctx.moveTo(profile[0].x, profile[0].y);
-      for (let i = 1; i < profile.length; i++) {
-        ctx.lineTo(profile[i].x, profile[i].y);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = isSelected ? 1.6 : 1.2;
+      ctx.shadowBlur = 5;
+      ctx.shadowColor = col;
+      for (const b of profile.buildings) {
+        ctx.strokeRect(b.x, b.y, b.w, b.h);
       }
-      ctx.closePath();
-      ctx.fillStyle = p.dark;
-      ctx.globalAlpha = 0.85;
-      ctx.fill();
-
-      // アウトライン
-      ctx.globalAlpha = 1.0;
-      ctx.beginPath();
-      ctx.moveTo(profile[0].x, profile[0].y);
-      for (let i = 1; i < profile.length; i++) {
-        ctx.lineTo(profile[i].x, profile[i].y);
+      ctx.shadowBlur = 0;
+      // 点灯窓（明るい小さな輝点）
+      ctx.fillStyle = p.hi;
+      for (const w of profile.windows) {
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, 1.1, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.closePath();
-      ctx.strokeStyle = isSelected ? p.hi : p.mid;
-      ctx.lineWidth   = isSelected ? 1.8 : 1.2;
-      ctx.stroke();
-
       ctx.restore();
     }
 
