@@ -835,14 +835,24 @@ export class Game extends Scene {
         return;
       }
 
-      // ---- ショップ開時：パネル内タップはボタンのみ、外タップは閉じる（発射しない）----
-      if (this.shopOpen) {
-        if (data.y >= H - SHOP_PANEL_H) {
-          this._shopTap(data.x, data.y);
-        } else {
-          this.shopOpen = false; // 閉じるタップではミサイルを撃たない
+      // ---- ショップ：可視パネル領域のタップを吸収（開閉アニメ中含む）----
+      // P3レビューD1対策: 描画は _shopSlide でスライドするがヒット矩形は全開位置基準のため、
+      // 全開（slide>0.98）時のみ購入を受け付ける。スライド途中の誤購入と、
+      // 閉じアニメ中にパネルを突き抜けてミサイル発射される事故を防ぐ。
+      {
+        const shopSlide = this._shopSlide || 0;
+        if (this.shopOpen || shopSlide > 0.02) {
+          const visibleTop = H - SHOP_PANEL_H * shopSlide;
+          if (data.y >= visibleTop) {
+            if (this.shopOpen && shopSlide > 0.98) this._shopTap(data.x, data.y);
+            return; // パネル上のタップは常に吸収（発射しない）
+          }
+          if (this.shopOpen) {
+            this.shopOpen = false; // 外タップで閉じる（発射しない）
+            return;
+          }
+          // 閉じアニメ中の上部タップは通常入力へフォールスルー
         }
-        return;
       }
 
       // BIGボタン
@@ -1913,7 +1923,8 @@ export class Game extends Scene {
         this.money -= item.price;
         this.turrets.push({
           x: TURRET_XS[idx], y: TURRET_Y,
-          cooldown: 0.5, level: 1,
+          // P3レビューD2対策: 購入済みのTURRET LV+を新設砲座にも継承する
+          cooldown: 0.5, level: 1 + ((this.shop && this.shop.lv) | 0),
           flash: 0, lastTx: TURRET_XS[idx], lastTy: TURRET_Y - 30,
         });
         this._float(TURRET_XS[idx], TURRET_Y - 16, 'TURRET ONLINE', p.mid, 11);
@@ -2044,7 +2055,7 @@ export class Game extends Scene {
         // 補助表示（所持数・状態）
         let sub = '';
         if (it.id === 'turret') sub = this.turrets.length + '/' + TURRET_MAX;
-        else if (it.id === 'tlv' && this.turrets.length > 0) sub = 'Lv' + this.turrets[0].level;
+        else if (it.id === 'tlv' && this.turrets.length > 0) sub = 'Lv' + (1 + ((this.shop && this.shop.lv) | 0));
         else if (it.id === 'big') sub = this._bigCharges + '/' + BIG_CHARGES_MAX;
         if (sub) this.engine.text(sub, r.x + r.w - 8, r.y + 22, 11, p.dim, 'right');
         ctx.restore();
