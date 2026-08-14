@@ -124,7 +124,15 @@ const STAGE_TYPES = [
 // 'WIDE'   : 撃った都市の爆発半径+12 — 一時バフ
 // 'SCATTER': 3発のスキャッター特殊弾を付与（グローバル弾薬）
 // 'RAPID'  : 時間限定 連射強化（1都市2発・上限10、RAPID_DURATIONs）
-const ITEM_TYPES = ['MULTI', 'POWER', 'WIDE', 'SCATTER', 'RAPID'];
+// ---- P4 追加ドロップ ----
+// 'SHOCK'  : shockLevel +1（衝撃波の発生源。フロート 'SHOCK+'）
+// 'HOMING' : 誘導弾 +3
+// 'BARRIER': 全生存都市に+1シールドチャージ（上限2）
+// 'ZAP'    : 即時無料ZAPバースト（対象なしなら$フォールバック）
+// 重みはほぼ均等（配列から一様抽選）。
+const ITEM_TYPES = ['MULTI', 'POWER', 'WIDE', 'SCATTER', 'RAPID', 'SHOCK', 'HOMING', 'BARRIER', 'ZAP'];
+// アイテム隕石上のラベル（1〜2文字。SCATTERとSHOCKの'S'衝突を避ける）
+const ITEM_LABELS = { SHOCK: 'SK', HOMING: 'H', BARRIER: 'B', ZAP: 'Z' };
 
 // ---- ランアップグレード（ステージクリア時の3択カード / Falltopia式）----
 // ラン内永続。this.run[id] がスタック数。定数は変更せず、使用箇所で補正を掛ける。
@@ -139,7 +147,7 @@ const UPGRADES = [
   { id: 'coin',   name: 'COIN',         icon: '$', rarity: 'COMMON', descPlain: '撃破ごとにスコア ', descKey: '+5' },
   { id: 'slots',  name: 'SLOTS+',       icon: '⬡', rarity: 'RARE',   descPlain: '発射台都市 ',       descKey: '+1' },
   { id: 'chain',  name: 'CHAIN',        icon: 'ϟ', rarity: 'RARE',   descPlain: '隕石撃破で ',       descKey: '連鎖爆発' },
-  { id: 'shock',  name: 'SHOCKWAVE',    icon: '◉', rarity: 'RARE',   descPlain: '巨大隕石撃破で ',   descKey: '衝撃波' },
+  { id: 'shock',  name: 'SHOCKWAVE',    icon: '◉', rarity: 'RARE',   descPlain: '衝撃波を有効化 半径 ', descKey: '+20' },
   { id: 'shield', name: 'SHIELD',       icon: '□', rarity: 'RARE',   descPlain: '都市被弾を1回 ',    descKey: '無効化' },
 ];
 
@@ -164,8 +172,24 @@ const RUN_CD_MIN           = 0.2;
 const RUN_COIN_PER_STACK   = 5;     // 撃破ボーナススコア/枚
 const CHAIN_BASE_R         = 26;    // 連鎖爆発の基本半径
 const CHAIN_R_PER_STACK    = 8;
-const SHOCK_BASE_R         = 140;   // 衝撃波の基本半径
+const SHOCK_BASE_R         = 100;   // 衝撃波の基本半径（P4: 140→100、ローカルな爆風に）
 const SHOCK_R_PER_STACK    = 20;
+
+// ---- SHOCKWAVE 再設計（P4: 強すぎ・無限連鎖・画面外キルのユーザーフィードバック対応）----
+// 発生は確率制＋世代減衰：spawnChance = BASE × DECAY^gen（gen0=55%, gen1≒19%, gen2≒6.7%…）
+// 幾何減衰で伝播は自然に窒息するが、安全のため gen<=SHOCK_GEN_CAP を超えては絶対に発生しない。
+const SHOCK_SPAWN_BASE  = 0.55;
+const SHOCK_GEN_DECAY   = 0.35;
+const SHOCK_GEN_CAP     = 4;
+// 影響も確率制：shock爆発が隕石に重なった時のみ確率で1ダメージ。
+// ロールは blast×meteor ごとに1回だけ（失敗してもヒット済み扱い＝毎フレーム再ロールしない）。
+const SHOCK_AFFECT_BASE = 0.30;
+const SHOCK_AFFECT_PER_LEVEL = 0.08;
+const SHOCK_AFFECT_MAX  = 0.80;
+
+// ---- 画面外ガード（P4: すべての爆発は「画面に入った」隕石しか傷つけない）----
+// y がこの値以下の隕石（アイテム隕石含む）はどの種類の爆発でもダメージ/取得の対象外。
+const OFFSCREEN_SAFE_Y  = -6;
 
 // ---- CHAIN抑制（P1: 連鎖が盤面を全消ししないためのハードリミット）----
 // ・chainDepth>=2 の爆発によるキルは以後連鎖しない（最大カスケード深度2）
@@ -192,11 +216,12 @@ const TURRET_CD_LEVEL_MULT = 0.88;  // レベルごと-12%
 const TURRET_CD_MIN        = 0.8;   // 下限
 const TURRET_MISSILE_SPD   = 200;
 const TURRET_BLAST_R       = BLAST_GROW * 0.8; // 固定小半径（WIDE/ラン補正なし）
-const TURRET_AIM_NOISE     = 12;    // 迎撃点の照準ノイズ±px
+const TURRET_AIM_NOISE     = 18;    // 迎撃点の照準ノイズ±px（P4: 12→18、少し漏らす＝手動の価値）
 // タレットキル: $は満額 / スコア半減 / コンボ・REROLL加算なし（精密操作の経済は手動専用）
 
-// ---- ライブショップ（P1: The Tower式、プレイ中に開く下部ドロワー）----
-const SHOP_PANEL_H       = 180;
+// ---- ライブショップ（P1: The Tower式、プレイ中に開く下部ドロワー。P4: 3列×4行=12項目）----
+const SHOP_PANEL_H       = 210;  // P4: 180→210（4行分）
+const SHOP_COLS          = 3;
 const SHOP_TAB_W         = 130;
 const SHOP_TAB_H         = 18;
 const SHOP_TURRET_PRICES = [60, 140, 300];
@@ -204,7 +229,41 @@ const SHOP_TLV_BASE      = 45;   // ×(1+0.6×購入回数)
 const SHOP_RELOAD_BASE   = 35;   // ×1.6^n、効果: 手動CD×0.9
 const SHOP_RADIUS_BASE   = 40;   // ×1.6^n、効果: 手動爆発半径×1.1
 const SHOP_BIG_PRICE     = 50;   // フラット
-const SHOP_REPAIR_BASE   = 120;  // ×1.8^n
+const SHOP_REPAIR_BASE   = 120;  // ×1.8^n（即時復旧＝プレミアム。REBUILDは安価な時間払い）
+// ---- P4 新ショップ項目 ----
+const SHOP_SHOCK_BASE    = 55;   // ×1.6^n、効果: shockLevel +1
+const SHOP_HOMING_PRICE  = 45;   // フラット（消耗品: 誘導弾×3）
+const SHOP_ZAP_PRICE     = 70;   // フラット（即時: チェーンライトニング）
+const SHOP_DRONE_PRICE   = 90;   // フラット（同時1機まで、30秒）
+const SHOP_BARRIER_BASE  = 85;   // ×1.5^n、効果: 全生存都市に+1シールドチャージ
+const SHOP_REBUILD_PRICE = 70;   // フラット（20秒かけて都市1つを段階的復元）
+
+// ---- HOMING（誘導弾: 消耗品。手動ミサイルのみ消費、タレット/ドローン弾は対象外）----
+const HOMING_PER_PURCHASE = 3;
+const HOMING_TURN_RATE    = 2.2;  // rad/s（緩やかな旋回、速度は不変）
+
+// ---- ZAP（電気ショック: 画面内の隕石 最大5体に即時1ダメージ）----
+const ZAP_MAX_TARGETS = 5;
+const ZAP_BOLT_SEC    = 0.35; // 稲妻ポリラインの表示時間
+
+// ---- DRONE（味方機: y~140を巡回、ミニタレット射撃、30秒で離脱）----
+const DRONE_DURATION = 30;
+const DRONE_CD       = 1.4;
+const DRONE_DMG      = 1;
+const DRONE_Y        = 140;
+
+// ---- BARRIER（都市バリア: 都市ごとのシールドチャージ、上限2）----
+const CITY_SHIELD_CAP = 2;
+
+// ---- REBUILD（段階的復元: 20秒で都市1つを復活。再建中に被弾すると進捗0にリセット）----
+const REBUILD_SEC = 20;
+
+// ---- ボス死亡＝破片の雨（P4: 終末感。ボス撃破で実体の破片隕石が降る）----
+const BOSS_FRAG_BASE  = 6;    // 6 + stage 個（上限 BOSS_FRAG_CAP）
+const BOSS_FRAG_CAP   = 10;
+const BOSS_FRAG_R_MIN = 6;
+const BOSS_FRAG_R_MAX = 13;
+const BOSS_FRAG_Y_MAX = 180;  // 破片の出現Y上限（死亡位置がこれより下ならそのまま）
 
 // ---- HP計算 ----
 function calcMeteorHP(r) {
@@ -218,13 +277,17 @@ function calcMeteorHP(r) {
 function makeStageScript(stage, stageType) {
   const events = [];
   // P1ペース+50%: 波の間隔を~×0.75に圧縮（ボス到達も少し早く）
-  let baseDelay  = Math.max(3.5 - stage * 0.25, 1.1) * 0.75;
+  // P4: さらに全体密度+15%（×0.87）。無操作放置で8.9分生存できた受動性を潰す。
+  let baseDelay  = Math.max(3.5 - stage * 0.25, 1.1) * 0.75 * 0.87;
   let bossT      = 58 + stage * 3;
   let itemChance = Math.min(0.08 + stage * 0.025, 0.22);
 
   if (stageType === 'SWARM') { baseDelay *= 0.5; bossT = 44 + stage * 2.5; }
   if (stageType === 'FAST')  { bossT = 48 + stage * 2.5; }
   if (stageType === 'CHAOS') { baseDelay *= 0.65; bossT = 46 + stage * 2.5; }
+
+  // P4: ステージ0の序盤の長い間延びをカット（最初の波は~2.5秒以内、ボスは~45秒）
+  if (stage === 0) { baseDelay *= 0.7; bossT = 45; }
 
   let t = 0;
   events.push({ t, type: 'meteor', count: 1, forceSize: null, itemChance });
@@ -381,14 +444,16 @@ function cityBuffRadiusAdd(buffs) {
   return buffs.wide.length * 12;
 }
 
-// ---- ネオン・ブラストポップ（Falltopia / The Tower 風）----
-// 塗りつぶしスペックル方式（大セル色サイクル）を廃止し、拡張する薄いリング＋
-// 飛散パーティクル＋一瞬の明るいコアフラッシュに置き換える。
-// RADIUS/DAMAGE等の判定は既存の blast.r / blast.maxR / blast.growing / blast.fadeTimer
-// をそのまま使うため不変（描画だけが変わる）。色は blast.kind（描画専用フィールド：
-// 'manual'|'big'|'chain'|'shock'|'turret'）で決める。
+// ---- レトロ・ピクセルスペックル爆発（Missile Command 風、P4で復活）----
+// P2のネオンリング＋パーティクル爆発は迫力不足のフィードバックを受けて廃止し、
+// MICRO ARCADE版の「コース8pxセル全面フラッシュ」方式を移植した。
+// ・爆発の現在半径をラフなジッター縁の8pxセル塊で塗りつぶす
+// ・塊全体が1〜2フレームごとに1色でビビッドに明滅（白多め＝ストロボ白に見える）
+// ・blast.kind ごとにベースの色ミックスをバイアス（manual/big/chain/shock/turret）
+// RADIUS/DAMAGE等の判定は既存の blast.r / maxR / growing / fadeTimer をそのまま
+// 使うため不変（描画だけが変わる）。
 
-// 高速シードPRNG（xorshift32相当の整数ハッシュ）。パーティクルの角度/速度を
+// 高速シードPRNG（xorshift32相当の整数ハッシュ）。セルジッター・色サイクルを
 // 配列を持たず毎フレーム決定論的に算出するために使う（GC負荷なし）。
 function _speckleRand(cx, cy, blastId, tick) {
   let h = (cx * 2246822519) ^ (cy * 3266489917) ^ (blastId * 668265263) ^ (tick * 374761393);
@@ -398,23 +463,63 @@ function _speckleRand(cx, cy, blastId, tick) {
   return (h & 0xffff) / 0x10000; // 0〜0.9999...
 }
 
-// 爆発の種別→色（役割色）。kindが無い（旧データ・保険）場合は通常=シアン。
-function _blastColor(b, p) {
-  switch (b.kind) {
-    case 'big':    return p.warn;   // BIGブラスト＝琥珀の二重リング
-    case 'shock':  return p.violet; // SHOCKWAVE＝紫のリング
-    case 'chain':  return p.pink;   // CHAIN連鎖＝マゼンタ
-    case 'turret': return p.mid;    // 自動タレット＝控えめなシアン
-    default:       return p.mid;    // 手動ミサイル＝シアン
+// セルサイズ（論理px）— 大きいほどブロッキーでレトロらしい
+const _CELL = 8;
+
+// スペックル色セット（各14色）。白3＋黒3で高コントラストのストロボ、残りをkindごとにバイアス。
+// manual: 中立ビビッドミックス（オリジナル準拠）
+const _SPECKLE_MANUAL = [
+  '#ffffff', '#ffffff', '#ffffff',
+  '#00ff88', '#ff00ff', '#00ffff', '#ffff00', '#ff4400', '#ff9900', '#4466ff',
+  '#000000', '#000000', '#000000',
+  '#ffffff',
+];
+// big: 琥珀/白バイアス（緑・青・マゼンタを琥珀系に差し替え）
+const _SPECKLE_BIG = [
+  '#ffffff', '#ffffff', '#ffffff',
+  '#ffcc44', '#ffffff', '#ffe08a', '#ffff00', '#ff4400', '#ff9900', '#ffaa22',
+  '#000000', '#000000', '#000000',
+  '#ffffff',
+];
+// chain: ピンク/マゼンタバイアス
+const _SPECKLE_CHAIN = [
+  '#ffffff', '#ffffff', '#ffffff',
+  '#ff5cd0', '#ff00ff', '#ff88ee', '#ffff00', '#ff4400', '#ff5cd0', '#4466ff',
+  '#000000', '#000000', '#000000',
+  '#ffffff',
+];
+// shock: 紫/青バイアス
+const _SPECKLE_SHOCK = [
+  '#ffffff', '#ffffff', '#ffffff',
+  '#b06bff', '#8866ff', '#00ffff', '#4466ff', '#b06bff', '#6644ff', '#4466ff',
+  '#000000', '#000000', '#000000',
+  '#ffffff',
+];
+// turret: 暗めのミックス（純白を落とし、暗色を足す＝自動砲は控えめ）
+const _SPECKLE_TURRET = [
+  '#9fb8cc', '#9fb8cc', '#556677',
+  '#00cc77', '#cc00cc', '#00cccc', '#cccc00', '#cc4400', '#cc7700', '#3355cc',
+  '#000000', '#000000', '#000000',
+  '#556677',
+];
+const _SPECKLE_COLOR_COUNT = _SPECKLE_MANUAL.length; // 14（全kind共通）
+
+// blast.kind → 色配列
+function _speckleColorsFor(kind) {
+  switch (kind) {
+    case 'big':    return _SPECKLE_BIG;
+    case 'chain':  return _SPECKLE_CHAIN;
+    case 'shock':  return _SPECKLE_SHOCK;
+    case 'turret': return _SPECKLE_TURRET;
+    default:       return _SPECKLE_MANUAL;
   }
 }
 
-// 全爆発をネオンポップで描画（source-over のみ）。
-// mainCtx: メインCanvas2Dコンテキスト（論理座標系）。blasts: アクティブ爆発配列。p: パレット。
-function drawAllBlastsSpeckle(mainCtx, blasts, p) {
-  // 同時多発時の負荷対策：多すぎる場合はグローを省略（リング自体は必ず描く）
-  const glowOK = blasts.length <= 20;
-
+// 全爆発をスペックルで描画（source-over のみ、XOR合成なし）
+// mainCtx: メインCanvas2Dコンテキスト（論理座標系）
+// blasts: アクティブ爆発オブジェクト配列
+// frameCount: インクリメントカウンタ（色フリッカー用）
+function drawAllBlastsSpeckle(mainCtx, blasts, frameCount) {
   for (const b of blasts) {
     if (!b) continue;
     const r = Math.max(1, b.r);
@@ -424,57 +529,43 @@ function drawAllBlastsSpeckle(mainCtx, blasts, p) {
       : clamp(b.fadeTimer / BLAST_FADE_SEC, 0, 1);
     if (alpha <= 0) continue;
 
-    const color = _blastColor(b, p);
-    const dim   = b.kind === 'turret'; // 自動タレット弾は控えめな明度
-    const age   = b.age || 0;
+    const bx = b.x;
+    const by = b.y;
+    const id = b.id | 0;
+
+    // ★全面を1色で塗る。フレームごとに色を高速サイクルさせ、爆発の「全面」が
+    //   白・カラフル・黒(ネガ)と明滅する。ドット単位ではなく面全体が点滅する。
+    const colors  = _speckleColorsFor(b.kind);
+    const cidx    = (_speckleRand(id, 7, 13, frameCount) * _SPECKLE_COLOR_COUNT) | 0;
+    const fillCol = colors[cidx];
+
+    // グリッドをブラスト中心から±r の矩形に限定し、さらに画面内セルへクランプ
+    //（完全に画面外のセルはスキップ＝負荷対策）
+    const x0 = Math.max(0, Math.floor((bx - r) / _CELL));
+    const x1 = Math.min(Math.ceil((bx + r) / _CELL), Math.ceil(W / _CELL));
+    const y0 = Math.max(0, Math.floor((by - r) / _CELL));
+    const y1 = Math.min(Math.ceil((by + r) / _CELL), Math.ceil(H / _CELL));
 
     mainCtx.save();
     mainCtx.globalCompositeOperation = 'source-over';
+    mainCtx.globalAlpha = clamp(alpha, 0, 1);
+    mainCtx.fillStyle = fillCol;
 
-    // ---- 拡張する薄いリング ----
-    mainCtx.globalAlpha = clamp(alpha * (dim ? 0.55 : 1), 0, 1);
-    mainCtx.strokeStyle = color;
-    mainCtx.lineWidth = b.kind === 'big' ? 2.6 : (dim ? 1.2 : 1.7);
-    if (glowOK) {
-      mainCtx.shadowBlur  = dim ? 4 : (b.kind === 'big' ? 12 : 8);
-      mainCtx.shadowColor = color;
-    }
-    mainCtx.beginPath();
-    mainCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
-    mainCtx.stroke();
+    for (let gy = y0; gy <= y1; gy++) {
+      const cy = gy * _CELL + _CELL * 0.5;
+      const dy = cy - by;
 
-    // BIGブラストは二重リング（内側にもう一本、amber×2）
-    if (b.kind === 'big') {
-      mainCtx.globalAlpha = clamp(alpha * 0.55, 0, 1);
-      mainCtx.lineWidth = 1.4;
-      mainCtx.beginPath();
-      mainCtx.arc(b.x, b.y, Math.max(1, r * 0.68), 0, Math.PI * 2);
-      mainCtx.stroke();
-    }
-    mainCtx.shadowBlur = 0;
+      for (let gx = x0; gx <= x1; gx++) {
+        const cx = gx * _CELL + _CELL * 0.5;
+        const dx = cx - bx;
 
-    // ---- 明るいコアフラッシュ（発生直後の数フレームのみ） ----
-    if (age < 0.07) {
-      mainCtx.globalAlpha = clamp(alpha * (1 - age / 0.07), 0, 1);
-      mainCtx.fillStyle = '#ffffff';
-      mainCtx.beginPath();
-      mainCtx.arc(b.x, b.y, Math.max(2, r * 0.35), 0, Math.PI * 2);
-      mainCtx.fill();
-    }
+        // セルごとに半径ジッターでエッジを粗く（綺麗な円にしない）
+        const jitter = 0.88 + 0.22 * _speckleRand(gx * 7 + 3, gy * 5 + 1, id, 0);
+        const effectiveR = r * jitter;
+        if (dx * dx + dy * dy > effectiveR * effectiveR) continue;
 
-    // ---- 飛散パーティクル（決定論的な角度/速度で外へ流れフェード） ----
-    const pCount = dim ? 5 : (b.kind === 'big' ? 10 : 7);
-    mainCtx.fillStyle = color;
-    for (let i = 0; i < pCount; i++) {
-      const ang  = _speckleRand(b.id, i, 91, 0) * Math.PI * 2;
-      const spd  = 36 + _speckleRand(b.id, i, 173, 1) * 70;
-      const dist = spd * age;
-      const pAlpha = clamp(alpha * (1 - age / (BLAST_FADE_SEC * 0.7)), 0, 1) * (dim ? 0.6 : 1);
-      if (pAlpha <= 0) continue;
-      mainCtx.globalAlpha = pAlpha;
-      mainCtx.beginPath();
-      mainCtx.arc(b.x + Math.cos(ang) * dist, b.y + Math.sin(ang) * dist, 1.4, 0, Math.PI * 2);
-      mainCtx.fill();
+        mainCtx.fillRect(gx * _CELL, gy * _CELL, _CELL, _CELL);
+      }
     }
 
     mainCtx.restore();
@@ -543,10 +634,11 @@ export class Game extends Scene {
     // 3択カード画面（open中はゲームプレイ凍結）
     this._cardChoice = null; // { cards:[...], t, stage } | null
 
-    // 都市: alive flag + バフスタック
+    // 都市: alive flag + バフスタック + バリアチャージ（P4: BARRIER購入/ドロップで+1、上限2）
     this.cities = Array.from({ length: CITY_COUNT }, () => ({
       alive: true,
       buffs: makeCityBuffs(),
+      shield: 0,
     }));
 
     this.meteors    = [];
@@ -585,9 +677,18 @@ export class Game extends Scene {
       reload: 0,  // RELOAD- 購入回数
       radius: 0,  // RADIUS+ 購入回数
       repair: 0,  // REPAIR CITY 購入回数
+      shock: 0,   // SHOCK+ 購入回数（P4）
+      barrier: 0, // BARRIER 購入回数（P4）
     };
     this._shopCdMult     = 1; // RELOAD- の累積（手動CDに乗算）
     this._shopRadiusMult = 1; // RADIUS+ の累積（手動爆発半径に乗算）
+
+    // ---- P4 新システムの状態（すべてラン内のみ・保存しない）----
+    this.shockLevel  = 0;    // 衝撃波レベル（SHOCK+購入/SHOCKドロップで+1。>0で衝撃波が有効）
+    this.homingAmmo  = 0;    // 誘導弾残数（手動ミサイルのみ消費）
+    this.drone       = null; // 味方ドローン（同時1機）{x,y,t,cooldown,phase,flash}
+    this._zapBolts   = [];   // ZAP稲妻の描画データ [{pts:[{x,y}...], t}]
+    this._rebuild    = null; // 段階的復元の進行状態 {cityIdx, t} | null
   }
 
   _bigBtnRect() { return { x: W / 2 - 48, y: 44, w: 112, h: 28 }; }
@@ -929,6 +1030,11 @@ export class Game extends Scene {
     const useScatter = !big && this._scatterAmmo > 0;
     if (useScatter) this._scatterAmmo = Math.max(0, this._scatterAmmo - 1);
 
+    // P4 HOMING: 残弾がある間、手動ミサイルは1発ごとに1消費して誘導弾になる
+    //（タレット/ドローンの自動弾はこの関数を通らないため絶対に消費しない）
+    const useHoming = this.homingAmmo > 0;
+    if (useHoming) this.homingAmmo = Math.max(0, this.homingAmmo - 1);
+
     // MISSILE SPD+ アップグレード適用（+22%/枚）
     const spd = this._runMissileSpd();
     this.missiles.push({
@@ -940,6 +1046,8 @@ export class Game extends Scene {
       done: false,
       big: !!big,
       scatter: useScatter,
+      homing: useHoming, // 誘導弾フラグ（P4）
+      aimX: tx, aimY: ty, // 元の照準点（誘導ターゲット選択の基準）
       cityIdx,   // 発射元都市（バフ参照用）
     });
 
@@ -967,6 +1075,8 @@ export class Game extends Scene {
       if (this._banishShake > 0) this._banishShake = Math.max(0, this._banishShake - dt);
       this._updateCityBlasts(dt);
       this._updateDebris(dt);
+      // ZAP稲妻の残像も凍結中に消化する（描画装飾のみ、ゲームロジックには無関係）
+      this._updateZapBolts(dt);
       // カード画面上のフロート（POOL LIMIT / BANISH +1）を進行させる
       this._updateFloaters(dt);
       return;
@@ -990,6 +1100,11 @@ export class Game extends Scene {
 
     // ---- 自動タレット（ゲームは止まらない＝ショップ開放中も発射する）----
     this._updateTurrets(dt);
+
+    // ---- P4: ドローン／段階的復元／ZAP稲妻 ----
+    this._updateDrone(dt);
+    this._updateRebuild(dt);
+    this._updateZapBolts(dt);
 
     // ステージクリアオーバーレイのタイマー（ゲームは止まらない）
     if (this._clearOverlay) {
@@ -1135,7 +1250,8 @@ export class Game extends Scene {
         continue;
       }
       const ratio = m.spd / dist;
-      m.x += dx * ratio * dt;
+      // P4: オプションの水平ドリフト vx（ボス破片用。無指定は0＝従来通り）
+      m.x += dx * ratio * dt + (m.vx || 0) * dt;
       m.y += dy * ratio * dt;
 
       const trailMax = m.fast ? 8 : (m.boss ? 4 : 5);
@@ -1181,6 +1297,34 @@ export class Game extends Scene {
       const ms = this.missiles[i];
       if (!ms) { this.missiles.splice(i, 1); continue; }
       if (ms.done) { this.missiles.splice(i, 1); continue; }
+
+      // ---- P4 HOMING: 照準点に最も近い画面内隕石へ緩やかに旋回（速度は不変）----
+      if (ms.homing && !ms.auto) {
+        let best = null, bestD = Infinity;
+        const ax = ms.aimX != null ? ms.aimX : ms.tx;
+        const ay = ms.aimY != null ? ms.aimY : ms.ty;
+        for (const m of this.meteors) {
+          if (!m || m.y <= OFFSCREEN_SAFE_Y) continue; // 画面外は狙わない
+          const d = Math.hypot(m.x - ax, m.y - ay);
+          if (d < bestD) { bestD = d; best = m; }
+        }
+        if (best) {
+          const spd  = ms.spd || MISSILE_SPD;
+          const cur  = Math.atan2(ms.vy, ms.vx);
+          const want = Math.atan2(best.y - ms.y, best.x - ms.x);
+          let dA = want - cur;
+          while (dA >  Math.PI) dA -= Math.PI * 2;
+          while (dA < -Math.PI) dA += Math.PI * 2;
+          dA = clamp(dA, -HOMING_TURN_RATE * dt, HOMING_TURN_RATE * dt);
+          const na = cur + dA;
+          ms.vx = Math.cos(na) * spd;
+          ms.vy = Math.sin(na) * spd;
+          // 起爆点をターゲット現在位置に追従させる（到達判定と爆心が一致する）
+          ms.tx = best.x;
+          ms.ty = best.y;
+        }
+      }
+
       ms.x += ms.vx * dt;
       ms.y += ms.vy * dt;
       const ddx = ms.tx - ms.x;
@@ -1224,9 +1368,22 @@ export class Game extends Scene {
       for (let j = this.meteors.length - 1; j >= 0; j--) {
         const m = this.meteors[j];
         if (!m) continue;
+        // ---- P4 画面外ガード：まだ画面に入っていない隕石（y<=-6）はどの爆発でも
+        //      傷つけない（アイテム隕石含む）。ヒット記録もしない＝入場後に改めて判定できる。
+        if (m.y <= OFFSCREEN_SAFE_Y) continue;
         if (Math.hypot(m.x - b.x, m.y - b.y) > b.r + m.r) continue;
         if (m.hitBlastIds.has(b.id)) continue;
         m.hitBlastIds.add(b.id);
+
+        // ---- P4 SHOCKWAVE 影響ロール：shock爆発は確率でのみダメージを与える ----
+        // 失敗してもヒット済み（hitBlastIds登録済み）＝この blast×meteor で再ロールしない。
+        if (b.kind === 'shock') {
+          const chance = clamp(
+            SHOCK_AFFECT_BASE + SHOCK_AFFECT_PER_LEVEL * (this.shockLevel | 0),
+            0, SHOCK_AFFECT_MAX
+          );
+          if (Math.random() >= chance) continue;
+        }
 
         if (m.isItem) {
           this._collectItem(m, b.cityIdx);
@@ -1270,73 +1427,9 @@ export class Game extends Scene {
           }
 
           if (m.boss) {
-            let gain = BOSS_SCORE_BASE * (this._stage + 1);
-            // COIN: 撃破ボーナススコア
-            if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
-            gain = Math.round(gain * comboMult * (isAuto ? 0.5 : 1));
-            this.score += gain;
-            this._addMoney(MONEY_BOSS, m.x + 20, m.y + 16);
-            this._bossAlive = false;
-            this._bossIdx   = -1;
-            // ボス破壊演出
-            this._spawnBossShatter(m.x, m.y, m.r);
-            m.flashTimer = 0; // 破壊時はフラッシュ不要
-            // 撃破フロート（ボス死は大きく表示）
-            this._float(m.x, m.y, '+' + gain, p.warn, 22);
-            // SHOCKWAVE: ボス撃破でも広域弱衝撃波（ダメージ1）
-            if (this.run && this.run.shock > 0) {
-              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true, { auto: isAuto });
-            }
-            // ボス破壊音（壮大な降下音）
-            this.engine.audio.sequence([
-              { freq: 880, dur: 0.09, type: 'sawtooth', vol: 0.20 },
-              { freq: 660, dur: 0.09, type: 'sawtooth', vol: 0.20 },
-              { freq: 440, dur: 0.12, type: 'sawtooth', vol: 0.22 },
-              { freq: 280, dur: 0.14, type: 'sawtooth', vol: 0.24 },
-              { freq: 160, dur: 0.20, type: 'sawtooth', vol: 0.26 },
-              { freq: 80,  dur: 0.30, type: 'sawtooth', vol: 0.28 },
-            ]);
-            this.engine.audio.bad();
+            this._handleBossDeath(m, { isAuto, comboMult });
           } else {
-            const sizeBonus = Math.ceil(m.maxHp);
-            let gain = METEOR_SCORE_BASE * sizeBonus;
-            // COIN: 撃破ごとにボーナススコア（+5/枚）
-            if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
-            gain = Math.round(gain * comboMult * (isAuto ? 0.5 : 1));
-            this.score += gain;
-            // 隕石の役割色（通常=赤/高速=明色/巨大=警告色）で撃破フロート
-            const floatColor = m.fast ? p.hi : (m.r >= GIANT_R_THRESH ? p.warn : p.bad);
-            this._float(m.x, m.y, '+' + gain, floatColor, 12);
-            // ---- $ 獲得（小=1/中=2/巨大=4。タレットキルでも満額）----
-            const moneyGain = m.r >= GIANT_R_THRESH ? MONEY_GIANT
-              : (m.r >= LARGE_R_THRESH ? MONEY_MEDIUM : MONEY_SMALL);
-            this._addMoney(moneyGain, m.x + 16, m.y + 12);
-            // CHAIN: 撃破地点に小さな連鎖爆発（ダメージ1）— P1ハード抑制付き
-            // ・深度>=2の爆発によるキルは連鎖しない
-            // ・半径は深度ごとに×0.65減衰
-            // ・1ルート爆発あたり連鎖は合計3個まで（共有カウンタ b.chainBudget）
-            // 新しい爆発は配列末尾に push され、この下方向ループでは今フレーム再訪しない（安全）
-            if (this.run && this.run.chain > 0) {
-              const depth = b.chainDepth | 0;
-              if (depth < CHAIN_MAX_DEPTH) {
-                const budget = b.chainBudget || (b.chainBudget = { left: CHAIN_MAX_PER_ROOT });
-                if (budget.left > 0) {
-                  budget.left--;
-                  const baseR = CHAIN_BASE_R + CHAIN_R_PER_STACK * this.run.chain;
-                  const r     = baseR * Math.pow(CHAIN_R_DECAY, depth);
-                  this._spawnExtraBlast(m.x, m.y, r, 1, false, {
-                    chainDepth: depth + 1,
-                    chainBudget: budget,
-                    auto: isAuto,
-                  });
-                }
-              }
-            }
-            // SHOCKWAVE: 巨大隕石（GIANT閾値以上）撃破で広域弱衝撃波（ダメージ1）— 従来通り
-            if (this.run && this.run.shock > 0 && m.r >= GIANT_R_THRESH) {
-              this._spawnExtraBlast(m.x, m.y, SHOCK_BASE_R + SHOCK_R_PER_STACK * this.run.shock, 1, true, { auto: isAuto });
-            }
-            this.engine.audio.good();
+            this._handleMeteorDeath(m, { isAuto, comboMult, sourceBlast: b });
           }
           if (this._bossIdx > j) this._bossIdx--;
           this.meteors.splice(j, 1);
@@ -1465,14 +1558,305 @@ export class Game extends Scene {
     }
   }
 
+  // ---- 現在のコンボ倍率（コンボ値は変更しない。ZAPキルのスコア計算用）----
+  _currentComboMult() {
+    return Math.min(1 + COMBO_SCORE_STEP * (this.combo | 0), COMBO_MULT_CAP);
+  }
+
+  // ---- ボス死亡処理（爆発ループ/ZAPの両方から呼ぶ。meteors からの splice は呼び出し側）----
+  // スコア/$/フラグ/シャッター演出/破片の雨/音。P4: ボス死からの衝撃波は発生させない
+  //（破片の雨が置き換える＝発生させると破片が即座に全滅するため）。
+  _handleBossDeath(m, opts) {
+    const o = opts || {};
+    const isAuto    = !!o.isAuto;
+    const comboMult = o.comboMult != null ? o.comboMult : 1;
+    const p = P();
+    let gain = BOSS_SCORE_BASE * (this._stage + 1);
+    // COIN: 撃破ボーナススコア
+    if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
+    gain = Math.round(gain * comboMult * (isAuto ? 0.5 : 1));
+    this.score += gain;
+    this._addMoney(MONEY_BOSS, m.x + 20, m.y + 16);
+    this._bossAlive = false;
+    this._bossIdx   = -1;
+    // ボス破壊演出＋実体破片の雨（P4）
+    this._spawnBossShatter(m.x, m.y, m.r);
+    this._spawnBossFragments(m);
+    m.flashTimer = 0; // 破壊時はフラッシュ不要
+    // 撃破フロート（ボス死は大きく表示）
+    this._float(m.x, m.y, '+' + gain, p.warn, 22);
+    // ボス破壊音（壮大な降下音）
+    this.engine.audio.sequence([
+      { freq: 880, dur: 0.09, type: 'sawtooth', vol: 0.20 },
+      { freq: 660, dur: 0.09, type: 'sawtooth', vol: 0.20 },
+      { freq: 440, dur: 0.12, type: 'sawtooth', vol: 0.22 },
+      { freq: 280, dur: 0.14, type: 'sawtooth', vol: 0.24 },
+      { freq: 160, dur: 0.20, type: 'sawtooth', vol: 0.26 },
+      { freq: 80,  dur: 0.30, type: 'sawtooth', vol: 0.28 },
+    ]);
+    this.engine.audio.bad();
+  }
+
+  // ---- 通常隕石の死亡処理（爆発ループ/ZAPの両方から呼ぶ。splice は呼び出し側）----
+  // opts: { isAuto, comboMult, sourceBlast } — sourceBlast=null（ZAP等）は連鎖爆発なし。
+  _handleMeteorDeath(m, opts) {
+    const o = opts || {};
+    const isAuto    = !!o.isAuto;
+    const comboMult = o.comboMult != null ? o.comboMult : 1;
+    const b = o.sourceBlast || null;
+    const p = P();
+
+    const sizeBonus = Math.ceil(m.maxHp);
+    let gain = METEOR_SCORE_BASE * sizeBonus;
+    // COIN: 撃破ごとにボーナススコア（+5/枚）
+    if (this.run && this.run.coin > 0) gain += RUN_COIN_PER_STACK * this.run.coin;
+    gain = Math.round(gain * comboMult * (isAuto ? 0.5 : 1));
+    this.score += gain;
+    // 隕石の役割色（通常=赤/高速=明色/巨大=警告色）で撃破フロート
+    const floatColor = m.fast ? p.hi : (m.r >= GIANT_R_THRESH ? p.warn : p.bad);
+    this._float(m.x, m.y, '+' + gain, floatColor, 12);
+    // ---- $ 獲得（小=1/中=2/巨大=4。タレットキルでも満額）----
+    const moneyGain = m.r >= GIANT_R_THRESH ? MONEY_GIANT
+      : (m.r >= LARGE_R_THRESH ? MONEY_MEDIUM : MONEY_SMALL);
+    this._addMoney(moneyGain, m.x + 16, m.y + 12);
+    // CHAIN: 撃破地点に小さな連鎖爆発（ダメージ1）— P1ハード抑制付き
+    // ・深度>=2の爆発によるキルは連鎖しない
+    // ・半径は深度ごとに×0.65減衰
+    // ・1ルート爆発あたり連鎖は合計3個まで（共有カウンタ b.chainBudget）
+    // 新しい爆発は配列末尾に push され、下方向ループでは今フレーム再訪しない（安全）
+    if (b && this.run && this.run.chain > 0) {
+      const depth = b.chainDepth | 0;
+      if (depth < CHAIN_MAX_DEPTH) {
+        const budget = b.chainBudget || (b.chainBudget = { left: CHAIN_MAX_PER_ROOT });
+        if (budget.left > 0) {
+          budget.left--;
+          const baseR = CHAIN_BASE_R + CHAIN_R_PER_STACK * this.run.chain;
+          const r     = baseR * Math.pow(CHAIN_R_DECAY, depth);
+          this._spawnExtraBlast(m.x, m.y, r, 1, false, {
+            chainDepth: depth + 1,
+            chainBudget: budget,
+            auto: isAuto,
+          });
+        }
+      }
+    }
+    // SHOCKWAVE: 巨大隕石（GIANT閾値以上）撃破で確率発生（P4: 世代減衰付き）
+    if (m.r >= GIANT_R_THRESH) {
+      this._maybeSpawnShockwave(m.x, m.y, b, isAuto);
+    }
+    this.engine.audio.good();
+  }
+
+  // ---- P4 衝撃波の確率スポーン（世代減衰）----
+  // sourceBlast が shock 爆発なら次世代（gen+1）として引き継ぐ。gen>SHOCK_GEN_CAP は絶対に発生しない。
+  // run.shock===0 でも shockLevel>0 なら基本半径で発生する（shockLevel 単独で有効化）。
+  _maybeSpawnShockwave(x, y, sourceBlast, isAuto) {
+    const stacks   = this.run ? (this.run.shock | 0) : 0;
+    const hasShock = stacks > 0 || (this.shockLevel | 0) > 0;
+    if (!hasShock) return false;
+    const gen = (sourceBlast && sourceBlast.kind === 'shock')
+      ? ((sourceBlast.shockGen | 0) + 1)
+      : 0;
+    if (gen > SHOCK_GEN_CAP) return false; // 安全キャップ（幾何減衰で実際はここまで届かない）
+    const chance = SHOCK_SPAWN_BASE * Math.pow(SHOCK_GEN_DECAY, gen);
+    if (Math.random() >= chance) return false;
+    const r = SHOCK_BASE_R + SHOCK_R_PER_STACK * stacks;
+    this._spawnExtraBlast(x, y, r, 1, true, { auto: isAuto, kind: 'shock', shockGen: gen });
+    return true;
+  }
+
+  // ---- P4 ボス死亡＝破片の雨 ----
+  // 6+stage（上限10）個の r6..13 破片をボスの横幅に散らして実体隕石として降らせる。
+  // 速度は通常速の×1.1〜1.5、わずかな水平ドリフト vx 付き。通常隕石なので撃破可能・
+  // $ドロップあり・都市を直撃しうる。ステージクリアは全破片の処理を自然に待つ。
+  _spawnBossFragments(m) {
+    const count = Math.min(BOSS_FRAG_BASE + this._stage, BOSS_FRAG_CAP);
+    const fy    = Math.min(m.y, BOSS_FRAG_Y_MAX);
+    for (let i = 0; i < count; i++) {
+      const fr   = BOSS_FRAG_R_MIN + Math.random() * (BOSS_FRAG_R_MAX - BOSS_FRAG_R_MIN);
+      const fx   = clamp(
+        m.x - m.r * 0.85 + ((i + 0.5) / count) * m.r * 1.7 + (Math.random() * 2 - 1) * 8,
+        8, W - 8
+      );
+      const spd  = this._calcNormalSpd() * (1.1 + Math.random() * 0.4);
+      const seed = _nextMeteorSeed++;
+      const hp   = calcMeteorHP(fr);
+      this.meteors.push({
+        x: fx, y: fy + (Math.random() * 2 - 1) * 10,
+        tx: 18 + Math.random() * (W - 36), ty: GROUND_Y,
+        spd, r: fr,
+        vx: (Math.random() * 2 - 1) * 18, // わずかな水平ドリフト
+        hp, maxHp: hp,
+        fast: false,
+        boss: false,
+        isItem: false,
+        itemType: null,
+        trail: [],
+        rot: Math.random() * Math.PI * 2,
+        verts: makeRockVerts(fr, seed),
+        seed,
+        hitBlastIds: new Set(),
+        flashTimer: 0,
+      });
+    }
+  }
+
+  // ---- P4 ZAP（電気ショック）：画面内の隕石 最大5体に即時1ダメージ ----
+  // キルは「手動スコア満額・コンボ変化なし・$満額」（フリーコンボ防止のためコンボ非加算）。
+  // 稲妻はランダムな画面上端の点からターゲットを貫くギザギザポリラインで~0.35秒表示。
+  // 戻り値: ヒットした隕石数（0=対象なし）。
+  _doZap() {
+    const ox = 30 + Math.random() * (W - 60);
+    const oy = 0;
+    // 画面内（y>-6）の隕石を稲妻起点からの距離でソートし、近い順に最大5体
+    const cands = [];
+    for (const m of this.meteors) {
+      if (!m || m.y <= OFFSCREEN_SAFE_Y) continue;
+      cands.push({ m, d: Math.hypot(m.x - ox, m.y - oy) });
+    }
+    cands.sort((a, b) => a.d - b.d);
+    const picks = cands.slice(0, ZAP_MAX_TARGETS).map(c => c.m);
+    if (picks.length === 0) return 0;
+
+    // 稲妻ポリライン（中間点をジッターさせて生成、描画は _drawZapBolts）
+    const pts = [{ x: ox, y: oy }];
+    for (const m of picks) pts.push({ x: m.x, y: m.y });
+    const jag = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const a = jag[jag.length - 1];
+      const c = pts[i];
+      jag.push({
+        x: (a.x + c.x) / 2 + (Math.random() * 2 - 1) * 14,
+        y: (a.y + c.y) / 2 + (Math.random() * 2 - 1) * 14,
+      });
+      jag.push(c);
+    }
+    if (!this._zapBolts) this._zapBolts = [];
+    this._zapBolts.push({ pts: jag, t: ZAP_BOLT_SEC });
+
+    // ダメージ適用（コンボは読み取りのみ＝現在の倍率でスコア満額、コンボ値は不変）
+    const comboMult = this._currentComboMult();
+    for (const m of picks) {
+      m.hp -= 1;
+      m.flashTimer = 0.13;
+      if (m.hp > 0) continue;
+      const j = this.meteors.indexOf(m);
+      if (j < 0) continue;
+      if (m.isItem) {
+        this._collectItem(m, -1);
+      } else if (m.boss) {
+        this._handleBossDeath(m, { isAuto: false, comboMult });
+      } else {
+        this._handleMeteorDeath(m, { isAuto: false, comboMult, sourceBlast: null });
+      }
+      if (this._bossIdx === j)     { this._bossAlive = false; this._bossIdx = -1; }
+      else if (this._bossIdx > j)  { this._bossIdx--; }
+      this.meteors.splice(j, 1);
+    }
+
+    // ZAP音（高音の短いジッパー）
+    this.engine.audio.sequence([
+      { freq: 1760, dur: 0.04, type: 'square', vol: 0.16 },
+      { freq: 1320, dur: 0.04, type: 'square', vol: 0.14 },
+      { freq: 1980, dur: 0.06, type: 'square', vol: 0.16 },
+    ]);
+    return picks.length;
+  }
+
+  // ---- P4 ZAP稲妻の寿命更新（通常時・カード凍結中の両方から呼ぶ＝描画装飾のみ）----
+  _updateZapBolts(dt) {
+    if (!this._zapBolts) { this._zapBolts = []; return; }
+    for (let i = this._zapBolts.length - 1; i >= 0; i--) {
+      const z = this._zapBolts[i];
+      if (!z) { this._zapBolts.splice(i, 1); continue; }
+      z.t -= dt;
+      if (z.t <= 0) this._zapBolts.splice(i, 1);
+    }
+  }
+
+  // ---- P4 ドローン更新（巡回＋ミニタレット射撃＋30秒で離脱）----
+  // キル経済はタレットと同一（弾に auto:true → スコア半減・コンボなし・$満額）。
+  _updateDrone(dt) {
+    const d = this.drone;
+    if (!d) return;
+    d.t -= dt;
+    if (d.t <= 0) {
+      this._float(d.x, d.y, 'DRONE OUT', P().dim, 9);
+      this.drone = null;
+      return;
+    }
+    d.phase += dt;
+    d.x = W / 2 + Math.sin(d.phase * 0.7) * 120;  // 水平サインドリフト
+    d.y = DRONE_Y + Math.sin(d.phase * 1.7) * 6;
+    if (d.flash > 0) d.flash = Math.max(0, d.flash - dt);
+    d.cooldown -= dt;
+    if (d.cooldown > 0) return;
+    const target = this._turretPickTarget();
+    if (!target) { d.cooldown = 0.12; return; } // 標的なし：少し待って再走査
+    // タレットと同じ1次近似リード射撃（照準ノイズなし＝短命な分だけ素直に働く）
+    const dm  = Math.hypot(target.tx - target.x, target.ty - target.y);
+    const mvx = dm > 0 ? (target.tx - target.x) / dm * target.spd : 0;
+    const mvy = dm > 0 ? (target.ty - target.y) / dm * target.spd : 0;
+    const ft  = Math.hypot(target.x - d.x, target.y - d.y) / TURRET_MISSILE_SPD;
+    const ix  = clamp(target.x + mvx * ft, 4, W - 4);
+    const iy  = clamp(target.y + mvy * ft, 8, GROUND_Y - 8);
+    const dx = ix - d.x, dy = iy - d.y;
+    const dd = Math.hypot(dx, dy);
+    if (dd >= 1) {
+      this.missiles.push({
+        x: d.x, y: d.y,
+        tx: ix, ty: iy,
+        vx: dx / dd * TURRET_MISSILE_SPD,
+        vy: dy / dd * TURRET_MISSILE_SPD,
+        spd: TURRET_MISSILE_SPD,
+        done: false,
+        big: false,
+        scatter: false,
+        cityIdx: -1,
+        auto: true,          // ドローン弾＝タレット経済（爆発kindも'turret'）
+        ox: d.x, oy: d.y,
+        dmg: DRONE_DMG,
+        targetSeed: target.seed,
+      });
+      d.flash = 0.08;
+    }
+    d.cooldown = DRONE_CD;
+  }
+
+  // ---- P4 段階的復元（REBUILD）の進行 ----
+  // 完了で都市が復活（バフ/シールドは初期化）。再建中の被弾リセットは _impactCity 側。
+  _updateRebuild(dt) {
+    const rb = this._rebuild;
+    if (!rb) return;
+    const c = this.cities[rb.cityIdx];
+    if (!c || c.alive) { this._rebuild = null; return; } // REPAIR等で先に復活したら破棄
+    rb.t += dt;
+    if (rb.t >= REBUILD_SEC) {
+      c.alive  = true;
+      c.buffs  = makeCityBuffs();
+      c.shield = 0;
+      const p = P();
+      this.cityBlasts.push({
+        x: CITY_XS[rb.cityIdx] + CITY_W / 2,
+        y: GROUND_Y - CITY_H / 2,
+        r: 4, t: 0.55,
+        color: p.green,
+      });
+      this._float(CITY_XS[rb.cityIdx] + CITY_W / 2, GROUND_Y - CITY_H - 12, 'REBUILT', p.green, 12);
+      this.engine.audio.good();
+      this._rebuild = null;
+    }
+  }
+
   // ---- 通常隕石スポーン ----
   _spawnMeteor(forceSize, itemChance) {
     const x = 18 + Math.random() * (W - 36);
     const alive = this.cities.map((c, i) => c.alive ? i : -1).filter(i => i >= 0);
     let tx;
-    if (alive.length > 0 && Math.random() < 0.7) {
+    // P4: 都市狙い率 0.7→0.85、散布 ±14（放置プレイで都市が着実に削られる圧を作る）
+    if (alive.length > 0 && Math.random() < 0.85) {
       const idx = alive[Math.floor(Math.random() * alive.length)];
-      tx = CITY_XS[idx] + CITY_W / 2 + (Math.random() * 24 - 12);
+      tx = CITY_XS[idx] + CITY_W / 2 + (Math.random() * 28 - 14);
     } else {
       tx = 18 + Math.random() * (W - 36);
     }
@@ -1584,6 +1968,28 @@ export class Game extends Scene {
     } else if (type === 'RAPID') {
       // RAPIDバフ：時間制限で連射強化
       this._rapidTimer = RAPID_DURATION;
+    } else if (type === 'SHOCK') {
+      // P4: 衝撃波レベル+1（run.shock が0でも shockLevel 単独で衝撃波が有効になる）
+      this.shockLevel = (this.shockLevel | 0) + 1;
+      this._float(m.x, m.y - 14, 'SHOCK+', P().violet, 12);
+    } else if (type === 'HOMING') {
+      // P4: 誘導弾+3
+      this.homingAmmo = (this.homingAmmo | 0) + HOMING_PER_PURCHASE;
+      this._float(m.x, m.y - 14, 'HOMING +3', P().hi, 12);
+    } else if (type === 'BARRIER') {
+      // P4: 全生存都市に+1シールドチャージ（上限2）。全都市が上限なら$フォールバック
+      let gained = 0;
+      for (const c of this.cities) {
+        if (!c || !c.alive) continue;
+        if ((c.shield | 0) < CITY_SHIELD_CAP) { c.shield = (c.shield | 0) + 1; gained++; }
+      }
+      if (gained > 0) this._float(m.x, m.y - 14, 'BARRIER', P().mid, 12);
+      else this._addMoney(MONEY_ITEM, m.x, m.y - 14); // フォールバック
+    } else if (type === 'ZAP') {
+      // P4: 即時無料ZAPバースト。対象なしなら$フォールバック
+      const hits = this._doZap();
+      if (hits > 0) this._float(m.x, m.y - 14, 'ZAP', P().violet, 12);
+      else this._addMoney(MONEY_ITEM, m.x, m.y - 14); // フォールバック
     }
 
     // ---- $ アイテム取得ボーナス ----
@@ -1618,6 +2024,8 @@ export class Game extends Scene {
       auto: !!o.auto,
       chainDepth: o.chainDepth | 0,
       chainBudget: o.chainBudget || null,
+      // P4: 衝撃波の世代（0=衝撃波以外が原因。衝撃波によるキルは gen+1 を引き継ぐ）
+      shockGen: o.shockGen | 0,
       // 描画専用：CHAIN=マゼンタ／SHOCKWAVE=紫（big=trueで呼ばれるのはSHOCKWAVEのみ）
       kind: o.kind || (big ? 'shock' : 'chain'),
       age: 0,
@@ -1799,9 +2207,39 @@ export class Game extends Scene {
       const d  = Math.abs(cx - ix);
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
+
+    // ---- P4 REBUILD: 再建中の都市サイトへの着弾は進捗を0にリセット ----
+    // まだ生存していないので「破壊」はされない。生存都市より近い場合のみサイトが被弾を吸う。
+    if (this._rebuild) {
+      const rc = CITY_XS[this._rebuild.cityIdx] + CITY_W / 2;
+      const rd = Math.abs(rc - ix);
+      if (rd < CITY_W * 2.5 && rd < bestDist) {
+        if (this._rebuild.t > 0) {
+          this._rebuild.t = 0;
+          this._float(rc, GROUND_Y - CITY_H - 6, 'REBUILD RESET', P().bad, 10);
+          this.engine.audio.bad();
+        }
+        return;
+      }
+    }
+
     if (bestIdx >= 0 && bestDist < CITY_W * 2.5) {
       const floatX = CITY_XS[bestIdx] + CITY_W / 2;
       const floatY = GROUND_Y - CITY_H - 6;
+      // ---- P4 BARRIER: 都市個別のシールドチャージを最優先で消費（カードSHIELDより先）----
+      const hitCity = this.cities[bestIdx];
+      if ((hitCity.shield | 0) > 0) {
+        hitCity.shield--;
+        this.engine.audio.select();
+        this._float(floatX, floatY, 'SHIELD', P().mid, 11);
+        this.cityBlasts.push({
+          x: floatX,
+          y: GROUND_Y - CITY_H / 2,
+          r: 6, t: 0.3,
+          color: P().mid,
+        });
+        return;
+      }
       // SHIELD アップグレード：被弾を1回無効化（スタック消費）
       if (this.run && this.run.shield > 0) {
         this.run.shield--;
@@ -1847,31 +2285,46 @@ export class Game extends Scene {
 
   // ---- ショップ価格（購入回数でエスカレーション。買えない状態は null で示さず enabled で判定）----
   _shopPrice(id) {
-    const s = this.shop || { lv: 0, reload: 0, radius: 0, repair: 0 };
+    const s = this.shop || { lv: 0, reload: 0, radius: 0, repair: 0, shock: 0, barrier: 0 };
     switch (id) {
       case 'turret': {
         const n = this.turrets ? this.turrets.length : 0;
         return SHOP_TURRET_PRICES[Math.min(n, SHOP_TURRET_PRICES.length - 1)];
       }
-      case 'tlv':    return Math.round(SHOP_TLV_BASE * (1 + 0.6 * s.lv));
-      case 'reload': return Math.round(SHOP_RELOAD_BASE * Math.pow(1.6, s.reload));
-      case 'radius': return Math.round(SHOP_RADIUS_BASE * Math.pow(1.6, s.radius));
-      case 'big':    return SHOP_BIG_PRICE;
-      case 'repair': return Math.round(SHOP_REPAIR_BASE * Math.pow(1.8, s.repair));
+      case 'tlv':     return Math.round(SHOP_TLV_BASE * (1 + 0.6 * s.lv));
+      case 'reload':  return Math.round(SHOP_RELOAD_BASE * Math.pow(1.6, s.reload));
+      case 'radius':  return Math.round(SHOP_RADIUS_BASE * Math.pow(1.6, s.radius));
+      case 'big':     return SHOP_BIG_PRICE;
+      case 'repair':  return Math.round(SHOP_REPAIR_BASE * Math.pow(1.8, s.repair));
+      // ---- P4 ----
+      case 'shock':   return Math.round(SHOP_SHOCK_BASE * Math.pow(1.6, s.shock | 0));
+      case 'homing':  return SHOP_HOMING_PRICE;
+      case 'zap':     return SHOP_ZAP_PRICE;
+      case 'drone':   return SHOP_DRONE_PRICE;
+      case 'barrier': return Math.round(SHOP_BARRIER_BASE * Math.pow(1.5, s.barrier | 0));
+      case 'rebuild': return SHOP_REBUILD_PRICE;
     }
     return 999999;
   }
 
-  // ---- ショップ項目一覧（2列×3行。enabled=前提条件、afford=残金）----
+  // ---- ショップ項目一覧（P4: 3列×4行=12項目。enabled=前提条件、afford=残金）----
   _shopItems() {
-    const deadCity = this.cities.some(c => c && !c.alive);
+    const deadCity   = this.cities.some(c => c && !c.alive);
+    const zapTargets = this.meteors.some(m => m && m.y > OFFSCREEN_SAFE_Y);
+    const barrierOK  = this.cities.some(c => c && c.alive && (c.shield | 0) < CITY_SHIELD_CAP);
     const defs = [
-      { id: 'turret', name: 'AUTO TURRET', enabled: this.turrets.length < TURRET_MAX },
-      { id: 'tlv',    name: 'TURRET LV+',  enabled: this.turrets.length > 0 },
-      { id: 'reload', name: 'RELOAD-',     enabled: true },
-      { id: 'radius', name: 'RADIUS+',     enabled: true },
-      { id: 'big',    name: 'BIG CHARGE',  enabled: this._bigCharges < BIG_CHARGES_MAX },
-      { id: 'repair', name: 'REPAIR CITY', enabled: deadCity },
+      { id: 'turret',  name: 'TURRET',  enabled: this.turrets.length < TURRET_MAX },
+      { id: 'tlv',     name: 'LV+',     enabled: this.turrets.length > 0 },
+      { id: 'reload',  name: 'RELOAD-', enabled: true },
+      { id: 'radius',  name: 'RADIUS+', enabled: true },
+      { id: 'big',     name: 'BIG+',    enabled: this._bigCharges < BIG_CHARGES_MAX },
+      { id: 'repair',  name: 'REPAIR',  enabled: deadCity },
+      { id: 'shock',   name: 'SHOCK+',  enabled: true },
+      { id: 'homing',  name: 'HOMING',  enabled: true },
+      { id: 'zap',     name: 'ZAP',     enabled: zapTargets },
+      { id: 'drone',   name: 'DRONE',   enabled: !this.drone },
+      { id: 'barrier', name: 'BARRIER', enabled: barrierOK },
+      { id: 'rebuild', name: 'REBUILD', enabled: deadCity && !this._rebuild },
     ];
     for (const d of defs) {
       d.price  = this._shopPrice(d.id);
@@ -1880,14 +2333,14 @@ export class Game extends Scene {
     return defs;
   }
 
-  // ---- ショップボタン矩形（パネル全開位置基準。col:0-1, row:0-2）----
+  // ---- ショップボタン矩形（パネル全開位置基準。col:0-2, row:0-3）----
   _shopBtnRect(col, row) {
     const panelY = H - SHOP_PANEL_H;
-    const bw = Math.floor((W - 24) / 2); // 8 + bw + 8 + bw + 8
-    const bh = 42;
+    const bw = Math.floor((W - 8 * (SHOP_COLS + 1)) / SHOP_COLS); // 8pxガター×4 → 109px
+    const bh = 40;
     return {
       x: 8 + col * (bw + 8),
-      y: panelY + 26 + row * (bh + 7),
+      y: panelY + 26 + row * (bh + 6),
       w: bw,
       h: bh,
     };
@@ -1897,7 +2350,7 @@ export class Game extends Scene {
   _shopTap(x, y) {
     const items = this._shopItems();
     for (let i = 0; i < items.length; i++) {
-      const r = this._shopBtnRect(i % 2, Math.floor(i / 2));
+      const r = this._shopBtnRect(i % SHOP_COLS, Math.floor(i / SHOP_COLS));
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
         this._shopBuy(items[i], r);
         return;
@@ -1987,6 +2440,71 @@ export class Game extends Scene {
         this.engine.audio.good();
         return;
       }
+      // ---- P4 新項目 ----
+      case 'shock': {
+        this.money -= item.price;
+        this.shop.shock = (this.shop.shock | 0) + 1;
+        this.shockLevel = (this.shockLevel | 0) + 1;
+        this._float(fx, fy, 'SHOCK+ Lv' + this.shockLevel, p.violet, 11);
+        this.engine.audio.select();
+        return;
+      }
+      case 'homing': {
+        this.money -= item.price;
+        this.homingAmmo = (this.homingAmmo | 0) + HOMING_PER_PURCHASE;
+        this._float(fx, fy, 'HOMING +3', p.hi, 11);
+        this.engine.audio.select();
+        return;
+      }
+      case 'zap': {
+        // 即時発動。対象なしは購入不可（enabledで弾いているが二重ガード）
+        if (!this.meteors.some(m => m && m.y > OFFSCREEN_SAFE_Y)) return;
+        this.money -= item.price;
+        this._doZap();
+        this._float(fx, fy, 'ZAP', p.violet, 11);
+        return;
+      }
+      case 'drone': {
+        if (this.drone) return; // 同時1機まで
+        this.money -= item.price;
+        this.drone = {
+          x: W / 2, y: DRONE_Y,
+          t: DRONE_DURATION,
+          cooldown: 0.6,
+          phase: Math.random() * 10,
+          flash: 0,
+        };
+        this._float(W / 2, DRONE_Y - 18, 'DRONE ONLINE', p.mid, 11);
+        this.engine.audio.good();
+        return;
+      }
+      case 'barrier': {
+        let gained = 0;
+        for (const c of this.cities) {
+          if (!c || !c.alive) continue;
+          if ((c.shield | 0) < CITY_SHIELD_CAP) { c.shield = (c.shield | 0) + 1; gained++; }
+        }
+        if (gained === 0) return; // 全都市が上限（enabledで弾いているが二重ガード）
+        this.money -= item.price;
+        this.shop.barrier = (this.shop.barrier | 0) + 1;
+        this._float(fx, fy, 'BARRIER +' + gained, p.mid, 11);
+        this.engine.audio.good();
+        return;
+      }
+      case 'rebuild': {
+        if (this._rebuild) return; // 同時1件まで
+        // 最小インデックスの破壊都市を対象にする
+        let idx = -1;
+        for (let i = 0; i < CITY_COUNT; i++) {
+          if (this.cities[i] && !this.cities[i].alive) { idx = i; break; }
+        }
+        if (idx < 0) return;
+        this.money -= item.price;
+        this._rebuild = { cityIdx: idx, t: 0 };
+        this._float(CITY_XS[idx] + CITY_W / 2, GROUND_Y - CITY_H - 12, 'REBUILDING', p.green, 11);
+        this.engine.audio.select();
+        return;
+      }
     }
   }
 
@@ -2018,11 +2536,11 @@ export class Game extends Scene {
       this.engine.text('SHOP', 10, panelY + 6, 13, p.mid, 'left');
       this.engine.text('$' + this.money, W - 10, panelY + 6, 13, p.green, 'right');
 
-      // ボタン 2列×3行
+      // ボタン 3列×4行（P4）
       const items = this._shopItems();
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const r  = this._shopBtnRect(i % 2, Math.floor(i / 2));
+        const r  = this._shopBtnRect(i % SHOP_COLS, Math.floor(i / SHOP_COLS));
         const usable = it.afford;
         const col = usable ? p.mid : p.dim;
         const cut = 5;
@@ -2048,16 +2566,22 @@ export class Game extends Scene {
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // 名前＋価格（価格は緑）
-        this.engine.text(it.name, r.x + 8, r.y + 5, 12, usable ? p.fg : p.dim, 'left');
-        this.engine.text('$' + it.price, r.x + 8, r.y + 22, 12, usable ? p.green : p.dim, 'left');
+        // 名前＋価格（価格は緑。P4: 3列化に合わせてフォント縮小）
+        this.engine.text(it.name, r.x + 6, r.y + 4, 10, usable ? p.fg : p.dim, 'left');
+        this.engine.text('$' + it.price, r.x + 6, r.y + 20, 10, usable ? p.green : p.dim, 'left');
 
         // 補助表示（所持数・状態）
         let sub = '';
         if (it.id === 'turret') sub = this.turrets.length + '/' + TURRET_MAX;
         else if (it.id === 'tlv' && this.turrets.length > 0) sub = 'Lv' + (1 + ((this.shop && this.shop.lv) | 0));
         else if (it.id === 'big') sub = this._bigCharges + '/' + BIG_CHARGES_MAX;
-        if (sub) this.engine.text(sub, r.x + r.w - 8, r.y + 22, 11, p.dim, 'right');
+        else if (it.id === 'shock' && this.shockLevel > 0) sub = 'Lv' + this.shockLevel;
+        else if (it.id === 'homing' && this.homingAmmo > 0) sub = 'x' + this.homingAmmo;
+        else if (it.id === 'drone' && this.drone) sub = Math.ceil(this.drone.t) + 's';
+        else if (it.id === 'rebuild' && this._rebuild) {
+          sub = Math.floor(clamp(this._rebuild.t / REBUILD_SEC, 0, 1) * 100) + '%';
+        }
+        if (sub) this.engine.text(sub, r.x + r.w - 6, r.y + 20, 9, p.dim, 'right');
         ctx.restore();
       }
       ctx.restore();
@@ -2161,6 +2685,80 @@ export class Game extends Scene {
     }
   }
 
+  // ---- P4 ドローン描画（小型ウィング＋残り時間バー＋マズルフラッシュ）----
+  _drawDrone(ctx, p) {
+    const d = this.drone;
+    if (!d) return;
+    ctx.save();
+    // 機体（シアンのワイヤーウィング）
+    ctx.strokeStyle = p.mid;
+    ctx.lineWidth = 1.4;
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = p.mid;
+    ctx.beginPath();
+    ctx.moveTo(d.x - 7, d.y + 3);
+    ctx.lineTo(d.x, d.y - 5);
+    ctx.lineTo(d.x + 7, d.y + 3);
+    ctx.lineTo(d.x, d.y + 1);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // コアドット
+    ctx.beginPath();
+    ctx.arc(d.x, d.y - 1, 1.4, 0, Math.PI * 2);
+    ctx.fillStyle = p.mid;
+    ctx.fill();
+    // マズルフラッシュ（発射直後）
+    if (d.flash > 0) {
+      ctx.globalAlpha = clamp(d.flash / 0.08, 0, 1);
+      ctx.beginPath();
+      ctx.arc(d.x, d.y - 1, 4, 0, Math.PI * 2);
+      ctx.strokeStyle = p.hi;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // 残り時間バー（機体の上）
+    const frac = clamp(d.t / DRONE_DURATION, 0, 1);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(d.x - 10, d.y - 13, 20, 3);
+    ctx.fillStyle = p.mid;
+    ctx.fillRect(d.x - 10, d.y - 13, Math.max(0, 20 * frac), 3);
+    ctx.restore();
+  }
+
+  // ---- P4 ZAP稲妻描画（紫の外光＋白コアの二重ポリライン、~0.35秒でフェード）----
+  _drawZapBolts(ctx, p) {
+    if (!this._zapBolts || this._zapBolts.length === 0) return;
+    for (const z of this._zapBolts) {
+      if (!z || !z.pts || z.pts.length < 2) continue;
+      const a = clamp(z.t / ZAP_BOLT_SEC, 0, 1);
+      if (a <= 0) continue;
+      ctx.save();
+      // 外光（紫、太め）
+      ctx.globalAlpha = clamp(a * 0.9, 0, 1);
+      ctx.strokeStyle = p.violet;
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = p.violet;
+      ctx.beginPath();
+      ctx.moveTo(z.pts[0].x, z.pts[0].y);
+      for (let i = 1; i < z.pts.length; i++) ctx.lineTo(z.pts[i].x, z.pts[i].y);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // コア（白、細め）
+      ctx.globalAlpha = clamp(a, 0, 1);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(z.pts[0].x, z.pts[0].y);
+      for (let i = 1; i < z.pts.length; i++) ctx.lineTo(z.pts[i].x, z.pts[i].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // ---- render ----
   render(ctx) {
     const p = P();
@@ -2200,6 +2798,9 @@ export class Game extends Scene {
     // ---- 自動タレットポッド ----
     this._drawTurrets(ctx, p);
 
+    // ---- P4 ドローン（味方機・タイマーバー付き）----
+    this._drawDrone(ctx, p);
+
     // ---- 都市爆発エフェクト（REPAIR復旧フラッシュは緑、SHIELDはシアン）----
     for (const cb of this.cityBlasts) {
       if (!cb) continue;
@@ -2225,8 +2826,10 @@ export class Game extends Scene {
         ctx.strokeStyle = p.dim;
         ctx.lineWidth   = 1;
       } else {
-        ctx.strokeStyle = ms.big ? p.warn : (ms.scatter ? p.hi : p.fg);
-        ctx.lineWidth   = ms.big ? 2.5 : 1.5;
+        // P4: 誘導弾（homing）は少し明るく・わずかに太く（白＋淡いグロー）
+        ctx.strokeStyle = ms.big ? p.warn : (ms.scatter ? p.hi : (ms.homing ? p.hi : p.fg));
+        ctx.lineWidth   = ms.big ? 2.5 : (ms.homing ? 1.8 : 1.5);
+        if (ms.homing) { ctx.shadowBlur = 5; ctx.shadowColor = p.hi; }
       }
       ctx.setLineDash(ms.big ? [6, 3] : (ms.scatter ? [3, 2] : []));
       ctx.beginPath();
@@ -2234,9 +2837,10 @@ export class Game extends Scene {
       ctx.lineTo(ms.x, ms.y);
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.shadowBlur = 0;
       ctx.beginPath();
-      ctx.arc(ms.x, ms.y, ms.auto ? 2 : (ms.big ? 4 : (ms.scatter ? 3 : 2.5)), 0, Math.PI * 2);
-      ctx.fillStyle = ms.auto ? p.mid : (ms.big ? p.warn : (ms.scatter ? p.hi : p.fg));
+      ctx.arc(ms.x, ms.y, ms.auto ? 2 : (ms.big ? 4 : ((ms.scatter || ms.homing) ? 3 : 2.5)), 0, Math.PI * 2);
+      ctx.fillStyle = ms.auto ? p.mid : (ms.big ? p.warn : ((ms.scatter || ms.homing) ? p.hi : p.fg));
       ctx.fill();
       ctx.restore();
     }
@@ -2411,9 +3015,12 @@ export class Game extends Scene {
       const activeBlasts = this.blasts.filter(b => b != null);
 
       if (activeBlasts.length > 0) {
-        drawAllBlastsSpeckle(ctx, activeBlasts, p);
+        drawAllBlastsSpeckle(ctx, activeBlasts, this._frameCount);
       }
     }
+
+    // ---- P4 ZAP稲妻（爆発の上に描く）----
+    this._drawZapBolts(ctx, p);
 
     // ---- 浮遊数値（撃破スコア/コンボ/CITY LOST等。爆発の上・パネルの下）----
     this._drawFloaters(ctx, p);
@@ -3017,6 +3624,8 @@ export class Game extends Scene {
     // ---- 背景の細線アウトラインパネル（情報内容は変更せず、見た目だけ薄く囲む）----
     let visibleRows = 0;
     if (this._scatterAmmo > 0) visibleRows++;
+    if (this.homingAmmo > 0) visibleRows++;   // P4
+    if (this.shockLevel > 0) visibleRows++;   // P4
     if (this._launcherSlots > 2) visibleRows++;
     if (this._rapidTimer > 0) visibleRows++;
     for (let ci = 0; ci < CITY_COUNT; ci++) {
@@ -3049,6 +3658,29 @@ export class Game extends Scene {
         ctx.fillStyle = p.hi;
         ctx.fill();
       }
+      ctx.restore();
+      rowY += rowH;
+    }
+
+    // ---- P4 HOMING残弾（ドット表示）----
+    if (this.homingAmmo > 0) {
+      ctx.save();
+      this.engine.text('HOMG', labelX, rowY, 8, p.hi, 'left');
+      for (let i = 0; i < Math.min(this.homingAmmo, 9); i++) {
+        ctx.beginPath();
+        ctx.arc(panelX + 28 + i * 5, rowY + 4, 2, 0, Math.PI * 2);
+        ctx.fillStyle = p.hi;
+        ctx.fill();
+      }
+      ctx.restore();
+      rowY += rowH;
+    }
+
+    // ---- P4 SHOCKレベル（静的表示）----
+    if (this.shockLevel > 0) {
+      ctx.save();
+      this.engine.text('SHOCK', labelX, rowY, 8, p.violet, 'left');
+      this.engine.text('Lv' + this.shockLevel, panelX + 32, rowY, 8, p.violet, 'left');
       ctx.restore();
       rowY += rowH;
     }
@@ -3149,7 +3781,8 @@ export class Game extends Scene {
 
     ctx.save();
     ctx.globalAlpha = clamp(pulse, 0, 1);
-    const label = m.itemType ? m.itemType[0] : '?';
+    // P4: SCATTERとSHOCKの'S'衝突回避のため、新ドロップはITEM_LABELSの1〜2文字を使う
+    const label = m.itemType ? (ITEM_LABELS[m.itemType] || m.itemType[0]) : '?';
     this.engine.text(label, m.x, m.y - 6, 13, p.hi, 'center');
     ctx.restore();
   }
@@ -3255,6 +3888,35 @@ export class Game extends Scene {
       ctx.beginPath(); ctx.moveTo(mx - 5, my - 5); ctx.lineTo(mx + 5, my + 5); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(mx + 5, my - 5); ctx.lineTo(mx - 5, my + 5); ctx.stroke();
       ctx.restore();
+
+      // ---- P4 REBUILD: 再建中の足場（下から進捗分だけ緑の破線アウトラインが立ち上がる）----
+      if (this._rebuild && this._rebuild.cityIdx === idx) {
+        const frac    = clamp(this._rebuild.t / REBUILD_SEC, 0, 1);
+        const profile = CITY_PROFILES[idx];
+        if (profile && profile.buildings && frac > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(ox - 2, oy + CITY_H * (1 - frac) - 1, CITY_W + 4, CITY_H * frac + 2);
+          ctx.clip();
+          ctx.globalAlpha = 0.8;
+          ctx.strokeStyle = p.green;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          for (const b of profile.buildings) {
+            ctx.strokeRect(ox + b.x, oy + b.y, b.w, b.h);
+          }
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+        // 進捗バー（都市上部）
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = p.dark;
+        ctx.fillRect(ox, oy - 8, CITY_W, 3);
+        ctx.fillStyle = p.green;
+        ctx.fillRect(ox, oy - 8, Math.max(0, CITY_W * frac), 3);
+        ctx.restore();
+      }
       return;
     }
 
@@ -3317,6 +3979,23 @@ export class Game extends Scene {
       ctx.fill();
       ctx.restore();
       dotX += 7;
+    }
+
+    // ---- P4 BARRIER: シールドチャージ分の半透明ドームアーク（上限2、外側ほど薄く）----
+    const shieldCharges = Math.min(city.shield | 0, CITY_SHIELD_CAP);
+    if (shieldCharges > 0) {
+      ctx.save();
+      const dcx = ox + CITY_W / 2;
+      const dcy = oy + CITY_H; // 地面基準
+      for (let s = 0; s < shieldCharges; s++) {
+        ctx.globalAlpha = clamp(0.4 - s * 0.12, 0, 1);
+        ctx.strokeStyle = p.mid;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(dcx, dcy, CITY_W * 0.78 + s * 4, Math.PI, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // SHIELDアップグレード有効中：都市上に小さなシールドグリフ
