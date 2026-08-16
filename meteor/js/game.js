@@ -46,7 +46,8 @@ const METEOR_SPD_MIN      = 3;     // 旧2
 const METEOR_SPD_MAX      = 7.5;   // 旧5
 const METEOR_SPD_MAX_LATE = 10.5;  // 旧7
 
-const FAST_CHANCE  = 0.10;
+const FAST_CHANCE  = 0.14;  // P5b: 序盤の高速隕石混入率（旧0.10）。ステージごとに+5%
+const FAST_CHANCE_CAP = 0.40; // 上限
 const FAST_SPD_MIN = 21;  // 旧14
 const FAST_SPD_MAX = 36;  // 旧24
 
@@ -265,14 +266,18 @@ const REBUILD_SEC = 20;
 // ---- ボス死亡＝破片の雨（P4: 終末感。ボス撃破で実体の破片隕石が降る）----
 // P5: 破片の「量・大きさ・速さ」を難易度（ステージ）に合わせて上げる。
 // 個数 = BASE + stage*PER_STAGE（上限CAP）、半径上限は stage で伸び、速度倍率も上がる。
-const BOSS_FRAG_BASE       = 6;
-const BOSS_FRAG_PER_STAGE  = 1.5;  // ステージごとの追加個数
-const BOSS_FRAG_CAP        = 16;   // 上限（旧10）
+// P5b（ユーザー: 「死ぬほど降り注いでいい」）: 序盤から量が多く、後半は速度と耐久で難易度を上げる。
+const BOSS_FRAG_BASE       = 14;   // ステージ0でも14個（旧6）
+const BOSS_FRAG_PER_STAGE  = 3;    // ステージごとの追加個数（旧1.5）
+const BOSS_FRAG_CAP        = 34;   // 上限（旧16）
 const BOSS_FRAG_R_MIN      = 6;
 const BOSS_FRAG_R_MAX      = 13;   // ステージ0の上限半径。+1/stage で最大22（＝巨大級）まで
 const BOSS_FRAG_R_MAX_CAP  = 22;
-const BOSS_FRAG_SPD_MIN    = 1.1;  // 通常速×（stageで+0.08ずつ、上限2.2）
-const BOSS_FRAG_SPD_RANGE  = 0.4;
+const BOSS_FRAG_SPD_MIN    = 1.3;  // 通常速×（stageで+0.12ずつ、上限3.0）— 後半は速く
+const BOSS_FRAG_SPD_RANGE  = 0.5;
+const BOSS_FRAG_HP_BONUS_PER = 3;  // このステージ数ごとに破片HP+1（後半は耐久で難化）
+const BOSS_FRAG_WAVES      = 3;    // 一斉ではなく数波に分けて降らせる（時間差で降り注ぐ演出＆迎撃の余地）
+const BOSS_FRAG_WAVE_GAP_Y = 46;   // 波ごとの出現Y差（上の波ほど遅れて到達）
 const BOSS_FRAG_Y_MAX = 180;  // 破片の出現Y上限（死亡位置がこれより下ならそのまま）
 
 // ---- HP計算 ----
@@ -1709,20 +1714,33 @@ export class Game extends Scene {
     const st    = Math.max(0, this._stage | 0);
     const count = Math.min(Math.round(BOSS_FRAG_BASE + st * BOSS_FRAG_PER_STAGE), BOSS_FRAG_CAP);
     const rMax  = Math.min(BOSS_FRAG_R_MAX + st, BOSS_FRAG_R_MAX_CAP);
-    const spdLo = Math.min(BOSS_FRAG_SPD_MIN + st * 0.08, 2.2);
+    const spdLo = Math.min(BOSS_FRAG_SPD_MIN + st * 0.12, 3.0);
+    const hpBonus = Math.floor(st / BOSS_FRAG_HP_BONUS_PER); // 後半は耐久UP
     const fy    = Math.min(m.y, BOSS_FRAG_Y_MAX);
+    // 破片は画面幅いっぱいに、数波に分けて時間差で降らせる（上の波ほど後着＝連続的な「雨」）
     for (let i = 0; i < count; i++) {
+      const wave = i % BOSS_FRAG_WAVES;
       const fr   = BOSS_FRAG_R_MIN + Math.random() * (rMax - BOSS_FRAG_R_MIN);
+      // 横位置：ボス中心を基準に画面幅の大半へ散らす（幅が広いほど都市に届く）
+      const spread = Math.max(m.r * 1.7, W * 0.85);
       const fx   = clamp(
-        m.x - m.r * 0.85 + ((i + 0.5) / count) * m.r * 1.7 + (Math.random() * 2 - 1) * 8,
+        m.x - spread / 2 + ((i + 0.5) / count) * spread + (Math.random() * 2 - 1) * 12,
         8, W - 8
       );
       const spd  = this._calcNormalSpd() * (spdLo + Math.random() * BOSS_FRAG_SPD_RANGE);
       const seed = _nextMeteorSeed++;
-      const hp   = calcMeteorHP(fr);
+      const hp   = calcMeteorHP(fr) + hpBonus;
+      // 都市を狙う破片を混ぜる（生存都市があれば約7割が都市を直接狙う）
+      const alive = [];
+      for (let ci = 0; ci < this.cities.length; ci++) if (this.cities[ci] && this.cities[ci].alive) alive.push(ci);
+      let tx = 18 + Math.random() * (W - 36);
+      if (alive.length && Math.random() < 0.7) {
+        const ci = alive[(Math.random() * alive.length) | 0];
+        tx = CITY_XS[ci] + CITY_W / 2 + (Math.random() * 2 - 1) * 14;
+      }
       this.meteors.push({
-        x: fx, y: fy + (Math.random() * 2 - 1) * 10,
-        tx: 18 + Math.random() * (W - 36), ty: GROUND_Y,
+        x: fx, y: fy - wave * BOSS_FRAG_WAVE_GAP_Y + (Math.random() * 2 - 1) * 10,
+        tx, ty: GROUND_Y,
         spd, r: fr,
         vx: (Math.random() * 2 - 1) * 18, // わずかな水平ドリフト
         hp, maxHp: hp,
@@ -1774,23 +1792,33 @@ export class Game extends Scene {
     this._zapBolts.push({ pts: jag, t: ZAP_BOLT_SEC });
 
     // ダメージ適用（コンボは読み取りのみ＝現在の倍率でスコア満額、コンボ値は不変）
+    // ★P5修正：以前は死亡処理（破片スポーン等で meteors を伸ばす）の後に indexOf/splice し、
+    //   さらに _handleBossDeath が _bossIdx を -1 にした後で再度 _bossIdx を触っていた。
+    //   → 死亡判定を先に確定し、死亡処理は「配列から外した後」に行い、_bossIdx は
+    //     生存メテオ配列から再導出する。例外が出ても update() 全体が止まらないよう try で囲む。
     const comboMult = this._currentComboMult();
+    const dead = [];
     for (const m of picks) {
       m.hp -= 1;
       m.flashTimer = 0.13;
-      if (m.hp > 0) continue;
-      const j = this.meteors.indexOf(m);
-      if (j < 0) continue;
-      if (m.isItem) {
-        this._collectItem(m, -1);
-      } else if (m.boss) {
-        this._handleBossDeath(m, { isAuto: false, comboMult });
-      } else {
-        this._handleMeteorDeath(m, { isAuto: false, comboMult, sourceBlast: null });
+      if (m.hp <= 0) dead.push(m);
+    }
+    if (dead.length) {
+      // 1) まず配列から取り除く（インデックス依存を排除）
+      const deadSet = new Set(dead);
+      this.meteors = this.meteors.filter(x => !deadSet.has(x));
+      // 2) 死亡処理（破片スポーン・スコア・$・連鎖など）。1体の失敗が他を巻き込まないよう個別に保護
+      for (const m of dead) {
+        try {
+          if (m.isItem)      this._collectItem(m, -1);
+          else if (m.boss)   this._handleBossDeath(m, { isAuto: false, comboMult });
+          else               this._handleMeteorDeath(m, { isAuto: false, comboMult, sourceBlast: null });
+        } catch (e) { console.error('[zap death]', e); }
       }
-      if (this._bossIdx === j)     { this._bossAlive = false; this._bossIdx = -1; }
-      else if (this._bossIdx > j)  { this._bossIdx--; }
-      this.meteors.splice(j, 1);
+      // 3) ボスインデックスを再導出（ボスが死んだ／並びが変わった両方に対応）
+      const bi = this.meteors.findIndex(x => x && x.boss);
+      this._bossIdx   = bi;
+      this._bossAlive = bi >= 0;
     }
 
     // ZAP音（高音の短いジッパー）
@@ -1918,7 +1946,15 @@ export class Game extends Scene {
 
     if (spawnItem) r = 14 + Math.random() * 6;
 
-    const isFast  = !spawnItem && Math.random() < FAST_CHANCE;
+    // P5b: 高速隕石の混入率をステージで上げる（都市被弾がほぼ起きない問題への直接の対策）。
+    // 遅い隕石は必ず迎撃できてしまうため、都市に「届く」脅威は速さで作る。
+    const fastChance = Math.min(FAST_CHANCE + 0.05 * (this._stage | 0), FAST_CHANCE_CAP);
+    const isFast  = !spawnItem && Math.random() < fastChance;
+    // 高速隕石は都市を強く狙う（散布も狭く）
+    if (isFast && alive.length > 0 && Math.random() < 0.9) {
+      const idx = alive[Math.floor(Math.random() * alive.length)];
+      tx = CITY_XS[idx] + CITY_W / 2 + (Math.random() * 12 - 6);
+    }
     const spd     = isFast ? this._calcFastSpd() : this._calcNormalSpd();
     const maxHp   = spawnItem ? 1 : calcMeteorHP(r);
     const seed    = _nextMeteorSeed++;

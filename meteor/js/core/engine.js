@@ -89,8 +89,21 @@ export class Engine {
         this.scene.render(ctx);
         // メニュー以外はBACKボタンを上に重ねる（blocksBack中は機能しないため描画も消し、押せそうで押せないUX不整合を防ぐ）
         if (!this.scene.isRoot && !(this.scene.blocksBack && this.scene.blocksBack())) this._drawBack();
+        this._errCount = 0;
       } catch (e) {
+        // update() が毎フレーム例外を投げると「描画は続くのにゲームだけ止まる」症状になる。
+        // 黙って握り潰さず、画面に赤帯で可視化して調査可能にする（ループ自体は継続）。
+        this._errCount = (this._errCount || 0) + 1;
         console.error('[scene error]', e);
+        try {
+          ctx.save();
+          ctx.setTransform(this.scale * (window.devicePixelRatio || 1), 0, 0, this.scale * (window.devicePixelRatio || 1), 0, 0);
+          ctx.fillStyle = 'rgba(200,30,60,0.85)';
+          ctx.fillRect(0, H - 22, W, 22);
+          ctx.fillStyle = '#fff'; ctx.font = '11px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          ctx.fillText('ERR ' + String(e && e.message || e).slice(0, 48) + ' (x' + this._errCount + ')', 6, H - 11);
+          ctx.restore();
+        } catch (_) { /* 描画エラー表示自体の失敗は無視 */ }
       }
     }
     requestAnimationFrame(this._loop); // 例外があっても次フレームは必ず予約する
