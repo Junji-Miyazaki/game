@@ -426,8 +426,8 @@ const CITY_H      = 22;  // 少し高くして山シルエットに
 const GROUND_Y    = H - 40;
 
 // ミサイル（P1: ペース+50% — 速く・軽快に）
-const MISSILE_SPD    = 170;  // px/s（旧115 ×~1.5）
-const FIRE_COOLDOWN  = 0.45; // 発射間隔（秒、旧0.55）
+const MISSILE_SPD    = 210;  // px/s（P5: 170→210、発射感をより速く）
+const FIRE_COOLDOWN  = 0.36; // 発射間隔（秒、P5: 0.45→0.36）
 
 // 同時飛翔上限（通常）
 const MISSILES_CAP_NORMAL = 4;
@@ -588,6 +588,10 @@ const SHOCK_R_PER_STACK    = 20;
 const SHOCK_SPAWN_BASE  = 0.55;
 const SHOCK_GEN_DECAY   = 0.35;
 const SHOCK_GEN_CAP     = 4;
+// ★フリーズ対策（P5）：衝撃波の同時存在上限／処理落ち検知しきい値／全爆発の同時上限
+const SHOCK_MAX_ACTIVE  = 3;     // 同時に存在できる衝撃波爆発
+const HEAVY_FRAME_DT    = 0.05;  // これより長いフレーム(=20fps未満)では新規連鎖/衝撃波を抑制
+const MAX_ACTIVE_BLASTS = 24;    // 全爆発の同時上限（超えた分は最古からフェードへ）
 // 影響も確率制：shock爆発が隕石に重なった時のみ確率で1ダメージ。
 // ロールは blast×meteor ごとに1回だけ（失敗してもヒット済み扱い＝毎フレーム再ロールしない）。
 const SHOCK_AFFECT_BASE = 0.30;
@@ -666,10 +670,16 @@ const CITY_SHIELD_CAP = 2;
 const REBUILD_SEC = 20;
 
 // ---- ボス死亡＝破片の雨（P4: 終末感。ボス撃破で実体の破片隕石が降る）----
-const BOSS_FRAG_BASE  = 6;    // 6 + stage 個（上限 BOSS_FRAG_CAP）
-const BOSS_FRAG_CAP   = 10;
-const BOSS_FRAG_R_MIN = 6;
-const BOSS_FRAG_R_MAX = 13;
+// P5: 破片の「量・大きさ・速さ」を難易度（ステージ）に合わせて上げる。
+// 個数 = BASE + stage*PER_STAGE（上限CAP）、半径上限は stage で伸び、速度倍率も上がる。
+const BOSS_FRAG_BASE       = 6;
+const BOSS_FRAG_PER_STAGE  = 1.5;  // ステージごとの追加個数
+const BOSS_FRAG_CAP        = 16;   // 上限（旧10）
+const BOSS_FRAG_R_MIN      = 6;
+const BOSS_FRAG_R_MAX      = 13;   // ステージ0の上限半径。+1/stage で最大22（＝巨大級）まで
+const BOSS_FRAG_R_MAX_CAP  = 22;
+const BOSS_FRAG_SPD_MIN    = 1.1;  // 通常速×（stageで+0.08ずつ、上限2.2）
+const BOSS_FRAG_SPD_RANGE  = 0.4;
 const BOSS_FRAG_Y_MAX = 180;  // 破片の出現Y上限（死亡位置がこれより下ならそのまま）
 
 // ---- HP計算 ----
@@ -946,32 +956,40 @@ function drawAllBlastsSpeckle(mainCtx, blasts, frameCount) {
     const cidx    = (_speckleRand(id, 7, 13, frameCount) * _SPECKLE_COLOR_COUNT) | 0;
     const fillCol = colors[cidx];
 
+    // ★負荷対策：セルサイズを半径に応じて粗くし、fillRect回数を半径によらずほぼ一定に保つ
+    //   （r<=48: 8px / r<=96: 12px / それ以上: 16px）。大爆発ほど粗いドット＝迫力も出る。
+    const CELL = r <= 48 ? _CELL : (r <= 96 ? 12 : 16);
     // グリッドをブラスト中心から±r の矩形に限定し、さらに画面内セルへクランプ
-    //（完全に画面外のセルはスキップ＝負荷対策）
-    const x0 = Math.max(0, Math.floor((bx - r) / _CELL));
-    const x1 = Math.min(Math.ceil((bx + r) / _CELL), Math.ceil(W / _CELL));
-    const y0 = Math.max(0, Math.floor((by - r) / _CELL));
-    const y1 = Math.min(Math.ceil((by + r) / _CELL), Math.ceil(H / _CELL));
+    //（完全に画面外のセルはスキップ）
+    const x0 = Math.max(0, Math.floor((bx - r) / CELL));
+    const x1 = Math.min(Math.ceil((bx + r) / CELL), Math.ceil(W / CELL));
+    const y0 = Math.max(0, Math.floor((by - r) / CELL));
+    const y1 = Math.min(Math.ceil((by + r) / CELL), Math.ceil(H / CELL));
 
     mainCtx.save();
     mainCtx.globalCompositeOperation = 'source-over';
     mainCtx.globalAlpha = clamp(alpha, 0, 1);
     mainCtx.fillStyle = fillCol;
 
+    const r2 = r * r;
     for (let gy = y0; gy <= y1; gy++) {
-      const cy = gy * _CELL + _CELL * 0.5;
+      const cy = gy * CELL + CELL * 0.5;
       const dy = cy - by;
+      const dy2 = dy * dy;
+      if (dy2 > r2 * 1.21) continue; // 行ごと早期打ち切り
 
       for (let gx = x0; gx <= x1; gx++) {
-        const cx = gx * _CELL + _CELL * 0.5;
+        const cx = gx * CELL + CELL * 0.5;
         const dx = cx - bx;
+        const d2 = dx * dx + dy2;
+        if (d2 > r2 * 1.21) continue;            // 明らかな外側は即スキップ（ハッシュ計算しない）
+        if (d2 > r2 * 0.77) {                    // 縁の帯だけジッター判定（内側は無条件で塗る）
+          const jitter = 0.88 + 0.22 * _speckleRand(gx * 7 + 3, gy * 5 + 1, id, 0);
+          const effectiveR = r * jitter;
+          if (d2 > effectiveR * effectiveR) continue;
+        }
 
-        // セルごとに半径ジッターでエッジを粗く（綺麗な円にしない）
-        const jitter = 0.88 + 0.22 * _speckleRand(gx * 7 + 3, gy * 5 + 1, id, 0);
-        const effectiveR = r * jitter;
-        if (dx * dx + dy * dy > effectiveR * effectiveR) continue;
-
-        mainCtx.fillRect(gx * _CELL, gy * _CELL, _CELL, _CELL);
+        mainCtx.fillRect(gx * CELL, gy * CELL, CELL, CELL);
       }
     }
 
@@ -1468,6 +1486,16 @@ class Game extends Scene {
   update(dt) {
     if (this.dead) return;
     const p = P(); // 撃破フロート・コンボ表示の色参照用
+    this._lastDt = dt; // 処理落ち検知用（衝撃波/連鎖の抑制判定に使う）
+
+    // ★フリーズ対策：全爆発の同時上限。超過分は最古の爆発を即フェード（成長を止める）
+    if (this.blasts && this.blasts.length > MAX_ACTIVE_BLASTS) {
+      let over = this.blasts.length - MAX_ACTIVE_BLASTS;
+      for (let i = 0; i < this.blasts.length && over > 0; i++) {
+        const b = this.blasts[i];
+        if (b && b.growing) { b.growing = false; over--; }
+      }
+    }
 
     // ---- 3択カード選択中：ゲームプレイ凍結（演出タイマー・パーティクルのみ進行）----
     // スポーン・隕石・ミサイル・爆発・バフ・_elapsed はすべて停止。
@@ -2031,7 +2059,8 @@ class Game extends Scene {
     // ・半径は深度ごとに×0.65減衰
     // ・1ルート爆発あたり連鎖は合計3個まで（共有カウンタ b.chainBudget）
     // 新しい爆発は配列末尾に push され、下方向ループでは今フレーム再訪しない（安全）
-    if (b && this.run && this.run.chain > 0) {
+    // ★処理落ち中は新規連鎖も抑制（衝撃波と同じ負荷スパイク対策）
+    if (b && this.run && this.run.chain > 0 && (this._lastDt || 0) <= HEAVY_FRAME_DT) {
       const depth = b.chainDepth | 0;
       if (depth < CHAIN_MAX_DEPTH) {
         const budget = b.chainBudget || (b.chainBudget = { left: CHAIN_MAX_PER_ROOT });
@@ -2065,6 +2094,12 @@ class Game extends Scene {
       ? ((sourceBlast.shockGen | 0) + 1)
       : 0;
     if (gen > SHOCK_GEN_CAP) return false; // 安全キャップ（幾何減衰で実際はここまで届かない）
+    // ★フリーズ対策：同時に存在できる衝撃波は SHOCK_MAX_ACTIVE 個まで（描画・判定コストの暴走を物理的に封じる）
+    let activeShock = 0;
+    for (const b of this.blasts) if (b && b.kind === 'shock') activeShock++;
+    if (activeShock >= SHOCK_MAX_ACTIVE) return false;
+    // ★処理落ち中（前フレームが長い）は新規衝撃波を発生させない＝負荷スパイクの正帰還を切る
+    if ((this._lastDt || 0) > HEAVY_FRAME_DT) return false;
     const chance = SHOCK_SPAWN_BASE * Math.pow(SHOCK_GEN_DECAY, gen);
     if (Math.random() >= chance) return false;
     const r = SHOCK_BASE_R + SHOCK_R_PER_STACK * stacks;
@@ -2077,15 +2112,19 @@ class Game extends Scene {
   // 速度は通常速の×1.1〜1.5、わずかな水平ドリフト vx 付き。通常隕石なので撃破可能・
   // $ドロップあり・都市を直撃しうる。ステージクリアは全破片の処理を自然に待つ。
   _spawnBossFragments(m) {
-    const count = Math.min(BOSS_FRAG_BASE + this._stage, BOSS_FRAG_CAP);
+    // 難易度スケーリング：個数・最大半径・速度がステージで上昇（終末感が段階的に増す）
+    const st    = Math.max(0, this._stage | 0);
+    const count = Math.min(Math.round(BOSS_FRAG_BASE + st * BOSS_FRAG_PER_STAGE), BOSS_FRAG_CAP);
+    const rMax  = Math.min(BOSS_FRAG_R_MAX + st, BOSS_FRAG_R_MAX_CAP);
+    const spdLo = Math.min(BOSS_FRAG_SPD_MIN + st * 0.08, 2.2);
     const fy    = Math.min(m.y, BOSS_FRAG_Y_MAX);
     for (let i = 0; i < count; i++) {
-      const fr   = BOSS_FRAG_R_MIN + Math.random() * (BOSS_FRAG_R_MAX - BOSS_FRAG_R_MIN);
+      const fr   = BOSS_FRAG_R_MIN + Math.random() * (rMax - BOSS_FRAG_R_MIN);
       const fx   = clamp(
         m.x - m.r * 0.85 + ((i + 0.5) / count) * m.r * 1.7 + (Math.random() * 2 - 1) * 8,
         8, W - 8
       );
-      const spd  = this._calcNormalSpd() * (1.1 + Math.random() * 0.4);
+      const spd  = this._calcNormalSpd() * (spdLo + Math.random() * BOSS_FRAG_SPD_RANGE);
       const seed = _nextMeteorSeed++;
       const hp   = calcMeteorHP(fr);
       this.meteors.push({
