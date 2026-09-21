@@ -69,6 +69,7 @@
   <div class="seg" data-key="flow"><span class="tog" data-val="bursts">bursts</span><span class="tog" data-val="stream">stream</span></div>
   <div><span class="tog" data-set="sieve">gamut sieve</span> <span class="hint">root · m3 · 5th · M3-below, in the tuning</span></div>
   <div><span class="tog" data-set="row">ordered row</span> <span class="hint">grains walk the ranked concepts as a series (P / I / R / RI)</span></div>
+  <div><span class="tog on" data-set="rowBias">weighted row</span> <span class="hint">heavier concepts linger (repeat), lighter ones fall silent (rest)</span></div>
   <h4>Auto</h4>
   <div><span class="tog on" data-set="auto">let the epoch decide</span> <span class="hint" id="sAutoNow"></span></div>
   <div class="hint">fermo → stream·sieve·row (voice as set) &nbsp; nascente → bowed·bursts &nbsp; inquieto → struck·bursts &nbsp; crollo → solid·bursts &nbsp; retraction breaks the sieve</div>
@@ -144,9 +145,10 @@ const SET_DEFAULT = {
   // voice: bowed(弓奏) / struck(打撃＋共鳴) / solid(発信音)   flow: bursts(反復句) / stream(粒の流れ)
   // sieve: 音律固有のガムート(根音・短3・5度・下の長3 = F–A–C–E 型)へ全音を吸着
   // row: 概念を重み順に並べガムートへ落とした音列を粒が P/I/R/RI で巡る（必然＝順序）
-  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false},   // I
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false},   // II
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false} ], // III
+  // rowBias: 列の位置ごとに重みで反復・休符を混ぜる（参照音の A=55% の偏りに寄せる）
+  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true},   // I
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true},   // II
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true} ], // III
 };
 let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
@@ -157,7 +159,7 @@ SETTINGS.mv = SETTINGS.mv.map((m,i) => {
   const d = SET_DEFAULT.mv[i], o = Object.assign({}, d, m);
   if (!['bowed','struck','solid'].includes(o.voice)) o.voice = (m.bow === false) ? 'solid' : 'bowed';
   if (!['bursts','stream'].includes(o.flow)) o.flow = 'bursts';
-  o.sieve = !!o.sieve; o.row = !!o.row; delete o.bow;
+  o.sieve = !!o.sieve; o.row = !!o.row; o.rowBias = (typeof m.rowBias === 'boolean') ? m.rowBias : true; delete o.bow;
   return o;
 });
 if (typeof SETTINGS.auto !== 'boolean') SETTINGS.auto = SET_DEFAULT.auto;
@@ -429,7 +431,7 @@ function effCfg(){
   if (!autoPreset) refreshAuto();
   return autoPreset ? Object.assign({}, m, autoPreset) : m;
 }
-const cfgLabel = c => `${c.voice} · ${c.flow}${c.sieve ? ' · sieve' : ''}${c.row ? ' · row' : ''}`;
+const cfgLabel = c => `${c.voice} · ${c.flow}${c.sieve ? ' · sieve' : ''}${c.row ? (c.rowBias ? ' · row(w)' : ' · row') : ''}`;
 // 現在の音律でのガムート(steps): 根音の長3度下 〜 2オクターヴ上の窓 (F3–A5 型)
 let gamutCache = null, gamutKey = '';
 function gamutSteps(){
@@ -789,8 +791,22 @@ function streamIOI(){
 }
 // 音列(row): 相の概念を結合の重み順に並べ、各音をガムートへ落とした「場から導かれる音列」。
 // 粒はこれを P/I/R/RI で巡る（必然＝順序）。どの概念が鳴るかは列が決め、偶然は間合いと強さに残る
-let rowIx = 0, rowForm = 0;
+let rowIx = 0, rowForm = 0, rowHold = null;
+// 重み付き(rowBias): 列の位置ごとに、その概念の結合重みで「留まる(反復)」と「沈黙(休符)」を混ぜる。
+// 重い概念(ハブ=根音)ほど留まり、軽い概念ほど黙る → 参照音の偏り(A=55%, 同音反復58%)に寄る
+const ROW_REP  = s => clamp(0.10 + 0.62 * s * s, 0.10, 0.72);   // s = 正規化スコア(0..1)、根音は 1
+const ROW_REST = s => clamp(0.02 + 0.16 * (1 - s), 0.02, 0.18);
+const ROW_PIVOT = 0.30;   // 非根音の後、根音(軸)へ戻る確率（参照音の A→X→A 旋回）
 function rowPick(){
+  const bias = !!effCfg().rowBias;
+  if (bias && rowHold){
+    const s = rowHold.s;
+    if (rng() < ROW_REP(s)) return rowHold;                    // 留まる
+    if (rowHold.ci !== field.rootIx && rng() < ROW_PIVOT){     // 軸(根音)へ戻る。列は進まない
+      rowHold = { ci: field.rootIx, steps: conceptSteps(field.rootIx), s: 1 };
+      return rowHold;
+    }
+  }
   const ord = field.order, n = ord.length;
   const i = rowIx % n;
   if (i === 0 && rowIx > 0) rowForm = rngi(4);      // 一巡ごとに形を選び直す
@@ -800,12 +816,17 @@ function rowPick(){
   const inv = !!(rowForm & 1);                       // I / RI は根音を軸に反転
   const root = field.gravity + 48;
   const steps = inv ? 2 * root - conceptSteps(ci) : conceptSteps(ci);
-  return { ci, steps };
+  const smax = Math.max(1e-9, ...ord.map(c => field.score[c] || 0));
+  const s = (ci === field.rootIx) ? 1 : clamp((field.score[ci] || 0) / smax, 0, 1);   // 根音は最重
+  rowHold = { ci, steps, s };
+  if (bias && rng() < ROW_REST(s)) return { rest: true };    // 黙る（列は進む）
+  return rowHold;
 }
 function grain(t, now){
   const es = field.edges; if (!es.length) return;
   const useRow = !!effCfg().row;
   const rp = useRow ? rowPick() : null;
+  if (rp && rp.rest){ pushRest(0.15, 'miss', t); return; }   // 列の沈黙 = 短い休符
   // エッジ: 通常は Dice 重みで引く。音列のときは鳴る概念に接するエッジから引く（状態・撤回・引用のため）
   let pool = es;
   if (rp){ const inc = es.filter(e => e.ai === rp.ci || e.bi === rp.ci); if (inc.length) pool = inc; }
@@ -896,7 +917,7 @@ function advanceEpoch(now, announce){
     bendGravity(now, hasRev ? 1 : 0.4);
     // タイミング: 相の性格が音の出し方を決める（auto）。切り替わりは字幕で告げる
     refreshAuto();
-    rowIx = 0; rowForm = 0;   // 音列は相ごとに原形から始める
+    rowIx = 0; rowForm = 0; rowHold = null;   // 音列は相ごとに原形から始める
     const sw = SETTINGS.auto ? ` → ${cfgLabel(effCfg())}` : '';
     fluxLastAt = -999;
     if (hasRev) fluxShow('THE CONSENSUS COLLAPSES.' + sw, now);
@@ -1804,6 +1825,7 @@ panel.querySelectorAll('.tog').forEach(el=>{
     else if (k==='suite'){ suiteMode=!suiteMode; SETTINGS.suite=suiteMode; el.classList.toggle('on',suiteMode); }
     else if (k==='sieve'){ SETTINGS.mv[curMi].sieve=!SETTINGS.mv[curMi].sieve; el.classList.toggle('on',SETTINGS.mv[curMi].sieve); }
     else if (k==='row'){ SETTINGS.mv[curMi].row=!SETTINGS.mv[curMi].row; el.classList.toggle('on',SETTINGS.mv[curMi].row); }
+    else if (k==='rowBias'){ SETTINGS.mv[curMi].rowBias=!SETTINGS.mv[curMi].rowBias; el.classList.toggle('on',SETTINGS.mv[curMi].rowBias); }
     else if (k==='auto'){ SETTINGS.auto=!SETTINGS.auto; el.classList.toggle('on',SETTINGS.auto);
                           if (SETTINGS.auto) refreshAuto(); applyMovementUI(); }
     saveSet();
@@ -1846,6 +1868,7 @@ function applyMovementUI(){
   });
   panel.querySelector('.tog[data-set="sieve"]').classList.toggle('on', !!cfg.sieve);
   panel.querySelector('.tog[data-set="row"]').classList.toggle('on', !!cfg.row);
+  panel.querySelector('.tog[data-set="rowBias"]').classList.toggle('on', !!cfg.rowBias);
   panel.querySelector('.tog[data-set="auto"]').classList.toggle('on', !!SETTINGS.auto);
   sAutoNow.textContent = (SETTINGS.auto && autoPreset) ? `${autoChar}: ${cfgLabel(effCfg())}` : '';
   sBowLen.value = Math.round(cfg.bowLen*100); sBowAtk.value = Math.round(cfg.bowAtk*100);
