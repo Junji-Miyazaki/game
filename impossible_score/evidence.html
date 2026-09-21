@@ -68,12 +68,14 @@
   <label>attack <input type="range" id="sBowAtk" min="10" max="200" value="100"></label>
   <div class="seg" data-key="flow"><span class="tog" data-val="bursts">bursts</span><span class="tog" data-val="stream">stream</span></div>
   <div><span class="tog" data-set="sieve">gamut sieve</span> <span class="hint">root · m3 · 5th · M3-below, in the tuning</span></div>
+  <div><span class="tog" data-set="row">ordered row</span> <span class="hint">grains walk the ranked concepts as a series (P / I / R / RI)</span></div>
   <h4>Auto</h4>
   <div><span class="tog on" data-set="auto">let the epoch decide</span> <span class="hint" id="sAutoNow"></span></div>
-  <div class="hint">fermo → struck·stream·sieve &nbsp; nascente → bowed·bursts &nbsp; inquieto → struck·bursts &nbsp; crollo → solid·bursts &nbsp; retraction breaks the sieve</div>
+  <div class="hint">fermo → stream·sieve·row (voice as set) &nbsp; nascente → bowed·bursts &nbsp; inquieto → struck·bursts &nbsp; crollo → solid·bursts &nbsp; retraction breaks the sieve</div>
   <h4>Suite</h4>
   <div><span class="tog" data-set="suite">continuous (I→II→III→…)</span></div>
-  <label>movement length <input type="range" id="sEpoch" min="18" max="60" value="38"><span id="sEpochV">38s</span></label>
+  <label>epoch length（相の長さ） <input type="range" id="sEpoch" min="18" max="60" value="38"><span id="sEpochV">38s</span></label>
+  <div class="hint" id="sEpochTot"></div>
 </div>
 
 <div id="overlay">
@@ -141,9 +143,10 @@ const SET_DEFAULT = {
   auto:true,   // 相(10年)の性格が voice/flow/sieve を決める（手動設定はその下地）
   // voice: bowed(弓奏) / struck(打撃＋共鳴) / solid(発信音)   flow: bursts(反復句) / stream(粒の流れ)
   // sieve: 音律固有のガムート(根音・短3・5度・下の長3 = F–A–C–E 型)へ全音を吸着
-  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false},   // I
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false},   // II
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false} ], // III
+  // row: 概念を重み順に並べガムートへ落とした音列を粒が P/I/R/RI で巡る（必然＝順序）
+  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false},   // I
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false},   // II
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false} ], // III
 };
 let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
@@ -154,7 +157,7 @@ SETTINGS.mv = SETTINGS.mv.map((m,i) => {
   const d = SET_DEFAULT.mv[i], o = Object.assign({}, d, m);
   if (!['bowed','struck','solid'].includes(o.voice)) o.voice = (m.bow === false) ? 'solid' : 'bowed';
   if (!['bursts','stream'].includes(o.flow)) o.flow = 'bursts';
-  o.sieve = !!o.sieve; delete o.bow;
+  o.sieve = !!o.sieve; o.row = !!o.row; delete o.bow;
   return o;
 });
 if (typeof SETTINGS.auto !== 'boolean') SETTINGS.auto = SET_DEFAULT.auto;
@@ -408,10 +411,10 @@ const GAMUT_CENTS = {
   chromatic:   [0, 300,   700,   800  ],
 };
 const AUTO_MAP = {
-  fermo:    { voice:'struck', flow:'stream', sieve:true  },   // 合意が固まった相: 澄んだ粒
-  nascente: { voice:'bowed',  flow:'bursts', sieve:false },   // 仮説が形をなす相: 濁った弓奏
-  inquieto: { voice:'struck', flow:'bursts', sieve:false },   // 係争: 明るいが篩が外れる
-  crollo:   { voice:'solid',  flow:'bursts', sieve:false },   // 定説崩壊: 裸の発信音
+  fermo:    {                 flow:'stream', sieve:true,  row:true  },   // 合意が固まった相: 音階と音列で澄む(音色は手動のまま)
+  nascente: { voice:'bowed',  flow:'bursts', sieve:false, row:false },   // 仮説が形をなす相: 濁った弓奏
+  inquieto: { voice:'struck', flow:'bursts', sieve:false, row:false },   // 係争: 明るいが篩が外れる
+  crollo:   { voice:'solid',  flow:'bursts', sieve:false, row:false },   // 定説崩壊: 裸の発信音
 };
 let autoPreset = null, autoChar = '';
 let sieveBreakT = -99;   // 撤回で篩が破れている間(now < sieveBreakT)は吸着しない
@@ -426,7 +429,7 @@ function effCfg(){
   if (!autoPreset) refreshAuto();
   return autoPreset ? Object.assign({}, m, autoPreset) : m;
 }
-const cfgLabel = c => `${c.voice} · ${c.flow}${c.sieve ? ' · sieve' : ''}`;
+const cfgLabel = c => `${c.voice} · ${c.flow}${c.sieve ? ' · sieve' : ''}${c.row ? ' · row' : ''}`;
 // 現在の音律でのガムート(steps): 根音の長3度下 〜 2オクターヴ上の窓 (F3–A5 型)
 let gamutCache = null, gamutKey = '';
 function gamutSteps(){
@@ -451,6 +454,10 @@ function gamutSteps(){
 function gamutSnap(steps, edge){
   if (edge && edge.status === 'reversed') return steps;
   const g = gamutSteps();
+  // 窓の外の音はオクターヴで窓へ折り畳む（根音 A2 → A3 のように音高類を保つ）
+  const lo = g[0], hi = g[g.length - 1];
+  while (steps < lo - 12) steps += 48;
+  while (steps > hi + 12) steps -= 48;
   let best = g[0], bd = Infinity;
   for (const s of g){ const d = Math.abs(s - steps); if (d < bd){ bd = d; best = s; } }
   if (edge && edge.status === 'contested') best += CENTS_TO_STEP(PYTH_COMMA) * (edge.ai % 2 ? 1 : -1);
@@ -558,7 +565,7 @@ function buildField(dec){
     steps = CONCEPTS.map((c,i) =>
       pcs[i] * 4 + c.band * 48 + detune[i] * (i % 2 ? 1 : -1));
   }
-  return { dec, edges, score, detune, steps, rootIx, spectral, tuning, pcs,
+  return { dec, edges, score, detune, steps, rootIx, spectral, tuning, pcs, order,
            gravity: steps[rootIx] - 48 };
 }
 const conceptSteps = i => field.steps[i];
@@ -780,11 +787,31 @@ function streamIOI(){
   let s = 0; for (let k = 0; k < 3; k++) s += -Math.log(1 - rng()) * m / 3;  // Gamma(3)
   return clamp(s, 0.06, 0.9);
 }
+// 音列(row): 相の概念を結合の重み順に並べ、各音をガムートへ落とした「場から導かれる音列」。
+// 粒はこれを P/I/R/RI で巡る（必然＝順序）。どの概念が鳴るかは列が決め、偶然は間合いと強さに残る
+let rowIx = 0, rowForm = 0;
+function rowPick(){
+  const ord = field.order, n = ord.length;
+  const i = rowIx % n;
+  if (i === 0 && rowIx > 0) rowForm = rngi(4);      // 一巡ごとに形を選び直す
+  rowIx++;
+  const pos = (rowForm & 2) ? n - 1 - i : i;         // R / RI は逆行
+  const ci = ord[pos];
+  const inv = !!(rowForm & 1);                       // I / RI は根音を軸に反転
+  const root = field.gravity + 48;
+  const steps = inv ? 2 * root - conceptSteps(ci) : conceptSteps(ci);
+  return { ci, steps };
+}
 function grain(t, now){
   const es = field.edges; if (!es.length) return;
-  let tw = 0; for (const e of es) tw += e.w;
-  let r = rng() * tw, edge = es[es.length - 1];
-  for (const e of es){ r -= e.w; if (r <= 0){ edge = e; break; } }
+  const useRow = !!effCfg().row;
+  const rp = useRow ? rowPick() : null;
+  // エッジ: 通常は Dice 重みで引く。音列のときは鳴る概念に接するエッジから引く（状態・撤回・引用のため）
+  let pool = es;
+  if (rp){ const inc = es.filter(e => e.ai === rp.ci || e.bi === rp.ci); if (inc.length) pool = inc; }
+  let tw = 0; for (const e of pool) tw += e.w;
+  let r = rng() * tw, edge = pool[pool.length - 1];
+  for (const e of pool){ r -= e.w; if (r <= 0){ edge = e; break; } }
   const { ai, bi, w, status } = edge;
   // 撤回: 粒単位なので発話単位より確率を下げる(頻度を揃える)
   const retrRate = edge.co ? clamp(edge.retr / edge.co * 8, 0, 0.30) * 0.10 : 0;
@@ -797,8 +824,8 @@ function grain(t, now){
   const z = clamp(0.35 + w * 0.5 + gauss() * 0.06, 0.08, 1);
   const dyn = clamp(2 + Math.round(w * 4), 0, 7);
   const depth = Math.round(st.complexity * 3.4);
-  const ghost = rng() < 0.06;                       // 篩の隙間から覗く亡霊(引力場×篩の音)
-  const ci = (rng() < 0.62) ? bi : ai;              // 因果の向き先を優先 → ハブが中心音になる
+  const ghost = !rp && rng() < 0.06;                // 篩の隙間から覗く亡霊(引力場×篩の音)。音列中は出ない
+  const ci = rp ? rp.ci : ((rng() < 0.62) ? bi : ai);   // 音列が決める / 因果の向き先を優先 → ハブが中心音に
   const C = CONCEPTS[ci];
   const bass = established && rng() < 0.03;        // ごく稀に和声の底
   particles.push(ghost ? {
@@ -807,7 +834,7 @@ function grain(t, now){
       dur: 0.12 + rng() * 0.2, partial: 1, crossed: false, px: undefined, py: undefined,
     } : {
       ci, edge, t, depth, z: bass ? clamp(0.55 + w * 0.35, 0.1, 1) : z, dyn,
-      steps: conceptSteps(ci) - (bass ? 48 : 0),
+      steps: (rp ? rp.steps : conceptSteps(ci)) - (bass ? 48 : 0),
       dur: bass ? 2.2 + rng() * 2.0 : 0.22 + rng() * 0.3,
       partial: C.partial, crossed: false, px: undefined, py: undefined, sustained: bass,
     });
@@ -869,6 +896,7 @@ function advanceEpoch(now, announce){
     bendGravity(now, hasRev ? 1 : 0.4);
     // タイミング: 相の性格が音の出し方を決める（auto）。切り替わりは字幕で告げる
     refreshAuto();
+    rowIx = 0; rowForm = 0;   // 音列は相ごとに原形から始める
     const sw = SETTINGS.auto ? ` → ${cfgLabel(effCfg())}` : '';
     fluxLastAt = -999;
     if (hasRev) fluxShow('THE CONSENSUS COLLAPSES.' + sw, now);
@@ -901,8 +929,9 @@ function scheduleAudio(p, at, steps, lenSec){
     // 打撃＋共鳴(鐘/棒): 参照音の包絡 = 立ち上がり 23ms, 基音の余韻 ≈1.6s, 上の部分音ほど速く消える。
     // 音量はほぼ平坦にし、強弱は「明るさ」(上部分音の量)で表す。第III曲(倍音列)は整数倍音で澄み、
     // I/II は弦の伸び(非整数倍音)で金属的に。20ms のノイズ打撃が粒立ちを作る
+    // 非整数倍音は弦程度に控えめ(ガムラン/スティールパン化を避ける)。III は完全に整数倍音
     const spectralV = field && field.tuning === 'spectral';
-    const beta = spectralV ? 0 : 0.004;
+    const beta = spectralV ? 0 : 0.0012;
     const tau = clamp(lenSec * 1.6 * cfg.bowLen, 0.5, 4.0);          // 基音の減衰(length で可変)
     const bright = lerp(0.30, 1.0, p.dyn / 7);
     const peak = 0.17 * p.gainMul * lerp(0.7, 1.0, p.z);
@@ -914,7 +943,7 @@ function scheduleAudio(p, at, steps, lenSec){
       const osc = (k === 1) ? o : ctx.createOscillator();
       osc.type = 'sine'; osc.frequency.value = fk;
       const gk = ctx.createGain();
-      const amp = peak * (k === 1 ? 1 : bright * Math.pow(k, -1.15));
+      const amp = peak * (k === 1 ? 1 : bright * Math.pow(k, -1.4));
       const tk = tau / (1 + 0.55 * (k - 1));
       gk.gain.setValueAtTime(0.0001, t);
       gk.gain.linearRampToValueAtTime(Math.max(amp, 0.001), t + 0.004 + 0.004 * k);
@@ -928,7 +957,7 @@ function scheduleAudio(p, at, steps, lenSec){
       const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = clamp(f * 2.5, 300, 7000); bp.Q.value = 1.2;
       const ng = ctx.createGain();
       ng.gain.setValueAtTime(0.0001, t);
-      ng.gain.linearRampToValueAtTime(peak * 0.55, t + 0.003);
+      ng.gain.linearRampToValueAtTime(peak * 0.35, t + 0.003);
       ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.024);
       n.connect(bp).connect(ng).connect(bus);
       n.start(t, rng() * 0.8); n.stop(t + 0.03);
@@ -1774,6 +1803,7 @@ panel.querySelectorAll('.tog').forEach(el=>{
     else if (k==='sound'){ soundOn=!soundOn; SETTINGS.sound=soundOn; el.classList.toggle('on',soundOn); }
     else if (k==='suite'){ suiteMode=!suiteMode; SETTINGS.suite=suiteMode; el.classList.toggle('on',suiteMode); }
     else if (k==='sieve'){ SETTINGS.mv[curMi].sieve=!SETTINGS.mv[curMi].sieve; el.classList.toggle('on',SETTINGS.mv[curMi].sieve); }
+    else if (k==='row'){ SETTINGS.mv[curMi].row=!SETTINGS.mv[curMi].row; el.classList.toggle('on',SETTINGS.mv[curMi].row); }
     else if (k==='auto'){ SETTINGS.auto=!SETTINGS.auto; el.classList.toggle('on',SETTINGS.auto);
                           if (SETTINGS.auto) refreshAuto(); applyMovementUI(); }
     saveSet();
@@ -1796,7 +1826,16 @@ const sVol=document.getElementById('sVol'), sBowLen=document.getElementById('sBo
 sVol.oninput = () => { SETTINGS.vol = sVol.value/100; if(master) master.gain.setTargetAtTime(SETTINGS.vol, ctx.currentTime, 0.1); saveSet(); };
 sBowLen.oninput = () => { SETTINGS.mv[curMi].bowLen = sBowLen.value/100; saveSet(); };
 sBowAtk.oninput = () => { SETTINGS.mv[curMi].bowAtk = sBowAtk.value/100; saveSet(); };
-sEpoch.oninput = () => { EPOCH_SEC = +sEpoch.value; SETTINGS.epochSec = EPOCH_SEC; sEpochV.textContent = EPOCH_SEC+'s'; saveSet(); };
+// 相の長さ → 各曲の合計(相の数×長さ)と組曲一巡の合計
+const sEpochTot = document.getElementById('sEpochTot');
+const mmss = s => `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+function showEpochTotals(){
+  sEpochV.textContent = EPOCH_SEC+'s';
+  const per = SUITE.map((m,i) => `${['I','II','III'][i]} ≈ ${mmss(m.decades.length*EPOCH_SEC)}`);
+  const all = SUITE.reduce((a,m)=>a+m.decades.length, 0) * EPOCH_SEC;
+  sEpochTot.textContent = `${per.join(' · ')} · suite ≈ ${mmss(all)}`;
+}
+sEpoch.oninput = () => { EPOCH_SEC = +sEpoch.value; SETTINGS.epochSec = EPOCH_SEC; showEpochTotals(); saveSet(); };
 // パネルを現在の設定/曲に同期
 function applyMovementUI(){
   const cfg = SETTINGS.mv[curMi] || SET_DEFAULT.mv[0];
@@ -1806,6 +1845,7 @@ function applyMovementUI(){
     seg.querySelectorAll('.tog').forEach(x => x.classList.toggle('on', x.dataset.val === cur));
   });
   panel.querySelector('.tog[data-set="sieve"]').classList.toggle('on', !!cfg.sieve);
+  panel.querySelector('.tog[data-set="row"]').classList.toggle('on', !!cfg.row);
   panel.querySelector('.tog[data-set="auto"]').classList.toggle('on', !!SETTINGS.auto);
   sAutoNow.textContent = (SETTINGS.auto && autoPreset) ? `${autoChar}: ${cfgLabel(effCfg())}` : '';
   sBowLen.value = Math.round(cfg.bowLen*100); sBowAtk.value = Math.round(cfg.bowAtk*100);
@@ -1816,7 +1856,7 @@ function applyGlobalUI(){
   panel.querySelector('.tog[data-set="ribbon"]').classList.toggle('on', ribbonOn);
   panel.querySelector('.tog[data-set="sound"]').classList.toggle('on', soundOn);
   panel.querySelector('.tog[data-set="suite"]').classList.toggle('on', suiteMode);
-  sVol.value = Math.round(SETTINGS.vol*100); sEpoch.value = EPOCH_SEC; sEpochV.textContent = EPOCH_SEC+'s';
+  sVol.value = Math.round(SETTINGS.vol*100); sEpoch.value = EPOCH_SEC; showEpochTotals();
 }
 if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen)
   panel.querySelector('.tog[data-set="full"]').style.display='none';
