@@ -70,6 +70,8 @@
   <div><span class="tog" data-set="sieve">gamut sieve</span> <span class="hint">root · m3 · 5th · M3-below, in the tuning</span></div>
   <div><span class="tog" data-set="row">ordered row</span> <span class="hint">grains walk the ranked concepts as a series (P / I / R / RI)</span></div>
   <div><span class="tog on" data-set="rowBias">weighted row</span> <span class="hint">heavier concepts linger (repeat), lighter ones fall silent (rest)</span></div>
+  <label>linger（根音の反復）<input type="range" id="sRowRep" min="10" max="95" value="72"><span id="sRowRepV">72%</span></label>
+  <label>pivot（根音へ回帰）<input type="range" id="sRowPivot" min="0" max="80" value="30"><span id="sRowPivotV">30%</span></label>
   <h4>Auto</h4>
   <div><span class="tog on" data-set="auto">let the epoch decide</span> <span class="hint" id="sAutoNow"></span></div>
   <div class="hint">fermo → stream·sieve·row (voice as set) &nbsp; nascente → bowed·bursts &nbsp; inquieto → struck·bursts &nbsp; crollo → solid·bursts &nbsp; retraction breaks the sieve</div>
@@ -146,9 +148,10 @@ const SET_DEFAULT = {
   // sieve: 音律固有のガムート(根音・短3・5度・下の長3 = F–A–C–E 型)へ全音を吸着
   // row: 概念を重み順に並べガムートへ落とした音列を粒が P/I/R/RI で巡る（必然＝順序）
   // rowBias: 列の位置ごとに重みで反復・休符を混ぜる（参照音の A=55% の偏りに寄せる）
-  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true},   // I
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true},   // II
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true} ], // III
+  // rowRep: 根音の留まり(反復)確率の上限 / rowPivot: 非根音の後に根音へ回帰する確率
+  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30},   // I
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30},   // II
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30} ], // III
 };
 let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
@@ -160,6 +163,8 @@ SETTINGS.mv = SETTINGS.mv.map((m,i) => {
   if (!['bowed','struck','solid'].includes(o.voice)) o.voice = (m.bow === false) ? 'solid' : 'bowed';
   if (!['bursts','stream'].includes(o.flow)) o.flow = 'bursts';
   o.sieve = !!o.sieve; o.row = !!o.row; o.rowBias = (typeof m.rowBias === 'boolean') ? m.rowBias : true; delete o.bow;
+  if (!(o.rowRep >= 0.10 && o.rowRep <= 0.95)) o.rowRep = d.rowRep;
+  if (!(o.rowPivot >= 0 && o.rowPivot <= 0.8)) o.rowPivot = d.rowPivot;
   return o;
 });
 if (typeof SETTINGS.auto !== 'boolean') SETTINGS.auto = SET_DEFAULT.auto;
@@ -794,15 +799,15 @@ function streamIOI(){
 let rowIx = 0, rowForm = 0, rowHold = null;
 // 重み付き(rowBias): 列の位置ごとに、その概念の結合重みで「留まる(反復)」と「沈黙(休符)」を混ぜる。
 // 重い概念(ハブ=根音)ほど留まり、軽い概念ほど黙る → 参照音の偏り(A=55%, 同音反復58%)に寄る
-const ROW_REP  = s => clamp(0.10 + 0.62 * s * s, 0.10, 0.72);   // s = 正規化スコア(0..1)、根音は 1
+// 上限(根音の留まり)と回帰確率はパネルで調整可（rowRep / rowPivot、楽章別・記憶）
+const ROW_REP  = (s, cap) => clamp(0.10 + (cap - 0.10) * s * s, 0.10, cap);   // s = 正規化スコア(0..1)、根音は 1
 const ROW_REST = s => clamp(0.02 + 0.16 * (1 - s), 0.02, 0.18);
-const ROW_PIVOT = 0.30;   // 非根音の後、根音(軸)へ戻る確率（参照音の A→X→A 旋回）
 function rowPick(){
-  const bias = !!effCfg().rowBias;
+  const cfg = effCfg(), bias = !!cfg.rowBias;
   if (bias && rowHold){
     const s = rowHold.s;
-    if (rng() < ROW_REP(s)) return rowHold;                    // 留まる
-    if (rowHold.ci !== field.rootIx && rng() < ROW_PIVOT){     // 軸(根音)へ戻る。列は進まない
+    if (rng() < ROW_REP(s, cfg.rowRep)) return rowHold;         // 留まる
+    if (rowHold.ci !== field.rootIx && rng() < cfg.rowPivot){   // 軸(根音)へ戻る。列は進まない
       rowHold = { ci: field.rootIx, steps: conceptSteps(field.rootIx), s: 1 };
       return rowHold;
     }
@@ -1847,6 +1852,10 @@ const sVol=document.getElementById('sVol'), sBowLen=document.getElementById('sBo
       sAutoNow=document.getElementById('sAutoNow');
 sVol.oninput = () => { SETTINGS.vol = sVol.value/100; if(master) master.gain.setTargetAtTime(SETTINGS.vol, ctx.currentTime, 0.1); saveSet(); };
 sBowLen.oninput = () => { SETTINGS.mv[curMi].bowLen = sBowLen.value/100; saveSet(); };
+const sRowRep=document.getElementById('sRowRep'), sRowRepV=document.getElementById('sRowRepV'),
+      sRowPivot=document.getElementById('sRowPivot'), sRowPivotV=document.getElementById('sRowPivotV');
+sRowRep.oninput   = () => { SETTINGS.mv[curMi].rowRep = sRowRep.value/100; sRowRepV.textContent = sRowRep.value+'%'; saveSet(); };
+sRowPivot.oninput = () => { SETTINGS.mv[curMi].rowPivot = sRowPivot.value/100; sRowPivotV.textContent = sRowPivot.value+'%'; saveSet(); };
 sBowAtk.oninput = () => { SETTINGS.mv[curMi].bowAtk = sBowAtk.value/100; saveSet(); };
 // 相の長さ → 各曲の合計(相の数×長さ)と組曲一巡の合計
 const sEpochTot = document.getElementById('sEpochTot');
@@ -1872,6 +1881,8 @@ function applyMovementUI(){
   panel.querySelector('.tog[data-set="auto"]').classList.toggle('on', !!SETTINGS.auto);
   sAutoNow.textContent = (SETTINGS.auto && autoPreset) ? `${autoChar}: ${cfgLabel(effCfg())}` : '';
   sBowLen.value = Math.round(cfg.bowLen*100); sBowAtk.value = Math.round(cfg.bowAtk*100);
+  sRowRep.value = Math.round(cfg.rowRep*100);   sRowRepV.textContent = sRowRep.value+'%';
+  sRowPivot.value = Math.round(cfg.rowPivot*100); sRowPivotV.textContent = sRowPivot.value+'%';
 }
 function applyGlobalUI(){
   panel.querySelector('.tog[data-set="glow"]').classList.toggle('on', glowOn);
