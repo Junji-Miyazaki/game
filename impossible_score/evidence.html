@@ -42,6 +42,9 @@
   #settings .tog { color:#556; cursor:pointer; user-select:none; }
   #settings .tog.on { color:#bdf; }
   #settings .mvname { color:#8ab; font-style:italic; font-size:10px; margin-bottom:2px; }
+  #settings .seg .tog { margin-right:14px; }
+  #settings .seg .tog.on { text-decoration:underline; text-underline-offset:3px; }
+  #settings .hint { color:#556; font-size:9px; letter-spacing:.02em; line-height:1.5; }
   #pieces { margin-top:34px; display:flex; gap:14px; flex-wrap:wrap; justify-content:center; }
   .pbtn { border:1px solid #4a4235; padding:14px 20px; cursor:pointer; color:#bbb;
           min-width:200px; letter-spacing:.2em; font-size:13px; line-height:2; }
@@ -59,10 +62,15 @@
   <h4>Display</h4>
   <div><span class="tog on" data-set="glow">glow</span> &nbsp; <span class="tog on" data-set="graph">map</span> &nbsp; <span class="tog" data-set="ribbon">score</span> &nbsp; <span class="tog on" data-set="sound">sound</span> &nbsp; <span class="tog" data-set="full">fullscreen</span></div>
   <label>volume <input type="range" id="sVol" min="0" max="100" value="85"></label>
-  <h4>Bowing — <span class="mvname" id="sMvName">—</span></h4>
-  <div><span class="tog on" data-set="bow">bowed / sustained</span></div>
+  <h4>Voice — <span class="mvname" id="sMvName">—</span></h4>
+  <div class="seg" data-key="voice"><span class="tog" data-val="bowed">bowed</span><span class="tog" data-val="struck">struck</span><span class="tog" data-val="solid">solid</span></div>
   <label>length <input type="range" id="sBowLen" min="30" max="300" value="150"></label>
   <label>attack <input type="range" id="sBowAtk" min="10" max="200" value="100"></label>
+  <div class="seg" data-key="flow"><span class="tog" data-val="bursts">bursts</span><span class="tog" data-val="stream">stream</span></div>
+  <div><span class="tog" data-set="sieve">gamut sieve</span> <span class="hint">root · m3 · 5th · M3-below, in the tuning</span></div>
+  <h4>Auto</h4>
+  <div><span class="tog on" data-set="auto">let the epoch decide</span> <span class="hint" id="sAutoNow"></span></div>
+  <div class="hint">fermo → struck·stream·sieve &nbsp; nascente → bowed·bursts &nbsp; inquieto → struck·bursts &nbsp; crollo → solid·bursts &nbsp; retraction breaks the sieve</div>
   <h4>Suite</h4>
   <div><span class="tog" data-set="suite">continuous (I→II→III→…)</span></div>
   <label>movement length <input type="range" id="sEpoch" min="18" max="60" value="38"><span id="sEpochV">38s</span></label>
@@ -130,14 +138,26 @@ let soundOn=true, glowOn=true, graphOn=true;
 const SET_DEFAULT = {
   glow:true, graph:true, sound:true, suite:false, ribbon:false,
   vol:0.85, epochSec:38,
-  mv:[ {bow:true, bowLen:1.5, bowAtk:1.0},   // I
-       {bow:true, bowLen:1.5, bowAtk:1.0},   // II
-       {bow:true, bowLen:1.5, bowAtk:1.0} ], // III
+  auto:true,   // 相(10年)の性格が voice/flow/sieve を決める（手動設定はその下地）
+  // voice: bowed(弓奏) / struck(打撃＋共鳴) / solid(発信音)   flow: bursts(反復句) / stream(粒の流れ)
+  // sieve: 音律固有のガムート(根音・短3・5度・下の長3 = F–A–C–E 型)へ全音を吸着
+  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false},   // I
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false},   // II
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false} ], // III
 };
 let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
 catch(e){ SETTINGS = Object.assign({}, SET_DEFAULT); }
 if (!Array.isArray(SETTINGS.mv) || SETTINGS.mv.length!==3) SETTINGS.mv = SET_DEFAULT.mv.map(m=>Object.assign({},m));
+// 旧設定(bow:true/false)からの移行と欠損項目の補完
+SETTINGS.mv = SETTINGS.mv.map((m,i) => {
+  const d = SET_DEFAULT.mv[i], o = Object.assign({}, d, m);
+  if (!['bowed','struck','solid'].includes(o.voice)) o.voice = (m.bow === false) ? 'solid' : 'bowed';
+  if (!['bursts','stream'].includes(o.flow)) o.flow = 'bursts';
+  o.sieve = !!o.sieve; delete o.bow;
+  return o;
+});
+if (typeof SETTINGS.auto !== 'boolean') SETTINGS.auto = SET_DEFAULT.auto;
 // 一度きりの移行: リボン(楽譜)は初期値OFF。過去に ON を保存済みでも一度だけ OFF に落とす
 try{ if(localStorage.getItem('evidence_ribbon_off_v1')!=='1'){ SETTINGS.ribbon=false; localStorage.setItem('evidence_ribbon_off_v1','1'); } }catch(e){}
 function saveSet(){ try{ localStorage.setItem('evidence_set_v1', JSON.stringify(SETTINGS)); }catch(e){} }
@@ -378,6 +398,65 @@ function sieveSteps(pc, oct){
   return CENTS_TO_STEP(cents) + oct * 48;
 }
 
+// ---------- 偶然と必然: voice / flow / sieve と、相の性格による自動切替 ----------
+// 参照音(sound.m4a)の必然 = 小さなガムート(根音・短3・5度・下の長3 = F–A–C–E 型)を
+// 各曲の音律で置き直したもの。偶然 = そこから重み付きで1粒ずつ引き続ける流れ。
+const GAMUT_CENTS = {
+  pythagorean: [0, 294,   702,   792  ],   // 5度の鎖から: 32/27, 3/2, 128/81
+  meantone:    [0, 310.3, 696.6, 813.7],   // 純正3度の族: 6/5 近似, 5度, 8/5(純正)
+  spectral:    [0, 315.6, 702,   813.7],   // 倍音 6:5, 3:2, 8:5
+  chromatic:   [0, 300,   700,   800  ],
+};
+const AUTO_MAP = {
+  fermo:    { voice:'struck', flow:'stream', sieve:true  },   // 合意が固まった相: 澄んだ粒
+  nascente: { voice:'bowed',  flow:'bursts', sieve:false },   // 仮説が形をなす相: 濁った弓奏
+  inquieto: { voice:'struck', flow:'bursts', sieve:false },   // 係争: 明るいが篩が外れる
+  crollo:   { voice:'solid',  flow:'bursts', sieve:false },   // 定説崩壊: 裸の発信音
+};
+let autoPreset = null, autoChar = '';
+let sieveBreakT = -99;   // 撤回で篩が破れている間(now < sieveBreakT)は吸着しない
+function refreshAuto(){
+  if (!field) return;
+  autoChar = epochCharacter(field.dec);
+  autoPreset = AUTO_MAP[autoChar] || AUTO_MAP.nascente;
+}
+function effCfg(){
+  const m = SETTINGS.mv[curMi] || SET_DEFAULT.mv[0];
+  if (!SETTINGS.auto) return m;
+  if (!autoPreset) refreshAuto();
+  return autoPreset ? Object.assign({}, m, autoPreset) : m;
+}
+const cfgLabel = c => `${c.voice} · ${c.flow}${c.sieve ? ' · sieve' : ''}`;
+// 現在の音律でのガムート(steps): 根音の長3度下 〜 2オクターヴ上の窓 (F3–A5 型)
+let gamutCache = null, gamutKey = '';
+function gamutSteps(){
+  const key = field.tuning + ':' + field.gravity;
+  if (gamutKey === key && gamutCache) return gamutCache;
+  // 根音を 196〜392Hz の帯(A3=220 を含む)に置く → 窓は参照音と同じ F3–A5 型(≈174–880Hz)
+  let root = field.gravity + 48;
+  while (stepFreq(root) < 196) root += 48;
+  while (stepFreq(root) >= 392) root -= 48;
+  const tab = GAMUT_CENTS[field.tuning] || GAMUT_CENTS.chromatic;
+  const out = [];
+  for (let oct = -1; oct <= 2; oct++)
+    for (const c of tab){
+      const s = root + oct * 48 + CENTS_TO_STEP(c);
+      if (s >= root - 16.5 && s <= root + 96.5) out.push(s);
+    }
+  out.sort((a,b)=>a-b);
+  gamutKey = key; gamutCache = out;
+  return out;
+}
+// 篩: 最寄りのガムート音へ吸着。係争はコンマぶん外れて唸り、逆転は吸着されない(場の外の音)
+function gamutSnap(steps, edge){
+  if (edge && edge.status === 'reversed') return steps;
+  const g = gamutSteps();
+  let best = g[0], bd = Infinity;
+  for (const s of g){ const d = Math.abs(s - steps); if (d < bd){ bd = d; best = s; } }
+  if (edge && edge.status === 'contested') best += CENTS_TO_STEP(PYTH_COMMA) * (edge.ai % 2 ? 1 : -1);
+  return best;
+}
+
 // ---------- 案B: 凍結セリー（作品の底に一度だけ眠る、動かない厳密な12音列＋総音列＝化石/遺伝子） ----------
 // 起動時に一度、厳密な12音セリー＋総音列（持続・強度・音色）を生成して凍結。演奏中は
 // ここから窓を切り抜き（P/I/R/RI＋移高）、一声部として引用的に鳴らす。厳密なセリエリズムが
@@ -563,7 +642,9 @@ function observe(p, at){
   const C = CONCEPTS[p.ci];
   if (!p.orn && !p.serial){ C.litAt = at; if (p.edge) p.edge.litAt = at; }  // 装飾音・化石は同一性でないのでノードを点灯しない
   if (p.dropped){ droppedN++; pushRest(lenSec, 'drop', at); return; }
-  const sounded = p.steps + p.slip;
+  let sounded = p.steps + p.slip;
+  // 篩(必然): 用量掃引(曲線の形)以外の全音をガムートへ吸着。撤回で篩が破れている間は素通し
+  if (effCfg().sieve && at >= sieveBreakT && !p.sweep) sounded = gamutSnap(sounded, p.edge);
   scheduleAudio(p, at + Math.max(0, p.offset), sounded, lenSec);
   const note = notation(sounded, lenSec);
   note.dyn = p.dyn; note.at = at; note.col = p.serial ? '150,170,190' : C.col;   // 化石声部は寒色
@@ -585,6 +666,7 @@ function utter(edge, now){
   const retrRate = edge.co ? clamp(edge.retr / edge.co * 8, 0, 0.30) : 0;
   if (edge.retr > 0 && rng() < retrRate){
     retracted++;
+    sieveBreakT = now + 4;   // イベント: 撤回は篩を破る（数秒間ガムート外の音が漏れる）
     for (let k = 0; k < 3 + rngi(3); k++) pushRest(0.2, 'drop', now + k * 0.12);
     fluxShow('RETRACTED.', now);
     return;
@@ -687,13 +769,68 @@ function emitDoseSweep(t0, now){
   }
 }
 
+// ---------- flow=stream: 途切れない粒の流れ（偶然） ----------
+// 参照音: 発音 5〜7/s, IOI は Gamma(k≈3), 休符なし, 音量は平坦。
+// 粒ごとに Dice 重みでエッジを引き、因果の向き先(bi)を優先して鳴らす → ハブ概念が
+// データから自然に中心音になる（参照音の A=55% に相当する偏り）。密度は文献量で決まる
+let streamT = 0;
+function streamIOI(){
+  const tot = field.edges.reduce((a, e) => a + (e.co || 0), 0);
+  const m = lerp(0.30, 0.14, clamp(Math.log10(tot + 1) / 5, 0, 1));   // 文献が増えるほど密
+  let s = 0; for (let k = 0; k < 3; k++) s += -Math.log(1 - rng()) * m / 3;  // Gamma(3)
+  return clamp(s, 0.06, 0.9);
+}
+function grain(t, now){
+  const es = field.edges; if (!es.length) return;
+  let tw = 0; for (const e of es) tw += e.w;
+  let r = rng() * tw, edge = es[es.length - 1];
+  for (const e of es){ r -= e.w; if (r <= 0){ edge = e; break; } }
+  const { ai, bi, w, status } = edge;
+  // 撤回: 粒単位なので発話単位より確率を下げる(頻度を揃える)
+  const retrRate = edge.co ? clamp(edge.retr / edge.co * 8, 0, 0.30) * 0.10 : 0;
+  if (edge.retr > 0 && rng() < retrRate){
+    retracted++; sieveBreakT = now + 4;
+    pushRest(0.2, 'drop', t); fluxShow('RETRACTED.', now); return;
+  }
+  papersProcessed += Math.round((edge.co || 0) / 12);
+  const established = w >= 0.55 && status !== 'reversed';
+  const z = clamp(0.35 + w * 0.5 + gauss() * 0.06, 0.08, 1);
+  const dyn = clamp(2 + Math.round(w * 4), 0, 7);
+  const depth = Math.round(st.complexity * 3.4);
+  const ghost = rng() < 0.06;                       // 篩の隙間から覗く亡霊(引力場×篩の音)
+  const ci = (rng() < 0.62) ? bi : ai;              // 因果の向き先を優先 → ハブが中心音になる
+  const C = CONCEPTS[ci];
+  const bass = established && rng() < 0.03;        // ごく稀に和声の底
+  particles.push(ghost ? {
+      ci, edge, orn: true, t, depth, z: z * 0.8, dyn: clamp(dyn - 2, 0, 7),
+      steps: sieveSteps(pickPC(), (CONCEPTS[ai].band + CONCEPTS[bi].band) / 2 | 0),
+      dur: 0.12 + rng() * 0.2, partial: 1, crossed: false, px: undefined, py: undefined,
+    } : {
+      ci, edge, t, depth, z: bass ? clamp(0.55 + w * 0.35, 0.1, 1) : z, dyn,
+      steps: conceptSteps(ci) - (bass ? 48 : 0),
+      dur: bass ? 2.2 + rng() * 2.0 : 0.22 + rng() * 0.3,
+      partial: C.partial, crossed: false, px: undefined, py: undefined, sustained: bass,
+    });
+  if (rng() < 0.08){
+    const A = CONCEPTS[ai], B = CONCEPTS[bi];
+    ephem.push({ text: `${A.en} × ${B.en}`, n: edge.co, at: now, life: 1.4,
+                 x: W * (0.30 + rng() * 0.40), y: fieldTop() + (fieldBottom() - fieldTop()) * (0.28 + rng() * 0.5) });
+    if (ephem.length > 40) ephem.shift();
+  }
+}
+
 function schedulerTick(){
   if (!running || !field) return;
   const now = ctx.currentTime;
   if (!st.fermata){
-    for (const e of field.edges){
-      if (e.nextT < now) e.nextT = now + rng() * 1.5;
-      if (e.nextT < now + 1.5 && particles.length < 420) utter(e, e.nextT);
+    if (effCfg().flow === 'stream'){
+      if (streamT < now) streamT = now + 0.05;
+      while (streamT < now + 1.2 && particles.length < 420){ grain(streamT, now); streamT += streamIOI(); }
+    } else {
+      for (const e of field.edges){
+        if (e.nextT < now) e.nextT = now + rng() * 1.5;
+        if (e.nextT < now + 1.5 && particles.length < 420) utter(e, e.nextT);
+      }
     }
     if (pulseGenT < now) pulseGenT = now + 0.2;
     while (pulseGenT < now + 2){
@@ -730,9 +867,13 @@ function advanceEpoch(now, announce){
     const hasRev = d.edges.some(e => e[3] === 'reversed');
     // パラダイムの移動: 重心音がたわむ。定説が覆る相では深く長く崩れる
     bendGravity(now, hasRev ? 1 : 0.4);
+    // タイミング: 相の性格が音の出し方を決める（auto）。切り替わりは字幕で告げる
+    refreshAuto();
+    const sw = SETTINGS.auto ? ` → ${cfgLabel(effCfg())}` : '';
     fluxLastAt = -999;
-    if (hasRev) fluxShow('THE CONSENSUS COLLAPSES.', now);
-    else fluxShow(`Mvt ${ROMAN[epochIx]} · ${d.year} — ${epochCharacter(d)}`, now);
+    if (hasRev) fluxShow('THE CONSENSUS COLLAPSES.' + sw, now);
+    else fluxShow(`Mvt ${ROMAN[epochIx]} · ${d.year} — ${epochCharacter(d)}${sw}`, now);
+    if (SETTINGS.auto) sAutoNow.textContent = `${autoChar}: ${cfgLabel(effCfg())}`;
     if (curMi === 1 && JCURVE[d.year]){
       curvePrev = getCurve(now) || JCURVE[d.year];
       curveTarget = JCURVE[d.year];
@@ -745,6 +886,7 @@ function advanceEpoch(now, announce){
 // ---------- audio ----------
 let activeVoices = 0;
 const MAX_VOICES = 130;   // 弓奏の持続音が長く重なるため上限を引き上げ
+let noiseBuf = null;       // struck の打撃ノイズ（起動時に1秒ぶん生成）
 function scheduleAudio(p, at, steps, lenSec){
   if (!soundOn || activeVoices >= MAX_VOICES) return;
   activeVoices++;
@@ -753,9 +895,46 @@ function scheduleAudio(p, at, steps, lenSec){
   o.onended = () => { activeVoices--; };
   const g = ctx.createGain();
   const t = Math.max(at, ctx.currentTime + 0.01);
-  const cfg = SETTINGS.mv[curMi] || SET_DEFAULT.mv[0];
+  const cfg = effCfg();
   let o2 = null, vib = null, endT;
-  if (cfg.bow){
+  if (cfg.voice === 'struck'){
+    // 打撃＋共鳴(鐘/棒): 参照音の包絡 = 立ち上がり 23ms, 基音の余韻 ≈1.6s, 上の部分音ほど速く消える。
+    // 音量はほぼ平坦にし、強弱は「明るさ」(上部分音の量)で表す。第III曲(倍音列)は整数倍音で澄み、
+    // I/II は弦の伸び(非整数倍音)で金属的に。20ms のノイズ打撃が粒立ちを作る
+    const spectralV = field && field.tuning === 'spectral';
+    const beta = spectralV ? 0 : 0.004;
+    const tau = clamp(lenSec * 1.6 * cfg.bowLen, 0.5, 4.0);          // 基音の減衰(length で可変)
+    const bright = lerp(0.30, 1.0, p.dyn / 7);
+    const peak = 0.17 * p.gainMul * lerp(0.7, 1.0, p.z);
+    const bus = ctx.createGain(); bus.gain.value = 1; bus.connect(master);
+    let maxEnd = 0;
+    for (let k = 1; k <= 5; k++){
+      const fk = f * k * (1 + beta * k * k);
+      if (fk > 9000) break;
+      const osc = (k === 1) ? o : ctx.createOscillator();
+      osc.type = 'sine'; osc.frequency.value = fk;
+      const gk = ctx.createGain();
+      const amp = peak * (k === 1 ? 1 : bright * Math.pow(k, -1.15));
+      const tk = tau / (1 + 0.55 * (k - 1));
+      gk.gain.setValueAtTime(0.0001, t);
+      gk.gain.linearRampToValueAtTime(Math.max(amp, 0.001), t + 0.004 + 0.004 * k);
+      gk.gain.exponentialRampToValueAtTime(0.0001, t + tk * 2.4);
+      osc.connect(gk).connect(bus);
+      const e = t + tk * 2.4 + 0.03; maxEnd = Math.max(maxEnd, e);
+      if (k > 1){ osc.start(t); osc.stop(e); }
+    }
+    if (noiseBuf){   // 打撃ノイズ 20ms（帯域は基音の 2〜3 倍）
+      const n = ctx.createBufferSource(); n.buffer = noiseBuf;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = clamp(f * 2.5, 300, 7000); bp.Q.value = 1.2;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.linearRampToValueAtTime(peak * 0.55, t + 0.003);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.024);
+      n.connect(bp).connect(ng).connect(bus);
+      n.start(t, rng() * 0.8); n.stop(t + 0.03);
+    }
+    endT = maxEnd;
+  } else if (cfg.voice === 'bowed'){
     // 弓奏(ボウイング): 緩やかに立ち上がり、長く保持し、消えていく。設定で長さ・立ち上がり可変
     const sustain = clamp(lenSec * 2.6 * cfg.bowLen, 1.0, 12);
     const atk = clamp(sustain * 0.38 * cfg.bowAtk, 0.2, 3.0);
@@ -1539,6 +1718,9 @@ function drawHUD(){
   g2.fillStyle = 'rgba(180,190,210,0.5)';
   g2.textAlign = 'right';
   g2.fillText(`${papersSounded.toLocaleString()} papers sounded · ${papersProcessed.toLocaleString()} processed`, W - 14, H - 8);
+  // いまの音の出し方（手動 / 相が決めた）と、撤回で篩が破れている状態
+  { const c = effCfg(); const broken = c.sieve && ctx && ctx.currentTime < sieveBreakT;
+    g2.fillText(`${SETTINGS.auto ? autoChar + ' → ' : ''}${cfgLabel(c)}${broken ? ' (broken)' : ''}`, W - 14, H - 20); }
   g2.textAlign = 'left';
 }
 
@@ -1591,13 +1773,26 @@ panel.querySelectorAll('.tog').forEach(el=>{
     else if (k==='ribbon'){ ribbonOn=!ribbonOn; SETTINGS.ribbon=ribbonOn; el.classList.toggle('on',ribbonOn); }
     else if (k==='sound'){ soundOn=!soundOn; SETTINGS.sound=soundOn; el.classList.toggle('on',soundOn); }
     else if (k==='suite'){ suiteMode=!suiteMode; SETTINGS.suite=suiteMode; el.classList.toggle('on',suiteMode); }
-    else if (k==='bow'){ SETTINGS.mv[curMi].bow=!SETTINGS.mv[curMi].bow; el.classList.toggle('on',SETTINGS.mv[curMi].bow); }
+    else if (k==='sieve'){ SETTINGS.mv[curMi].sieve=!SETTINGS.mv[curMi].sieve; el.classList.toggle('on',SETTINGS.mv[curMi].sieve); }
+    else if (k==='auto'){ SETTINGS.auto=!SETTINGS.auto; el.classList.toggle('on',SETTINGS.auto);
+                          if (SETTINGS.auto) refreshAuto(); applyMovementUI(); }
     saveSet();
   };
 });
+// セグメント群（voice / flow: 楽章別のラジオ選択）
+panel.querySelectorAll('.seg').forEach(seg=>{
+  seg.querySelectorAll('.tog').forEach(el=>{
+    el.onclick = () => {
+      SETTINGS.mv[curMi][seg.dataset.key] = el.dataset.val;
+      seg.querySelectorAll('.tog').forEach(x => x.classList.toggle('on', x === el));
+      saveSet();
+    };
+  });
+});
 // スライダー群
 const sVol=document.getElementById('sVol'), sBowLen=document.getElementById('sBowLen'),
-      sBowAtk=document.getElementById('sBowAtk'), sEpoch=document.getElementById('sEpoch'), sEpochV=document.getElementById('sEpochV');
+      sBowAtk=document.getElementById('sBowAtk'), sEpoch=document.getElementById('sEpoch'), sEpochV=document.getElementById('sEpochV'),
+      sAutoNow=document.getElementById('sAutoNow');
 sVol.oninput = () => { SETTINGS.vol = sVol.value/100; if(master) master.gain.setTargetAtTime(SETTINGS.vol, ctx.currentTime, 0.1); saveSet(); };
 sBowLen.oninput = () => { SETTINGS.mv[curMi].bowLen = sBowLen.value/100; saveSet(); };
 sBowAtk.oninput = () => { SETTINGS.mv[curMi].bowAtk = sBowAtk.value/100; saveSet(); };
@@ -1606,7 +1801,13 @@ sEpoch.oninput = () => { EPOCH_SEC = +sEpoch.value; SETTINGS.epochSec = EPOCH_SE
 function applyMovementUI(){
   const cfg = SETTINGS.mv[curMi] || SET_DEFAULT.mv[0];
   document.getElementById('sMvName').textContent = movement ? (movement.no+'. '+movement.title) : '—';
-  panel.querySelector('.tog[data-set="bow"]').classList.toggle('on', cfg.bow);
+  panel.querySelectorAll('.seg').forEach(seg => {
+    const cur = cfg[seg.dataset.key];
+    seg.querySelectorAll('.tog').forEach(x => x.classList.toggle('on', x.dataset.val === cur));
+  });
+  panel.querySelector('.tog[data-set="sieve"]').classList.toggle('on', !!cfg.sieve);
+  panel.querySelector('.tog[data-set="auto"]').classList.toggle('on', !!SETTINGS.auto);
+  sAutoNow.textContent = (SETTINGS.auto && autoPreset) ? `${autoChar}: ${cfgLabel(effCfg())}` : '';
   sBowLen.value = Math.round(cfg.bowLen*100); sBowAtk.value = Math.round(cfg.bowAtk*100);
 }
 function applyGlobalUI(){
@@ -1639,6 +1840,9 @@ async function startPiece(mi){
   master.connect(limiter).connect(ctx.destination);
   startNoiseFloor();
   startDroneBed();
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  { const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  refreshAuto();
 
   running = true;
   applyGlobalUI(); applyMovementUI();
