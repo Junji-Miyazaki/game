@@ -71,6 +71,7 @@
   <div class="seg" data-key="meter"><span class="tog" data-val="off">meter off</span><span class="tog" data-val="5/8">5/8</span><span class="tog" data-val="7/8">7/8</span><span class="tog" data-val="9/8">9/8</span><span class="tog" data-val="11/8">11/8</span><span class="tog" data-val="13/8">13/8</span><span class="tog" data-val="cycle">cycle</span></div>
   <div class="hint">odd meter replaces the flow: grains sit on an eighth-note grid in groups (7/8 = 2+2+3), group heads accented, weak beats drop out</div>
   <label>eighth（8分音符）<input type="range" id="sMeterMs" min="120" max="400" value="200"><span id="sMeterMsV">200ms</span></label>
+  <label>density（枠あたりの粒）<input type="range" id="sMeterDens" min="1" max="8" value="5"><span id="sMeterDensV">5</span></label>
   <div><span class="tog" data-set="sieve">gamut sieve</span> <span class="hint">root · m3 · 5th · M3-below, in the tuning</span></div>
   <div><span class="tog" data-set="row">ordered row</span> <span class="hint">grains walk the ranked concepts as a series (P / I / R / RI)</span></div>
   <div><span class="tog on" data-set="rowBias">weighted row</span> <span class="hint">heavier concepts linger (repeat), lighter ones fall silent (rest)</span></div>
@@ -156,9 +157,9 @@ const SET_DEFAULT = {
   // rowBias: 列の位置ごとに重みで反復・休符を混ぜる（参照音の A=55% の偏りに寄せる）
   // rowRep: 根音の留まり(反復)確率の上限 / rowPivot: 非根音の後に根音へ回帰する確率 / rowRest: 最も軽い概念の休符確率
   // meter: 変拍子の格子 off/5/8/7/8/9/8/11/8/13/8/cycle（ON なら flow を置き換える）/ meterMs: 8分音符の長さ
-  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'off', meterMs:200},   // I
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'7/8', meterMs:200},   // II: 変拍子の実験
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'off', meterMs:200} ], // III
+  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'off', meterMs:200, meterDens:5},   // I
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'7/8', meterMs:200, meterDens:5},   // II: 変拍子の実験
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'off', meterMs:200, meterDens:5} ], // III
 };
 let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
@@ -175,6 +176,7 @@ SETTINGS.mv = SETTINGS.mv.map((m,i) => {
   if (!(o.rowRest >= 0 && o.rowRest <= 0.6)) o.rowRest = d.rowRest;
   if (!['off','5/8','7/8','9/8','11/8','13/8','cycle'].includes(o.meter)) o.meter = d.meter;
   if (!(o.meterMs >= 120 && o.meterMs <= 400)) o.meterMs = d.meterMs;
+  if (!(o.meterDens >= 1 && o.meterDens <= 8)) o.meterDens = d.meterDens;
   return o;
 });
 if (typeof SETTINGS.auto !== 'boolean') SETTINGS.auto = SET_DEFAULT.auto;
@@ -473,8 +475,13 @@ function meterStep(now, cfg){
     if (head) pulseMarks.push({ t: meterT, z: METER_Z, crossed: false, acc: bar ? 2 : 1 });
     // たっ-た / たっ-た / たっ-た-た: 群の頭は強く長く、弱拍は確率で抜ける（3の群は尻が「た」として残りやすい）
     const pSound = bar ? 0.98 : head ? 0.92 : (inThree && tail) ? 0.78 : 0.50;
-    if (rng() < pSound)
-      grain(meterT, now, { z: METER_Z, dynAdd: bar ? 2 : head ? 1 : -1, dur: head ? e8 * 1.5 : e8 * 0.6, bass: bar });
+    if (rng() < pSound){
+      // density: 1枠に積む粒の数（群の頭は厚く＝和音、弱拍は薄く）。拍子を保ったまま論文の密度を戻す
+      const dens = clamp(cfg.meterDens || 1, 1, 8);
+      const n = bar ? dens : head ? Math.max(1, Math.round(dens * 0.75)) : Math.max(1, Math.round(dens * 0.4));
+      for (let i = 0; i < n; i++)
+        grain(meterT + i * 0.012, now, { z: METER_Z, dynAdd: (bar ? 2 : head ? 1 : -1) - (i ? 1 : 0), dur: head ? e8 * 1.5 : e8 * 0.6, bass: bar && i === 0 });
+    }
     meterT += e8; meterPos++;
   }
 }
@@ -1910,6 +1917,8 @@ const sRowRest=document.getElementById('sRowRest'), sRowRestV=document.getElemen
 sRowRest.oninput = () => { SETTINGS.mv[curMi].rowRest = sRowRest.value/100; sRowRestV.textContent = sRowRest.value+'%'; saveSet(); };
 const sMeterMs=document.getElementById('sMeterMs'), sMeterMsV=document.getElementById('sMeterMsV');
 sMeterMs.oninput = () => { SETTINGS.mv[curMi].meterMs = +sMeterMs.value; sMeterMsV.textContent = sMeterMs.value+'ms'; saveSet(); };
+const sMeterDens=document.getElementById('sMeterDens'), sMeterDensV=document.getElementById('sMeterDensV');
+sMeterDens.oninput = () => { SETTINGS.mv[curMi].meterDens = +sMeterDens.value; sMeterDensV.textContent = sMeterDens.value; saveSet(); };
 const sDot=document.getElementById('sDot'), sDotV=document.getElementById('sDotV');
 sDot.oninput = () => { SETTINGS.dot = sDot.value/100; sDotV.textContent = SETTINGS.dot.toFixed(1)+'×'; saveSet(); };
 sBowAtk.oninput = () => { SETTINGS.mv[curMi].bowAtk = sBowAtk.value/100; saveSet(); };
@@ -1941,6 +1950,7 @@ function applyMovementUI(){
   sRowPivot.value = Math.round(cfg.rowPivot*100); sRowPivotV.textContent = sRowPivot.value+'%';
   sRowRest.value = Math.round(cfg.rowRest*100);   sRowRestV.textContent = sRowRest.value+'%';
   sMeterMs.value = cfg.meterMs; sMeterMsV.textContent = cfg.meterMs+'ms';
+  sMeterDens.value = cfg.meterDens; sMeterDensV.textContent = cfg.meterDens;
 }
 function applyGlobalUI(){
   panel.querySelector('.tog[data-set="glow"]').classList.toggle('on', glowOn);
