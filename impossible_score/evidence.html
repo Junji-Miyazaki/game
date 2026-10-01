@@ -68,6 +68,9 @@
   <label>length <input type="range" id="sBowLen" min="30" max="300" value="150"></label>
   <label>attack <input type="range" id="sBowAtk" min="10" max="200" value="100"></label>
   <div class="seg" data-key="flow"><span class="tog" data-val="bursts">bursts</span><span class="tog" data-val="stream">stream</span></div>
+  <div class="seg" data-key="meter"><span class="tog" data-val="off">meter off</span><span class="tog" data-val="5/8">5/8</span><span class="tog" data-val="7/8">7/8</span><span class="tog" data-val="9/8">9/8</span><span class="tog" data-val="11/8">11/8</span><span class="tog" data-val="13/8">13/8</span><span class="tog" data-val="cycle">cycle</span></div>
+  <div class="hint">odd meter replaces the flow: grains sit on an eighth-note grid in groups (7/8 = 2+2+3), group heads accented, weak beats drop out</div>
+  <label>eighth（8分音符）<input type="range" id="sMeterMs" min="120" max="400" value="200"><span id="sMeterMsV">200ms</span></label>
   <div><span class="tog" data-set="sieve">gamut sieve</span> <span class="hint">root · m3 · 5th · M3-below, in the tuning</span></div>
   <div><span class="tog" data-set="row">ordered row</span> <span class="hint">grains walk the ranked concepts as a series (P / I / R / RI)</span></div>
   <div><span class="tog on" data-set="rowBias">weighted row</span> <span class="hint">heavier concepts linger (repeat), lighter ones fall silent (rest)</span></div>
@@ -152,9 +155,10 @@ const SET_DEFAULT = {
   // row: 概念を重み順に並べガムートへ落とした音列を粒が P/I/R/RI で巡る（必然＝順序）
   // rowBias: 列の位置ごとに重みで反復・休符を混ぜる（参照音の A=55% の偏りに寄せる）
   // rowRep: 根音の留まり(反復)確率の上限 / rowPivot: 非根音の後に根音へ回帰する確率 / rowRest: 最も軽い概念の休符確率
-  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18},   // I
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18},   // II
-       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18} ], // III
+  // meter: 変拍子の格子 off/5/8/7/8/9/8/11/8/13/8/cycle（ON なら flow を置き換える）/ meterMs: 8分音符の長さ
+  mv:[ {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'off', meterMs:200},   // I
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'7/8', meterMs:200},   // II: 変拍子の実験
+       {voice:'bowed', bowLen:1.5, bowAtk:1.0, flow:'bursts', sieve:false, row:false, rowBias:true, rowRep:0.72, rowPivot:0.30, rowRest:0.18, meter:'off', meterMs:200} ], // III
 };
 let SETTINGS;
 try { SETTINGS = Object.assign({}, SET_DEFAULT, JSON.parse(localStorage.getItem('evidence_set_v1')||'{}')); }
@@ -169,6 +173,8 @@ SETTINGS.mv = SETTINGS.mv.map((m,i) => {
   if (!(o.rowRep >= 0.10 && o.rowRep <= 0.95)) o.rowRep = d.rowRep;
   if (!(o.rowPivot >= 0 && o.rowPivot <= 0.8)) o.rowPivot = d.rowPivot;
   if (!(o.rowRest >= 0 && o.rowRest <= 0.6)) o.rowRest = d.rowRest;
+  if (!['off','5/8','7/8','9/8','11/8','13/8','cycle'].includes(o.meter)) o.meter = d.meter;
+  if (!(o.meterMs >= 120 && o.meterMs <= 400)) o.meterMs = d.meterMs;
   return o;
 });
 if (typeof SETTINGS.auto !== 'boolean') SETTINGS.auto = SET_DEFAULT.auto;
@@ -437,11 +443,42 @@ function refreshAuto(){
 }
 function effCfg(){
   const m = SETTINGS.mv[curMi] || SET_DEFAULT.mv[0];
-  if (!SETTINGS.auto) return m;
-  if (!autoPreset) refreshAuto();
-  return autoPreset ? Object.assign({}, m, autoPreset) : m;
+  let c = m;
+  if (SETTINGS.auto){ if (!autoPreset) refreshAuto(); if (autoPreset) c = Object.assign({}, m, autoPreset); }
+  // 変拍子(meter): ON の楽章は flow を拍子の格子に置き換える（auto の flow より優先。voice/sieve/row は auto のまま）
+  if (m.meter && m.meter !== 'off'){ if (c === m) c = Object.assign({}, m); c.flow = 'meter'; }
+  return c;
 }
-const cfgLabel = c => `${c.voice} · ${c.flow}${c.sieve ? ' · sieve' : ''}${c.row ? (c.rowBias ? ' · row(w)' : ' · row') : ''}`;
+// ---------- 変拍子の格子（第II曲の実験: 粒を 2+2+3 のような群に嵌め込む） ----------
+const METERS = { '5/8':[3,2], '7/8':[2,2,3], '9/8':[2,2,2,3], '11/8':[3,3,3,2], '13/8':[3,3,2,3,2] };
+const METER_Z = 0.6;   // 格子を保つため、拍子モードの粒と拍点は同じ速度で走る
+let meterT = 0, meterPos = 0;
+function meterGroups(cfg){
+  if (cfg.meter === 'cycle'){ const k = Object.keys(METERS); return METERS[k[epochIx % k.length]]; }
+  return METERS[cfg.meter] || METERS['7/8'];
+}
+function meterName(cfg){
+  const g = meterGroups(cfg);
+  return `${g.reduce((a,b)=>a+b,0)}/8 (${g.join('+')})`;
+}
+function meterStep(now, cfg){
+  const groups = meterGroups(cfg), barLen = groups.reduce((a,b)=>a+b,0);
+  const e8 = clamp(cfg.meterMs, 120, 400) / 1000;
+  if (meterT < now){ meterT = now + 0.1; meterPos = 0; }
+  while (meterT < now + 1.2 && particles.length < 420){
+    const pos = meterPos % barLen;
+    let acc = 0, gi = 0;
+    for (; gi < groups.length; gi++){ if (pos < acc + groups[gi]) break; acc += groups[gi]; }
+    const head = pos === acc, bar = pos === 0, inThree = groups[gi] === 3, tail = pos === acc + groups[gi] - 1;
+    if (head) pulseMarks.push({ t: meterT, z: METER_Z, crossed: false, acc: bar ? 2 : 1 });
+    // たっ-た / たっ-た / たっ-た-た: 群の頭は強く長く、弱拍は確率で抜ける（3の群は尻が「た」として残りやすい）
+    const pSound = bar ? 0.98 : head ? 0.92 : (inThree && tail) ? 0.78 : 0.50;
+    if (rng() < pSound)
+      grain(meterT, now, { z: METER_Z, dynAdd: bar ? 2 : head ? 1 : -1, dur: head ? e8 * 1.5 : e8 * 0.6, bass: bar });
+    meterT += e8; meterPos++;
+  }
+}
+const cfgLabel = c => `${c.voice} · ${c.flow === 'meter' ? meterName(c) : c.flow}${c.sieve ? ' · sieve' : ''}${c.row ? (c.rowBias ? ' · row(w)' : ' · row') : ''}`;
 // 現在の音律でのガムート(steps): 根音の長3度下 〜 2オクターヴ上の窓 (F3–A5 型)
 let gamutCache = null, gamutKey = '';
 function gamutSteps(){
@@ -832,7 +869,8 @@ function rowPick(){
   if (bias && rng() < ROW_REST(s, cfg.rowRest)) return { rest: true };    // 黙る（列は進む）
   return rowHold;
 }
-function grain(t, now){
+function grain(t, now, opt){   // opt: 拍子モードからの強弱・長さ・速度の指定
+  opt = opt || {};
   const es = field.edges; if (!es.length) return;
   const useRow = !!effCfg().row;
   const rp = useRow ? rowPick() : null;
@@ -852,13 +890,13 @@ function grain(t, now){
   }
   papersProcessed += Math.round((edge.co || 0) / 12);
   const established = w >= 0.55 && status !== 'reversed';
-  const z = clamp(0.35 + w * 0.5 + gauss() * 0.06, 0.08, 1);
-  const dyn = clamp(2 + Math.round(w * 4), 0, 7);
+  const z = opt.z !== undefined ? opt.z : clamp(0.35 + w * 0.5 + gauss() * 0.06, 0.08, 1);
+  const dyn = clamp(2 + Math.round(w * 4) + (opt.dynAdd || 0), 0, 7);
   const depth = Math.round(st.complexity * 3.4);
   const ghost = !rp && rng() < 0.06;                // 篩の隙間から覗く亡霊(引力場×篩の音)。音列中は出ない
   const ci = rp ? rp.ci : ((rng() < 0.62) ? bi : ai);   // 音列が決める / 因果の向き先を優先 → ハブが中心音に
   const C = CONCEPTS[ci];
-  const bass = established && rng() < 0.03;        // ごく稀に和声の底
+  const bass = established && (opt.bass ? rng() < 0.5 : rng() < 0.03);   // 和声の底（拍子の小節頭では半分）
   particles.push(ghost ? {
       ci, edge, orn: true, t, depth, z: z * 0.8, dyn: clamp(dyn - 2, 0, 7),
       steps: sieveSteps(pickPC(), (CONCEPTS[ai].band + CONCEPTS[bi].band) / 2 | 0),
@@ -866,7 +904,7 @@ function grain(t, now){
     } : {
       ci, edge, t, depth, z: bass ? clamp(0.55 + w * 0.35, 0.1, 1) : z, dyn,
       steps: (rp ? rp.steps : conceptSteps(ci)) - (bass ? 48 : 0),
-      dur: bass ? 2.2 + rng() * 2.0 : 0.22 + rng() * 0.3,
+      dur: bass ? 2.2 + rng() * 2.0 : (opt.dur !== undefined ? opt.dur : 0.22 + rng() * 0.3),
       partial: C.partial, crossed: false, px: undefined, py: undefined, sustained: bass,
     });
   if (rng() < 0.08){
@@ -881,7 +919,10 @@ function schedulerTick(){
   if (!running || !field) return;
   const now = ctx.currentTime;
   if (!st.fermata){
-    if (effCfg().flow === 'stream'){
+    const fc = effCfg();
+    if (fc.flow === 'meter'){
+      meterStep(now, fc);                      // 拍点も格子から出す（下の等間隔パルスは使わない）
+    } else if (fc.flow === 'stream'){
       if (streamT < now) streamT = now + 0.05;
       while (streamT < now + 1.2 && particles.length < 420){ grain(streamT, now); streamT += streamIOI(); }
     } else {
@@ -890,10 +931,12 @@ function schedulerTick(){
         if (e.nextT < now + 1.5 && particles.length < 420) utter(e, e.nextT);
       }
     }
-    if (pulseGenT < now) pulseGenT = now + 0.2;
-    while (pulseGenT < now + 2){
-      pulseMarks.push({ t: pulseGenT, z: 0.55, crossed: false });
-      pulseGenT += pulseSpacing(pulseGenT);
+    if (fc.flow !== 'meter'){
+      if (pulseGenT < now) pulseGenT = now + 0.2;
+      while (pulseGenT < now + 2){
+        pulseMarks.push({ t: pulseGenT, z: 0.55, crossed: false });
+        pulseGenT += pulseSpacing(pulseGenT);
+      }
     }
     if (serialT < now){ sampleFossil(now); }   // 案B: 凍結セリーの断片を引用する声部
     if (graveT < now) graveT = now + 2;
@@ -1050,14 +1093,14 @@ function pulseSpacing(now){
   return beatLen() * (0.90 - 0.30 * prog);
 }
 let pulseBeat = 0;
-function schedulePulse(at){
+function schedulePulse(at, acc){
   if (!soundOn || !field) return;
   const t = Math.max(at, ctx.currentTime + 0.005);
   const cl = clinical();
   const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.value = clamp(stepFreq(field.gravity + (cl ? 108 : 96)), 200, 3600);
+  o.frequency.value = clamp(stepFreq(field.gravity + (cl ? 108 : 96) - (acc === 2 ? 24 : 0)), 200, 3600);
   const g = ctx.createGain();
-  const pk = cl ? 0.030 : 0.012;
+  const pk = (cl ? 0.030 : 0.012) * (acc === 2 ? 2.6 : acc === 1 ? 1.7 : 1);   // 変拍子: 群の頭は強く、小節頭は低く強く
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(pk, t + 0.001);
   g.gain.setValueAtTime(pk, t + (cl ? 0.012 : 0.008));
@@ -1255,7 +1298,7 @@ function updateParticles(dt, now){
     const dxp = m.x - line.x;
     if (dxp <= closing * 0.12){
       m.crossed = true;
-      schedulePulse(now + clamp(Math.max(dxp, 0) / closing, 0, 0.15));
+      schedulePulse(now + clamp(Math.max(dxp, 0) / closing, 0, 0.15), m.acc || 0);
       flashes.push({ at: now });
     }
   }
@@ -1342,7 +1385,7 @@ function draw(now, tSec){
   // 拍マーカー
   for (const m of pulseMarks){
     if (now < m.t || m.x === undefined || m.x < -5 || m.x > W) continue;
-    g2.strokeStyle = `rgba(220,220,220,${0.04 * vb})`; g2.lineWidth = 1;
+    g2.strokeStyle = `rgba(220,220,220,${(m.acc === 2 ? 0.14 : m.acc === 1 ? 0.08 : 0.04) * vb})`; g2.lineWidth = m.acc === 2 ? 1.5 : 1;
     g2.beginPath(); g2.moveTo(m.x, fieldTop()); g2.lineTo(m.x, fieldBottom()); g2.stroke();
   }
 
@@ -1865,6 +1908,8 @@ sRowRep.oninput   = () => { SETTINGS.mv[curMi].rowRep = sRowRep.value/100; sRowR
 sRowPivot.oninput = () => { SETTINGS.mv[curMi].rowPivot = sRowPivot.value/100; sRowPivotV.textContent = sRowPivot.value+'%'; saveSet(); };
 const sRowRest=document.getElementById('sRowRest'), sRowRestV=document.getElementById('sRowRestV');
 sRowRest.oninput = () => { SETTINGS.mv[curMi].rowRest = sRowRest.value/100; sRowRestV.textContent = sRowRest.value+'%'; saveSet(); };
+const sMeterMs=document.getElementById('sMeterMs'), sMeterMsV=document.getElementById('sMeterMsV');
+sMeterMs.oninput = () => { SETTINGS.mv[curMi].meterMs = +sMeterMs.value; sMeterMsV.textContent = sMeterMs.value+'ms'; saveSet(); };
 const sDot=document.getElementById('sDot'), sDotV=document.getElementById('sDotV');
 sDot.oninput = () => { SETTINGS.dot = sDot.value/100; sDotV.textContent = SETTINGS.dot.toFixed(1)+'×'; saveSet(); };
 sBowAtk.oninput = () => { SETTINGS.mv[curMi].bowAtk = sBowAtk.value/100; saveSet(); };
@@ -1895,6 +1940,7 @@ function applyMovementUI(){
   sRowRep.value = Math.round(cfg.rowRep*100);   sRowRepV.textContent = sRowRep.value+'%';
   sRowPivot.value = Math.round(cfg.rowPivot*100); sRowPivotV.textContent = sRowPivot.value+'%';
   sRowRest.value = Math.round(cfg.rowRest*100);   sRowRestV.textContent = sRowRest.value+'%';
+  sMeterMs.value = cfg.meterMs; sMeterMsV.textContent = cfg.meterMs+'ms';
 }
 function applyGlobalUI(){
   panel.querySelector('.tog[data-set="glow"]').classList.toggle('on', glowOn);
