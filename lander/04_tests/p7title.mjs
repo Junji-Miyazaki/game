@@ -1,6 +1,6 @@
 // p7title — タイトル画面の回帰テスト（ランキング一覧を閉じるタップが START に貫通しないこと）
 // 実行: node 04_tests/p7title.mjs（lander/ から）
-import { TitleScene } from '../02_src/title.js';
+import { TitleScene, BootScene } from '../02_src/title.js';
 
 const noop = () => {};
 const ctx = new Proxy({}, {
@@ -79,5 +79,27 @@ const started = (t, calls) => calls.n > 0 || !!t.launch;
   ok(!threw, 'render with the list open does not throw: ' + (threw && threw.stack));
 }
 
+// 5) 起動画面 TAP TO BEGIN：タップまで次へ進まない／1回のタップで1回だけ進む／その後のタイトルは音声有効なら即タイトル曲
+{
+  let n = 0;
+  const e = makeEngine(profileStore());
+  const b = new BootScene(e, () => { n++; });
+  b.enter && b.enter();
+  for (let i = 0; i < 120; i++) { b.update(1 / 60); b.render(ctx); }
+  ok(n === 0, 'boot: does not advance without input');
+  b.onInput('confirm', { repeat: true });
+  ok(n === 0, 'boot: key auto-repeat does not advance');
+  b.onInput('tap', { x: 180, y: 380, now: 0 });
+  b.onInput('tap', { x: 180, y: 380, now: 0 });
+  ok(n === 1, 'boot: first tap advances exactly once');
+  ok(b.isRoot === true, 'boot: no BACK button');
+  // エンジンはタップ時に audio.unlock() する → その直後のタイトル enter で曲が始まる
+  let played = 0;
+  const e2 = makeEngine(profileStore());
+  e2.music.playTitle = () => { played++; };
+  e2.audio.unlock();
+  const t = new TitleScene(e2, noop, { launch: true }); t.enter();
+  ok(played === 1, 'title music starts on enter when audio was unlocked by the boot tap');
+}
 console.log('p7title: ' + pass + '/' + (pass + fail) + ' PASS');
 process.exit(fail ? 1 : 0);

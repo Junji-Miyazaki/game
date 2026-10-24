@@ -3511,6 +3511,49 @@ function hideNameOverlay() {
   } catch (_) { /* ignore */ }
 }
 
+// ---- 起動画面「TAP TO BEGIN」----
+// ブラウザは最初のユーザー操作まで音を出せない（自動再生の制限）。ここで1回タップしてもらうことで
+// 音声が有効になり、次のタイトル画面は表示された瞬間から曲が流れる（TitleScene.enter が ctx を見て再生）。
+// 音声の有効化そのものは engine の入力処理（audio.unlock）がジェスチャ内で行う。
+class BootScene extends Scene {
+  constructor(engine, next) {
+    super(engine);
+    this.next = next;
+    this.isRoot = true;   // BACKボタン非表示
+    this.t = 0;
+    this.done = false;
+    this.stars = [];
+    for (let i = 0; i < 46; i++) {
+      this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.15 ? 1.3 : 0.7, tw: Math.random() * 6.28 });
+    }
+  }
+  onInput(action, data) {
+    if (this.done) return;
+    if (data && data.repeat) return;
+    if (action === 'tap' || action === 'confirm') {
+      this.done = true;
+      if (typeof this.next === 'function') this.next();
+    }
+  }
+  update(dt) { this.t += (dt > 0 ? dt : 0.016); }
+  render(ctx) {
+    const p = P();
+    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
+    for (const s of this.stars) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.18 + 0.32 * Math.abs(Math.sin(this.t * 0.6 + s.tw))));
+      ctx.fillStyle = p.fg;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const fadeIn = Math.min(1, this.t / 0.8);
+    txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: 0.85 * fadeIn });
+    txt(ctx, 'SOFT LANDING TOUR', W / 2, H * 0.40 + 34, 8, p.dim, 'center', { sp: 5, w: 400, a: fadeIn });
+    const pulse = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 2.2));
+    txt(ctx, 'TAP TO BEGIN', W / 2, H * 0.60, 12, p.fg, 'center', { sp: 6, w: 400, a: pulse * fadeIn });
+    txt(ctx, 'SOUND ON', W / 2, H * 0.60 + 28, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.7 * fadeIn });
+  }
+}
+
 class TitleScene extends Scene {
   // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
   constructor(engine, startGame, opts) {
@@ -5421,7 +5464,9 @@ window.addEventListener('load', () => {
   const startGame = () => engine.changeScene(fadeInScene(new Game(engine), 0.8));
   engine.toMenu = toTitle;
 
-  engine.start(new TitleScene(engine, startGame, { launch: true }));
+  // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
+  // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。
+  engine.start(new BootScene(engine, toTitle));
 });
 
 })();
