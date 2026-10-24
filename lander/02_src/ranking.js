@@ -1,7 +1,7 @@
 // ローカルランキング（端末ごとの localStorage 保存）。純関数中心でヘッドレステスト可能。
 // Entry = { name, score, stage, date(ISO) }。上位10件を score降順 → stage降順 → 日付が早い順 で保持する。
 import { P } from './core/palette.js';
-import { relayEnabled, fetchWorldTop } from './net.js';
+import { relayEnabled, fetchWorldTop, makeNameKey } from './net.js';
 import { txt, rgba, hair, pill } from './art.js';
 
 export const RANK_MAX = 10;
@@ -124,4 +124,106 @@ export function setPlayerName(storage, name) {
   const nm = sanitizeName(name) || 'PILOT';
   try { storage.set('lastName', nm); } catch (_) { /* 保存不可でも続行 */ }
   return nm;
+}
+
+// ---- 1ランにつき1行（runId）----
+// 同じ runId の行があれば、新スコアが高い時だけ置き換える（低ければ何もしない）。runId 無しは従来どおり追加。
+export function recordEntry(list, entry) {
+  if (entry && entry.runId) {
+    const i = list.findIndex((e) => e.runId === entry.runId);
+    if (i >= 0) {
+      if (!(entry.score > list[i].score)) return list;
+      const rest = list.slice(); rest.splice(i, 1);
+      return insertEntry(rest, entry);
+    }
+  }
+  return insertEntry(list, entry);
+}
+export function newRunId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+}
+
+// ---- チェックポイント（ステージ開始時の保存。ローカルのみ）----
+const CP_KEY = 'checkpoint';
+export function loadCheckpoint(storage) {
+  try {
+    const raw = storage.get(CP_KEY, null);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (!c || c.v !== 1 || typeof c.runId !== 'string' || !c.runId) return null;
+    if (!Number.isInteger(c.stage) || c.stage < 1 || c.stage > 9999) return null;
+    if (!Number.isFinite(c.totalScore) || c.totalScore < 0) return null;
+    if (!Number.isInteger(c.continues) || c.continues < 0 || c.continues > 99) return null;
+    if (!c.modules || typeof c.modules !== 'object' || Array.isArray(c.modules)) return null;
+    return c;
+  } catch (_) { return null; }
+}
+export function saveCheckpoint(storage, cp) {
+  try { return !!storage.set(CP_KEY, JSON.stringify(Object.assign({ v: 1, savedAt: new Date().toISOString() }, cp))); } catch (_) { return false; }
+}
+export function clearCheckpoint(storage) { try { storage.set(CP_KEY, ''); } catch (_) { /* ignore */ } }
+
+// ---- パイロット・プロフィール（端末ごと最大3名。{name, key}）----
+export const PROFILE_MAX = 3;
+const PROF_KEY = 'profiles', ACTIVE_KEY = 'activeProfile';
+function readProfiles(storage) {
+  try {
+    const arr = JSON.parse(storage.get(PROF_KEY, '') || '[]');
+    if (!Array.isArray(arr)) return [];
+    const seen = new Set(), out = [];
+    for (const p of arr) {
+      if (!p || typeof p.name !== 'string' || typeof p.key !== 'string') continue;
+      const nm = sanitizeName(p.name);
+      if (!nm || seen.has(nm)) continue;
+      seen.add(nm); out.push({ name: nm, key: p.key });
+      if (out.length >= PROFILE_MAX) break;
+    }
+    return out;
+  } catch (_) { return []; }
+}
+function writeProfiles(storage, list) { try { storage.set(PROF_KEY, JSON.stringify(list)); } catch (_) { /* ignore */ } }
+// 一覧を返す。プロフィールが無く lastName があれば移行（新しいキーで作成）。lastName が一覧に無ければ（枠があれば）追加
+export function loadProfiles(storage) {
+  let list = readProfiles(storage);
+  const ln = getPlayerName(storage);
+  if (ln && !list.some((p) => p.name === ln) && list.length < PROFILE_MAX) {
+    list = list.concat([{ name: ln, key: makeNameKey() }]);
+    writeProfiles(storage, list);
+  }
+  return list;
+}
+export function getActiveProfile(storage) {
+  const list = loadProfiles(storage);
+  if (!list.length) return null;
+  const ln = getPlayerName(storage);
+  let act = null; try { act = storage.get(ACTIVE_KEY, null); } catch (_) { /* ignore */ }
+  return list.find((p) => p.name === ln) || list.find((p) => p.name === act) || list[0];
+}
+export function setActiveProfile(storage, name) {
+  const list = loadProfiles(storage);
+  const p = list.find((x) => x.name === name);
+  if (!p) return null;
+  try { storage.set(ACTIVE_KEY, p.name); storage.set('lastName', p.name); } catch (_) { /* ignore */ }
+  return p;
+}
+// 追加して有効化。空名/枠なし -> null。同名が既にあれば選択のみ
+export function addProfile(storage, name) {
+  const nm = sanitizeName(name);
+  if (!nm) return null;
+  const list = loadProfiles(storage);
+  const ex = list.find((p) => p.name === nm);
+  if (ex) return setActiveProfile(storage, nm);
+  if (list.length >= PROFILE_MAX) return null;
+  list.push({ name: nm, key: makeNameKey() });
+  writeProfiles(storage, list);
+  return setActiveProfile(storage, nm);
+}
+export function removeProfile(storage, name) {
+  const list = loadProfiles(storage).filter((p) => p.name !== name);
+  writeProfiles(storage, list);
+  const cur = getPlayerName(storage);
+  if (cur === name || !list.some((p) => p.name === cur)) {
+    try { storage.set('lastName', list.length ? list[0].name : ''); storage.set(ACTIVE_KEY, list.length ? list[0].name : ''); } catch (_) { /* ignore */ }
+  }
+  return list;
 }

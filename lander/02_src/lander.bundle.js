@@ -337,10 +337,15 @@ class Engine {
     c.addEventListener('contextmenu', (e) => { e.preventDefault(); this._clearPointers(); });
 
     // フォーカス喪失・非表示・ページ離脱では全ポインタ解除（押しっぱなし固着の防止）
-    window.addEventListener('blur', this._clearPointers);
-    window.addEventListener('pagehide', this._clearPointers);
+    // 非表示・フォーカス喪失ではシーンにも通知する（LANDER は MISSION HOLD へ自動移行）
+    const onHidden = () => {
+      this._clearPointers();
+      try { if (this.scene && this.scene.onHidden) this.scene.onHidden(); } catch (_) { /* シーン側の例外で入力解除を止めない */ }
+    };
+    window.addEventListener('blur', onHidden);
+    window.addEventListener('pagehide', onHidden);
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => { if (document.hidden) this._clearPointers(); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) onHidden(); });
     }
   }
 
@@ -585,7 +590,7 @@ function request(url, init, ms, parse) {
 async function submitScore(entry, timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return { ok: false, error: 'disabled' };
   try {
-    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage });
+    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage, key: entry.key });
     return await request(RELAY_URL + '/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs,
       (res) => ({ ok: !!(res && res.ok), status: res && res.status }));
   } catch (e) {
@@ -605,6 +610,63 @@ async function fetchWorldTop(timeoutMs = NET_TIMEOUT_MS) {
   } catch (_) {
     return null;
   }
+}
+
+// 名前の正規化。ワーカー(06_server/ranking-worker.js)の normName と同一にすること。
+// 全角/半角・大文字小文字は別名。前後の空白だけ除く。
+function normName(s) { return String(s).trim(); }
+
+// 名前の所有キー（端末ごと・名前ごと）。128bit 以上の乱数を hex で返す。乱数源が無ければ ''（送信は 400 になる）
+function makeNameKey() {
+  try {
+    const a = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(a);
+    return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch (_) { return ''; }
+}
+
+// -> { ok:true, taken } | { ok:false }（オフ/失敗/不正応答）。決して throw しない
+async function checkName(name, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false };
+  try {
+    return await request(RELAY_URL + '/name?n=' + encodeURIComponent(String(name ?? '')), { method: 'GET' }, timeoutMs, async (res) => {
+      if (!res || !res.ok) return { ok: false };
+      const j = await res.json();
+      return (j && typeof j.taken === 'boolean') ? { ok: true, taken: j.taken } : { ok: false };
+    });
+  } catch (_) {
+    return { ok: false };
+  }
+}
+
+const errOf = (res) => (res && res.status === 403 ? 'forbidden' : res && res.status === 404 ? 'unknown' : res && res.status === 401 ? 'unauthorized' : res && res.status === 503 ? 'disabled' : 'status ' + (res && res.status));
+
+// 自分の名前を削除（台帳と WORLD ボードから）。-> { ok:true } | { ok:false, error }
+async function deleteName(name, key, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    return await request(RELAY_URL + '/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, key }) }, timeoutMs,
+      (res) => (res && res.ok) ? { ok: true } : { ok: false, error: errOf(res) });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
+// 管理（DEBUG 用）。-> { ok:true, names } | { ok:false, error }
+async function adminList(adminKey, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    return await request(RELAY_URL + '/admin/list', { method: 'GET', headers: { 'X-Admin-Key': String(adminKey || '') } }, timeoutMs, async (res) => {
+      if (!res || !res.ok) return { ok: false, error: errOf(res) };
+      const j = await res.json();
+      return (j && Array.isArray(j.names)) ? { ok: true, names: j.names } : { ok: false, error: 'bad response' };
+    });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+async function adminDelete(adminKey, name, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    return await request(RELAY_URL + '/admin/delete', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Key': String(adminKey || '') }, body: JSON.stringify({ name }) }, timeoutMs,
+      (res) => (res && res.ok) ? { ok: true } : { ok: false, error: errOf(res) });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
 
 
@@ -821,6 +883,108 @@ function setPlayerName(storage, name) {
   const nm = sanitizeName(name) || 'PILOT';
   try { storage.set('lastName', nm); } catch (_) { /* 保存不可でも続行 */ }
   return nm;
+}
+
+// ---- 1ランにつき1行（runId）----
+// 同じ runId の行があれば、新スコアが高い時だけ置き換える（低ければ何もしない）。runId 無しは従来どおり追加。
+function recordEntry(list, entry) {
+  if (entry && entry.runId) {
+    const i = list.findIndex((e) => e.runId === entry.runId);
+    if (i >= 0) {
+      if (!(entry.score > list[i].score)) return list;
+      const rest = list.slice(); rest.splice(i, 1);
+      return insertEntry(rest, entry);
+    }
+  }
+  return insertEntry(list, entry);
+}
+function newRunId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+}
+
+// ---- チェックポイント（ステージ開始時の保存。ローカルのみ）----
+const CP_KEY = 'checkpoint';
+function loadCheckpoint(storage) {
+  try {
+    const raw = storage.get(CP_KEY, null);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (!c || c.v !== 1 || typeof c.runId !== 'string' || !c.runId) return null;
+    if (!Number.isInteger(c.stage) || c.stage < 1 || c.stage > 9999) return null;
+    if (!Number.isFinite(c.totalScore) || c.totalScore < 0) return null;
+    if (!Number.isInteger(c.continues) || c.continues < 0 || c.continues > 99) return null;
+    if (!c.modules || typeof c.modules !== 'object' || Array.isArray(c.modules)) return null;
+    return c;
+  } catch (_) { return null; }
+}
+function saveCheckpoint(storage, cp) {
+  try { return !!storage.set(CP_KEY, JSON.stringify(Object.assign({ v: 1, savedAt: new Date().toISOString() }, cp))); } catch (_) { return false; }
+}
+function clearCheckpoint(storage) { try { storage.set(CP_KEY, ''); } catch (_) { /* ignore */ } }
+
+// ---- パイロット・プロフィール（端末ごと最大3名。{name, key}）----
+const PROFILE_MAX = 3;
+const PROF_KEY = 'profiles', ACTIVE_KEY = 'activeProfile';
+function readProfiles(storage) {
+  try {
+    const arr = JSON.parse(storage.get(PROF_KEY, '') || '[]');
+    if (!Array.isArray(arr)) return [];
+    const seen = new Set(), out = [];
+    for (const p of arr) {
+      if (!p || typeof p.name !== 'string' || typeof p.key !== 'string') continue;
+      const nm = sanitizeName(p.name);
+      if (!nm || seen.has(nm)) continue;
+      seen.add(nm); out.push({ name: nm, key: p.key });
+      if (out.length >= PROFILE_MAX) break;
+    }
+    return out;
+  } catch (_) { return []; }
+}
+function writeProfiles(storage, list) { try { storage.set(PROF_KEY, JSON.stringify(list)); } catch (_) { /* ignore */ } }
+// 一覧を返す。プロフィールが無く lastName があれば移行（新しいキーで作成）。lastName が一覧に無ければ（枠があれば）追加
+function loadProfiles(storage) {
+  let list = readProfiles(storage);
+  const ln = getPlayerName(storage);
+  if (ln && !list.some((p) => p.name === ln) && list.length < PROFILE_MAX) {
+    list = list.concat([{ name: ln, key: makeNameKey() }]);
+    writeProfiles(storage, list);
+  }
+  return list;
+}
+function getActiveProfile(storage) {
+  const list = loadProfiles(storage);
+  if (!list.length) return null;
+  const ln = getPlayerName(storage);
+  let act = null; try { act = storage.get(ACTIVE_KEY, null); } catch (_) { /* ignore */ }
+  return list.find((p) => p.name === ln) || list.find((p) => p.name === act) || list[0];
+}
+function setActiveProfile(storage, name) {
+  const list = loadProfiles(storage);
+  const p = list.find((x) => x.name === name);
+  if (!p) return null;
+  try { storage.set(ACTIVE_KEY, p.name); storage.set('lastName', p.name); } catch (_) { /* ignore */ }
+  return p;
+}
+// 追加して有効化。空名/枠なし -> null。同名が既にあれば選択のみ
+function addProfile(storage, name) {
+  const nm = sanitizeName(name);
+  if (!nm) return null;
+  const list = loadProfiles(storage);
+  const ex = list.find((p) => p.name === nm);
+  if (ex) return setActiveProfile(storage, nm);
+  if (list.length >= PROFILE_MAX) return null;
+  list.push({ name: nm, key: makeNameKey() });
+  writeProfiles(storage, list);
+  return setActiveProfile(storage, nm);
+}
+function removeProfile(storage, name) {
+  const list = loadProfiles(storage).filter((p) => p.name !== name);
+  writeProfiles(storage, list);
+  const cur = getPlayerName(storage);
+  if (cur === name || !list.some((p) => p.name === cur)) {
+    try { storage.set('lastName', list.length ? list[0].name : ''); storage.set(ACTIVE_KEY, list.length ? list[0].name : ''); } catch (_) { /* ignore */ }
+  }
+  return list;
 }
 
 
@@ -2272,6 +2436,118 @@ function drawSpeaker(ctx, cx, cy, s, color, muted) {
   ctx.restore();
 }
 
+// ================================================================ MISSION HOLD / ABORT
+// HUDのHOLDボタン: ヘアラインの円 + 縦2本線（ミュートのスピーカーと同じ静かなトーン）
+function drawHoldButton(ctx, r) {
+  const p = P();
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, 12, 0, TAU);
+  ctx.fillStyle = rgba('#06080E', 0.4); ctx.fill();
+  ctx.strokeStyle = rgba(p.fg, 0.32); ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = rgba(p.fg, 0.8);
+  ctx.fillRect(cx - 4, cy - 5, 2.6, 10);
+  ctx.fillRect(cx + 1.4, cy - 5, 2.6, 10);
+  ctx.restore();
+}
+// d: { confirm, stage, body, clock(秒), score, buttons:[{label,x,y,w,h,kind:'main'|'danger'}] }
+function drawHoldPanel(ctx, d) {
+  const p = P();
+  const cx = AW / 2;
+  veil(ctx, 0.55);
+  const conf = !!d.confirm;
+  const edge = conf ? p.bad : p.mid;
+  panel(ctx, 40, 184, AW - 80, 272, { a: 0.9, border: edge, ba: conf ? 0.32 : 0.22 });
+  if (!conf) {
+    txt(ctx, 'MISSION HOLD', cx, 208, 18, p.hi, 'center', { sp: 6, w: 300 });
+    txt(ctx, 'STAGE ' + d.stage + (d.body ? '  ·  ' + String(d.body).toUpperCase() : ''), cx, 248, 9, p.fg, 'center', { sp: 3, w: 500 });
+    const s = Math.max(0, Math.floor(d.clock || 0));
+    const mm = Math.floor(s / 60), ss = s % 60;
+    txt(ctx, 'T+ ' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss, cx, 268, 9, p.dim, 'center', { sp: 3, w: 500 });
+  } else {
+    txt(ctx, 'ABORT MISSION?', cx, 208, 18, p.bad, 'center', { sp: 5, w: 300 });
+    txt(ctx, 'YOUR SCORE WILL BE RECORDED', cx, 248, 9, p.fg, 'center', { sp: 3, w: 500 });
+    txt(ctx, 'SCORE  ' + (d.score || 0), cx, 268, 9, p.dim, 'center', { sp: 3, w: 500 });
+  }
+  hair(ctx, 64, 296, AW - 64, 296, p.fg, 0.12);
+  for (let i = 0; i < d.buttons.length; i++) {
+    const b = d.buttons[i];
+    const danger = b.kind === 'danger';
+    pill(ctx, b.x, b.y, b.w, b.h, danger ? rgba(p.bad, 0.10) : rgba(p.fg, 0.10), danger ? rgba(p.bad, 0.55) : rgba(p.fg, 0.28));
+    txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, danger ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+  }
+}
+
+// 小さな非ブロッキングの注記（y: 既定はランキング枠の下）
+function drawNote(ctx, text, y) {
+  txt(ctx, text, AW / 2, y === undefined ? 556 : y, 8, P().warn, 'center', { sp: 2, w: 500, a: 0.9 });
+}
+// DEBUG: WORLD ADMIN の一覧。d = { phase:'loading'|'list'|'error', msg, rows:[{label,sub,del:{x,y,w,h}}], prev, next, close, page, pages, confirm:{text,yes,no}|null }
+function drawAdminPanel(ctx, d) {
+  const p = P();
+  panel(ctx, 20, 70, AW - 40, 520, { a: 0.9, border: p.warn, ba: 0.3 });
+  txt(ctx, 'WORLD ADMIN', AW / 2, 80, 14, p.warn, 'center', { sp: 6, w: 500 });
+  if (d.msg) txt(ctx, d.msg, AW / 2, 102, 9, d.phase === 'error' ? p.bad : p.mid, 'center', { sp: 2.5, w: 500 });
+  if (d.confirm) {
+    txt(ctx, d.confirm.text, AW / 2, 240, 11, p.fg, 'center', { sp: 2, w: 500 });
+    for (const b of [d.confirm.yes, d.confirm.no]) {
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(b === d.confirm.yes ? p.bad : p.fg, 0.10), rgba(b === d.confirm.yes ? p.bad : p.fg, 0.4));
+      txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, b === d.confirm.yes ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+    }
+    return;
+  }
+  for (const r of d.rows) {
+    hair(ctx, 36, r.del.y - 4, AW - 36, r.del.y - 4, p.fg, 0.08);
+    txt(ctx, r.label, 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
+    txt(ctx, r.sub, 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
+    pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
+    txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
+  }
+  for (const k of ['prev', 'next', 'close']) {
+    const b = d[k]; if (!b) continue;
+    pill(ctx, b.x, b.y, b.w, b.h, null, rgba(p.fg, 0.25));
+    txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 4, 9, p.fg, 'center', { sp: 2, w: 500 });
+  }
+  if (d.pages > 1) txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, 548, 9, p.dim, 'center', { sp: 3, w: 500 });
+}
+// タイトル: PILOTS パネル / PUBLIC BETA。d = { mode:'list'|'confirm', rows:[{name,active,sel,del}], add, close, msg, confirm:{text,yes,no} }
+function drawProfilePanel(ctx, d) {
+  const p = P();
+  veil(ctx, 0.6);
+  panel(ctx, 20, 110, AW - 40, 360, { a: 0.92, border: p.mid, ba: 0.25 });
+  txt(ctx, 'PILOTS', AW / 2, 126, 16, p.hi, 'center', { sp: 8, w: 300 });
+  if (d.mode === 'confirm') {
+    txt(ctx, d.confirm.l1, AW / 2, 196, 12, p.fg, 'center', { sp: 2, w: 500 });
+    txt(ctx, d.confirm.l2, AW / 2, 220, 8, p.warn, 'center', { sp: 2, w: 500 });
+    for (const b of [d.confirm.yes, d.confirm.no]) {
+      const danger = b === d.confirm.yes;
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(danger ? p.bad : p.fg, 0.10), rgba(danger ? p.bad : p.fg, 0.45));
+      txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, danger ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+    }
+    if (d.msg) txt(ctx, d.msg, AW / 2, 420, 8, p.bad, 'center', { sp: 2, w: 500 });
+    return;
+  }
+  for (const r of d.rows) {
+    pill(ctx, r.sel.x, r.sel.y, r.sel.w, r.sel.h, r.active ? rgba(p.mid, 0.10) : null, rgba(r.active ? p.mid : p.fg, r.active ? 0.6 : 0.2));
+    txt(ctx, r.name, r.sel.x + 18, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, null, rgba(p.bad, 0.4));
+    txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
+  }
+  if (!d.rows.length) txt(ctx, 'NO PILOTS YET', AW / 2, 190, 9, p.dim, 'center', { sp: 4, w: 500 });
+  const a = d.add;
+  pill(ctx, a.x, a.y, a.w, a.h, a.off ? null : rgba(p.mid, 0.08), rgba(p.mid, a.off ? 0.18 : 0.5));
+  txt(ctx, a.off ? 'MAX 3 PILOTS' : 'ADD PILOT', a.x + a.w / 2, a.y + a.h / 2 - 5, 10, a.off ? p.dim : p.hi, 'center', { sp: 4, w: 500 });
+  const c = d.close;
+  pill(ctx, c.x, c.y, c.w, c.h, null, rgba(p.fg, 0.22));
+  txt(ctx, 'CLOSE', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+  if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, p.bad, 'center', { sp: 2, w: 500 });
+}
+function drawBetaTag(ctx, r, a) {
+  const p = P();
+  pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
+  txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+}
+
 
 // ---- 02_src/music.js ----
 // 生成音楽 + 効果音（P2m）。WebAudioのみで合成、素材ファイル・既存旋律の引用なし。
@@ -2279,6 +2555,7 @@ function drawSpeaker(ctx, cx, cy, s, color, muted) {
 // ctx は engine.audio.ctx（最初のタップ後に生成）を遅延取得。無い間は全メソッドが no-op。
 // 全ヘルパー名は _mus 接頭辞（バンドルは同一スコープに連結されるため）。
 
+const _MUS_DUCK = 0.3;           // HOLD 中のBGM倍率
 const _MUS_MUSIC_LEVEL = 0.125;   // ≒ -18 dBFS
 const _MUS_SFX_LEVEL = 0.32;      // ≒ -10 dBFS（音楽より少し大きい）
 const _MUS_MAX_MUSIC_VOICES = 14; // 一過性の音楽ボイス上限（ベル/パルス等）
@@ -2289,7 +2566,7 @@ const _MUS_JINGLE_LEVEL = 0.2;    // ジングルは環境BGM(0.125)より大き
 const _MUS_MAX_JINGLE_VOICES = 18;
 
 const _musS = {
-  audio: null, ctx: null, muted: false,
+  audio: null, ctx: null, muted: false, ducked: false,
   master: null, musicBus: null, sfxBus: null, noise: null,
   voices: [],   // 一過性ボイス {nodes, end, kind}
   scenes: [],   // 稼働中/フェードアウト中のシーン
@@ -2313,7 +2590,7 @@ function _musEnsure() {
   const master = ctx.createGain();
   master.gain.value = _musS.muted ? 0 : 1;
   master.connect(ctx.destination);
-  const mb = ctx.createGain(); mb.gain.value = _MUS_MUSIC_LEVEL; mb.connect(master);
+  const mb = ctx.createGain(); mb.gain.value = _MUS_MUSIC_LEVEL * (_musS.ducked ? _MUS_DUCK : 1); mb.connect(master);
   const sb = ctx.createGain(); sb.gain.value = _MUS_SFX_LEVEL; sb.connect(master);
   const jb = ctx.createGain(); jb.gain.value = _MUS_JINGLE_LEVEL; jb.connect(master);
   _musS.master = master; _musS.musicBus = mb; _musS.sfxBus = sb; _musS.jbus = jb;
@@ -2722,6 +2999,15 @@ const Music = {
   },
   isMuted() { return _musS.muted; },
 
+  // MISSION HOLD 中にBGMだけを約30%へ下げる（SFXは下げない）。ctx無しなら状態だけ保存して何もしない
+  duck(on) {
+    _musS.ducked = !!on;
+    if (!_musEnsure() || !_musS.musicBus) return;
+    const ctx = _musS.ctx; const p = _musS.musicBus.gain; const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    p.setTargetAtTime(_MUS_MUSIC_LEVEL * (_musS.ducked ? _MUS_DUCK : 1), now, 0.08);
+  },
+
   playTitle() { _musJStop(0.3); _musSwitch('title', _MUS_XFADE); },
   playBody(bodyId) { _musSwitch(_musHas(bodyId) && bodyId !== 'title' ? bodyId : 'moon', _MUS_XFADE); },
 
@@ -2878,6 +3164,7 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // ---- 02_src/title.js ----
 // タイトル画面（P0の仮実装。P2でリデザインする）。タップで開始。
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
+function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
 // ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
 // テストでは engine.music に差し替えられる。実機は music.js の Music。
@@ -2952,7 +3239,9 @@ function fadeInScene(scene, dur) {
 
 
 // 名前入力オーバーレイ（HTML）。document が無い環境では false を返し何もしない。確定で onSubmit(name)。
-function showNameOverlay(initial, onSubmit) {
+// onSubmit(value) は null/undefined（受理）・文字列（インラインのエラー表示でオーバーレイを維持）・Promise<文字列|null>（確認中は CHECKING…）を返せる。
+// opts: { label, password, max }
+function showNameOverlay(initial, onSubmit, opts) {
   if (typeof document === 'undefined') return false;
   const old = document.getElementById('lander-name-entry');
   if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -2962,23 +3251,33 @@ function showNameOverlay(initial, onSubmit) {
     'background:#151b32;border:2px solid #3ee6ff;border-radius:6px;padding:16px;width:min(300px,86vw);' +
     'box-sizing:border-box;text-align:center;color:#c9ecff;font-family:"Rajdhani",sans-serif;';
   const label = document.createElement('div');
-  label.textContent = 'ENTER YOUR NAME';
+  label.textContent = (opts && opts.label) || 'ENTER YOUR NAME';
   label.style.cssText = 'font-size:18px;margin-bottom:10px;';
   const input = document.createElement('input');
-  input.type = 'text'; input.maxLength = 10; input.value = initial || ''; input.autocomplete = 'off';
+  input.type = (opts && opts.password) ? 'password' : 'text'; input.maxLength = (opts && opts.max) || 10; input.value = initial || ''; input.autocomplete = 'off';
   input.setAttribute('autocapitalize', 'off');
   input.style.cssText = 'width:100%;box-sizing:border-box;font-size:20px;padding:8px;text-align:center;' +
     'background:#0a0e1c;color:#fff;border:1px solid #33406b;border-radius:4px;outline:none;';
   const btn = document.createElement('button');
   btn.type = 'button'; btn.textContent = 'OK';
   btn.style.cssText = 'margin-top:12px;width:100%;font-size:20px;padding:10px;background:#3ee6ff;color:#0a0e1c;border:0;border-radius:4px;font-weight:700;font-family:inherit;';
-  const done = () => { const v = input.value; if (wrap.parentNode) wrap.parentNode.removeChild(wrap); onSubmit(v); };
+  const msg = document.createElement('div');
+  msg.style.cssText = 'min-height:18px;margin-top:10px;font-size:13px;letter-spacing:1px;color:#ffb547;';
+  let busy = false;
+  const fin = (m) => { busy = false; btn.disabled = false; if (m) msg.textContent = String(m); else if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+  const done = () => {
+    if (busy) return;
+    let r = null;
+    try { r = onSubmit(input.value); } catch (_) { r = null; }
+    if (r && typeof r.then === 'function') { busy = true; btn.disabled = true; msg.textContent = 'CHECKING\u2026'; r.then(fin, () => fin(null)); }
+    else fin(typeof r === 'string' ? r : null);
+  };
   btn.addEventListener('click', done);
   input.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') { e.preventDefault(); done(); }
   });
-  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn);
+  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn); wrap.appendChild(msg);
   document.body.appendChild(wrap);
   try { input.focus(); input.select(); } catch (_) { /* ignore */ }
   return true;
@@ -3016,8 +3315,13 @@ class TitleScene extends Scene {
     // タップ対象（互いに重ならない。8pxグリッド）
     this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
     this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
-    this.changeBtn = { x: W / 2 - 34, y: 436, w: 68, h: 20 };
+    this.betaBox = { x: W / 2 - 44, y: 114, w: 88, h: 16 };        // PUBLIC BETA（タップはロゴタップ扱い）
+    this.changeBtn = { x: W / 2 - 40, y: 436, w: 80, h: 20 };      // PILOTS（旧 CHANGE。プロフィール一覧を開く）
     this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
+    this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
+    this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
+    this.cp = null;
+    this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
     this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
@@ -3027,6 +3331,8 @@ class TitleScene extends Scene {
 
   enter() {
     this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
+    try { const ap = getActiveProfile(this.engine.storage); if (ap) this.name = ap.name; } catch (_) { /* ignore */ }
+    this.cp = loadCheckpoint(this.engine.storage);
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
   }
@@ -3037,14 +3343,81 @@ class TitleScene extends Scene {
     musicOf(this.engine).playTitle();
   }
 
-  // 名前確定（HTML・テストフック共通）。開始待ち(pendingStart)ならそのままゲーム開始
+  // 名前確定（同期のテストフック／従来動作）。プロフィールも作成・選択する。開始待ち(pendingStart)ならそのままゲーム開始
   _submitName(name) {
-    this.name = setPlayerName(this.engine.storage, name);
+    this.name = setPlayerName(this.engine.storage, name); this.prof = null;
+    try { addProfile(this.engine.storage, this.name); } catch (_) { /* ignore */ }
     if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+  }
+  // 名前入力オーバーレイからの確定（新規パイロット）。-> null（受理）| エラー文字列 | Promise<エラー文字列|null>（WORLD の重複確認が必要な時のみ）
+  _onNameEntered(v) {
+    const nm = sanitizeName(v);
+    if (!nm) return 'ENTER A NAME';
+    const list = loadProfiles(this.engine.storage);
+    const accept = () => {
+      if (!addProfile(this.engine.storage, nm)) return 'MAX ' + PROFILE_MAX + ' PILOTS';
+      this.name = nm; this.prof = null;
+      if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+      return null;
+    };
+    if (list.some((p) => p.name === nm)) return accept();
+    if (list.length >= PROFILE_MAX) return 'MAX ' + PROFILE_MAX + ' PILOTS';
+    if (!relayEnabled()) return accept();
+    return Promise.resolve().then(() => checkName(nm)).then(
+      (r) => (r && r.ok && r.taken) ? 'NAME ALREADY REGISTERED \u2014 CHOOSE ANOTHER' : accept(),   // {ok:false}（オフライン）は検証できないので許可
+      () => accept());
   }
   _openName(thenStart) {
     this.pendingStart = !!thenStart;
-    showNameOverlay(this.name || '', (v) => this._submitName(v));
+    showNameOverlay('', (v) => this._onNameEntered(v));
+  }
+
+  // ---- PILOTS パネル ----
+  _profRects() {
+    const list = loadProfiles(this.engine.storage);
+    const act = getActiveProfile(this.engine.storage);
+    const rows = list.map((p, i) => ({ name: p.name, active: !!act && act.name === p.name,
+      sel: { x: 36, y: 164 + i * 56, w: 200, h: 44 }, del: { x: 248, y: 164 + i * 56, w: 56, h: 44 } }));
+    return { rows, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
+      yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 356, w: W - 120, h: 44, label: 'CANCEL' } };
+  }
+  _profInput(action, data) {
+    const pf = this.prof;
+    if (action === 'back') { if (pf.mode === 'confirm') { pf.mode = 'list'; pf.msg = ''; } else this.prof = null; return; }
+    if (action !== 'tap' || !data || pf.busy) return;
+    const R = this._profRects();
+    if (pf.mode === 'confirm') {
+      if (this._hit(R.no, data)) { pf.mode = 'list'; pf.msg = ''; }
+      else if (this._hit(R.yes, data)) this._deletePilot(pf.target);
+      return;
+    }
+    if (this._hit(R.close, data)) { this.prof = null; return; }
+    if (this._hit(R.add, data)) { if (!R.add.off) { this.prof = null; this._openName(false); } else pf.msg = 'MAX ' + PROFILE_MAX + ' PILOTS'; return; }
+    for (const r of R.rows) {
+      if (this._hit(r.del, data)) { pf.mode = 'confirm'; pf.target = r.name; pf.msg = ''; return; }
+      if (this._hit(r.sel, data)) { setActiveProfile(this.engine.storage, r.name); this.name = r.name; return; }
+    }
+  }
+  // サーバー側の名前と記録も削除。成功/「未登録」ならローカルから削除、通信失敗なら残す。ローカルのランキング行は消さない
+  async _deletePilot(name) {
+    const pf = this.prof; if (!pf) return;
+    const prof = loadProfiles(this.engine.storage).find((p) => p.name === name);
+    if (!prof) { pf.mode = 'list'; return; }
+    let remove = true;
+    if (relayEnabled()) {
+      pf.busy = true; pf.msg = 'DELETING\u2026';
+      let r = null; try { r = await deleteName(prof.name, prof.key); } catch (_) { r = null; }
+      pf.busy = false;
+      if (!(r && r.ok) && !(r && r.error === 'unknown')) {
+        remove = false;
+        pf.msg = (r && r.error === 'forbidden') ? 'NOT ALLOWED \u2014 KEY MISMATCH' : 'OFFLINE \u2014 TRY AGAIN';
+      }
+    }
+    if (!remove) return;
+    removeProfile(this.engine.storage, name);
+    const ap = getActiveProfile(this.engine.storage);
+    this.name = ap ? ap.name : '';
+    pf.mode = 'list'; pf.msg = '';
   }
 
   // START 確定後: 発射シーケンス（または即ゲーム）
@@ -3063,6 +3436,21 @@ class TitleScene extends Scene {
     this.startGame();
   }
 
+  // CONTINUE MISSION: 保存したステージの開始から再開（発射シーケンスはそのまま流す）
+  _continueMission() {
+    musicOf(this.engine).sfx.uiTap();
+    if (!this.name) { this._openName(false); return; }
+    this.engine.resumeCheckpoint = this.cp;
+    this._begin();
+  }
+  // NEW MISSION: チェックポイントを破棄して最初から
+  _newMission() {
+    musicOf(this.engine).sfx.uiTap();
+    clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
+    if (!this.name) { this._openName(true); return; }
+    this._begin();
+  }
+
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
   exit() { hideNameOverlay(); }
@@ -3075,6 +3463,7 @@ class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
+    if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
       if (this._hit(this.muteBtn, data)) {
         const m = toggleMute(this.engine);
@@ -3089,13 +3478,19 @@ class TitleScene extends Scene {
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
-      if (this._hit(this.logoBox, data)) {
+      if (this._hit(this.logoBox, data) || this._hit(this.betaBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
         return;
       }
-      if (this.name && this._hit(this.changeBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openName(false); return; }
+      if (this._hit(this.changeBtn, data)) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; this.prof = { mode: 'list', target: '', msg: '', busy: false }; return; }
+      if (this.cp) {   // チェックポイントあり: CONTINUE MISSION / NEW MISSION。それ以外のタップでは開始しない
+        if (this._hit(this.continueBtn, data)) { this._continueMission(); return; }
+        if (this._hit(this.newBtn, data)) { this._newMission(); return; }
+        return;
+      }
     }
+    if (action === 'confirm' && this.cp) { this._continueMission(); return; }
     if (action === 'tap' || action === 'confirm') {
       musicOf(this.engine).sfx.uiTap();
       if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
@@ -3186,23 +3581,31 @@ class TitleScene extends Scene {
     if (logoA > 0) {
       txt(ctx, 'LANDER', W / 2, 60, 34, p.hi, 'center', { sp: 16, w: 300, a: logoA });
       txt(ctx, 'SOFT LANDING TOUR', W / 2, 98, 8, p.dim, 'center', { sp: 5, w: 400, a: logoA });
+      drawBetaTag(ctx, this.betaBox, logoA);
     }
     if (ui > 0) {
       const sp = drawSpeaker;
       sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
-      if (this.name) {
-        txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
-        const cb = this.changeBtn;
-        pill(ctx, cb.x, cb.y, cb.w, cb.h, rgba(p.fg, 0.04 * ui), rgba(p.fg, 0.22 * ui));
-        txt(ctx, 'CHANGE', W / 2, cb.y + 6, 8, p.mid, 'center', { sp: 3, w: 500, a: ui });
-      } else {
-        txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
-      }
-      const sb = this.startBtn;
+      if (this.name) txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
+      else txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
+      const cb = this.changeBtn;
+      pill(ctx, cb.x, cb.y, cb.w, cb.h, rgba(p.fg, 0.04 * ui), rgba(p.fg, 0.22 * ui));
+      txt(ctx, 'PILOTS', W / 2, cb.y + 6, 8, p.mid, 'center', { sp: 3, w: 500, a: ui });
       const breath = 0.5 + 0.5 * Math.sin(this.t * 2);
-      pill(ctx, sb.x, sb.y, sb.w, sb.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
-      txt(ctx, 'START', W / 2, sb.y + 15, 14, p.hi, 'center', { sp: 9, w: 500, a: ui });
-      if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
+      if (this.cp) {
+        const c = this.continueBtn, nb = this.newBtn;
+        pill(ctx, c.x, c.y, c.w, c.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
+        txt(ctx, 'CONTINUE MISSION', W / 2, c.y + 10, 12, p.hi, 'center', { sp: 5, w: 500, a: ui });
+        const bn = (stageBodyName(this.cp.stage) || '').toUpperCase();
+        txt(ctx, 'ST.' + this.cp.stage + (bn ? '  \u00b7  ' + bn : '') + '  \u00b7  ' + this.cp.totalScore, W / 2, c.y + 30, 8, p.dim, 'center', { sp: 2, w: 500, a: ui });
+        pill(ctx, nb.x, nb.y, nb.w, nb.h, null, rgba(p.fg, 0.22 * ui));
+        txt(ctx, 'NEW MISSION', W / 2, nb.y + 11, 9, p.fg, 'center', { sp: 4, w: 500, a: ui });
+      } else {
+        const sb = this.startBtn;
+        pill(ctx, sb.x, sb.y, sb.w, sb.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
+        txt(ctx, 'START', W / 2, sb.y + 15, 14, p.hi, 'center', { sp: 9, w: 500, a: ui });
+        if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
+      }
       const b = this.rankBtn;
       pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
       txt(ctx, 'RANKING', W / 2, b.y + 9, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
@@ -3210,8 +3613,8 @@ class TitleScene extends Scene {
     if (isDebug()) txt(ctx, 'DEBUG', 12, 16, 9, p.warn, 'left', { sp: 3, w: 500 });
     if (this.toastT > 0) {
       ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
-      this.engine.rect(W / 2 - 50, 120, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 120, 100, 24, p.warn, 1.5);
-      this.engine.text('DEBUG ON', W / 2, 125, 13, p.warn, 'center');
+      this.engine.rect(W / 2 - 50, 140, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 140, 100, 24, p.warn, 1.5);
+      this.engine.text('DEBUG ON', W / 2, 145, 13, p.warn, 'center');
       ctx.restore();
     }
 
@@ -3224,6 +3627,11 @@ class TitleScene extends Scene {
       this.engine.stroke(20, 90, W - 40, 440, p.mid, 2);
       this.engine.text('TOP 10', W / 2, 104, 20, p.hi, 'center');
       drawRankPanel(this.engine, ctx, this.tabs, this.rank, 32, 130, W - 64, -1);
+    }
+    if (this.prof) {
+      const R = this._profRects(), pf = this.prof;
+      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg,
+        confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
   }
 }
@@ -3310,6 +3718,10 @@ const RESULT_STATES = ['landing', 'cleared', 'crashed', 'bonusfailed', 'module',
 const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
+const HOLD_GRACE_S      = 0.5;   // RESUME直後は操縦入力を無視する秒数
+const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン無視（誤タップ防止）
+const ADMIN_PER_PAGE    = 5;
+let _adminKeyMem = '';   // 管理キー（セッション中のみ・メモリ上。保存しない）
 const DBG_STATES = ['play', 'landing', 'cleared', 'crashed', 'bonusfailed'];
 const BONUS_TYPES       = ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'];
 const PRECISION_MUL     = 2;     // PRECISIONボーナスの得点倍率（P1.5: x3 -> x2。x3は3000点超でランキングを歪めた）
@@ -3461,13 +3873,24 @@ class Game extends Scene {
     this._dbgTainted = false;
     this._dbgBonusI = 0;
     this._clock = 0;
+    this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
+    this._duck(false);
+    this.runId      = newRunId();
+    this._worldNote = '';
+    // タイトルの CONTINUE MISSION: 保存したステージの「開始」から再開（地形は新規）
+    const cp = this.engine.resumeCheckpoint; this.engine.resumeCheckpoint = null;
+    if (cp && cp.v === 1) {
+      this.stage = cp.stage; this.totalScore = cp.totalScore; this.continues = cp.continues; this.runId = cp.runId;
+      for (const k of Object.keys(this.modules)) { const d = moduleDef(k); this.modules[k] = Math.max(0, Math.min(d ? d.max : 0, (cp.modules && cp.modules[k]) | 0)); }
+      this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
+    }
     this._initStage();
   }
 
-  exit() { hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() { this._admin = null; this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
-  blocksBack() { return this.state === 'module'; }
+  blocksBack() { return this.state === 'module' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -3545,6 +3968,17 @@ class Game extends Scene {
     this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
     this._keys = this._keys || { left: false, right: false, up: false };
+    this._saveCheckpoint();
+  }
+
+  // ステージ開始ごとに保存（ボーナス中は「ボーナスの次のステージ」を保存＝再開がボーナスの途中にならない）。デバッグ中/デバッグ操作ランは保存しない
+  _saveCheckpoint() {
+    if (this._isDebugRun()) return;
+    const prof = getActiveProfile(this.engine.storage);
+    saveCheckpoint(this.engine.storage, {
+      runId: this.runId, stage: this.bonus ? this.stage + 1 : this.stage, totalScore: this.totalScore,
+      continues: this.continues, modules: Object.assign({}, this.modules), name: prof ? prof.name : getPlayerName(this.engine.storage),
+    });
   }
 
   // ---- Distance to nearest guide point ----
@@ -3569,8 +4003,10 @@ class Game extends Scene {
       if (action === 'tap' && data && data.t0 < this._overlayAt) return;          // この画面に入る前から押していた指の解除は無視
     }
 
+    if (this.state === 'hold') { this._holdInput(action, data); return; }
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
+    if (action === 'tap' && data && this.state === 'play' && this._inRect(this._holdRect(), data)) { this._enterHold(); return; }
     if (isDebug() && action === 'tap' && data && DBG_STATES.indexOf(this.state) >= 0 && this._inRect(this._dbgBtnRect(), data)) {
       this._dbgPrev = this.state;
       this.state = 'debug';
@@ -3634,16 +4070,150 @@ class Game extends Scene {
     }
   }
 
+  // ---- MISSION HOLD（一時停止）/ ABORT MISSION（自発的な終了）----
+  // 操作: タップのみ。Escape/Backspace は既に BACK（メニューへ退出）で、P キー用のエンジン動作は無いため割り当てない。
+  //       HOLD 中は BACK ボタンを無効化（blocksBack）し、Escape(=back)は RESUME / 確認の CANCEL に割り当てる。
+  _holdRect() { return { x: 184, y: 18, w: 38, h: 32 }; }
+  _duck(on) { try { const m = musicOf(this.engine); if (m && typeof m.duck === 'function') m.duck(on); } catch (_) { /* 音の失敗はゲームに影響させない */ } }
+  _uiTap() { try { if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } }
+  _enterHold() {
+    if (this.state !== 'play') return;
+    this._holdPrev = this.state;
+    this._holdConfirm = false;
+    this.state = 'hold';
+    this._inputLock = HOLD_LOCK_S;
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;   // 凍結画面に炎を残さない
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._duck(true);
+    this._uiTap();
+  }
+  // ページ非表示/ブラー: プレイ中のみ自動で HOLD（自動再開はしない）
+  onHidden() { if (this.state === 'play') this._enterHold(); }
+  _resume() {
+    if (this.state !== 'hold') return;
+    this.state = this._holdPrev || 'play';
+    this._holdPrev = null; this._holdConfirm = false;
+    this._holdGrace = HOLD_GRACE_S;
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._duck(false);
+    this._uiTap();
+  }
+  _abortConfirmed() {
+    if (this.state !== 'hold') return;
+    this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
+    this._duck(false);
+    this._uiTap();
+    this._saveCheckpoint();   // ABORT してもタイトルの CONTINUE MISSION で再開できる
+    this._gameOver(false, true);   // 残機に関係なく即終了。燃料ボーナスなし・通常のゲームオーバーと同じ記録/送信
+  }
+  _holdButtons() {
+    const x = 70, w = W - 140;
+    return this._holdConfirm
+      ? [{ id: 'cancel', label: 'CANCEL', kind: 'main', x, y: 320, w, h: 48 }, { id: 'confirm', label: 'CONFIRM ABORT', kind: 'danger', x, y: 384, w, h: 48 }]
+      : [{ id: 'resume', label: 'RESUME', kind: 'main', x, y: 320, w, h: 48 }, { id: 'abort', label: 'ABORT MISSION', kind: 'danger', x, y: 384, w, h: 48 }];
+  }
+  _holdInput(action, data) {
+    if (data && data.repeat) return;
+    if (action === 'back') { if (this._inputLock <= 0) { if (this._holdConfirm) { this._holdConfirm = false; this._inputLock = HOLD_LOCK_S; } else this._resume(); } return; }
+    if (action !== 'tap' || !data) return;
+    if (data.t0 < this._overlayAt) return;      // HOLD に入る前から押していた指の解除はタップにしない
+    if (this._inputLock > 0) return;
+    for (const b of this._holdButtons()) {
+      if (!this._inRect(b, data)) continue;
+      if (b.id === 'resume') this._resume();
+      else if (b.id === 'abort') { this._holdConfirm = true; this._inputLock = HOLD_LOCK_S; this._uiTap(); }
+      else if (b.id === 'cancel') { this._holdConfirm = false; this._inputLock = HOLD_LOCK_S; this._uiTap(); }
+      else if (b.id === 'confirm') this._abortConfirmed();
+      return;
+    }
+  }
+
   // ---- デバッグパネル ----
   _dbgButtons() {
     const labels = ['AUTO LAND', 'WIN NOW', 'CRASH', 'STAGE -', 'STAGE +', 'NEXT BODY', 'BONUS \u25b6', 'MODULE', 'FUEL FULL', '+3 CONTINUES', 'CLOSE'];
     return labels.map((label, i) => ({ label, x: 30 + (i % 2) * 150, y: 112 + Math.floor(i / 2) * 44, w: 140, h: 36 }));
   }
   _debugInput(action, data) {
+    if (this._admin) { this._adminInput(action, data); return; }
     if (action === 'back') { this._dbgClose(); return; }
     if (action !== 'tap' || !data) return;
     const btns = this._dbgButtons();
     for (let i = 0; i < btns.length; i++) if (this._inRect(btns[i], data)) { this._debugAction(i); return; }
+    if (this._inRect(this._adminBtnRect(), data)) this._adminOpen();
+  }
+  _adminBtnRect() { return { x: 180, y: 112 + 5 * 44, w: 140, h: 36, label: 'WORLD ADMIN' }; }
+
+  // ---- DEBUG: WORLD ADMIN（管理キーはメモリのみ。localStorage/sessionStorage には保存しない）----
+  _askAdminKey(cb) {
+    const shown = showNameOverlay('', (v) => { cb(String(v == null ? '' : v).trim()); return null; }, { label: 'ADMIN KEY', password: true, max: 128 });
+    if (!shown) cb('');
+  }
+  _adminOpen() {
+    this._admin = { phase: 'loading', msg: 'LOADING\u2026', names: [], page: 0, confirm: null };
+    this._adminTok = (this._adminTok || 0) + 1;
+    if (_adminKeyMem) { this._adminLoad(); return; }
+    this._askAdminKey((k) => { if (!this._admin) return; if (!k) { this._admin = null; return; } _adminKeyMem = k; this._adminLoad(); });
+  }
+  _adminErr(r) {
+    const e = String((r && r.error) || '').toLowerCase();
+    if (e === 'unauthorized' || e === 'forbidden') { _adminKeyMem = ''; return 'UNAUTHORIZED'; }
+    if (e === 'disabled') return 'ADMIN DISABLED';
+    return 'OFFLINE';
+  }
+  async _adminLoad() {
+    const a = this._admin; if (!a) return;
+    const tok = ++this._adminTok;
+    a.phase = 'loading'; a.msg = 'LOADING\u2026';
+    let r; try { r = await adminList(_adminKeyMem); } catch (_) { r = { ok: false }; }
+    if (tok !== this._adminTok || this._admin !== a) return;
+    if (r && r.ok) { a.phase = 'list'; a.msg = ''; a.names = Array.isArray(r.names) ? r.names : []; a.page = Math.min(a.page, Math.max(0, Math.ceil(a.names.length / ADMIN_PER_PAGE) - 1)); if (!a.names.length) a.msg = 'NO NAMES'; }
+    else { a.phase = 'error'; a.msg = this._adminErr(r); }
+  }
+  _adminRects() {
+    const a = this._admin, rows = [];
+    const from = a.page * ADMIN_PER_PAGE;
+    for (let i = 0; i < ADMIN_PER_PAGE && from + i < a.names.length; i++) {
+      const n = a.names[from + i] || {};
+      const b = n.best;
+      rows.push({ name: String(n.name == null ? '' : n.name), label: String(n.name == null ? '' : n.name).slice(0, 14),
+        sub: (b ? 'BEST ' + b.score + '  ST.' + b.stage : 'NO SCORE') + (n.first ? '  FIRST ' + String(n.first).slice(0, 10) : ''),
+        del: { x: W - 36 - 56, y: 128 + i * 72, w: 56, h: 40 } });
+    }
+    const pages = Math.max(1, Math.ceil(a.names.length / ADMIN_PER_PAGE));
+    return { rows, pages,
+      prev: a.page > 0 ? { x: 30, y: 496, w: 80, h: 36, label: 'PREV' } : null,
+      next: a.page < pages - 1 ? { x: W - 110, y: 496, w: 80, h: 36, label: 'NEXT' } : null,
+      close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' } };
+  }
+  _adminConfirmRects() { return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
+  _adminInput(action, data) {
+    const a = this._admin;
+    if (action === 'back') { if (a.confirm) a.confirm = null; else { this._admin = null; this._adminTok++; } return; }
+    if (action !== 'tap' || !data) return;
+    if (a.confirm) {
+      const c = this._adminConfirmRects();
+      if (this._inRect(c.no, data)) a.confirm = null;
+      else if (this._inRect(c.yes, data)) this._adminDelete(a.confirm);
+      return;
+    }
+    const R = this._adminRects();
+    if (this._inRect(R.close, data)) { this._admin = null; this._adminTok++; return; }
+    if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
+    if (R.next && this._inRect(R.next, data)) { a.page++; return; }
+    for (const r of R.rows) if (this._inRect(r.del, data)) { a.confirm = r.name; return; }
+  }
+  async _adminDelete(name) {
+    const a = this._admin; if (!a) return;
+    a.confirm = null; a.msg = 'DELETING\u2026';
+    let r; try { r = await adminDelete(_adminKeyMem, name); } catch (_) { r = { ok: false }; }
+    if (this._admin !== a) return;
+    if (r && r.ok) await this._adminLoad(); else { a.phase = 'list'; a.msg = this._adminErr(r); }
+  }
+  _drawAdmin(ctx) {
+    const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
+    drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,
+      confirm: a.confirm ? { text: 'DELETE ' + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
   }
   _dbgClose() { this.state = this._dbgPrev || 'play'; }
   // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）
@@ -3755,7 +4325,7 @@ class Game extends Scene {
   // デバッグ中/デバッグ操作を使ったランは記録しない（ローカル・世界ランキングとも）
   _isDebugRun() { return isDebug() || this._dbgTainted; }
 
-  _gameOver(applyFuelScore) {
+  _gameOver(applyFuelScore, keepCheckpoint) {
     if (applyFuelScore) this.totalScore += Math.round((this.fuel || 0) * 2);
     const dbgRun = this._isDebugRun();
     if (!dbgRun && this.totalScore > this.high) {
@@ -3763,21 +4333,30 @@ class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
     this._setOverlayState('gameover');
+    if (!dbgRun && !keepCheckpoint) clearCheckpoint(this.engine.storage);   // 本当のゲームオーバー（残機切れ/GIVE UP）で破棄
     this.rankList = loadRanking(this.engine.storage);
     this.rankTabs = createRankTabs();
     this.newIdx = -1;
     this.goPhase = 'ranking';
-    // 名前はプレイ前にタイトルで入力済み。ここでは自動で記録する（無ければ PILOT）
-    if (!dbgRun && qualifies(this.rankList, this.totalScore)) {
-      const nm = getPlayerName(this.engine.storage) || 'PILOT';
-      const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString() };
-      const list = insertEntry(this.rankList, entry);
-      saveRanking(this.engine.storage, list);
-      this.rankList = list;
-      this.newIdx = list.indexOf(entry);
+    const prof = dbgRun ? null : getActiveProfile(this.engine.storage);
+    const nm = (prof && prof.name) || getPlayerName(this.engine.storage) || 'PILOT';
+    // 1ラン=1行。再開したランは自分の行を更新する（高い時だけ）。名前はプレイ前にタイトルで入力済み（無ければ PILOT）
+    if (!dbgRun) {
+      const ex = this.rankList.find((e) => e.runId === this.runId);
+      if (ex ? this.totalScore > ex.score : qualifies(this.rankList, this.totalScore)) {
+        const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString(), runId: this.runId };
+        const list = recordEntry(this.rankList, entry);
+        saveRanking(this.engine.storage, list);
+        this.rankList = list;
+        this.newIdx = list.indexOf(entry);
+      } else if (ex) this.newIdx = -1;
     }
     if (!dbgRun && relayEnabled() && this.totalScore > 0) {
-      try { submitScore({ name: getPlayerName(this.engine.storage) || 'PILOT', score: this.totalScore, stage: this.stage }).catch(() => {}); } catch (_) { /* 送信失敗はゲームに影響させない */ }
+      try {
+        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, key: prof ? prof.key : undefined })).then((r) => {
+          if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
+        }, () => {});
+      } catch (_) { /* 送信失敗はゲームに影響させない */ }
     }
   }
 
@@ -3800,6 +4379,7 @@ class Game extends Scene {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
+    if (this.state === 'hold') { if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt); return; }   // MISSION HOLD: 全て凍結
     this._clock = (this._clock || 0) + dt;
 
     if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
@@ -3841,6 +4421,11 @@ class Game extends Scene {
       this._keys.left = k.left; this._keys.right = k.right; this._keys.up = k.up;
     }
     this._readPointerControls();
+    if (this._holdGrace > 0) {   // RESUME 直後は操縦入力を無視（キーのパルスも捨てる）
+      this._holdGrace = Math.max(0, this._holdGrace - dt);
+      this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;
+      if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    }
 
     // Keyboard (one-shot pulse per frame)
     if (this._keys) {
@@ -4218,14 +4803,21 @@ class Game extends Scene {
       const real = this.state;
       this.state = this._dbgPrev || 'play';
       try { this._renderScene(ctx); } finally { this.state = real; }
-      this._drawDebugPanel(ctx);
+      if (this._admin) this._drawAdmin(ctx); else this._drawDebugPanel(ctx);
+      return;
+    }
+    if (this.state === 'hold') {
+      const real = this.state;
+      this.state = this._holdPrev || 'play';
+      try { this._renderScene(ctx); } finally { this.state = real; }
+      drawHoldPanel(ctx, { confirm: this._holdConfirm, stage: this.stage, body: this._body ? this._body.name : '', clock: this._clock, score: this.totalScore, buttons: this._holdButtons() });
       return;
     }
     this._renderScene(ctx);
   }
 
   _drawDebugPanel(ctx) {
-    drawDebugPanel(ctx, 'DEBUG', 'ST.' + this.stage + '  ' + (this._body ? this._body.name : '') + (this.bonus ? '  BONUS' : ''), this._dbgButtons());
+    drawDebugPanel(ctx, 'DEBUG', 'ST.' + this.stage + '  ' + (this._body ? this._body.name : '') + (this.bonus ? '  BONUS' : ''), this._dbgButtons().concat([this._adminBtnRect()]));
   }
 
   // ---- シーン描画（見た目は art.js。ここは「何をどの順で描くか」だけ）----
@@ -4301,6 +4893,7 @@ class Game extends Scene {
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
 
+    if (this.state === 'play') drawHoldButton(ctx, this._holdRect());
     // ミュート（小さなスピーカー）
     { const m = this._muteRect(); drawSpeaker(ctx, m.x + m.w / 2, m.y + m.h / 2 + 1, 0.8, 'rgba(236,230,216,0.6)', isMuted(this.engine)); }
   }
@@ -4498,6 +5091,7 @@ class Game extends Scene {
   _drawGameOver(ctx) {
     drawGameOverFrame(ctx, { score: this.totalScore, stage: this.stage, debugRun: this._isDebugRun(), newRecord: this.newIdx >= 0 });
     drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
+    if (this._worldNote) drawNote(ctx, this._worldNote);
     drawGameOverFooter(ctx);
   }
 }

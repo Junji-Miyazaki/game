@@ -1445,3 +1445,115 @@ export function drawSpeaker(ctx, cx, cy, s, color, muted) {
   }
   ctx.restore();
 }
+
+// ================================================================ MISSION HOLD / ABORT
+// HUDのHOLDボタン: ヘアラインの円 + 縦2本線（ミュートのスピーカーと同じ静かなトーン）
+export function drawHoldButton(ctx, r) {
+  const p = P();
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, 12, 0, TAU);
+  ctx.fillStyle = rgba('#06080E', 0.4); ctx.fill();
+  ctx.strokeStyle = rgba(p.fg, 0.32); ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = rgba(p.fg, 0.8);
+  ctx.fillRect(cx - 4, cy - 5, 2.6, 10);
+  ctx.fillRect(cx + 1.4, cy - 5, 2.6, 10);
+  ctx.restore();
+}
+// d: { confirm, stage, body, clock(秒), score, buttons:[{label,x,y,w,h,kind:'main'|'danger'}] }
+export function drawHoldPanel(ctx, d) {
+  const p = P();
+  const cx = AW / 2;
+  veil(ctx, 0.55);
+  const conf = !!d.confirm;
+  const edge = conf ? p.bad : p.mid;
+  panel(ctx, 40, 184, AW - 80, 272, { a: 0.9, border: edge, ba: conf ? 0.32 : 0.22 });
+  if (!conf) {
+    txt(ctx, 'MISSION HOLD', cx, 208, 18, p.hi, 'center', { sp: 6, w: 300 });
+    txt(ctx, 'STAGE ' + d.stage + (d.body ? '  ·  ' + String(d.body).toUpperCase() : ''), cx, 248, 9, p.fg, 'center', { sp: 3, w: 500 });
+    const s = Math.max(0, Math.floor(d.clock || 0));
+    const mm = Math.floor(s / 60), ss = s % 60;
+    txt(ctx, 'T+ ' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss, cx, 268, 9, p.dim, 'center', { sp: 3, w: 500 });
+  } else {
+    txt(ctx, 'ABORT MISSION?', cx, 208, 18, p.bad, 'center', { sp: 5, w: 300 });
+    txt(ctx, 'YOUR SCORE WILL BE RECORDED', cx, 248, 9, p.fg, 'center', { sp: 3, w: 500 });
+    txt(ctx, 'SCORE  ' + (d.score || 0), cx, 268, 9, p.dim, 'center', { sp: 3, w: 500 });
+  }
+  hair(ctx, 64, 296, AW - 64, 296, p.fg, 0.12);
+  for (let i = 0; i < d.buttons.length; i++) {
+    const b = d.buttons[i];
+    const danger = b.kind === 'danger';
+    pill(ctx, b.x, b.y, b.w, b.h, danger ? rgba(p.bad, 0.10) : rgba(p.fg, 0.10), danger ? rgba(p.bad, 0.55) : rgba(p.fg, 0.28));
+    txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, danger ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+  }
+}
+
+// 小さな非ブロッキングの注記（y: 既定はランキング枠の下）
+export function drawNote(ctx, text, y) {
+  txt(ctx, text, AW / 2, y === undefined ? 556 : y, 8, P().warn, 'center', { sp: 2, w: 500, a: 0.9 });
+}
+// DEBUG: WORLD ADMIN の一覧。d = { phase:'loading'|'list'|'error', msg, rows:[{label,sub,del:{x,y,w,h}}], prev, next, close, page, pages, confirm:{text,yes,no}|null }
+export function drawAdminPanel(ctx, d) {
+  const p = P();
+  panel(ctx, 20, 70, AW - 40, 520, { a: 0.9, border: p.warn, ba: 0.3 });
+  txt(ctx, 'WORLD ADMIN', AW / 2, 80, 14, p.warn, 'center', { sp: 6, w: 500 });
+  if (d.msg) txt(ctx, d.msg, AW / 2, 102, 9, d.phase === 'error' ? p.bad : p.mid, 'center', { sp: 2.5, w: 500 });
+  if (d.confirm) {
+    txt(ctx, d.confirm.text, AW / 2, 240, 11, p.fg, 'center', { sp: 2, w: 500 });
+    for (const b of [d.confirm.yes, d.confirm.no]) {
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(b === d.confirm.yes ? p.bad : p.fg, 0.10), rgba(b === d.confirm.yes ? p.bad : p.fg, 0.4));
+      txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, b === d.confirm.yes ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+    }
+    return;
+  }
+  for (const r of d.rows) {
+    hair(ctx, 36, r.del.y - 4, AW - 36, r.del.y - 4, p.fg, 0.08);
+    txt(ctx, r.label, 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
+    txt(ctx, r.sub, 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
+    pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
+    txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
+  }
+  for (const k of ['prev', 'next', 'close']) {
+    const b = d[k]; if (!b) continue;
+    pill(ctx, b.x, b.y, b.w, b.h, null, rgba(p.fg, 0.25));
+    txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 4, 9, p.fg, 'center', { sp: 2, w: 500 });
+  }
+  if (d.pages > 1) txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, 548, 9, p.dim, 'center', { sp: 3, w: 500 });
+}
+// タイトル: PILOTS パネル / PUBLIC BETA。d = { mode:'list'|'confirm', rows:[{name,active,sel,del}], add, close, msg, confirm:{text,yes,no} }
+export function drawProfilePanel(ctx, d) {
+  const p = P();
+  veil(ctx, 0.6);
+  panel(ctx, 20, 110, AW - 40, 360, { a: 0.92, border: p.mid, ba: 0.25 });
+  txt(ctx, 'PILOTS', AW / 2, 126, 16, p.hi, 'center', { sp: 8, w: 300 });
+  if (d.mode === 'confirm') {
+    txt(ctx, d.confirm.l1, AW / 2, 196, 12, p.fg, 'center', { sp: 2, w: 500 });
+    txt(ctx, d.confirm.l2, AW / 2, 220, 8, p.warn, 'center', { sp: 2, w: 500 });
+    for (const b of [d.confirm.yes, d.confirm.no]) {
+      const danger = b === d.confirm.yes;
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(danger ? p.bad : p.fg, 0.10), rgba(danger ? p.bad : p.fg, 0.45));
+      txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, danger ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+    }
+    if (d.msg) txt(ctx, d.msg, AW / 2, 420, 8, p.bad, 'center', { sp: 2, w: 500 });
+    return;
+  }
+  for (const r of d.rows) {
+    pill(ctx, r.sel.x, r.sel.y, r.sel.w, r.sel.h, r.active ? rgba(p.mid, 0.10) : null, rgba(r.active ? p.mid : p.fg, r.active ? 0.6 : 0.2));
+    txt(ctx, r.name, r.sel.x + 18, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, null, rgba(p.bad, 0.4));
+    txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
+  }
+  if (!d.rows.length) txt(ctx, 'NO PILOTS YET', AW / 2, 190, 9, p.dim, 'center', { sp: 4, w: 500 });
+  const a = d.add;
+  pill(ctx, a.x, a.y, a.w, a.h, a.off ? null : rgba(p.mid, 0.08), rgba(p.mid, a.off ? 0.18 : 0.5));
+  txt(ctx, a.off ? 'MAX 3 PILOTS' : 'ADD PILOT', a.x + a.w / 2, a.y + a.h / 2 - 5, 10, a.off ? p.dim : p.hi, 'center', { sp: 4, w: 500 });
+  const c = d.close;
+  pill(ctx, c.x, c.y, c.w, c.h, null, rgba(p.fg, 0.22));
+  txt(ctx, 'CLOSE', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+  if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, p.bad, 'center', { sp: 2, w: 500 });
+}
+export function drawBetaTag(ctx, r, a) {
+  const p = P();
+  pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
+  txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+}

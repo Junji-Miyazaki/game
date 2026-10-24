@@ -6,14 +6,14 @@
 // Safe landing on the pad = STAGE CLEAR. Crash = GAME OVER.
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, saveRanking, insertEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName } from './ranking.js';
+import { loadRanking, saveRanking, recordEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, getActiveProfile, newRunId, loadCheckpoint, saveCheckpoint, clearCheckpoint } from './ranking.js';
 import { isDebug } from './debug.js';
 import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose } from './bodies.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
-import { relayEnabled, submitScore } from './net.js';
-import { musicOf, toggleMute, isMuted, hideNameOverlay } from './title.js';
-import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker } from './art.js';
+import { relayEnabled, submitScore, adminList, adminDelete } from './net.js';
+import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay } from './title.js';
+import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -88,6 +88,10 @@ const RESULT_STATES = ['landing', 'cleared', 'crashed', 'bonusfailed', 'module',
 const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
+const HOLD_GRACE_S      = 0.5;   // RESUME直後は操縦入力を無視する秒数
+const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン無視（誤タップ防止）
+const ADMIN_PER_PAGE    = 5;
+let _adminKeyMem = '';   // 管理キー（セッション中のみ・メモリ上。保存しない）
 const DBG_STATES = ['play', 'landing', 'cleared', 'crashed', 'bonusfailed'];
 const BONUS_TYPES       = ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'];
 const PRECISION_MUL     = 2;     // PRECISIONボーナスの得点倍率（P1.5: x3 -> x2。x3は3000点超でランキングを歪めた）
@@ -239,13 +243,24 @@ export class Game extends Scene {
     this._dbgTainted = false;
     this._dbgBonusI = 0;
     this._clock = 0;
+    this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
+    this._duck(false);
+    this.runId      = newRunId();
+    this._worldNote = '';
+    // タイトルの CONTINUE MISSION: 保存したステージの「開始」から再開（地形は新規）
+    const cp = this.engine.resumeCheckpoint; this.engine.resumeCheckpoint = null;
+    if (cp && cp.v === 1) {
+      this.stage = cp.stage; this.totalScore = cp.totalScore; this.continues = cp.continues; this.runId = cp.runId;
+      for (const k of Object.keys(this.modules)) { const d = moduleDef(k); this.modules[k] = Math.max(0, Math.min(d ? d.max : 0, (cp.modules && cp.modules[k]) | 0)); }
+      this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
+    }
     this._initStage();
   }
 
-  exit() { hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() { this._admin = null; this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
-  blocksBack() { return this.state === 'module'; }
+  blocksBack() { return this.state === 'module' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -323,6 +338,17 @@ export class Game extends Scene {
     this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
     this._keys = this._keys || { left: false, right: false, up: false };
+    this._saveCheckpoint();
+  }
+
+  // ステージ開始ごとに保存（ボーナス中は「ボーナスの次のステージ」を保存＝再開がボーナスの途中にならない）。デバッグ中/デバッグ操作ランは保存しない
+  _saveCheckpoint() {
+    if (this._isDebugRun()) return;
+    const prof = getActiveProfile(this.engine.storage);
+    saveCheckpoint(this.engine.storage, {
+      runId: this.runId, stage: this.bonus ? this.stage + 1 : this.stage, totalScore: this.totalScore,
+      continues: this.continues, modules: Object.assign({}, this.modules), name: prof ? prof.name : getPlayerName(this.engine.storage),
+    });
   }
 
   // ---- Distance to nearest guide point ----
@@ -347,8 +373,10 @@ export class Game extends Scene {
       if (action === 'tap' && data && data.t0 < this._overlayAt) return;          // この画面に入る前から押していた指の解除は無視
     }
 
+    if (this.state === 'hold') { this._holdInput(action, data); return; }
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
+    if (action === 'tap' && data && this.state === 'play' && this._inRect(this._holdRect(), data)) { this._enterHold(); return; }
     if (isDebug() && action === 'tap' && data && DBG_STATES.indexOf(this.state) >= 0 && this._inRect(this._dbgBtnRect(), data)) {
       this._dbgPrev = this.state;
       this.state = 'debug';
@@ -412,16 +440,150 @@ export class Game extends Scene {
     }
   }
 
+  // ---- MISSION HOLD（一時停止）/ ABORT MISSION（自発的な終了）----
+  // 操作: タップのみ。Escape/Backspace は既に BACK（メニューへ退出）で、P キー用のエンジン動作は無いため割り当てない。
+  //       HOLD 中は BACK ボタンを無効化（blocksBack）し、Escape(=back)は RESUME / 確認の CANCEL に割り当てる。
+  _holdRect() { return { x: 184, y: 18, w: 38, h: 32 }; }
+  _duck(on) { try { const m = musicOf(this.engine); if (m && typeof m.duck === 'function') m.duck(on); } catch (_) { /* 音の失敗はゲームに影響させない */ } }
+  _uiTap() { try { if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } }
+  _enterHold() {
+    if (this.state !== 'play') return;
+    this._holdPrev = this.state;
+    this._holdConfirm = false;
+    this.state = 'hold';
+    this._inputLock = HOLD_LOCK_S;
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;   // 凍結画面に炎を残さない
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._duck(true);
+    this._uiTap();
+  }
+  // ページ非表示/ブラー: プレイ中のみ自動で HOLD（自動再開はしない）
+  onHidden() { if (this.state === 'play') this._enterHold(); }
+  _resume() {
+    if (this.state !== 'hold') return;
+    this.state = this._holdPrev || 'play';
+    this._holdPrev = null; this._holdConfirm = false;
+    this._holdGrace = HOLD_GRACE_S;
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._duck(false);
+    this._uiTap();
+  }
+  _abortConfirmed() {
+    if (this.state !== 'hold') return;
+    this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
+    this._duck(false);
+    this._uiTap();
+    this._saveCheckpoint();   // ABORT してもタイトルの CONTINUE MISSION で再開できる
+    this._gameOver(false, true);   // 残機に関係なく即終了。燃料ボーナスなし・通常のゲームオーバーと同じ記録/送信
+  }
+  _holdButtons() {
+    const x = 70, w = W - 140;
+    return this._holdConfirm
+      ? [{ id: 'cancel', label: 'CANCEL', kind: 'main', x, y: 320, w, h: 48 }, { id: 'confirm', label: 'CONFIRM ABORT', kind: 'danger', x, y: 384, w, h: 48 }]
+      : [{ id: 'resume', label: 'RESUME', kind: 'main', x, y: 320, w, h: 48 }, { id: 'abort', label: 'ABORT MISSION', kind: 'danger', x, y: 384, w, h: 48 }];
+  }
+  _holdInput(action, data) {
+    if (data && data.repeat) return;
+    if (action === 'back') { if (this._inputLock <= 0) { if (this._holdConfirm) { this._holdConfirm = false; this._inputLock = HOLD_LOCK_S; } else this._resume(); } return; }
+    if (action !== 'tap' || !data) return;
+    if (data.t0 < this._overlayAt) return;      // HOLD に入る前から押していた指の解除はタップにしない
+    if (this._inputLock > 0) return;
+    for (const b of this._holdButtons()) {
+      if (!this._inRect(b, data)) continue;
+      if (b.id === 'resume') this._resume();
+      else if (b.id === 'abort') { this._holdConfirm = true; this._inputLock = HOLD_LOCK_S; this._uiTap(); }
+      else if (b.id === 'cancel') { this._holdConfirm = false; this._inputLock = HOLD_LOCK_S; this._uiTap(); }
+      else if (b.id === 'confirm') this._abortConfirmed();
+      return;
+    }
+  }
+
   // ---- デバッグパネル ----
   _dbgButtons() {
     const labels = ['AUTO LAND', 'WIN NOW', 'CRASH', 'STAGE -', 'STAGE +', 'NEXT BODY', 'BONUS \u25b6', 'MODULE', 'FUEL FULL', '+3 CONTINUES', 'CLOSE'];
     return labels.map((label, i) => ({ label, x: 30 + (i % 2) * 150, y: 112 + Math.floor(i / 2) * 44, w: 140, h: 36 }));
   }
   _debugInput(action, data) {
+    if (this._admin) { this._adminInput(action, data); return; }
     if (action === 'back') { this._dbgClose(); return; }
     if (action !== 'tap' || !data) return;
     const btns = this._dbgButtons();
     for (let i = 0; i < btns.length; i++) if (this._inRect(btns[i], data)) { this._debugAction(i); return; }
+    if (this._inRect(this._adminBtnRect(), data)) this._adminOpen();
+  }
+  _adminBtnRect() { return { x: 180, y: 112 + 5 * 44, w: 140, h: 36, label: 'WORLD ADMIN' }; }
+
+  // ---- DEBUG: WORLD ADMIN（管理キーはメモリのみ。localStorage/sessionStorage には保存しない）----
+  _askAdminKey(cb) {
+    const shown = showNameOverlay('', (v) => { cb(String(v == null ? '' : v).trim()); return null; }, { label: 'ADMIN KEY', password: true, max: 128 });
+    if (!shown) cb('');
+  }
+  _adminOpen() {
+    this._admin = { phase: 'loading', msg: 'LOADING\u2026', names: [], page: 0, confirm: null };
+    this._adminTok = (this._adminTok || 0) + 1;
+    if (_adminKeyMem) { this._adminLoad(); return; }
+    this._askAdminKey((k) => { if (!this._admin) return; if (!k) { this._admin = null; return; } _adminKeyMem = k; this._adminLoad(); });
+  }
+  _adminErr(r) {
+    const e = String((r && r.error) || '').toLowerCase();
+    if (e === 'unauthorized' || e === 'forbidden') { _adminKeyMem = ''; return 'UNAUTHORIZED'; }
+    if (e === 'disabled') return 'ADMIN DISABLED';
+    return 'OFFLINE';
+  }
+  async _adminLoad() {
+    const a = this._admin; if (!a) return;
+    const tok = ++this._adminTok;
+    a.phase = 'loading'; a.msg = 'LOADING\u2026';
+    let r; try { r = await adminList(_adminKeyMem); } catch (_) { r = { ok: false }; }
+    if (tok !== this._adminTok || this._admin !== a) return;
+    if (r && r.ok) { a.phase = 'list'; a.msg = ''; a.names = Array.isArray(r.names) ? r.names : []; a.page = Math.min(a.page, Math.max(0, Math.ceil(a.names.length / ADMIN_PER_PAGE) - 1)); if (!a.names.length) a.msg = 'NO NAMES'; }
+    else { a.phase = 'error'; a.msg = this._adminErr(r); }
+  }
+  _adminRects() {
+    const a = this._admin, rows = [];
+    const from = a.page * ADMIN_PER_PAGE;
+    for (let i = 0; i < ADMIN_PER_PAGE && from + i < a.names.length; i++) {
+      const n = a.names[from + i] || {};
+      const b = n.best;
+      rows.push({ name: String(n.name == null ? '' : n.name), label: String(n.name == null ? '' : n.name).slice(0, 14),
+        sub: (b ? 'BEST ' + b.score + '  ST.' + b.stage : 'NO SCORE') + (n.first ? '  FIRST ' + String(n.first).slice(0, 10) : ''),
+        del: { x: W - 36 - 56, y: 128 + i * 72, w: 56, h: 40 } });
+    }
+    const pages = Math.max(1, Math.ceil(a.names.length / ADMIN_PER_PAGE));
+    return { rows, pages,
+      prev: a.page > 0 ? { x: 30, y: 496, w: 80, h: 36, label: 'PREV' } : null,
+      next: a.page < pages - 1 ? { x: W - 110, y: 496, w: 80, h: 36, label: 'NEXT' } : null,
+      close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' } };
+  }
+  _adminConfirmRects() { return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
+  _adminInput(action, data) {
+    const a = this._admin;
+    if (action === 'back') { if (a.confirm) a.confirm = null; else { this._admin = null; this._adminTok++; } return; }
+    if (action !== 'tap' || !data) return;
+    if (a.confirm) {
+      const c = this._adminConfirmRects();
+      if (this._inRect(c.no, data)) a.confirm = null;
+      else if (this._inRect(c.yes, data)) this._adminDelete(a.confirm);
+      return;
+    }
+    const R = this._adminRects();
+    if (this._inRect(R.close, data)) { this._admin = null; this._adminTok++; return; }
+    if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
+    if (R.next && this._inRect(R.next, data)) { a.page++; return; }
+    for (const r of R.rows) if (this._inRect(r.del, data)) { a.confirm = r.name; return; }
+  }
+  async _adminDelete(name) {
+    const a = this._admin; if (!a) return;
+    a.confirm = null; a.msg = 'DELETING\u2026';
+    let r; try { r = await adminDelete(_adminKeyMem, name); } catch (_) { r = { ok: false }; }
+    if (this._admin !== a) return;
+    if (r && r.ok) await this._adminLoad(); else { a.phase = 'list'; a.msg = this._adminErr(r); }
+  }
+  _drawAdmin(ctx) {
+    const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
+    drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,
+      confirm: a.confirm ? { text: 'DELETE ' + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
   }
   _dbgClose() { this.state = this._dbgPrev || 'play'; }
   // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）
@@ -533,7 +695,7 @@ export class Game extends Scene {
   // デバッグ中/デバッグ操作を使ったランは記録しない（ローカル・世界ランキングとも）
   _isDebugRun() { return isDebug() || this._dbgTainted; }
 
-  _gameOver(applyFuelScore) {
+  _gameOver(applyFuelScore, keepCheckpoint) {
     if (applyFuelScore) this.totalScore += Math.round((this.fuel || 0) * 2);
     const dbgRun = this._isDebugRun();
     if (!dbgRun && this.totalScore > this.high) {
@@ -541,21 +703,30 @@ export class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
     this._setOverlayState('gameover');
+    if (!dbgRun && !keepCheckpoint) clearCheckpoint(this.engine.storage);   // 本当のゲームオーバー（残機切れ/GIVE UP）で破棄
     this.rankList = loadRanking(this.engine.storage);
     this.rankTabs = createRankTabs();
     this.newIdx = -1;
     this.goPhase = 'ranking';
-    // 名前はプレイ前にタイトルで入力済み。ここでは自動で記録する（無ければ PILOT）
-    if (!dbgRun && qualifies(this.rankList, this.totalScore)) {
-      const nm = getPlayerName(this.engine.storage) || 'PILOT';
-      const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString() };
-      const list = insertEntry(this.rankList, entry);
-      saveRanking(this.engine.storage, list);
-      this.rankList = list;
-      this.newIdx = list.indexOf(entry);
+    const prof = dbgRun ? null : getActiveProfile(this.engine.storage);
+    const nm = (prof && prof.name) || getPlayerName(this.engine.storage) || 'PILOT';
+    // 1ラン=1行。再開したランは自分の行を更新する（高い時だけ）。名前はプレイ前にタイトルで入力済み（無ければ PILOT）
+    if (!dbgRun) {
+      const ex = this.rankList.find((e) => e.runId === this.runId);
+      if (ex ? this.totalScore > ex.score : qualifies(this.rankList, this.totalScore)) {
+        const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString(), runId: this.runId };
+        const list = recordEntry(this.rankList, entry);
+        saveRanking(this.engine.storage, list);
+        this.rankList = list;
+        this.newIdx = list.indexOf(entry);
+      } else if (ex) this.newIdx = -1;
     }
     if (!dbgRun && relayEnabled() && this.totalScore > 0) {
-      try { submitScore({ name: getPlayerName(this.engine.storage) || 'PILOT', score: this.totalScore, stage: this.stage }).catch(() => {}); } catch (_) { /* 送信失敗はゲームに影響させない */ }
+      try {
+        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, key: prof ? prof.key : undefined })).then((r) => {
+          if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
+        }, () => {});
+      } catch (_) { /* 送信失敗はゲームに影響させない */ }
     }
   }
 
@@ -578,6 +749,7 @@ export class Game extends Scene {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
+    if (this.state === 'hold') { if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt); return; }   // MISSION HOLD: 全て凍結
     this._clock = (this._clock || 0) + dt;
 
     if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
@@ -619,6 +791,11 @@ export class Game extends Scene {
       this._keys.left = k.left; this._keys.right = k.right; this._keys.up = k.up;
     }
     this._readPointerControls();
+    if (this._holdGrace > 0) {   // RESUME 直後は操縦入力を無視（キーのパルスも捨てる）
+      this._holdGrace = Math.max(0, this._holdGrace - dt);
+      this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;
+      if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    }
 
     // Keyboard (one-shot pulse per frame)
     if (this._keys) {
@@ -996,14 +1173,21 @@ export class Game extends Scene {
       const real = this.state;
       this.state = this._dbgPrev || 'play';
       try { this._renderScene(ctx); } finally { this.state = real; }
-      this._drawDebugPanel(ctx);
+      if (this._admin) this._drawAdmin(ctx); else this._drawDebugPanel(ctx);
+      return;
+    }
+    if (this.state === 'hold') {
+      const real = this.state;
+      this.state = this._holdPrev || 'play';
+      try { this._renderScene(ctx); } finally { this.state = real; }
+      drawHoldPanel(ctx, { confirm: this._holdConfirm, stage: this.stage, body: this._body ? this._body.name : '', clock: this._clock, score: this.totalScore, buttons: this._holdButtons() });
       return;
     }
     this._renderScene(ctx);
   }
 
   _drawDebugPanel(ctx) {
-    drawDebugPanel(ctx, 'DEBUG', 'ST.' + this.stage + '  ' + (this._body ? this._body.name : '') + (this.bonus ? '  BONUS' : ''), this._dbgButtons());
+    drawDebugPanel(ctx, 'DEBUG', 'ST.' + this.stage + '  ' + (this._body ? this._body.name : '') + (this.bonus ? '  BONUS' : ''), this._dbgButtons().concat([this._adminBtnRect()]));
   }
 
   // ---- シーン描画（見た目は art.js。ここは「何をどの順で描くか」だけ）----
@@ -1079,6 +1263,7 @@ export class Game extends Scene {
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
 
+    if (this.state === 'play') drawHoldButton(ctx, this._holdRect());
     // ミュート（小さなスピーカー）
     { const m = this._muteRect(); drawSpeaker(ctx, m.x + m.w / 2, m.y + m.h / 2 + 1, 0.8, 'rgba(236,230,216,0.6)', isMuted(this.engine)); }
   }
@@ -1276,6 +1461,7 @@ export class Game extends Scene {
   _drawGameOver(ctx) {
     drawGameOverFrame(ctx, { score: this.totalScore, stage: this.stage, debugRun: this._isDebugRun(), newRecord: this.newIdx >= 0 });
     drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
+    if (this._worldNote) drawNote(ctx, this._worldNote);
     drawGameOverFooter(ctx);
   }
 }

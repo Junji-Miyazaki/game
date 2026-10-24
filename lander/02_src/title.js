@@ -2,10 +2,14 @@
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName } from './ranking.js';
+import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX } from './ranking.js';
+import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut } from './art.js';
+import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawBetaTag } from './art.js';
+
+import { stageInfo } from './bodies.js';
+function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
 // ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
 // テストでは engine.music に差し替えられる。実機は music.js の Music。
@@ -80,7 +84,9 @@ export function fadeInScene(scene, dur) {
 
 
 // 名前入力オーバーレイ（HTML）。document が無い環境では false を返し何もしない。確定で onSubmit(name)。
-export function showNameOverlay(initial, onSubmit) {
+// onSubmit(value) は null/undefined（受理）・文字列（インラインのエラー表示でオーバーレイを維持）・Promise<文字列|null>（確認中は CHECKING…）を返せる。
+// opts: { label, password, max }
+export function showNameOverlay(initial, onSubmit, opts) {
   if (typeof document === 'undefined') return false;
   const old = document.getElementById('lander-name-entry');
   if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -90,23 +96,33 @@ export function showNameOverlay(initial, onSubmit) {
     'background:#151b32;border:2px solid #3ee6ff;border-radius:6px;padding:16px;width:min(300px,86vw);' +
     'box-sizing:border-box;text-align:center;color:#c9ecff;font-family:"Rajdhani",sans-serif;';
   const label = document.createElement('div');
-  label.textContent = 'ENTER YOUR NAME';
+  label.textContent = (opts && opts.label) || 'ENTER YOUR NAME';
   label.style.cssText = 'font-size:18px;margin-bottom:10px;';
   const input = document.createElement('input');
-  input.type = 'text'; input.maxLength = 10; input.value = initial || ''; input.autocomplete = 'off';
+  input.type = (opts && opts.password) ? 'password' : 'text'; input.maxLength = (opts && opts.max) || 10; input.value = initial || ''; input.autocomplete = 'off';
   input.setAttribute('autocapitalize', 'off');
   input.style.cssText = 'width:100%;box-sizing:border-box;font-size:20px;padding:8px;text-align:center;' +
     'background:#0a0e1c;color:#fff;border:1px solid #33406b;border-radius:4px;outline:none;';
   const btn = document.createElement('button');
   btn.type = 'button'; btn.textContent = 'OK';
   btn.style.cssText = 'margin-top:12px;width:100%;font-size:20px;padding:10px;background:#3ee6ff;color:#0a0e1c;border:0;border-radius:4px;font-weight:700;font-family:inherit;';
-  const done = () => { const v = input.value; if (wrap.parentNode) wrap.parentNode.removeChild(wrap); onSubmit(v); };
+  const msg = document.createElement('div');
+  msg.style.cssText = 'min-height:18px;margin-top:10px;font-size:13px;letter-spacing:1px;color:#ffb547;';
+  let busy = false;
+  const fin = (m) => { busy = false; btn.disabled = false; if (m) msg.textContent = String(m); else if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+  const done = () => {
+    if (busy) return;
+    let r = null;
+    try { r = onSubmit(input.value); } catch (_) { r = null; }
+    if (r && typeof r.then === 'function') { busy = true; btn.disabled = true; msg.textContent = 'CHECKING\u2026'; r.then(fin, () => fin(null)); }
+    else fin(typeof r === 'string' ? r : null);
+  };
   btn.addEventListener('click', done);
   input.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') { e.preventDefault(); done(); }
   });
-  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn);
+  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn); wrap.appendChild(msg);
   document.body.appendChild(wrap);
   try { input.focus(); input.select(); } catch (_) { /* ignore */ }
   return true;
@@ -144,8 +160,13 @@ export class TitleScene extends Scene {
     // タップ対象（互いに重ならない。8pxグリッド）
     this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
     this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
-    this.changeBtn = { x: W / 2 - 34, y: 436, w: 68, h: 20 };
+    this.betaBox = { x: W / 2 - 44, y: 114, w: 88, h: 16 };        // PUBLIC BETA（タップはロゴタップ扱い）
+    this.changeBtn = { x: W / 2 - 40, y: 436, w: 80, h: 20 };      // PILOTS（旧 CHANGE。プロフィール一覧を開く）
     this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
+    this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
+    this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
+    this.cp = null;
+    this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
     this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
@@ -155,6 +176,8 @@ export class TitleScene extends Scene {
 
   enter() {
     this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
+    try { const ap = getActiveProfile(this.engine.storage); if (ap) this.name = ap.name; } catch (_) { /* ignore */ }
+    this.cp = loadCheckpoint(this.engine.storage);
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
   }
@@ -165,14 +188,81 @@ export class TitleScene extends Scene {
     musicOf(this.engine).playTitle();
   }
 
-  // 名前確定（HTML・テストフック共通）。開始待ち(pendingStart)ならそのままゲーム開始
+  // 名前確定（同期のテストフック／従来動作）。プロフィールも作成・選択する。開始待ち(pendingStart)ならそのままゲーム開始
   _submitName(name) {
-    this.name = setPlayerName(this.engine.storage, name);
+    this.name = setPlayerName(this.engine.storage, name); this.prof = null;
+    try { addProfile(this.engine.storage, this.name); } catch (_) { /* ignore */ }
     if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+  }
+  // 名前入力オーバーレイからの確定（新規パイロット）。-> null（受理）| エラー文字列 | Promise<エラー文字列|null>（WORLD の重複確認が必要な時のみ）
+  _onNameEntered(v) {
+    const nm = sanitizeName(v);
+    if (!nm) return 'ENTER A NAME';
+    const list = loadProfiles(this.engine.storage);
+    const accept = () => {
+      if (!addProfile(this.engine.storage, nm)) return 'MAX ' + PROFILE_MAX + ' PILOTS';
+      this.name = nm; this.prof = null;
+      if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+      return null;
+    };
+    if (list.some((p) => p.name === nm)) return accept();
+    if (list.length >= PROFILE_MAX) return 'MAX ' + PROFILE_MAX + ' PILOTS';
+    if (!relayEnabled()) return accept();
+    return Promise.resolve().then(() => checkName(nm)).then(
+      (r) => (r && r.ok && r.taken) ? 'NAME ALREADY REGISTERED \u2014 CHOOSE ANOTHER' : accept(),   // {ok:false}（オフライン）は検証できないので許可
+      () => accept());
   }
   _openName(thenStart) {
     this.pendingStart = !!thenStart;
-    showNameOverlay(this.name || '', (v) => this._submitName(v));
+    showNameOverlay('', (v) => this._onNameEntered(v));
+  }
+
+  // ---- PILOTS パネル ----
+  _profRects() {
+    const list = loadProfiles(this.engine.storage);
+    const act = getActiveProfile(this.engine.storage);
+    const rows = list.map((p, i) => ({ name: p.name, active: !!act && act.name === p.name,
+      sel: { x: 36, y: 164 + i * 56, w: 200, h: 44 }, del: { x: 248, y: 164 + i * 56, w: 56, h: 44 } }));
+    return { rows, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
+      yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 356, w: W - 120, h: 44, label: 'CANCEL' } };
+  }
+  _profInput(action, data) {
+    const pf = this.prof;
+    if (action === 'back') { if (pf.mode === 'confirm') { pf.mode = 'list'; pf.msg = ''; } else this.prof = null; return; }
+    if (action !== 'tap' || !data || pf.busy) return;
+    const R = this._profRects();
+    if (pf.mode === 'confirm') {
+      if (this._hit(R.no, data)) { pf.mode = 'list'; pf.msg = ''; }
+      else if (this._hit(R.yes, data)) this._deletePilot(pf.target);
+      return;
+    }
+    if (this._hit(R.close, data)) { this.prof = null; return; }
+    if (this._hit(R.add, data)) { if (!R.add.off) { this.prof = null; this._openName(false); } else pf.msg = 'MAX ' + PROFILE_MAX + ' PILOTS'; return; }
+    for (const r of R.rows) {
+      if (this._hit(r.del, data)) { pf.mode = 'confirm'; pf.target = r.name; pf.msg = ''; return; }
+      if (this._hit(r.sel, data)) { setActiveProfile(this.engine.storage, r.name); this.name = r.name; return; }
+    }
+  }
+  // サーバー側の名前と記録も削除。成功/「未登録」ならローカルから削除、通信失敗なら残す。ローカルのランキング行は消さない
+  async _deletePilot(name) {
+    const pf = this.prof; if (!pf) return;
+    const prof = loadProfiles(this.engine.storage).find((p) => p.name === name);
+    if (!prof) { pf.mode = 'list'; return; }
+    let remove = true;
+    if (relayEnabled()) {
+      pf.busy = true; pf.msg = 'DELETING\u2026';
+      let r = null; try { r = await deleteName(prof.name, prof.key); } catch (_) { r = null; }
+      pf.busy = false;
+      if (!(r && r.ok) && !(r && r.error === 'unknown')) {
+        remove = false;
+        pf.msg = (r && r.error === 'forbidden') ? 'NOT ALLOWED \u2014 KEY MISMATCH' : 'OFFLINE \u2014 TRY AGAIN';
+      }
+    }
+    if (!remove) return;
+    removeProfile(this.engine.storage, name);
+    const ap = getActiveProfile(this.engine.storage);
+    this.name = ap ? ap.name : '';
+    pf.mode = 'list'; pf.msg = '';
   }
 
   // START 確定後: 発射シーケンス（または即ゲーム）
@@ -191,6 +281,21 @@ export class TitleScene extends Scene {
     this.startGame();
   }
 
+  // CONTINUE MISSION: 保存したステージの開始から再開（発射シーケンスはそのまま流す）
+  _continueMission() {
+    musicOf(this.engine).sfx.uiTap();
+    if (!this.name) { this._openName(false); return; }
+    this.engine.resumeCheckpoint = this.cp;
+    this._begin();
+  }
+  // NEW MISSION: チェックポイントを破棄して最初から
+  _newMission() {
+    musicOf(this.engine).sfx.uiTap();
+    clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
+    if (!this.name) { this._openName(true); return; }
+    this._begin();
+  }
+
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
   exit() { hideNameOverlay(); }
@@ -203,6 +308,7 @@ export class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
+    if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
       if (this._hit(this.muteBtn, data)) {
         const m = toggleMute(this.engine);
@@ -217,13 +323,19 @@ export class TitleScene extends Scene {
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
-      if (this._hit(this.logoBox, data)) {
+      if (this._hit(this.logoBox, data) || this._hit(this.betaBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
         return;
       }
-      if (this.name && this._hit(this.changeBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openName(false); return; }
+      if (this._hit(this.changeBtn, data)) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; this.prof = { mode: 'list', target: '', msg: '', busy: false }; return; }
+      if (this.cp) {   // チェックポイントあり: CONTINUE MISSION / NEW MISSION。それ以外のタップでは開始しない
+        if (this._hit(this.continueBtn, data)) { this._continueMission(); return; }
+        if (this._hit(this.newBtn, data)) { this._newMission(); return; }
+        return;
+      }
     }
+    if (action === 'confirm' && this.cp) { this._continueMission(); return; }
     if (action === 'tap' || action === 'confirm') {
       musicOf(this.engine).sfx.uiTap();
       if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
@@ -314,23 +426,31 @@ export class TitleScene extends Scene {
     if (logoA > 0) {
       txt(ctx, 'LANDER', W / 2, 60, 34, p.hi, 'center', { sp: 16, w: 300, a: logoA });
       txt(ctx, 'SOFT LANDING TOUR', W / 2, 98, 8, p.dim, 'center', { sp: 5, w: 400, a: logoA });
+      drawBetaTag(ctx, this.betaBox, logoA);
     }
     if (ui > 0) {
       const sp = drawSpeaker;
       sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
-      if (this.name) {
-        txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
-        const cb = this.changeBtn;
-        pill(ctx, cb.x, cb.y, cb.w, cb.h, rgba(p.fg, 0.04 * ui), rgba(p.fg, 0.22 * ui));
-        txt(ctx, 'CHANGE', W / 2, cb.y + 6, 8, p.mid, 'center', { sp: 3, w: 500, a: ui });
-      } else {
-        txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
-      }
-      const sb = this.startBtn;
+      if (this.name) txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
+      else txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
+      const cb = this.changeBtn;
+      pill(ctx, cb.x, cb.y, cb.w, cb.h, rgba(p.fg, 0.04 * ui), rgba(p.fg, 0.22 * ui));
+      txt(ctx, 'PILOTS', W / 2, cb.y + 6, 8, p.mid, 'center', { sp: 3, w: 500, a: ui });
       const breath = 0.5 + 0.5 * Math.sin(this.t * 2);
-      pill(ctx, sb.x, sb.y, sb.w, sb.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
-      txt(ctx, 'START', W / 2, sb.y + 15, 14, p.hi, 'center', { sp: 9, w: 500, a: ui });
-      if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
+      if (this.cp) {
+        const c = this.continueBtn, nb = this.newBtn;
+        pill(ctx, c.x, c.y, c.w, c.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
+        txt(ctx, 'CONTINUE MISSION', W / 2, c.y + 10, 12, p.hi, 'center', { sp: 5, w: 500, a: ui });
+        const bn = (stageBodyName(this.cp.stage) || '').toUpperCase();
+        txt(ctx, 'ST.' + this.cp.stage + (bn ? '  \u00b7  ' + bn : '') + '  \u00b7  ' + this.cp.totalScore, W / 2, c.y + 30, 8, p.dim, 'center', { sp: 2, w: 500, a: ui });
+        pill(ctx, nb.x, nb.y, nb.w, nb.h, null, rgba(p.fg, 0.22 * ui));
+        txt(ctx, 'NEW MISSION', W / 2, nb.y + 11, 9, p.fg, 'center', { sp: 4, w: 500, a: ui });
+      } else {
+        const sb = this.startBtn;
+        pill(ctx, sb.x, sb.y, sb.w, sb.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
+        txt(ctx, 'START', W / 2, sb.y + 15, 14, p.hi, 'center', { sp: 9, w: 500, a: ui });
+        if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
+      }
       const b = this.rankBtn;
       pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
       txt(ctx, 'RANKING', W / 2, b.y + 9, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
@@ -338,8 +458,8 @@ export class TitleScene extends Scene {
     if (isDebug()) txt(ctx, 'DEBUG', 12, 16, 9, p.warn, 'left', { sp: 3, w: 500 });
     if (this.toastT > 0) {
       ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
-      this.engine.rect(W / 2 - 50, 120, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 120, 100, 24, p.warn, 1.5);
-      this.engine.text('DEBUG ON', W / 2, 125, 13, p.warn, 'center');
+      this.engine.rect(W / 2 - 50, 140, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 140, 100, 24, p.warn, 1.5);
+      this.engine.text('DEBUG ON', W / 2, 145, 13, p.warn, 'center');
       ctx.restore();
     }
 
@@ -352,6 +472,11 @@ export class TitleScene extends Scene {
       this.engine.stroke(20, 90, W - 40, 440, p.mid, 2);
       this.engine.text('TOP 10', W / 2, 104, 20, p.hi, 'center');
       drawRankPanel(this.engine, ctx, this.tabs, this.rank, 32, 130, W - 64, -1);
+    }
+    if (this.prof) {
+      const R = this._profRects(), pf = this.prof;
+      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg,
+        confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
   }
 }

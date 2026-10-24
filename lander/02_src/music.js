@@ -3,6 +3,7 @@
 // ctx は engine.audio.ctx（最初のタップ後に生成）を遅延取得。無い間は全メソッドが no-op。
 // 全ヘルパー名は _mus 接頭辞（バンドルは同一スコープに連結されるため）。
 
+const _MUS_DUCK = 0.3;           // HOLD 中のBGM倍率
 const _MUS_MUSIC_LEVEL = 0.125;   // ≒ -18 dBFS
 const _MUS_SFX_LEVEL = 0.32;      // ≒ -10 dBFS（音楽より少し大きい）
 const _MUS_MAX_MUSIC_VOICES = 14; // 一過性の音楽ボイス上限（ベル/パルス等）
@@ -13,7 +14,7 @@ const _MUS_JINGLE_LEVEL = 0.2;    // ジングルは環境BGM(0.125)より大き
 const _MUS_MAX_JINGLE_VOICES = 18;
 
 const _musS = {
-  audio: null, ctx: null, muted: false,
+  audio: null, ctx: null, muted: false, ducked: false,
   master: null, musicBus: null, sfxBus: null, noise: null,
   voices: [],   // 一過性ボイス {nodes, end, kind}
   scenes: [],   // 稼働中/フェードアウト中のシーン
@@ -37,7 +38,7 @@ function _musEnsure() {
   const master = ctx.createGain();
   master.gain.value = _musS.muted ? 0 : 1;
   master.connect(ctx.destination);
-  const mb = ctx.createGain(); mb.gain.value = _MUS_MUSIC_LEVEL; mb.connect(master);
+  const mb = ctx.createGain(); mb.gain.value = _MUS_MUSIC_LEVEL * (_musS.ducked ? _MUS_DUCK : 1); mb.connect(master);
   const sb = ctx.createGain(); sb.gain.value = _MUS_SFX_LEVEL; sb.connect(master);
   const jb = ctx.createGain(); jb.gain.value = _MUS_JINGLE_LEVEL; jb.connect(master);
   _musS.master = master; _musS.musicBus = mb; _musS.sfxBus = sb; _musS.jbus = jb;
@@ -445,6 +446,15 @@ export const Music = {
     p.setTargetAtTime(_musS.muted ? 0 : 1, now, 0.04);
   },
   isMuted() { return _musS.muted; },
+
+  // MISSION HOLD 中にBGMだけを約30%へ下げる（SFXは下げない）。ctx無しなら状態だけ保存して何もしない
+  duck(on) {
+    _musS.ducked = !!on;
+    if (!_musEnsure() || !_musS.musicBus) return;
+    const ctx = _musS.ctx; const p = _musS.musicBus.gain; const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    p.setTargetAtTime(_MUS_MUSIC_LEVEL * (_musS.ducked ? _MUS_DUCK : 1), now, 0.08);
+  },
 
   playTitle() { _musJStop(0.3); _musSwitch('title', _MUS_XFADE); },
   playBody(bodyId) { _musSwitch(_musHas(bodyId) && bodyId !== 'title' ? bodyId : 'moon', _MUS_XFADE); },

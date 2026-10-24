@@ -220,10 +220,15 @@ export class Engine {
     c.addEventListener('contextmenu', (e) => { e.preventDefault(); this._clearPointers(); });
 
     // フォーカス喪失・非表示・ページ離脱では全ポインタ解除（押しっぱなし固着の防止）
-    window.addEventListener('blur', this._clearPointers);
-    window.addEventListener('pagehide', this._clearPointers);
+    // 非表示・フォーカス喪失ではシーンにも通知する（LANDER は MISSION HOLD へ自動移行）
+    const onHidden = () => {
+      this._clearPointers();
+      try { if (this.scene && this.scene.onHidden) this.scene.onHidden(); } catch (_) { /* シーン側の例外で入力解除を止めない */ }
+    };
+    window.addEventListener('blur', onHidden);
+    window.addEventListener('pagehide', onHidden);
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => { if (document.hidden) this._clearPointers(); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) onHidden(); });
     }
   }
 

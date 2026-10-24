@@ -209,7 +209,9 @@ win.fire('mouseup', { clientX: 180, clientY: 600, button: 0 }); ok(!E.pointer.do
   ok(title.nameOverlayOpen(), 'overlay: opened by START without name');
   const w = doc.getElementById('lander-name-entry');
   const input = w.children[1], btn = w.children[2];
-  input.value = 'Zed'; btn.fire('click');
+  ls.delete('lander.profiles'); ls.delete('lander.lastName');   // 以前の節で作られたパイロット(最大3名)を消す
+  const _relay0 = net.RELAY_URL; net.__setRelayUrl('');   // 新規名はWORLD重複確認(非同期)を挟むので、同期経路を見るためリレーを切る
+  input.value = 'Zed'; btn.fire('click'); net.__setRelayUrl(_relay0);
   ok(!title.nameOverlayOpen() && started === 1, 'overlay: removed on submit and game starts');
   // Game.enter also clears a stray overlay
   title.showNameOverlay('x', noop); ok(title.nameOverlayOpen(), 'overlay: shown');
@@ -290,7 +292,7 @@ win.fire('mouseup', { clientX: 180, clientY: 600, button: 0 }); ok(!E.pointer.do
     }
   };
   let ipN = 0;
-  const post = (body, origin = 'https://u.github.io', ip, e = env) => W.fetch(new Request('https://w/submit', { method: 'POST', headers: { Origin: origin, 'CF-Connecting-IP': ip || ('2.2.2.' + (ipN++)), 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) }), e);
+  const post = (body, origin = 'https://u.github.io', ip, e = env) => W.fetch(new Request('https://w/submit', { method: 'POST', headers: { Origin: origin, 'CF-Connecting-IP': ip || ('2.2.2.' + (ipN++)), 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body && typeof body === 'object' && !('key' in body) ? { ...body, key: 'a'.repeat(64) } : body) }), e);  // 所有キー必須化（p4net）に合わせ、未指定なら固定の有効キーを付与
   const get = () => W.fetch(new Request('https://w/ranking', { headers: { Origin: 'https://u.github.io' } }), env);
   const month = new Date().toISOString().slice(0, 7);
   const mpath = (n = 1) => `log/${month}${n > 1 ? '-' + n : ''}.jsonl`;

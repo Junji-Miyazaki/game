@@ -6,6 +6,25 @@
 - `log/YYYY-MM.jsonl` … 受理した全エントリを月別に追記する監査ログ。約900KBを超えたら `log/YYYY-MM-2.jsonl`, `-3` ... へ繰り上げる。git 履歴も監査証跡になる。
 - `top.json` … 上位100件（score 降順 → stage 降順 → 早い日時が先）。受理のたびに更新。
 - `GET /ranking` は `top.json` だけを読み、上位20を返す。
+- `names.json` … 名前台帳 `{ "<名前>": { "name", "keyHash", "first" } }`。`keyHash` は端末が持つ秘密キーの SHA-256（生のキーは保存しない）。無ければ `top.json` から自動作成（既存の名前は「キー未設定の旧名」になる）。
+
+## ボードの意味（名前ごとのベスト）
+- WORLD は **名前ごとに1行のベストスコア**。同じ名前の再送は、高い方（同点は stage が高い方→早い日時）だけが残り、表示名は保存済みの行のものを維持。既存 `top.json` の重複行は最初の書き込みで統合される。
+- 名前の同一性は **前後の空白を除いた完全一致**。全角/半角・大文字/小文字は別の名前。
+- 名前は先着順。端末が名前ごとに乱数キーを作って送り、ログインは無い。端末を変えると同じ名前の所有は証明できない（仕様として許容）。
+
+## API
+| メソッド | パス | 内容 |
+|---|---|---|
+| GET | `/ranking` | `{ top: [...] }` 上位20 |
+| GET | `/name?n=<名前>` | `{ taken: boolean }`。空は 400。短時間キャッシュ、submit/delete で無効化 |
+| POST | `/submit` | `{ name, score, stage, key }`。新規名は登録。キー一致なら受理。キー不一致は **403 `name-taken`**。キー未設定の旧名（例: 既存の「みや」）は最初のキー付き送信で確保。`key` は hex 32〜128 文字（無ければ 400） |
+| POST | `/delete` | `{ name, key }`。キー一致で `names.json` と `top.json` から削除し `{ ok: true }`。不一致/旧名は 403、未登録は 404 |
+| GET | `/admin/list` | ヘッダ `X-Admin-Key`。`{ names: [{ name, first, best: {score,stage,date} \| null }] }` |
+| POST | `/admin/delete` | ヘッダ `X-Admin-Key`、`{ name }`。台帳と `top.json` から削除 |
+
+- 月ログ `log/YYYY-MM*.jsonl` は監査証跡なので削除してもそのまま残る（git 履歴にも残る）。
+- 管理系は `ADMIN_KEY` 未設定なら 503。キー誤りは 401（約0.4秒遅延、定数時間比較）。キーは **自分で作った長い乱数文字列**（パスワードマネージャ等で生成）を Cloudflare の Secret に直接入力する。チャットに貼らない。
 
 ## 1. スコア専用リポジトリを作る（GitHub）
 - New repository → 名前 `lander-scores` → Private で可（読み出しも Worker 経由のため）→ Create。
@@ -28,6 +47,8 @@ Workers & Pages → Create → **Start with Hello World!**（リポジトリ連�
   | `REPO` | Text | `Junji-Miyazaki/lander-scores` |
   | `LOG_DIR` | Text | `log`（省略時 `log`） |
   | `TOP_FILE` | Text | `top.json`（省略時 `top.json`） |
+  | `NAMES_FILE` | Text | `names.json`（省略時 `names.json`） |
+  | `ADMIN_KEY` | **Secret** | 管理用の長い乱数文字列（DEBUG の管理操作用。未設定なら管理APIは無効） |
   | `ALLOWED_ORIGINS` | Text | 本番は `https://junji-miyazaki.github.io` **のみ**。`http://localhost:4176` はローカル試験中だけ一時的に追加し、終わったら外す（Origin は偽装できるため効果は限定的だが、許可面は最小にする） |
 
 ## 4. 動作確認
@@ -40,3 +61,9 @@ Workers & Pages → Create → **Start with Hello World!**（リポジトリ連�
 - 1ファイルが約900KBを超えると月ログは連番ファイルへ繰り上げ、GitHub API の 1MB 制限で全体が壊れないようにしている（sha は `Accept: application/vnd.github.object`、内容は `application/vnd.github.raw` で取得）。
 - ログ追記と `top.json` 更新は別々の書き込み。ログ成功後に `top.json` が競合し続けた場合は 502 を返す（ログには残るので、必要なら月ログから `top.json` を再構築できる）。
 - 名前は制御文字・`<>`・双方向/ゼロ幅の書式制御文字を除去し、書記素単位で12文字に切り詰める。
+
+## 再デプロイ（既存の Worker を更新するとき）
+1. Cloudflare → Workers & Pages → `lander-ranking` → **Edit code**。
+2. 既存コードを**すべて**消し、新しい `ranking-worker.js` の内容を丸ごと貼り付けて **Deploy**。
+3. **Settings → Variables and Secrets** で `ADMIN_KEY` を **Secret** として追加（管理機能を使う場合。自分で生成した長い乱数）。それ以外の変数は変更不要。
+4. `names.json` は初回アクセス時に `top.json` から自動作成される。
