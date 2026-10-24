@@ -110,11 +110,13 @@ export class Engine {
   }
 
   // ---- 入力 ----
+  // 方針: 全ポインタ(タッチ複数 + マウス)を id で追跡する。解除漏れ(キャンバス外での離し・touchcancel・
+  // blur・タブ非表示)で「押しっぱなし」が残ると主エンジンが噴射し続けるため、window 級で必ず解除する。
   _setupInput() {
     const dispatch = (action, data) => {
       this.audio.unlock();
       // BACKボタンのタップはゲームに渡さず、メニューへ戻す（メニュー画面では無効）。
-      // ただしシーンが blocksBack()=true を返す間（例: アップグレードカード選択中）は無効化し誤タップ退出を防ぐ。
+      // ただしシーンが blocksBack()=true を返す間（例: 名前入力中）は無効化し誤タップ退出を防ぐ。
       if (action === 'tap' && data && this.scene && !this.scene.isRoot && this._inBack(data)
           && !(this.scene.blocksBack && this.scene.blocksBack())) {
         this.audio.select();
@@ -124,8 +126,11 @@ export class Engine {
       if (this.scene && this.scene.onInput) this.scene.onInput(action, data);
     };
 
-    // キーボード
+    // キーボード。入力欄(名前入力など)にフォーカス中はゲーム操作として扱わない
+    // （Backspace=戻る / Space・Enter の preventDefault が入力を壊すため）。
+    const isTextTarget = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable === true);
     window.addEventListener('keydown', (e) => {
+      if (isTextTarget(e.target)) return;
       const k = e.key;
       if (k === 'ArrowUp' || k === 'w') { dispatch('up'); e.preventDefault(); }
       else if (k === 'ArrowDown' || k === 's') { dispatch('down'); e.preventDefault(); }
@@ -135,55 +140,74 @@ export class Engine {
       else if (k === 'Escape' || k === 'Backspace') { dispatch('back'); e.preventDefault(); }
     });
 
-    // タッチ／マウス（スワイプ判定＋タップ）
+    // ---- ポインタ追跡 ----
     const SWIPE = 24; // スワイプとみなす最小移動量(px CSS)
-    let sx = 0, sy = 0, st = 0, moved = false;
+    this._touchMap = new Map(); // id -> {x,y}（論理座標。this.touches の要素と同一オブジェクト＝常に最新）
+    this.touches = [];          // 現在押されている全点（挿入順）
+    this._gesture = null;       // タップ/スワイプ判定用。「他の指が無い状態で最初に置かれた指」のみ
     const toLogical = (clientX, clientY) => {
       const r = this.canvas.getBoundingClientRect();
-      return {
-        x: (clientX - r.left) / this.scale,
-        y: (clientY - r.top) / this.scale,
-      };
+      return { x: (clientX - r.left) / this.scale, y: (clientY - r.top) / this.scale };
     };
-    const setPointer = (clientX, clientY, isDown) => {
-      const lp = toLogical(clientX, clientY);
-      this.pointer.x = lp.x; this.pointer.y = lp.y;
-      if (isDown != null) this.pointer.down = isDown;
+    const sync = () => {
+      this.touches.length = 0;
+      for (const v of this._touchMap.values()) this.touches.push(v);
+      const f = this.touches[0];
+      if (f) { this.pointer.down = true; this.pointer.x = f.x; this.pointer.y = f.y; }
+      else this.pointer.down = false;
     };
-    const onStart = (x, y) => { sx = x; sy = y; st = performance.now(); moved = false; setPointer(x, y, true); };
-    const onMove = (x, y) => { setPointer(x, y, null); };
-    const onEnd = (x, y) => {
-      setPointer(x, y, false);
-      const dx = x - sx, dy = y - sy;
+    this._pStart = (id, cx, cy) => {
+      const wasEmpty = this._touchMap.size === 0;
+      this._touchMap.set(id, toLogical(cx, cy));
+      // 2本目以降の指が来たらジェスチャ判定は無効（単一指のみ）
+      this._gesture = wasEmpty ? { id, sx: cx, sy: cy } : null;
+      sync();
+    };
+    this._pMove = (id, cx, cy) => {
+      const pt = this._touchMap.get(id);
+      if (!pt) return;
+      const lp = toLogical(cx, cy);
+      pt.x = lp.x; pt.y = lp.y;
+      sync();
+    };
+    this._pEnd = (id, cx, cy, cancelled) => {
+      if (!this._touchMap.has(id)) return;
+      this._touchMap.delete(id);
+      sync();
+      const g = this._gesture;
+      if (!g || g.id !== id) return;
+      this._gesture = null;
+      if (cancelled) return; // キャンセルされた接触はタップ扱いにしない
+      const dx = cx - g.sx, dy = cy - g.sy;
       const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (adx < SWIPE && ady < SWIPE) {
-        dispatch('tap', toLogical(x, y)); // タップ
-      } else if (adx > ady) {
-        dispatch(dx > 0 ? 'right' : 'left');
-      } else {
-        dispatch(dy > 0 ? 'down' : 'up');
-      }
+      if (adx < SWIPE && ady < SWIPE) dispatch('tap', toLogical(cx, cy));
+      else if (adx > ady) dispatch(dx > 0 ? 'right' : 'left');
+      else dispatch(dy > 0 ? 'down' : 'up');
+    };
+    this._clearPointers = () => {
+      this._touchMap.clear();
+      this._gesture = null;
+      sync();
     };
 
     const c = this.canvas;
-    c.addEventListener('touchstart', (e) => {
-      const t = e.changedTouches[0]; onStart(t.clientX, t.clientY);
-      e.preventDefault();
-    }, { passive: false });
-    c.addEventListener('touchmove', (e) => {
-      const t = e.changedTouches[0]; onMove(t.clientX, t.clientY);
-      e.preventDefault();
-    }, { passive: false });
-    c.addEventListener('touchend', (e) => {
-      const t = e.changedTouches[0]; onEnd(t.clientX, t.clientY);
-      e.preventDefault();
-    }, { passive: false });
+    const each = (e, fn) => { for (let i = 0; i < e.changedTouches.length; i++) fn(e.changedTouches[i]); };
+    c.addEventListener('touchstart', (e) => { each(e, (t) => this._pStart(t.identifier, t.clientX, t.clientY)); e.preventDefault(); }, { passive: false });
+    c.addEventListener('touchmove', (e) => { each(e, (t) => this._pMove(t.identifier, t.clientX, t.clientY)); e.preventDefault(); }, { passive: false });
+    c.addEventListener('touchend', (e) => { each(e, (t) => this._pEnd(t.identifier, t.clientX, t.clientY, false)); e.preventDefault(); }, { passive: false });
+    c.addEventListener('touchcancel', (e) => { each(e, (t) => this._pEnd(t.identifier, t.clientX, t.clientY, true)); e.preventDefault(); }, { passive: false });
 
-    // マウス（PC確認用）
-    let down = false;
-    c.addEventListener('mousedown', (e) => { down = true; onStart(e.clientX, e.clientY); });
-    c.addEventListener('mousemove', (e) => { if (down) onMove(e.clientX, e.clientY); });
-    c.addEventListener('mouseup', (e) => { if (down) onEnd(e.clientX, e.clientY); down = false; });
+    // マウス（PC確認用）。move/up は window で受け、キャンバス外で離しても必ず解除する。
+    c.addEventListener('mousedown', (e) => { this._pStart('mouse', e.clientX, e.clientY); });
+    window.addEventListener('mousemove', (e) => { this._pMove('mouse', e.clientX, e.clientY); });
+    window.addEventListener('mouseup', (e) => { this._pEnd('mouse', e.clientX, e.clientY, false); });
+
+    // フォーカス喪失・非表示・ページ離脱では全ポインタ解除（押しっぱなし固着の防止）
+    window.addEventListener('blur', this._clearPointers);
+    window.addEventListener('pagehide', this._clearPointers);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => { if (document.hidden) this._clearPointers(); });
+    }
   }
 
   // タップ座標がBACKボタン内か

@@ -6,6 +6,7 @@
 // Safe landing on the pad = STAGE CLEAR. Crash = GAME OVER.
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
+import { loadRanking, saveRanking, insertEntry, qualifies, drawRankingRows } from './ranking.js';
 
 export const meta = {
   id: 'lander',
@@ -65,6 +66,42 @@ const CONTROL_Y_MIN = 52; // ignore pointer input above this Y (BACK button zone
 const BTN_Y   = H - 80;  // top of button bar
 const BTN_H   = 80;       // height of button bar
 
+// ---- Terrain band (B2: pad must stay clear of the button bar) ----
+// パッド(脚10px含む)の下端が常に BTN_Y-12 以上上に来るよう、地形帯をボタン帯より上に置く。
+const FLOOR_Y     = 540;  // 地形の左右端の高さ（ボタン帯の背後へ塗りは続く）
+const FLOOR_MIN   = 440;  // 地形の最も高い点
+const PAD_Y_MIN   = 455;  // パッド面の取りうる最小Y
+const PAD_Y_RANGE = 60;   // パッド面Y = PAD_Y_MIN .. PAD_Y_MIN+60 (=515)。脚込み下端 <= 525 <= BTN_Y-12
+
+// ---- Continues / bonus / landing sequence ----
+const CONTINUES_MAX     = 3;
+const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
+const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
+const BOUNCE_AIRBORNE_PX = 30;   // 地面からこれ以上離れたら「離陸」とみなしバウンス状態を解除
+const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
+const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
+const BONUS_TYPES       = ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'];
+const PRECISION_PAD_W   = 22;
+const FUEL_RUN_FUEL     = 45;    // FUEL_MAX の45%
+const MOVING_PLATEAU_SEGS = 8;   // 160px の平坦台地
+const MOVING_PAD_PERIOD = 6;     // 秒
+const LANDING_SEQ_S     = 2.6;
+
+// 着陸シーケンスのフェーズ（データ駆動）。t(秒) -> {name, p(0..1: フェーズ内進行)}
+export const LANDING_PHASES = [
+  { name: 'hatch',   t0: 0.0, t1: 0.4 },
+  { name: 'descend', t0: 0.4, t1: 1.2 },
+  { name: 'walk',    t0: 1.2, t1: 1.6 },
+  { name: 'flag',    t0: 1.6, t1: 2.0 },
+  { name: 'wave',    t0: 2.0, t1: LANDING_SEQ_S },
+];
+export function landingPhase(t) {
+  for (const ph of LANDING_PHASES) {
+    if (t < ph.t1) return { name: ph.name, p: Math.max(0, Math.min(1, (t - ph.t0) / (ph.t1 - ph.t0))) };
+  }
+  return { name: 'done', p: 1 };
+}
+
 // ---- Stage difficulty scaling ----
 // Stage 1: low gravity, no obstacles.
 // Stage 2+: gravity increases per stage; floating obstacles added and multiplied.
@@ -83,38 +120,39 @@ function stageParams(stage) {
 }
 
 // ---- Terrain generation ----
-function buildTerrain(padW) {
+// opts.plateau: true -> MOVING_PAD用。MOVING_PLATEAU_SEGS 区間ぶんの平坦台地を作り、pad に移動範囲 minX/maxX を持たせる。
+function buildTerrain(padW, opts) {
+  const plateau = !!(opts && opts.plateau);
   const segW    = W / TERRAIN_SEGS;
-  const FLOOR_Y   = 608;
-  const FLOOR_MIN = 525;
-  const pts       = [];
-
-  // Pick one random segment for the landing pad
-  const available = [];
-  for (let i = 2; i < TERRAIN_SEGS - 3; i++) available.push(i);
-  const padSeg = available[Math.floor(Math.random() * available.length)];
+  const pts     = [];
 
   for (let i = 0; i <= TERRAIN_SEGS; i++) {
     const x = i * segW;
-    let y;
-    if (i === 0 || i === TERRAIN_SEGS) {
-      y = FLOOR_Y;
-    } else {
-      y = FLOOR_MIN + Math.random() * (FLOOR_Y - FLOOR_MIN);
-    }
+    const y = (i === 0 || i === TERRAIN_SEGS) ? FLOOR_Y : FLOOR_MIN + Math.random() * (FLOOR_Y - FLOOR_MIN);
     pts.push({ x, y });
   }
 
-  // Flatten the pad segment
-  const midX  = (padSeg + 0.5) * segW;
-  const flatY = FLOOR_MIN + 20 + Math.random() * 50;
-  const lx    = midX - padW / 2;
-  pts[padSeg].y     = flatY;
-  pts[padSeg + 1].y = flatY;
-  if (padSeg > 0)                  pts[padSeg - 1].y = (pts[padSeg - 1].y + flatY) / 2;
-  if (padSeg + 2 <= TERRAIN_SEGS)  pts[padSeg + 2].y = (pts[padSeg + 2].y + flatY) / 2;
+  const flatY = PAD_Y_MIN + Math.random() * PAD_Y_RANGE;
+  let flatX0, flatX1, i0, i1;
+  if (plateau) {
+    i0 = 1 + Math.floor(Math.random() * (TERRAIN_SEGS - MOVING_PLATEAU_SEGS - 1)); // 1 .. TERRAIN_SEGS-SEGS-1
+    i1 = i0 + MOVING_PLATEAU_SEGS;
+    flatX0 = i0 * segW; flatX1 = i1 * segW;
+  } else {
+    // パッドを置く区間（従来どおり i=2..TERRAIN_SEGS-4 から選ぶ）
+    const padSeg = 2 + Math.floor(Math.random() * (TERRAIN_SEGS - 5));
+    const midX = (padSeg + 0.5) * segW;
+    flatX0 = midX - padW / 2; flatX1 = midX + padW / 2;
+    i0 = Math.floor(flatX0 / segW);
+    i1 = Math.ceil(flatX1 / segW);
+  }
+  // パッドの下の地形はパッド面と同じ高さに平坦化（パッド端で地形がパッドと食い違わないように）
+  for (let i = i0; i <= i1; i++) pts[i].y = flatY;
+  if (i0 > 0)                pts[i0 - 1].y = (pts[i0 - 1].y + flatY) / 2;
+  if (i1 + 1 <= TERRAIN_SEGS) pts[i1 + 1].y = (pts[i1 + 1].y + flatY) / 2;
 
-  const pad = { x: lx, y: flatY, w: padW };
+  const pad = { x: (flatX0 + flatX1) / 2 - padW / 2, y: flatY, w: padW, moving: plateau };
+  if (plateau) { pad.minX = flatX0; pad.maxX = flatX1 - padW; pad.x = (pad.minX + pad.maxX) / 2; }
   return { pts, pad };
 }
 
@@ -154,12 +192,12 @@ function buildObstacles(count, speed) {
   if (count <= 0) return obs;
   for (let i = 0; i < count; i++) {
     // Spread evenly through descent zone, avoid spawning right at the start
-    const yBand   = 150 + (i / count) * 300 + Math.random() * 60;
+    const yBand   = 150 + (i / count) * 250 + Math.random() * 50;
     const vxSign  = Math.random() < 0.5 ? 1 : -1;
     const r       = 10 + Math.floor(Math.random() * 8); // radius 10-17
     obs.push({
       x:  30 + Math.random() * (W - 60),
-      y:  Math.max(150, Math.min(480, yBand)),
+      y:  Math.max(150, Math.min(410, yBand)), // 地形帯(440〜)の上に収める
       vx: (speed * 0.6 + Math.random() * speed * 0.8) * vxSign,
       r,
     });
@@ -173,11 +211,21 @@ export class Game extends Scene {
     this.high       = (this.engine.storage.getHigh(meta.id) || 0);
     this.totalScore = 0;
     this.stage      = 1;
-    this.state      = 'play';
+    this.continues  = CONTINUES_MAX;
+    this.bonus      = null;          // 進行中のボーナス {type, afterStage}
+    this.bonusCount = 0;             // これまでに発生したボーナス数（種類のローテーション用）
+    this._inputLock = 0;
+    this._removeNameDom();
     this._initStage();
   }
 
+  exit() { this._removeNameDom(); }
+
+  // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
+  blocksBack() { return this.state === 'gameover' && this.goPhase === 'name'; }
+
   // ---- Initialize one stage ----
+  // this.stage / this.bonus から再構築する。Continue 時も同じステージ番号（＝同じパラメータ）で呼ぶ。
   _initStage() {
     this.state    = 'play';
     this.fuel     = FUEL_MAX;
@@ -193,12 +241,15 @@ export class Game extends Scene {
     this._thrustRcsR = false;
 
     const sp       = stageParams(this.stage);
+    const btype    = this.bonus ? this.bonus.type : null;
     this._gravity  = sp.gravity;
-    this._padW     = sp.padW;
+    this._padW     = btype === 'PRECISION' ? PRECISION_PAD_W : sp.padW;
+    if (btype === 'FUEL_RUN') this.fuel = FUEL_RUN_FUEL;
 
-    const terrain     = buildTerrain(this._padW);
+    const terrain     = buildTerrain(this._padW, { plateau: btype === 'MOVING_PAD' });
     this.terrainPts   = terrain.pts;
     this.pad          = terrain.pad;
+    this._padT        = 0;
     this.stars        = this.stars || buildStars(40);
 
     this.guidePts = buildGuide(this.x, this.y, this.pad, GUIDE_PTS);
@@ -207,16 +258,22 @@ export class Game extends Scene {
     this._guideDevCount = 0;
     this._stageScore    = 0;
     this._guideBonus    = 0;
+    this._bonusScore    = 0;
+    this._bonusGrant    = false;
+    this._crashReason   = '';
+    this.landingSeq     = null;
+    this._bannerT       = btype ? 2.8 : 0;   // ボーナス開始バナーの残り秒
     this.particles      = [];
 
-    // バウンス状態フラグ（マージナル着地後に弾んでいる最中）
+    // バウンス状態フラグ（マージナル着地後に弾んでいる最中）と累積時間 (B1')
     this._bouncing = false;
+    this._bounceTime = 0;
 
     // ON COURSEポップインジケーター用タイマー
     this._onCourseTime = 0;   // ON COURSE状態の累積時間(秒)
     this._onCoursePulse = 0;  // 点滅アニメーション用位相(秒)
 
-    // Floating obstacles (stage 2+)
+    // Floating obstacles (stage 2+)。ボーナス中もステージs のパラメータを使う
     this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed);
 
     this._keys = this._keys || { left: false, right: false, up: false };
@@ -236,23 +293,42 @@ export class Game extends Scene {
     return minDist;
   }
 
-  // ---- Keyboard discrete input ----
+  // ---- Discrete input (keyboard / tap) ----
   onInput(action, data) {
+    const confirm = (action === 'tap' || action === 'confirm');
+
+    if (this.state === 'landing') {
+      // 着陸シーケンスはタップ/決定でスキップ
+      if (confirm && this._inputLock <= 0) this._finishLanding();
+      if (action === 'back') this.engine.toMenu();
+      return;
+    }
     if (this.state === 'cleared') {
-      if (action === 'tap' || action === 'confirm') {
-        this.stage += 1;
-        this._initStage();
+      if (confirm && this._inputLock <= 0) this._nextAfterClear();
+      if (action === 'back') this.engine.toMenu();
+      return;
+    }
+    if (this.state === 'bonusfailed') {
+      if (confirm && this._inputLock <= 0) this._nextAfterBonus();
+      if (action === 'back') this.engine.toMenu();
+      return;
+    }
+    if (this.state === 'crashed') {
+      if (confirm && this._inputLock <= 0) {
+        const g = this._giveUpRect();
+        if (action === 'tap' && data && data.x >= g.x && data.x <= g.x + g.w && data.y >= g.y && data.y <= g.y + g.h) {
+          this._gameOver();
+        } else {
+          this._continue();
+        }
       }
-      if (action === 'back') { this.engine.toMenu(); }
+      if (action === 'back') this.engine.toMenu();
       return;
     }
     if (this.state === 'gameover') {
-      if (action === 'tap' || action === 'confirm') {
-        this.totalScore = 0;
-        this.stage      = 1;
-        this._initStage();
-      }
-      if (action === 'back') { this.engine.toMenu(); }
+      if (this.goPhase === 'name') return; // 名前入力は HTML <input> が担当
+      if (confirm && this._inputLock <= 0) this.engine.toMenu();
+      if (action === 'back') this.engine.toMenu();
       return;
     }
     if (action === 'back') { this.engine.toMenu(); return; }
@@ -265,37 +341,170 @@ export class Game extends Scene {
     }
   }
 
+  _giveUpRect() { return { x: W / 2 - 50, y: H / 2 + 60, w: 100, h: 32 }; }
+
+  // ---- 状態遷移 ----
+  _setOverlayState(state) {
+    this.state = state;
+    this._inputLock = INPUT_LOCK_S;
+  }
+
+  _finishLanding() {
+    this.landingSeq = null;
+    this._setOverlayState('cleared');
+    this._inputLock = 0.3;
+  }
+
+  // クリア画面からの遷移: s%3===0 の通常ステージ後はボーナスを挟む
+  _nextAfterClear() {
+    if (this.bonus) { this._nextAfterBonus(); return; }
+    if (this.stage % BONUS_EVERY === 0) {
+      this.bonus = { type: BONUS_TYPES[this.bonusCount % BONUS_TYPES.length], afterStage: this.stage };
+      this.bonusCount += 1;
+      this._initStage();
+      return;
+    }
+    this.stage += 1;
+    this._initStage();
+  }
+
+  // ボーナス終了（成功・失敗とも）-> 次の通常ステージ
+  _nextAfterBonus() {
+    this.bonus = null;
+    this.stage += 1;
+    this._initStage();
+  }
+
+  _continue() {
+    this.continues = Math.max(0, this.continues - 1);
+    this._initStage(); // 同一ステージ(同一パラメータ)を新しい地形で再開。totalScore はそのまま
+  }
+
+  _gameOver(applyFuelScore) {
+    if (applyFuelScore) this.totalScore += Math.round((this.fuel || 0) * 2);
+    if (this.totalScore > this.high) {
+      this.high = this.totalScore;
+      this.engine.storage.setHigh(meta.id, this.high);
+    }
+    this._setOverlayState('gameover');
+    this.rankList = loadRanking(this.engine.storage);
+    this.newIdx = -1;
+    if (qualifies(this.rankList, this.totalScore)) {
+      this.goPhase = 'name';
+      this._showNameDom();
+    } else {
+      this.goPhase = 'ranking';
+    }
+  }
+
+  // 名前確定（HTML入力・OKボタン・テストフックから呼ぶ）
+  _submitName(name) {
+    if (this.state !== 'gameover' || this.goPhase !== 'name') return;
+    let nm = Array.from(String(name == null ? '' : name).trim()).slice(0, 10).join('').trim();
+    if (!nm) nm = 'PILOT';
+    try { this.engine.storage.set('lastName', nm); } catch (_) { /* 保存不可でも続行 */ }
+    const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString() };
+    const list = insertEntry(this.rankList, entry);
+    saveRanking(this.engine.storage, list);
+    this.rankList = list;
+    this.newIdx = list.indexOf(entry);
+    this._removeNameDom();
+    this.goPhase = 'ranking';
+    this._inputLock = INPUT_LOCK_S;
+  }
+
+  // ---- 名前入力 DOM（document が無いヘッドレス環境では何もしない）----
+  _showNameDom() {
+    if (typeof document === 'undefined') return;
+    this._removeNameDom();
+    let last = '';
+    try { last = this.engine.storage.get('lastName', '') || ''; } catch (_) { /* ignore */ }
+    const wrap = document.createElement('div');
+    wrap.id = 'lander-name-entry';
+    wrap.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1000;' +
+      'background:#151b32;border:2px solid #3ee6ff;border-radius:6px;padding:16px;width:min(300px,86vw);' +
+      'box-sizing:border-box;text-align:center;color:#c9ecff;font-family:"Rajdhani",sans-serif;';
+    const label = document.createElement('div');
+    label.textContent = 'ENTER YOUR NAME';
+    label.style.cssText = 'font-size:18px;margin-bottom:10px;';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 10;
+    input.value = last;
+    input.autocomplete = 'off';
+    input.autofocus = true;
+    input.setAttribute('autocapitalize', 'off');
+    input.style.cssText = 'width:100%;box-sizing:border-box;font-size:20px;padding:8px;text-align:center;' + // 16px以上: iOSの自動ズーム回避
+      'background:#0a0e1c;color:#fff;border:1px solid #33406b;border-radius:4px;outline:none;';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'OK';
+    btn.style.cssText = 'margin-top:12px;width:100%;font-size:20px;padding:10px;background:#3ee6ff;color:#0a0e1c;' +
+      'border:0;border-radius:4px;font-weight:700;font-family:inherit;';
+    const submit = () => this._submitName(input.value);
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return; // IME変換確定のEnterは送信しない
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn);
+    document.body.appendChild(wrap);
+    this._nameDom = wrap;
+    try { input.focus(); input.select(); } catch (_) { /* ignore */ }
+  }
+
+  _removeNameDom() {
+    if (this._nameDom && this._nameDom.parentNode) this._nameDom.parentNode.removeChild(this._nameDom);
+    this._nameDom = null;
+  }
+
+  // ---- Control inputs: 全タッチをゾーンごとに評価（同時押し可）----
+  _readPointerControls() {
+    const eng = this.engine;
+    const pts = Array.isArray(eng.touches) ? eng.touches
+      : (eng.pointer && eng.pointer.down ? [eng.pointer] : []);
+    for (const pt of pts) {
+      if (!(pt.y > CONTROL_Y_MIN)) continue;
+      if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
+      else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
+      else                        this._thrustMain = true;
+    }
+  }
+
   // ---- Per-frame logic ----
   update(dt) {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
 
+    if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
+
     if (this.state !== 'play') {
       this._updateParticles(dt);
+      if (this.state === 'landing' && this.landingSeq) {
+        this.landingSeq.t += dt;
+        this.angle *= Math.pow(0.02, dt);   // 着地後、機体を起こして立たせる（宇宙飛行士の絵と整合）
+        if (this.landingSeq.t >= LANDING_SEQ_S) this._finishLanding();
+      }
       if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
       return;
     }
 
-    const ptr = this.engine.pointer;
+    if (this._bannerT > 0) this._bannerT = Math.max(0, this._bannerT - dt);
+
+    // ---- Moving pad (bonus): パッドは台地上を往復。着地判定は常に現在位置を使う ----
+    if (this.pad && this.pad.moving) {
+      this._padT += dt;
+      const k = 0.5 - 0.5 * Math.cos(2 * Math.PI * this._padT / MOVING_PAD_PERIOD);
+      this.pad.x = this.pad.minX + (this.pad.maxX - this.pad.minX) * k;
+      this.guidePts = buildGuide(this.guidePts[0].x, this.guidePts[0].y, this.pad, GUIDE_PTS);
+    }
 
     // ---- Read control inputs ----
-    // Pointer press-and-hold in the bottom button bar (y > BTN_Y) is the primary control.
+    // Pointer press-and-hold (any active touch with y > CONTROL_Y_MIN) maps by x-zone.
     // Top strip y < CONTROL_Y_MIN is ignored to avoid conflicting with the BACK button.
     this._thrustMain = false;
     this._thrustRcsL = false;
     this._thrustRcsR = false;
-
-    if (ptr.down && ptr.y > CONTROL_Y_MIN) {
-      if (ptr.x < ZONE_L_MAX) {
-        // LEFT button pressed
-        this._thrustRcsL = true;
-      } else if (ptr.x > ZONE_R_MIN) {
-        // RIGHT button pressed
-        this._thrustRcsR = true;
-      } else {
-        // CENTER: main engine
-        this._thrustMain = true;
-      }
-    }
+    this._readPointerControls();
 
     // Keyboard (one-shot pulse per frame)
     if (this._keys) {
@@ -404,14 +613,7 @@ export class Game extends Scene {
         const dy = this.y - ob.y;
         if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
           // Hit an obstacle — crash
-          this._explode();
-          this.engine.audio.bad();
-          this.totalScore += Math.round((this.fuel || 0) * 2);
-          if (this.totalScore > this.high) {
-            this.high = this.totalScore;
-            this.engine.storage.setHigh(meta.id, this.high);
-          }
-          this.state = 'gameover';
+          this._doCrash('HIT AN OBSTACLE');
           return;
         }
       }
@@ -419,6 +621,28 @@ export class Game extends Scene {
 
     // ---- Terrain collision ----
     this._checkCollision();
+
+    // ---- B1': バウンス状態が長引いたら決着（低速・傾きの小刻みホップで永遠に終わらないのを防ぐ）----
+    if (this.state === 'play' && this._bouncing) {
+      const gap = this._terrainYAt(this.x) - (this.y + 16);
+      if (gap > BOUNCE_AIRBORNE_PX) {            // 明確に離陸した -> バウンス状態を解除
+        this._bouncing = false;
+        this._bounceTime = 0;
+      } else {
+        this._bounceTime += dt;
+        if (this._bounceTime > BOUNCE_RESOLVE_S) this._resolveBounce();
+      }
+    }
+  }
+
+  _resolveBounce() {
+    const absAngle = Math.abs(((this.angle + 180) % 360 + 360) % 360 - 180);
+    const onPad = (this.x >= this.pad.x && this.x <= this.pad.x + this.pad.w);
+    this._bouncing = false;
+    this._bounceTime = 0;
+    if (!onPad) { this._doCrash('MISSED THE PAD'); return; }
+    if (absAngle <= BOUNCE_RESOLVE_DEG) this._doSuccess(absAngle, Math.abs(this.omega));
+    else this._doCrash('TIPPED OVER');
   }
 
   // ---- Collision & landing check ----
@@ -442,7 +666,7 @@ export class Game extends Scene {
 
     // パッド外接触 -> クラッシュ（地形 or 障害物）
     if (!onPad) {
-      this._doCrash();
+      this._doCrash('MISSED THE PAD');
       return;
     }
 
@@ -457,7 +681,7 @@ export class Game extends Scene {
       // バウンス後もまだ速すぎる/傾きすぎ -> クラッシュ
       if (absVy > BOUNCE_VY || absVx > BOUNCE_VX || absAngle > BOUNCE_ANGLE) {
         this._bouncing = false;
-        this._doCrash();
+        this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega));
         return;
       }
       // まだ接触中だがゆっくりと落ち着いている -> もう一度バウンス処理
@@ -505,7 +729,15 @@ export class Game extends Scene {
 
     // ---- BOUNCE_* 超え -> 即クラッシュ ----
     this._bouncing = false;
-    this._doCrash();
+    this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega));
+  }
+
+  _crashReasonFor(absVy, absVx, absAngle, absOmega) {
+    if (absAngle > BOUNCE_ANGLE) return 'TIPPED OVER';
+    if (absVy > BOUNCE_VY) return 'TOO FAST';
+    if (absVx > BOUNCE_VX) return 'TOO MUCH SIDEWAYS SPEED';
+    if (absOmega > BOUNCE_OMEGA) return 'SPINNING TOO FAST';
+    return 'HARD LANDING';
   }
 
   // ---- 着地成功処理 ----
@@ -516,24 +748,40 @@ export class Game extends Scene {
     const landVx = Math.abs(this.vx || 0);
     this.y  = terrainY - 16;
     this.vx = 0; this.vy = 0; this.omega = 0;
+    this._bouncing = false;
+    this._bounceTime = 0;
 
     const sp        = stageParams(this.stage);
     const fuelBonus = Math.round((this.fuel || 0) * 10);
 
-    // 着地精度ボーナス: 速度・姿勢が安全値を下回るほど高得点（landing時の実速度を使用）
-    const softBonus = Math.round(Math.max(0, SAFE_VY - landVy) * 8);
-    const horzBonus = Math.round(Math.max(0, SAFE_VX - landVx) * 6);
-    const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - (absAngle || 0)) * 5);
-    const omgBonus  = Math.round(Math.max(0, SAFE_OMEGA - (absOmega || 0)) * 4);
+    if (this.bonus) {
+      // ボーナスミッション: 600 + 燃料*10（PRECISIONは3倍）。通常のステージ得点は付かない。
+      let sc = 600 + fuelBonus;
+      if (this.bonus.type === 'PRECISION') sc *= 3;
+      this._bonusScore = sc;
+      this._stageScore = sc;
+      this._guideBonus = 0;
+      this._bonusGrant = false;
+      if (this.bonus.type === 'PRECISION' && this.continues < CONTINUES_MAX) {
+        this.continues += 1;
+        this._bonusGrant = true;
+      }
+    } else {
+      // 着地精度ボーナス: 速度・姿勢が安全値を下回るほど高得点（landing時の実速度を使用）
+      const softBonus = Math.round(Math.max(0, SAFE_VY - landVy) * 8);
+      const horzBonus = Math.round(Math.max(0, SAFE_VX - landVx) * 6);
+      const uprBonus  = Math.round(Math.max(0, SAFE_ANGLE - (absAngle || 0)) * 5);
+      const omgBonus  = Math.round(Math.max(0, SAFE_OMEGA - (absOmega || 0)) * 4);
 
-    // 軌道追従ボーナス: 誘導線を忠実にたどるほど高得点（最大400点）
-    let guideBonus = 0;
-    if (this._guideDevCount > 0) {
-      const avgDev = this._guideDevTotal / this._guideDevCount;
-      guideBonus = Math.round(Math.max(0, 400 - avgDev * (400 / 60)));
+      // 軌道追従ボーナス: 誘導線を忠実にたどるほど高得点（最大400点）
+      let guideBonus = 0;
+      if (this._guideDevCount > 0) {
+        const avgDev = this._guideDevTotal / this._guideDevCount;
+        guideBonus = Math.round(Math.max(0, 400 - avgDev * (400 / 60)));
+      }
+      this._guideBonus  = guideBonus;
+      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
     }
-    this._guideBonus  = guideBonus;
-    this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
     this.totalScore  += this._stageScore;
 
     if (this.totalScore > this.high) {
@@ -542,22 +790,22 @@ export class Game extends Scene {
     }
 
     this.engine.audio.good();
-    this.state = 'cleared';
+    this.landingSeq = { t: 0 };
+    this._setOverlayState('landing');
   }
 
   // ---- クラッシュ処理 ----
-  _doCrash() {
+  // ボーナス中: Continue を消費せず BONUS FAILED。通常: Continue が残っていれば 'crashed'、無ければ GAME OVER。
+  _doCrash(reason) {
     this._explode();
     this.engine.audio.bad();
+    this._crashReason = reason || 'CRASHED';
+    this._bouncing = false;
+    this._bounceTime = 0;
 
-    this.totalScore += Math.round((this.fuel || 0) * 2);
-
-    if (this.totalScore > this.high) {
-      this.high = this.totalScore;
-      this.engine.storage.setHigh(meta.id, this.high);
-    }
-
-    this.state = 'gameover';
+    if (this.bonus) { this._setOverlayState('bonusfailed'); return; }
+    if (this.continues > 0) { this._setOverlayState('crashed'); return; }
+    this._gameOver(true);
   }
 
   // ---- Explosion particles ----
@@ -667,14 +915,23 @@ export class Game extends Scene {
     }
 
     // Lander craft
-    if (this.state !== 'gameover' || (this.particles && this.particles.length > 0)) {
-      if (this.state === 'play' || this.state === 'cleared') {
-        this._drawLander(ctx, this.x, this.y, this.angle);
-      }
+    if (this.state === 'play' || this.state === 'landing' || this.state === 'cleared') {
+      this._drawLander(ctx, this.x, this.y, this.angle);
     }
+
+    // Landing sequence (astronaut scene)。クリア画面はシーケンス終了後にのみ重なる
+    if (this.state === 'landing' && this.landingSeq) this._drawLandingScene(ctx);
 
     // HUD
     this._drawHUD(ctx);
+
+    // Bonus mission banner
+    if (this.state === 'play' && this.bonus && this._bannerT > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, this._bannerT));
+      this.engine.text('BONUS MISSION: ' + this.bonus.type.replace('_', ' '), W / 2, 150, 16, p.warn, 'center');
+      ctx.restore();
+    }
 
     // Bottom button controls
     this._drawButtons(ctx);
@@ -682,8 +939,98 @@ export class Game extends Scene {
     // Result overlays
     if (this.state === 'cleared') {
       this._drawClearScreen(ctx);
+    } else if (this.state === 'crashed') {
+      this._drawCrashed(ctx);
+    } else if (this.state === 'bonusfailed') {
+      this._drawBonusFailed(ctx);
     } else if (this.state === 'gameover') {
       this._drawGameOver(ctx);
+    }
+  }
+
+  // ---- Landing sequence (placeholder art; P2 replaces _drawAstronaut / _drawLandingFlag) ----
+  // 機体は upright(角度は update で0へ)・足元 y+16 が地面。ハッチは機体右側、ハシゴは機体右脚の内側。
+  _landingGeometry() {
+    const t  = this.landingSeq ? this.landingSeq.t : 0;
+    const ph = landingPhase(t);
+    const hatchX = this.x + 9, hatchY = this.y - 2;   // ハッチ位置
+    const ladderX = this.x + 11;
+    const groundAt = (x) => this._terrainYAt(Math.max(1, Math.min(W - 1, x)));
+    let ax = ladderX, ay = hatchY + 8, walkX = ladderX;
+    if (ph.name === 'descend') {
+      ay = hatchY + 8 + (groundAt(ladderX) - (hatchY + 8)) * ph.p;
+    } else if (ph.name === 'walk' || ph.name === 'flag' || ph.name === 'wave' || ph.name === 'done') {
+      const wp = ph.name === 'walk' ? ph.p : 1;
+      walkX = ladderX + 12 * wp;
+      ax = walkX;
+      ay = groundAt(walkX);
+    }
+    return { t, ph, hatchX, hatchY, ladderX, ax, ay, groundAt };
+  }
+
+  _drawLandingScene(ctx) {
+    const p = P();
+    const g = this._landingGeometry();
+    const { ph } = g;
+    // ハッチ（開閉）
+    const open = ph.name === 'hatch' ? ph.p : 1;
+    ctx.fillStyle = p.dark;
+    ctx.fillRect(g.hatchX - 1, g.hatchY - 5, 3, 10);
+    ctx.strokeStyle = p.hi; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(g.hatchX + 2, g.hatchY - 5);
+    ctx.lineTo(g.hatchX + 2 + 6 * open, g.hatchY - 5 + 5 * (1 - open) - 2 * open);
+    ctx.stroke();
+    // ハシゴ（ハッチ開放後）
+    if (ph.name !== 'hatch') {
+      const gy = g.groundAt(g.ladderX);
+      ctx.strokeStyle = p.mid; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(g.ladderX - 2, g.hatchY + 6); ctx.lineTo(g.ladderX - 2, gy);
+      ctx.moveTo(g.ladderX + 2, g.hatchY + 6); ctx.lineTo(g.ladderX + 2, gy); ctx.stroke();
+      for (let y = g.hatchY + 9; y < gy; y += 4) { ctx.beginPath(); ctx.moveTo(g.ladderX - 2, y); ctx.lineTo(g.ladderX + 2, y); ctx.stroke(); }
+    }
+    // 旗（planting 中〜）
+    if (ph.name === 'flag' || ph.name === 'wave' || ph.name === 'done') {
+      const ft = ph.name === 'flag' ? ph.p : 1;
+      this._drawLandingFlag(ctx, g.ax + 8, g.groundAt(g.ax + 8), ft);
+    }
+    // 宇宙飛行士（ハッチ開放後）
+    if (ph.name !== 'hatch') this._drawAstronaut(ctx, g.ax, g.ay, ph.name, g.t);
+    this.engine.text('TOUCHDOWN!', W / 2, 100, 16, p.hi, 'center');
+  }
+
+  // 宇宙飛行士（仮の簡易図形）。(x,y)=足元。phase: 'descend'|'walk'|'flag'|'wave'|'done'
+  _drawAstronaut(ctx, x, y, phase, t) {
+    const p = P();
+    const bob = phase === 'walk' ? Math.sin(t * 24) * 1 : 0;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    ctx.fillStyle = p.fg;
+    ctx.fillRect(-3, -8, 6, 6);            // 胴
+    ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2); // 脚
+    ctx.beginPath(); ctx.arc(0, -11, 3.5, 0, Math.PI * 2); ctx.fill(); // ヘルメット
+    ctx.fillStyle = p.mid; ctx.fillRect(-1.5, -12, 3, 2);               // バイザー
+    ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (phase === 'wave') {
+      const s = Math.sin(t * 12);
+      ctx.moveTo(3, -7); ctx.lineTo(6, -13 + s * 2);   // 手を振る
+    } else {
+      ctx.moveTo(3, -7); ctx.lineTo(5, -4);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 旗（仮）。(x,y)=地面の根元。t: 0..1 立てる進行
+  _drawLandingFlag(ctx, x, y, t) {
+    const p = P();
+    const h = 20 * Math.max(0, Math.min(1, t));
+    ctx.fillStyle = p.fg;
+    ctx.fillRect(x - 0.5, y - h, 1.5, h);
+    if (t > 0.6) {
+      ctx.fillStyle = p.warn;
+      ctx.fillRect(x + 1, y - h, 10, 7);
     }
   }
 
@@ -932,7 +1279,14 @@ export class Game extends Scene {
     const p = P();
 
     this.engine.text('LANDER', 52, 8, 16, p.fg, 'left');
-    this.engine.text('ST.' + this.stage, 52, 26, 12, p.mid, 'left');
+    this.engine.text('ST.' + this.stage + (this.bonus ? ' BONUS' : ''), 52, 26, 12, this.bonus ? p.warn : p.mid, 'left');
+    // 残り Continue（小さな機体アイコン）
+    for (let i = 0; i < (this.continues || 0); i++) {
+      const ix = 206 + i * 14;
+      this.engine.rect(ix, 45, 8, 9, p.mid);
+      this.engine.rect(ix + 2, 47, 4, 3, p.hi);
+      this.engine.rect(ix - 1, 54, 2, 2, p.mid); this.engine.rect(ix + 7, 54, 2, 2, p.mid);
+    }
     this.engine.text('HI ' + (this.high || 0),      W - 8, 8,  12, p.dim, 'right');
     this.engine.text('TOT ' + this.totalScore,       W - 8, 22, 12, p.mid, 'right');
 
@@ -1020,6 +1374,7 @@ export class Game extends Scene {
     const p  = P();
     const cx = W / 2;
     const cy = H / 2;
+    const b  = this.bonus;
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
@@ -1027,12 +1382,19 @@ export class Game extends Scene {
     this.engine.stroke(20, cy - 130, W - 40, 270, p.mid, 2);
     ctx.restore();
 
-    this.engine.text('STAGE CLEAR!',                cx, cy - 116, 24, p.hi,   'center');
-    this.engine.text('ST.' + this.stage + ' COMPLETE', cx, cy - 86, 13, p.mid, 'center');
-
-    this.engine.text('STAGE SCORE',                 cx, cy - 62,  12, p.dim,  'center');
-    this.engine.text('+' + (this._stageScore || 0), cx, cy - 46,  20, p.fg,   'center');
-    this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, cy - 22, 11, p.warn, 'center');
+    if (b) {
+      this.engine.text('BONUS CLEAR!',                cx, cy - 116, 24, p.warn, 'center');
+      this.engine.text(b.type.replace('_', ' '),      cx, cy - 86, 13, p.mid, 'center');
+      this.engine.text('BONUS SCORE',                 cx, cy - 62,  12, p.dim,  'center');
+      this.engine.text('+' + (this._bonusScore || 0), cx, cy - 46,  20, p.fg,   'center');
+      if (this._bonusGrant) this.engine.text('+1 CONTINUE!', cx, cy - 22, 12, p.hi, 'center');
+    } else {
+      this.engine.text('STAGE CLEAR!',                cx, cy - 116, 24, p.hi,   'center');
+      this.engine.text('ST.' + this.stage + ' COMPLETE', cx, cy - 86, 13, p.mid, 'center');
+      this.engine.text('STAGE SCORE',                 cx, cy - 62,  12, p.dim,  'center');
+      this.engine.text('+' + (this._stageScore || 0), cx, cy - 46,  20, p.fg,   'center');
+      this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, cy - 22, 11, p.warn, 'center');
+    }
 
     ctx.strokeStyle = p.dim;
     ctx.lineWidth   = 1;
@@ -1042,38 +1404,76 @@ export class Game extends Scene {
     this.engine.text('' + this.totalScore,          cx, cy + 30,  24, p.hi,   'center');
     this.engine.text('BEST ' + (this.high || 0),    cx, cy + 60,  14, p.mid,  'center');
 
-    this.engine.text('TAP → STAGE ' + (this.stage + 1), cx, cy + 90, 14, p.fg,  'center');
+    let next;
+    if (b) next = 'TAP → STAGE ' + (this.stage + 1);
+    else if (this.stage % BONUS_EVERY === 0) next = 'TAP → BONUS MISSION';
+    else next = 'TAP → STAGE ' + (this.stage + 1);
+    this.engine.text(next, cx, cy + 90, 14, p.fg,  'center');
     this.engine.text('BACK → MENU', cx, cy + 110, 11, p.dim, 'center');
   }
 
-  // ---- Game Over overlay ----
+  // ---- Crashed (continue available) ----
+  _drawCrashed(ctx) {
+    const p  = P();
+    const cx = W / 2;
+    const cy = H / 2;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
+    this.engine.rect(20, cy - 100, W - 40, 190, p.dark);
+    this.engine.stroke(20, cy - 100, W - 40, 190, p.bad, 2);
+    ctx.restore();
+    this.engine.text('CRASHED',                       cx, cy - 86, 28, p.bad,  'center');
+    this.engine.text(this._crashReason || '',         cx, cy - 50, 13, p.warn, 'center');
+    this.engine.text('SCORE ' + this.totalScore,      cx, cy - 26, 14, p.fg,   'center');
+    this.engine.text('TAP: CONTINUE (' + this.continues + ' left)', cx, cy + 8, 15, p.hi, 'center');
+    const g = this._giveUpRect();
+    this.engine.stroke(g.x, g.y, g.w, g.h, p.dim, 1.5);
+    this.engine.text('GIVE UP', cx, g.y + 8, 13, p.dim, 'center');
+  }
+
+  // ---- Bonus failed (no continue consumed) ----
+  _drawBonusFailed(ctx) {
+    const p  = P();
+    const cx = W / 2;
+    const cy = H / 2;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
+    this.engine.rect(20, cy - 90, W - 40, 170, p.dark);
+    this.engine.stroke(20, cy - 90, W - 40, 170, p.warn, 2);
+    ctx.restore();
+    this.engine.text('BONUS FAILED',                  cx, cy - 76, 26, p.warn, 'center');
+    this.engine.text(this._crashReason || '',         cx, cy - 42, 13, p.fg,   'center');
+    this.engine.text('NO CONTINUE USED',              cx, cy - 18, 12, p.dim,  'center');
+    this.engine.text('TAP → STAGE ' + (this.stage + 1), cx, cy + 20, 15, p.hi, 'center');
+  }
+
+  // ---- Game Over: name entry (DOM) -> ranking ----
   _drawGameOver(ctx) {
     const p  = P();
     const cx = W / 2;
     const cy = H / 2;
 
+    if (this.goPhase === 'name') {
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      this.engine.rect(20, 70, W - 40, 90, p.dark);
+      this.engine.stroke(20, 70, W - 40, 90, p.bad, 2);
+      ctx.restore();
+      this.engine.text('GAME OVER',                cx, 78, 26, p.bad, 'center');
+      this.engine.text('SCORE ' + this.totalScore + '  ST.' + this.stage, cx, 114, 15, p.fg, 'center');
+      this.engine.text('NEW RECORD!',              cx, 136, 12, p.warn, 'center');
+      return;
+    }
+
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(20, cy - 120, W - 40, 250, p.dark);
-    this.engine.stroke(20, cy - 120, W - 40, 250, p.bad, 2);
+    ctx.globalAlpha = 0.95;
+    this.engine.rect(20, 60, W - 40, 520, p.dark);
+    this.engine.stroke(20, 60, W - 40, 520, p.mid, 2);
     ctx.restore();
-
-    this.engine.text('GAME OVER',               cx, cy - 106, 28, p.bad,  'center');
-    this.engine.text('CRASHED! ST.' + this.stage, cx, cy - 74, 13, p.warn, 'center');
-
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(40, cy - 54); ctx.lineTo(W - 40, cy - 54); ctx.stroke();
-
-    this.engine.text('FINAL SCORE',             cx, cy - 40,  12, p.dim,  'center');
-    this.engine.text('' + this.totalScore,       cx, cy - 24,  26, p.fg,   'center');
-
-    ctx.beginPath(); ctx.moveTo(40, cy + 8); ctx.lineTo(W - 40, cy + 8); ctx.stroke();
-
-    this.engine.text('BEST',                    cx, cy + 18,  11, p.dim,  'center');
-    this.engine.text('' + (this.high || 0),     cx, cy + 34,  22, p.hi,   'center');
-
-    this.engine.text('TAP TO RETRY',            cx, cy + 68,  14, p.fg,   'center');
-    this.engine.text('BACK → MENU',        cx, cy + 88,  11, p.dim,  'center');
+    this.engine.text('GAME OVER',  cx, 70, 24, p.bad, 'center');
+    this.engine.text('SCORE ' + this.totalScore + '  ST.' + this.stage, cx, 102, 14, p.fg, 'center');
+    this.engine.text('RANKING',    cx, 128, 16, p.hi, 'center');
+    drawRankingRows(this.engine, ctx, this.rankList || [], 32, 160, W - 64, this.newIdx);
+    this.engine.text('TAP → TITLE', cx, 540, 14, p.fg, 'center');
   }
 }

@@ -15,6 +15,7 @@ const FILES = [
   '02_src/core/audio.js',
   '02_src/core/storage.js',
   '02_src/core/engine.js',
+  '02_src/ranking.js',
   '02_src/title.js',
   '02_src/game.js',
   '02_src/main.js',
