@@ -240,7 +240,7 @@ export class Game extends Scene {
     this._initStage();
   }
 
-  exit() { musicOf(this.engine).stopAll(0.6); }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() { const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   blocksBack() { return this.state === 'module'; }
@@ -272,7 +272,11 @@ export class Game extends Scene {
     const btype    = this.bonus ? this.bonus.type : null;
     this._info     = sp.info;
     this._body     = sp.info.body;
-    if (this._body.id !== this._musBodyId) { this._musBodyId = this._body.id; musicOf(this.engine).playBody(this._body.id); }   // 天体が変わったら曲を切替
+    // 天体が変わった／成功・クラッシュでBGMを止めていた場合は曲を（再）開始。ジングルは止める
+    if (this._body.id !== this._musBodyId || !this._bgmOn) {
+      this._musBodyId = this._body.id; this._bgmOn = true;
+      const mu = musicOf(this.engine); mu.stopJingle(0.3); mu.playBody(this._body.id);
+    }
     this._gravity  = sp.gravity;
     this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
     this._windT    = 0;
@@ -913,7 +917,9 @@ export class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
 
-    musicOf(this.engine).sfx.landing();
+    // 成功: BGMを止めて7/8拍子のジングル（着陸チャイム sfx.landing はジングルと衝突するため廃止）
+    { const mu = musicOf(this.engine); mu.stopAll(0.3); this._bgmOn = false;
+      mu.playJingle({ tier: Math.min(2, this._body.celebTier + (this._info.loop > 0 ? 1 : 0)), perfect: !!this._perfect }); }
     this.landingSeq = { t: 0 };
     this._setOverlayState('landing');
   }
@@ -924,6 +930,7 @@ export class Game extends Scene {
     this._explode();
     // 失敗音はユーザー指定で旧来の素朴な低いビープ（120Hz・ノコギリ波）に戻す。ミュート時は engine.audio.enabled=false で無音
     this.engine.audio.bad();
+    musicOf(this.engine).stopAll(0.4); this._bgmOn = false;   // クラッシュ: BGM無音（再開は _initStage で）
     this._crashReason = reason || 'CRASHED';
     this._bouncing = false;
     this._bounceTime = 0;

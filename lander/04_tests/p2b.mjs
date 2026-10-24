@@ -39,7 +39,8 @@ function makeMusic() {
   return {
     log, count: (n) => log.filter((x) => x === n || x.startsWith(n + ':')).length,
     attach: noop, setMuted: rec('setMuted'), isMuted: () => false,
-    playTitle: rec('playTitle'), playBody: rec('playBody'), stopAll: rec('stopAll'), tick: () => { log.push('tick'); },
+    playTitle: rec('playTitle'), playBody: rec('playBody'), stopAll: rec('stopAll'), stopJingle: rec('stopJingle'),
+    playJingle: (o) => { log.push('playJingle:' + (o && o.tier) + ',' + !!(o && o.perfect)); }, tick: () => { log.push('tick'); },
     sfx: { landing: rec('landing'), crash: rec('crash'), module: rec('module'), launch: rec('launch'), uiTap: rec('uiTap') },
   };
 }
@@ -193,7 +194,7 @@ setDebug(false);
   g.stage = STAGES_PER_BODY + 1; g._initStage(); ok(m.log.includes('playBody:europa') && m.count('playBody') === 2, 'body change switches the music to Europa');
   g.stage = 3 * STAGES_PER_BODY + 1; g._initStage(); ok(m.log.includes('playBody:mars'), 'later body switches again');
   // sfx
-  g.state = 'play'; g._doSuccess(0, 0); ok(m.count('landing') === 1, 'landing sfx on touchdown');
+  g.state = 'play'; g._doSuccess(0, 0); ok(m.count('landing') === 0 && m.count('playJingle') === 1, 'touchdown plays the jingle instead of the landing chime');
   { let bad = 0; g.engine.audio.bad = () => { bad++; }; g.state = 'play'; g._initStage(); g._doCrash('X');
     ok(bad === 1 && m.count('crash') === 0, 'crash plays the original low 8-bit beep (user preference), not the generated crash sfx'); }
   g.state = 'module'; g.offers = [MODULE_DEFS[0].id]; g._inputLock = 0; g._pickModule(0); ok(m.count('module') === 1, 'module sfx when a module is taken');
@@ -207,6 +208,44 @@ setDebug(false);
   const eReal = makeEngine(ctx, null); eReal.music = undefined; let thrown = null;
   try { const gr = new Game(eReal); gr.enter(); for (let i = 0; i < 120; i++) { gr.update(DT); gr.render(ctx); } gr._doSuccess(0, 0); gr.exit(); } catch (err) { thrown = err; }
   ok(!thrown, 'game works with the real unattached Music: ' + (thrown && thrown.message));
+}
+
+// ---------- 5b. BGM停止/ジングル/再開のフック順序 ----------
+{
+  const { ctx } = makeCtx(); const m = makeMusic(); const e = makeEngine(ctx, m);
+  const g = new Game(e); g.enter();
+  const mark = () => m.log.length;
+  const since = (i) => m.log.slice(i).filter((x) => x !== 'tick');
+  // 成功 -> stopAll(0.3) の後に playJingle（tier=celebTier、perfect 反映）
+  let i0 = mark(); g.state = 'play'; g._doSuccess(0, 0);
+  let seq = since(i0);
+  ok(seq[0] === 'stopAll:0.3' && seq[1].startsWith('playJingle:0,'), 'success: stopAll(0.3) then playJingle tier 0 on the Moon: ' + seq.join('|'));
+  ok(seq[1] === 'playJingle:0,' + !!g._perfect, 'perfect flag passed through');
+  g._perfect = true; // perfect 伝播の別確認（_doSuccess は内部で再計算するため、静止値で成功させる）
+  // 次ステージ（同一天体）-> stopJingle + playBody が再度呼ばれる
+  i0 = mark(); g._nextAfterClear(); seq = since(i0);
+  ok(seq.includes('stopJingle:0.3') && seq.includes('playBody:moon'), 'next stage after success: stopJingle + playBody (same body restarts): ' + seq.join('|'));
+  ok(seq.indexOf('stopJingle:0.3') < seq.indexOf('playBody:moon'), 'stopJingle before playBody');
+  // 通常の連続 _initStage（停止なし）では再起動しない
+  i0 = mark(); g.state = 'play'; g._initStage(); ok(since(i0).length === 0, 'no BGM stop in between => no restart');
+  // クラッシュ -> stopAll(0.4)、ジングルなし。CONTINUE -> stopJingle + playBody
+  g.continues = 2; i0 = mark(); g._doCrash('X'); seq = since(i0);
+  ok(seq.join('|') === 'stopAll:0.4', 'crash: stopAll(0.4) only: ' + seq.join('|'));
+  i0 = mark(); g._continue(); seq = since(i0);
+  ok(seq.includes('stopJingle:0.3') && seq.includes('playBody:moon'), 'CONTINUE after crash: stopJingle + playBody: ' + seq.join('|'));
+  // ボーナス開始 / モジュール選択後の次ステージ
+  g.state = "play"; g.stage = 3; g._doSuccess(0, 0); i0 = mark(); g._nextAfterClear(); seq = since(i0);
+  ok(g.bonus && seq.includes('stopJingle:0.3') && seq.some((x) => x.startsWith('playBody:')), 'bonus mission start: stopJingle + playBody: ' + seq.join('|'));
+  g.state = 'play'; g._doSuccess(0, 0); g.offers = [MODULE_DEFS[0].id]; g.state = 'module'; g._inputLock = 0; i0 = mark(); g._pickModule(0); seq = since(i0);
+  ok(seq.includes('stopJingle:0.3') && seq.some((x) => x.startsWith('playBody:')), 'module chosen then next stage: stopJingle + playBody: ' + seq.join('|'));
+  // 上位天体・周回で tier が上がる（IO celebTier1 -> 1、loop>0 で +1、上限2）
+  g.bonus = null; g.stage = 3 * STAGES_PER_BODY + 1; g.state = 'play'; g._initStage(); i0 = mark(); g._doSuccess(0, 0);
+  ok(since(i0).some((x) => /^playJingle:[12],/.test(x)), 'higher body gets tier >= 1');
+  g.stage = 5 * STAGES_PER_BODY + 1; g.state = 'play'; g._initStage(); i0 = mark(); g._doSuccess(0, 0);
+  ok(since(i0).some((x) => x.startsWith('playJingle:2,')), 'Titan/Venus tier 2 (capped)');
+  // タイトルへ戻る -> stopJingle + stopAll
+  i0 = mark(); g.exit(); seq = since(i0);
+  ok(seq.includes('stopJingle:0.3') && seq.some((x) => x.startsWith('stopAll')), 'exit: stopJingle + stopAll: ' + seq.join('|'));
 }
 
 // ---------- 6. ミュート ----------

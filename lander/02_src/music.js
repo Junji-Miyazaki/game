@@ -9,6 +9,8 @@ const _MUS_MAX_MUSIC_VOICES = 14; // 一過性の音楽ボイス上限（ベル/
 const _MUS_MAX_SFX_VOICES = 10;   // 効果音ボイス上限
 const _MUS_LOOKAHEAD = 0.6;       // 先読み秒
 const _MUS_XFADE = 2;             // 天体切替クロスフェード秒
+const _MUS_JINGLE_LEVEL = 0.2;    // ジングルは環境BGM(0.125)より大きく、SFX(0.32)より小さく
+const _MUS_MAX_JINGLE_VOICES = 18;
 
 const _musS = {
   audio: null, ctx: null, muted: false,
@@ -16,6 +18,7 @@ const _musS = {
   voices: [],   // 一過性ボイス {nodes, end, kind}
   scenes: [],   // 稼働中/フェードアウト中のシーン
   cur: null, curId: null,
+  jingle: null, dying: [], jbus: null, pulse: null,
 };
 
 const _musHas = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(_musSCENES, id);
@@ -30,12 +33,14 @@ function _musEnsure() {
   if (_musS.ctx === ctx) return true;
   // 新しいctx（または初回）: グラフを作り直す
   _musS.ctx = ctx; _musS.voices = []; _musS.scenes = []; _musS.cur = null; _musS.curId = null;
+  _musS.jingle = null; _musS.dying = []; _musS.pulse = null;
   const master = ctx.createGain();
   master.gain.value = _musS.muted ? 0 : 1;
   master.connect(ctx.destination);
   const mb = ctx.createGain(); mb.gain.value = _MUS_MUSIC_LEVEL; mb.connect(master);
   const sb = ctx.createGain(); sb.gain.value = _MUS_SFX_LEVEL; sb.connect(master);
-  _musS.master = master; _musS.musicBus = mb; _musS.sfxBus = sb;
+  const jb = ctx.createGain(); jb.gain.value = _MUS_JINGLE_LEVEL; jb.connect(master);
+  _musS.master = master; _musS.musicBus = mb; _musS.sfxBus = sb; _musS.jbus = jb;
   // ノイズバッファは1本を全員で共有（2秒、ループ再生）
   const len = Math.max(1, Math.floor(ctx.sampleRate * 2));
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -54,7 +59,7 @@ function _musDisconnect(nodes) {
 
 // 一過性ボイスを登録。上限超過なら false（呼び出し側は生成済みノードを捨てる）
 function _musCanVoice(kind) {
-  const cap = kind === 's' ? _MUS_MAX_SFX_VOICES : _MUS_MAX_MUSIC_VOICES;
+  const cap = kind === 's' ? _MUS_MAX_SFX_VOICES : kind === 'j' ? _MUS_MAX_JINGLE_VOICES : _MUS_MAX_MUSIC_VOICES;
   let n = 0;
   for (const v of _musS.voices) if (v.kind === kind) n++;
   return n < cap;
@@ -86,6 +91,11 @@ function _musSweep() {
     const keep = [];
     for (const v of _musS.voices) { if (v.end <= now) _musDisconnect(v.nodes); else keep.push(v); }
     _musS.voices = keep;
+  }
+  if (_musS.dying.length) {
+    const keep = [];
+    for (const d of _musS.dying) { if (d.killAt <= now) _musDisconnect(d.nodes); else keep.push(d); }
+    _musS.dying = keep;
   }
   if (_musS.scenes.length) {
     const keep = [];
@@ -318,6 +328,112 @@ function _musSwitch(id, fade) {
   _musS.curId = id;
 }
 
+
+// ---- 成功ジングル（7/8拍子 2+2+3、F リディアン・ドミナント）----
+// 音階: 1 2 3 #4 5 6 b7 = 0 2 4 6 7 9 10（半音）。#4(6)とb7(10)をフックに含める。オリジナル旋律（既存曲の引用なし）。
+const _MUS_J_ROOT = 349.23;                  // F4
+const _MUS_J_SCALE = [0, 2, 4, 6, 7, 9, 10];
+const _MUS_J_TEMPO = [168, 184, 200];        // 8分音符/分（tier別）
+const _MUS_J_ACCENTS = [0, 2, 4];            // 2+2+3 の群頭
+const _MUS_J_BAR = 7;
+// 旋律（F4=0 からの半音、null=休符）。イントロ2小節は1回、ループ2小節は stopJingle まで反復
+const _MUS_J_INTRO = [[12, 16, 19, 18, 21, 22, 21], [19, 22, 21, 18, 19, 16, 12]];
+const _MUS_J_LOOP = [
+  [[19, null, 21, null, 22, 21, 19], [18, null, 19, null, 16, null, 12]],                 // tier0: 疎で軽い
+  [[21, 24, null, 22, 21, null, 19], [21, 18, 19, null, 16, 18, 19]],                      // tier1: シンコペ
+  [[19, 21, 24, 22, 21, 19, 22], [21, 18, 19, 16, 16, 19, 24]],                            // tier2: 速く、末尾はアルペジオ上行
+];
+const _MUS_J_FILL = [26, 24, 22, 21, 19, 18, 16];  // tier>=1: ループ2周に1回、2小節目を下行フィルに差替え
+const _MUS_J_BASS = [[-12, -5, -12], [-12, -2, -5]];
+const _MUS_J_SPARKLE = [28, 31, 34];               // perfect: 各小節の最終群に高域アルペジオ（F7構成音）
+
+function _musPulse() {
+  const ctx = _musS.ctx;
+  if (_musS.pulse !== null) return _musS.pulse;
+  _musS.pulse = false;
+  if (typeof ctx.createPeriodicWave === 'function') {
+    try {
+      const N = 32, d = 0.25, real = new Float32Array(N + 1), imag = new Float32Array(N + 1);
+      for (let n = 1; n <= N; n++) {
+        real[n] = (2 / (n * Math.PI)) * Math.sin(2 * Math.PI * n * d);
+        imag[n] = (2 / (n * Math.PI)) * (1 - Math.cos(2 * Math.PI * n * d));
+      }
+      _musS.pulse = ctx.createPeriodicWave(real, imag);
+    } catch (e) { _musS.pulse = false; }
+  }
+  return _musS.pulse;
+}
+
+function _musJNote(J, kind, t, semi, dur, vel, type) {
+  if (!_musCanVoice('j')) return;
+  const ctx = _musS.ctx; const end = t + dur + 0.05;
+  const o = ctx.createOscillator();
+  o.frequency.value = _musHz(_MUS_J_ROOT, semi);
+  const pw = type === 'pulse' ? _musPulse() : null;
+  if (pw) o.setPeriodicWave(pw); else o.type = type === 'pulse' ? 'square' : type;
+  o.start(t); o._musStarted = true; o.stop(end);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(vel, t + 0.005);
+  env.gain.setValueAtTime(vel, t + dur * 0.55);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(env); env.connect(J.bus);
+  _musReg('j', [o, env], end);
+  J.log.push({ kind, t, semi }); if (J.log.length > 400) J.log.shift();
+}
+
+function _musJHat(J, t, vel) {
+  if (!_musCanVoice('j')) return;
+  const ctx = _musS.ctx; const end = t + 0.06;
+  const src = _musNoiseSrc(t, end);
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(vel, t);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+  src.connect(hp); hp.connect(env); env.connect(J.bus);
+  _musReg('j', [src, hp, env], end);
+  J.log.push({ kind: 'hat', t, semi: null }); if (J.log.length > 400) J.log.shift();
+}
+
+// n = ジングル開始からの8分音符通し番号。1つの8分音符分の音を t に予約
+function _musJStep(J, n, t) {
+  const E = J.E; const bar = Math.floor(n / _MUS_J_BAR); const e = n % _MUS_J_BAR;
+  let pat, bassBar;
+  if (bar < 2) { pat = _MUS_J_INTRO[bar]; bassBar = bar; }
+  else {
+    const k = bar - 2; const which = k % 2; const cycle = Math.floor(k / 2);
+    pat = _MUS_J_LOOP[J.tier][which]; bassBar = which;
+    if (which === 1 && J.tier >= 1 && cycle % 2 === 1) pat = _MUS_J_FILL;
+  }
+  const accent = _MUS_J_ACCENTS.indexOf(e);
+  const semi = pat[e];
+  const hi = J.tier >= 1 ? 1 : 0.85;
+  if (semi != null) {
+    const dur = E * (accent >= 0 ? 0.95 : 0.8);
+    _musJNote(J, 'lead', t, semi, dur, accent >= 0 ? 0.5 * hi : 0.38 * hi, 'pulse');
+    if (J.tier >= 2) _musJNote(J, 'dbl', t, semi + 12, dur * 0.8, 0.16, 'pulse');
+  }
+  if (accent >= 0) {
+    const grp = e === 4 ? 3 : 2;
+    _musJNote(J, 'bass', t, _MUS_J_BASS[bassBar][accent], E * grp * 0.85, 0.7, 'triangle');
+    _musJHat(J, t, accent === 0 ? 0.3 : 0.2);
+  }
+  if (J.perfect && e >= 4) _musJNote(J, 'sparkle', t, _MUS_J_SPARKLE[e - 4], E * 1.3, 0.14, 'sine');
+}
+
+function _musJStop(fade) {
+  const J = _musS.jingle; if (!J) return;
+  _musS.jingle = null;
+  const ctx = _musS.ctx; const now = ctx.currentTime;
+  const f = Math.max(0.05, +fade || 0);
+  J.bus.gain.cancelScheduledValues(now);
+  J.bus.gain.setValueAtTime(J.bus.gain.value, now);
+  J.bus.gain.linearRampToValueAtTime(0, now + f);
+  const killAt = now + f + 0.1;
+  for (const v of _musS.voices) if (v.kind === 'j') v.end = Math.min(v.end, killAt);
+  _musS.dying.push({ nodes: [J.bus], killAt });
+}
+
 export const Music = {
   attach(engineAudio) { _musS.audio = engineAudio || null; },
 
@@ -330,12 +446,41 @@ export const Music = {
   },
   isMuted() { return _musS.muted; },
 
-  playTitle() { _musSwitch('title', _MUS_XFADE); },
+  playTitle() { _musJStop(0.3); _musSwitch('title', _MUS_XFADE); },
   playBody(bodyId) { _musSwitch(_musHas(bodyId) && bodyId !== 'title' ? bodyId : 'moon', _MUS_XFADE); },
+
+  // 成功ジングル。BGMは呼び出し側が stopAll で止める（ここでは止めない）。ミュート/音声無効/ctx無しは何もしない
+  playJingle(opts) {
+    const o = opts || {};
+    if (!_musEnsure()) return;
+    _musJStop(0.05);
+    if (_musS.muted || (_musS.audio && _musS.audio.enabled === false)) return;
+    _musSweep();
+    const tier = Math.max(0, Math.min(2, Math.floor(+o.tier) || 0));
+    const ctx = _musS.ctx; const now = ctx.currentTime;
+    const bus = ctx.createGain(); bus.gain.value = 1; bus.connect(_musS.jbus);
+    const tempo = _MUS_J_TEMPO[tier];
+    const E = 60 / tempo;
+    _musS.jingle = { tier, perfect: !!o.perfect, bus, E, tempo, t0: now + 0.03, next: now + 0.03, n: 0, log: [] };
+  },
+  stopJingle(fadeSec = 0.3) {
+    if (!_musS.ctx || !_musEnsure()) return;
+    _musJStop(fadeSec);
+  },
+  // 同期用: { playing, eighthIndex(0..6), phase(0..1), tempo } / 再生していなければ null
+  jingleBeat() {
+    const J = _musS.jingle;
+    if (!J || !_musS.ctx) return null;
+    const x = (_musS.ctx.currentTime - J.t0) / J.E;
+    if (!(x >= 0)) return { playing: true, eighthIndex: 0, phase: 0, tempo: J.tempo };
+    const k = Math.floor(x);
+    return { playing: true, eighthIndex: k % _MUS_J_BAR, phase: x - k, tempo: J.tempo };
+  },
 
   stopAll(fadeSec = 1) {
     if (!_musS.ctx || !_musEnsure()) return;
     const f = Math.max(0.05, +fadeSec || 0);
+    _musJStop(f);
     for (const sc of _musS.scenes) if (sc.killAt == null) _musFadeOut(sc, f);
     _musS.cur = null; _musS.curId = null;
   },
@@ -344,6 +489,14 @@ export const Music = {
     if (!_musEnsure()) return;
     _musSweep();
     const now = _musS.ctx.currentTime;
+    const J = _musS.jingle;
+    if (J) {
+      if (J.next < now) { // 遅れは拍位置を保ったまま詰める
+        const skip = Math.ceil((now - J.next) / J.E); J.next += skip * J.E; J.n += skip;
+      }
+      let g = 16;
+      while (J.next < now + _MUS_LOOKAHEAD && g-- > 0) { _musJStep(J, J.n, J.next); J.n++; J.next += J.E; }
+    }
     const sc = _musS.cur;
     if (!sc || sc.killAt != null) return;
     if (sc.next < now) sc.next = now; // タブ休止後などの遅れは詰め直す
@@ -358,8 +511,11 @@ export const Music = {
   _debug() {
     let persistent = 0;
     for (const sc of _musS.scenes) persistent += sc.nodes.length;
-    return { voices: _musS.voices.length, scenes: _musS.scenes.length, persistentNodes: persistent, cur: _musS.curId };
+    return { jingle: _musS.jingle ? { tier: _musS.jingle.tier, perfect: _musS.jingle.perfect, E: _musS.jingle.E, t0: _musS.jingle.t0, tempo: _musS.jingle.tempo } : null,
+      jingleLog: _musS.jingle ? _musS.jingle.log.slice() : [], dying: _musS.dying.length, voices: _musS.voices.length, scenes: _musS.scenes.length, persistentNodes: persistent, cur: _musS.curId };
   },
+
+  jingleInfo: { root: _MUS_J_ROOT, scale: _MUS_J_SCALE.slice(), barLength: _MUS_J_BAR, accents: _MUS_J_ACCENTS.slice(), tempos: _MUS_J_TEMPO.slice() },
 
   sfx: {
     landing() {
