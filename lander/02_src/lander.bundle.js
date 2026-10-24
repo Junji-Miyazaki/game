@@ -3940,7 +3940,8 @@ class Game extends Scene {
   // ボーナス中: Continue を消費せず BONUS FAILED。通常: Continue が残っていれば 'crashed'、無ければ GAME OVER。
   _doCrash(reason) {
     this._explode();
-    musicOf(this.engine).sfx.crash();
+    // 失敗音はユーザー指定で旧来の素朴な低いビープ（120Hz・ノコギリ波）に戻す。ミュート時は engine.audio.enabled=false で無音
+    this.engine.audio.bad();
     this._crashReason = reason || 'CRASHED';
     this._bouncing = false;
     this._bounceTime = 0;

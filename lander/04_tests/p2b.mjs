@@ -194,7 +194,8 @@ setDebug(false);
   g.stage = 3 * STAGES_PER_BODY + 1; g._initStage(); ok(m.log.includes('playBody:mars'), 'later body switches again');
   // sfx
   g.state = 'play'; g._doSuccess(0, 0); ok(m.count('landing') === 1, 'landing sfx on touchdown');
-  g.state = 'play'; g._initStage(); g._doCrash('X'); ok(m.count('crash') === 1, 'crash sfx on crash');
+  { let bad = 0; g.engine.audio.bad = () => { bad++; }; g.state = 'play'; g._initStage(); g._doCrash('X');
+    ok(bad === 1 && m.count('crash') === 0, 'crash plays the original low 8-bit beep (user preference), not the generated crash sfx'); }
   g.state = 'module'; g.offers = [MODULE_DEFS[0].id]; g._inputLock = 0; g._pickModule(0); ok(m.count('module') === 1, 'module sfx when a module is taken');
   // 光 uiTap: crashed の CONTINUE
   g.state = 'play'; g._initStage(); g.continues = 2; g._doCrash('X'); g._inputLock = 0; const u0 = m.count('uiTap'); g.onInput('tap', { x: 180, y: 300 }); ok(m.count('uiTap') === u0 + 1, 'light uiTap on the CONTINUE overlay button');
