@@ -4827,15 +4827,15 @@ class Game extends Scene {
 
     if (body) drawBackdrop(ctx, body, t, this.stars);
 
-    // Descent trajectory guide (常に描画)
-    this._drawGuide(ctx);
-
     // Floating obstacles (stages 2+)
     this._drawObstacles(ctx);
 
     // Terrain + landing pad
     if (body && this.terrainPts && this.terrainPts.length > 0) drawTerrain(ctx, body, this.terrainPts, this.pad, t);
     if (this.pad) drawPad(ctx, this.pad, t);
+
+    // Descent trajectory guide（常に描画）— 地形・パッドより手前に描き、山に隠れずパッドまで繋がって見えるようにする
+    this._drawGuide(ctx);
 
     // Explosion particles
     drawParticles(ctx, this.particles);
