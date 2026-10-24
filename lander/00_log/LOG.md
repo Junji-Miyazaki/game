@@ -2,6 +2,12 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 統合・公開：HOLD/ABORT・再開・パイロット・所有キー・WORLD ADMIN（Opus 5.5 リーダー）
+- **統合**: ゲーム側（Sonnet: HOLD/ABORT、保存と再開、PUBLIC BETA、パイロット3名、WORLD ADMIN）と中継側（Sonnet: 名前ごとベスト、names.json、所有キー、/name /delete /admin/*）を並行実装→統合。全テスト 1,212件通過（smoke p1 p15 p2a p2m p2b p2j p3fix p4hold p4save p4net）。
+- **問題と対処**: 2担当が同じ p3fix.mjs を編集し、中継担当の「送信に鍵を自動付与」修正が後勝ちで消えていた → リーダーが1行で復元。教訓: 並行担当に同じテストファイルを触らせない。
+- **互換性の確認**: 新ゲームは旧中継（稼働中）でも送信可、/name は旧中継で404→オフライン扱いで登録許可。よって **ゲームを先に公開→中継を後で差し替え** の順序で安全。公開済み（PUBLIC BETA を公開バンドルで確認）。
+- **次（ユーザー作業）**: Cloudflare で ranking-worker.js を貼り替えて Deploy、Secret `ADMIN_KEY` を追加。差し替え後、ユーザーのスマホで1回プレイして「みや」を鍵付きで確保。
+
 ## 2026-10-25 世界ランキング有効化（Opus 5.5 リーダー）
 - **実施**: ユーザーが Cloudflare Worker `lander-ranking` を作成（https://lander-ranking.euler057721.workers.dev）。`02_src/net.js` の `RELAY_URL` に設定して公開。
 - **確認（データを書かない範囲）**: GET /ranking 200 `{"top":[]}`、CORS許可元 `https://junji-miyazaki.github.io`、OPTIONS 204、許可外Origin 403、不正値 400。テスト実行後も本番ランキングは空（Node の fetch は Origin を付けないため 403 で弾かれ、書き込まれない）。
