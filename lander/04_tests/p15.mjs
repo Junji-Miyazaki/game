@@ -178,13 +178,13 @@ const MOONLIKE = [0, 1, 2];
   let allDistinct = true, n2 = 0;
   for (let i = 0; i < 500; i++) { const o = rollOffers(newModules()); if (o.length === 2) n2++; if (new Set(o).size !== o.length) allDistinct = false; }
   ok(allDistinct && n2 === 500, 'offers: 2 distinct each time');
-  const mods = newModules(); mods.fuel = 2; mods.stab = 2; mods.radar = 1;
+  const mods = newModules(); mods.stab = 2; mods.radar = 1;
   let leaked = false; for (let i = 0; i < 500; i++) { const o = rollOffers(mods); if (o.some(id => isMaxed(mods, id))) leaked = true; if (o.length !== 2) leaked = true; }
   ok(!leaked, 'maxed modules never offered (3 left -> 2 offers)');
   mods.shock = 2; ok(rollOffers(mods).join() === 'shield', 'only 1 candidate -> 1 offer');
-  mods.shield = 1; ok(rollOffers(mods).length === 0, 'all maxed -> no offers');
+  mods.shield = 2; ok(rollOffers(mods).length === 0, 'all maxed -> no offers');
   unseed();
-  ok(MODULE_DEFS.map(d => d.id + d.max).join() === 'fuel2,stab2,shock2,radar1,shield1', 'module pool and max levels');
+  ok(MODULE_DEFS.map(d => d.id + d.max).join() === 'stab2,shock2,radar1,shield2', 'module pool and max levels');
 
   // flow: bonus resolves -> module state -> pick -> next stage
   let { e, g } = newGame();
@@ -267,6 +267,16 @@ const MOONLIKE = [0, 1, 2];
     const { g: n } = newGame(); n.stage = 3; n._initStage(); n._gravity = 0; n.x = 180; n.y = 200; n.vx = n.vy = 0;
     n.obstacles = [{ x: 180, y: 200, vx: 0, r: 12, style: 'rock' }]; n.update(1 / 60);
     ok(n.state === 'crashed', 'without shield a hit crashes'); }
+  // SHIELD Lv2: ステージ毎に2回吸収、3回目でクラッシュ、次ステージで2回分に回復
+  { const { g } = newGame(); g.modules.shield = 2; g.stage = 3; g._initStage();
+    ok(g._shieldCharges === 2, 'shield lv2 starts with 2 charges');
+    g._gravity = 0; g.vx = g.vy = 0;
+    g.obstacles = [{ x: 180, y: 200, vx: 0, r: 12, style: 'rock' }, { x: 100, y: 300, vx: 0, r: 12, style: 'rock' }, { x: 260, y: 350, vx: 0, r: 12, style: 'rock' }];
+    g.x = 180; g.y = 200; g.update(1 / 60); ok(g.state === 'play' && g._shieldCharges === 1, 'lv2: 1st hit absorbed');
+    g.render(ctx);
+    g.x = 100; g.y = 300; g.update(1 / 60); ok(g.state === 'play' && g._shieldCharges === 0, 'lv2: 2nd hit absorbed');
+    g.x = 260; g.y = 350; g.update(1 / 60); ok(g.state === 'crashed', 'lv2: 3rd hit crashes');
+    g.continues = 3; g._initStage(); ok(g._shieldCharges === 2, 'lv2: recharges to 2 next stage'); }
 }
 
 // ---------- 7. balance: PRECISION x2, per-stage score < 8000 with maxed modules ----------
@@ -279,7 +289,7 @@ const MOONLIKE = [0, 1, 2];
     g._guideDevCount = 1; g._guideDevTotal = 0;   // 誘導ボーナス最大
     g._doSuccess(0, 0);
     worst = Math.max(worst, g._stageScore);
-    if (bonus === 'PRECISION') ok(g._bonusScore === (600 + 1500) * 2, 'PRECISION x2 with 150 fuel: ' + g._bonusScore);
+    if (bonus === 'PRECISION') ok(g._bonusScore === (600 + 1000) * 2, 'PRECISION x2 with full 100 fuel (no fuel tank module): ' + g._bonusScore);
   }
   ok(worst < 8000, 'max per-stage score with all modules maxed < 8000: ' + worst);
   const { g: gn } = newGame(); gn.bonus = { type: 'PRECISION' }; gn._initStage(); gn.fuel = 100; onPad(gn); gn._doSuccess(0, 0);
@@ -511,7 +521,7 @@ const realFetch = globalThis.fetch;
         else if (k < 0.45) { onPad(g); g.vy = 1; g.angle = 0; if (g.state === 'play') g._doSuccess(0, 0); }
         else if (k < 0.6) { if (g.state === 'play') g._doCrash('FUZZ'); }
         else if (k < 0.7) { g.continues = 0; if (g.state === 'play') g._doCrash('FUZZ'); }
-        else if (k < 0.85) { const d = MODULE_DEFS[Math.floor(rnd() * 5)]; g.modules[d.id] = Math.min(d.max, g.modules[d.id] + 1); }
+        else if (k < 0.85) { const d = MODULE_DEFS[Math.floor(rnd() * MODULE_DEFS.length)]; g.modules[d.id] = Math.min(d.max, g.modules[d.id] + 1); }
         else setDebug(rnd() < 0.5);
       }
       if (g.state === 'module' && rnd() < 0.3) g._pickModule(Math.floor(rnd() * 2) % Math.max(1, g.offers.length));

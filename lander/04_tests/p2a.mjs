@@ -90,11 +90,11 @@ const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
     for (let b = 0; b < BODIES.length; b++) for (const loop of [0, 1]) for (const bonus of [null, 'MOVING_PAD', 'PRECISION', 'FUEL_RUN']) {
       const g = new Game(makeEngine(ctx)); g.enter();
       g.stage = b * STAGES_PER_BODY + 1 + loop * 12; g.bonus = bonus ? { type: bonus, afterStage: g.stage } : null; g._initStage();
-      g.modules = { fuel: 1, stab: 2, shock: 1, radar: 1, shield: 1 };
+      g.modules = { stab: 2, shock: 1, radar: 1, shield: 2 };
       g._dbgPrev = 'play';
       for (const s of STATES) {
         if (s === 'landing' || s === 'cleared') { g.landingSeq = { t: 0 }; g._perfect = true; }
-        if (s === 'module') g.offers = ['fuel', 'radar'];
+        if (s === 'module') g.offers = ['shield', 'radar'];
         if (s === 'gameover') { g.rankList = [{ name: 'AAA', score: 1234, stage: 5 }, { name: 'BBB', score: 99, stage: 1 }]; g.newIdx = 0; }
         g.state = s;
         g._thrustMain = g._thrustRcsL = g._thrustRcsR = (frames % 2 === 0);
@@ -165,7 +165,7 @@ const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
   // クリアパネルがパッドと重ならない（パッド面 y>=455）
   ok(cr.y + cr.h <= 455 - 100, 'clear panel clear of landing scene');
   // 5つのモジュール全てにグリフがある
-  ok(MODULE_DEFS.every(d => ['fuel', 'stab', 'shock', 'radar', 'shield'].includes(d.id)), 'module ids have glyphs');
+  ok(MODULE_DEFS.every(d => ['stab', 'shock', 'radar', 'shield'].includes(d.id)), 'module ids have glyphs');
   // パレットのキー互換
   const P = PALETTES.SPACE; ok(['bg', 'dark', 'dim', 'mid', 'fg', 'hi', 'warn', 'bad'].every(k => /^#[0-9a-f]{6}$/i.test(P[k])), 'palette keys kept');
   ok(P.bg.toLowerCase() === '#06080e' && P.fg.toLowerCase() === '#ece6d8' && P.mid.toLowerCase() === '#63d8c9' && P.warn.toLowerCase() === '#ffb547' && P.bad.toLowerCase() === '#ff4a3d', 'design palette baseline');

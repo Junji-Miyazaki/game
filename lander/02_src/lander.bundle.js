@@ -516,12 +516,12 @@ function celebrationPose(body, loop, t, perfect) {
 
 // ---- 02_src/modules.js ----
 // モジュール（P1.5）: 3ステージごと（ボーナス終了後）に2択で1つ獲得。ラン中は永続（Continueで維持、新規ランでリセット）。
+// 燃料タンクはユーザー判断で候補から除外（2026-10-25）。fuelMulFor は FUEL_RUN 等の計算互換のため残す（Lv0=×1）。
 const MODULE_DEFS = [
-  { id: 'fuel',   name: 'FUEL TANK',       icon: 'F', max: 2, desc: 'MAX FUEL +25% PER LEVEL' },
   { id: 'stab',   name: 'STABILIZER',      icon: 'S', max: 2, desc: 'STRONGER ROTATION DAMPING' },
   { id: 'shock',  name: 'SHOCK ABSORBER',  icon: 'A', max: 2, desc: 'LANDING SPEED LIMITS UP' },
   { id: 'radar',  name: 'RADAR',           icon: 'R', max: 1, desc: 'SHOWS PREDICTED TOUCHDOWN + VELOCITY' },
-  { id: 'shield', name: 'SHIELD',          icon: 'H', max: 1, desc: 'ABSORBS 1 OBSTACLE HIT PER STAGE' },
+  { id: 'shield', name: 'SHIELD',          icon: 'H', max: 2, desc: 'ABSORBS 1 HIT PER LEVEL, EVERY STAGE' },
 ];
 const MODULE_IDS = MODULE_DEFS.map(m => m.id);
 const moduleDef = (id) => MODULE_DEFS.find(m => m.id === id) || null;
@@ -1733,13 +1733,14 @@ function drawParticles(ctx, parts) {
   }
   ctx.restore();
 }
-function drawShieldRing(ctx, x, y, flash, ready) {
+function drawShieldRing(ctx, x, y, flash, ready, charges = 1) {
   const p = P();
+  const n = Math.max(1, Math.min(2, charges | 0));   // 残り回数ぶんの同心円（吸収直後で0でもフラッシュ用に1本）
   ctx.save();
   ctx.globalAlpha = flash > 0 ? Math.min(1, flash * 2) : 0.32;
   ctx.strokeStyle = flash > 0 ? p.hi : p.mid;
   ctx.lineWidth = flash > 0 ? 2.5 : 1;
-  ctx.beginPath(); ctx.arc(x, y, 23, 0, TAU); ctx.stroke();
+  for (let i = 0; i < n; i++) { ctx.beginPath(); ctx.arc(x, y, 23 + i * 5, 0, TAU); ctx.stroke(); }
   ctx.restore();
 }
 function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
@@ -3504,7 +3505,8 @@ class Game extends Scene {
     this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
     this._windT    = 0;
     this._windAccel = 0;
-    this._shieldReady = this._lvl('shield') > 0;
+    this._shieldCharges = this._lvl('shield');          // SHIELD: レベル＝このステージで吸収できる被弾回数
+    this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
     this._introT   = (sp.info.firstOfBody && !btype) ? INTRO_S : 0;
     this._padW     = btype === 'PRECISION' ? PRECISION_PAD_W : sp.padW;
@@ -3959,8 +3961,9 @@ class Game extends Scene {
         const dx = this.x - ob.x;
         const dy = this.y - ob.y;
         if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
-          if (this._shieldReady) {          // SHIELD: ステージ毎に1回だけ被弾を吸収（その障害物はこのステージ中は無効）
-            this._shieldReady = false;
+          if (this._shieldCharges > 0) {    // SHIELD: 残り回数があれば被弾を吸収（その障害物はこのステージ中は無効）
+            this._shieldCharges -= 1;
+            this._shieldReady = this._shieldCharges > 0;
             this._shieldFlash = 0.5;
             ob.spent = true;
             this.engine.audio.beep && this.engine.audio.beep(660, 0.08, 'triangle', 0.10);
@@ -4255,7 +4258,7 @@ class Game extends Scene {
 
     // SHIELD: 準備完了のリング / 吸収時のフラッシュ
     if (this.state === 'play' && this._lvl('shield') > 0 && (this._shieldReady || this._shieldFlash > 0)) {
-      drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady);
+      drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady, this._shieldCharges);
     }
 
     // Landing sequence (astronaut scene)。クリア画面中も祝福を続けるため、シーンは cleared でも描く（パネルは重ならない位置）

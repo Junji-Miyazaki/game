@@ -283,7 +283,8 @@ export class Game extends Scene {
     this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
     this._windT    = 0;
     this._windAccel = 0;
-    this._shieldReady = this._lvl('shield') > 0;
+    this._shieldCharges = this._lvl('shield');          // SHIELD: レベル＝このステージで吸収できる被弾回数
+    this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
     this._introT   = (sp.info.firstOfBody && !btype) ? INTRO_S : 0;
     this._padW     = btype === 'PRECISION' ? PRECISION_PAD_W : sp.padW;
@@ -738,8 +739,9 @@ export class Game extends Scene {
         const dx = this.x - ob.x;
         const dy = this.y - ob.y;
         if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
-          if (this._shieldReady) {          // SHIELD: ステージ毎に1回だけ被弾を吸収（その障害物はこのステージ中は無効）
-            this._shieldReady = false;
+          if (this._shieldCharges > 0) {    // SHIELD: 残り回数があれば被弾を吸収（その障害物はこのステージ中は無効）
+            this._shieldCharges -= 1;
+            this._shieldReady = this._shieldCharges > 0;
             this._shieldFlash = 0.5;
             ob.spent = true;
             this.engine.audio.beep && this.engine.audio.beep(660, 0.08, 'triangle', 0.10);
@@ -1034,7 +1036,7 @@ export class Game extends Scene {
 
     // SHIELD: 準備完了のリング / 吸収時のフラッシュ
     if (this.state === 'play' && this._lvl('shield') > 0 && (this._shieldReady || this._shieldFlash > 0)) {
-      drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady);
+      drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady, this._shieldCharges);
     }
 
     // Landing sequence (astronaut scene)。クリア画面中も祝福を続けるため、シーンは cleared でも描く（パネルは重ならない位置）

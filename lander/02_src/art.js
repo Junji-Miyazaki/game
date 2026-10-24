@@ -907,13 +907,14 @@ export function drawParticles(ctx, parts) {
   }
   ctx.restore();
 }
-export function drawShieldRing(ctx, x, y, flash, ready) {
+export function drawShieldRing(ctx, x, y, flash, ready, charges = 1) {
   const p = P();
+  const n = Math.max(1, Math.min(2, charges | 0));   // 残り回数ぶんの同心円（吸収直後で0でもフラッシュ用に1本）
   ctx.save();
   ctx.globalAlpha = flash > 0 ? Math.min(1, flash * 2) : 0.32;
   ctx.strokeStyle = flash > 0 ? p.hi : p.mid;
   ctx.lineWidth = flash > 0 ? 2.5 : 1;
-  ctx.beginPath(); ctx.arc(x, y, 23, 0, TAU); ctx.stroke();
+  for (let i = 0; i < n; i++) { ctx.beginPath(); ctx.arc(x, y, 23 + i * 5, 0, TAU); ctx.stroke(); }
   ctx.restore();
 }
 export function drawRadar(ctx, hit, px, py, x, y, vx, vy) {

@@ -1,10 +1,10 @@
 // モジュール（P1.5）: 3ステージごと（ボーナス終了後）に2択で1つ獲得。ラン中は永続（Continueで維持、新規ランでリセット）。
+// 燃料タンクはユーザー判断で候補から除外（2026-10-25）。fuelMulFor は FUEL_RUN 等の計算互換のため残す（Lv0=×1）。
 export const MODULE_DEFS = [
-  { id: 'fuel',   name: 'FUEL TANK',       icon: 'F', max: 2, desc: 'MAX FUEL +25% PER LEVEL' },
   { id: 'stab',   name: 'STABILIZER',      icon: 'S', max: 2, desc: 'STRONGER ROTATION DAMPING' },
   { id: 'shock',  name: 'SHOCK ABSORBER',  icon: 'A', max: 2, desc: 'LANDING SPEED LIMITS UP' },
   { id: 'radar',  name: 'RADAR',           icon: 'R', max: 1, desc: 'SHOWS PREDICTED TOUCHDOWN + VELOCITY' },
-  { id: 'shield', name: 'SHIELD',          icon: 'H', max: 1, desc: 'ABSORBS 1 OBSTACLE HIT PER STAGE' },
+  { id: 'shield', name: 'SHIELD',          icon: 'H', max: 2, desc: 'ABSORBS 1 HIT PER LEVEL, EVERY STAGE' },
 ];
 export const MODULE_IDS = MODULE_DEFS.map(m => m.id);
 export const moduleDef = (id) => MODULE_DEFS.find(m => m.id === id) || null;
