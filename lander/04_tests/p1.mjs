@@ -157,12 +157,9 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   g._doCrash('LAST');
   ok(g.state === 'gameover', 'crash at 0 continues -> gameover');
   ok(g.totalScore === 777 + 100, 'final crash adds fuel*2 once');
-  ok(g.goPhase === 'name', 'qualifying score -> name entry');
+  ok(g.goPhase === 'ranking' && g.newIdx === 0, 'P1.5: qualifying score -> auto-recorded (no name prompt)');
   // render in each state
   g.render(ctx);
-  // name -> ranking via test hook
-  g._submitName('  ');
-  ok(g.goPhase === 'ranking' && g.newIdx === 0, 'empty name accepted');
   const r = loadRanking(e.storage);
   ok(r.length === 1 && r[0].name === 'PILOT' && r[0].score === 877 && r[0].stage === 4, 'ranking saved with PILOT, score, furthest stage');
   g.render(ctx);
@@ -178,11 +175,13 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   const gr = h._giveUpRect();
   tap(h, gr.x + 5, gr.y + 5);
   ok(h.state === 'gameover' && h.continues === 3 && h.totalScore === 50, 'give up -> gameover (no fuel add)');
-  // name trimming / japanese / 10 chars / lastName
-  h._submitName('  日本語の名前ですよろしくおねがいします  ');
-  const rr = loadRanking(o.e.storage);
-  ok(Array.from(rr[0].name).length === 10, 'name cut to 10 chars: ' + rr[0].name);
-  ok(o.e.storage.get('lastName') === rr[0].name, 'lastName stored');
+  // P1.5: 名前は事前入力（lastName）。10文字に切り詰め・日本語可
+  const o2 = newGame();
+  o2.e.storage.set('lastName', '  日本語の名前ですよろしくおねがいします  ');
+  o2.g.stage = 2; o2.g.totalScore = 50; o2.g._doCrash('X'); tick(o2.g, 0.6);
+  const gr2 = o2.g._giveUpRect(); tap(o2.g, gr2.x + 5, gr2.y + 5);
+  const rr = loadRanking(o2.e.storage);
+  ok(Array.from(rr[0].name).length === 10, 'stored name cut to 10 chars: ' + rr[0].name);
   // score 0 -> directly ranking
   const z = newGame().g; z.totalScore = 0; z.fuel = 0; z.continues = 0; z._doCrash('Z');
   ok(z.state === 'gameover' && z.goPhase === 'ranking', 'non-qualifying -> ranking directly');
@@ -194,9 +193,8 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   ok(full.g.goPhase === 'ranking', 'score equal to 10th does not qualify');
   const full2 = newGame(); saveRanking(full2.e.storage, list);
   full2.g.totalScore = 150; full2.g.continues = 0; full2.g.fuel = 0; full2.g._doCrash('Q');
-  ok(full2.g.goPhase === 'name', 'score beating 10th qualifies');
-  full2.g._submitName('NEW');
-  ok(loadRanking(full2.e.storage).length === 10 && full2.g.rankList[full2.g.newIdx].name === 'NEW', 'inserted, capped, highlighted index valid');
+  ok(full2.g.newIdx >= 0, 'score beating 10th qualifies (auto-recorded)');
+  ok(loadRanking(full2.e.storage).length === 10 && full2.g.rankList[full2.g.newIdx].name === 'PILOT', 'inserted, capped, highlighted index valid');
 }
 
 // ---------- 5. bonus missions ----------
@@ -221,7 +219,9 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   ok(g.state === 'bonusfailed' && g.continues === c0, 'bonus crash -> bonusfailed, continue kept');
   g.render(ctx);
   tick(g, 0.6); tap(g);
-  ok(g.stage === 4 && !g.bonus && g.state === 'play', 'bonus failed tap -> stage 4');
+  ok(g.state === 'module', 'P1.5: bonus failed tap -> module choice');
+  g._pickModule(0);
+  ok(g.stage === 4 && !g.bonus && g.state === 'play', 'bonus failed tap -> module pick -> stage 4');
   clearStage(4); tap(g);
   ok(g.stage === 5 && !g.bonus, 'stage 4 clear: no bonus');
   // stage 6 -> PRECISION
@@ -233,16 +233,18 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   const t0 = g.totalScore;
   g._doSuccess(0, 0);
   ok(g.continues === 3 && g._bonusGrant, 'PRECISION success: +1 continue (2->3)');
-  ok(g._bonusScore === (600 + 400) * 3 && g.totalScore === t0 + 3000, 'PRECISION score x3: ' + g._bonusScore);
+  ok(g._bonusScore === (600 + 400) * 2 && g.totalScore === t0 + 2000, 'P1.5: PRECISION score x2: ' + g._bonusScore);
   tick(g, 3);
   g.render(ctx);
   tap(g);
+  ok(g.state === 'module', 'bonus clear -> module choice'); g._pickModule(0);
   ok(g.stage === 7 && !g.bonus, 'bonus clear -> stage 7');
   // cap at 3
   g.stage = 6; g.bonus = { type: 'PRECISION' }; g._initStage(); g.continues = 3;
   g.x = g.pad.x + g.pad.w / 2; g.y = g._terrainYAt(g.x) - 16; g.vx = 0; g.vy = 1; g.angle = 0;
   g._doSuccess(0, 0);
   ok(g.continues === 3 && !g._bonusGrant, 'continue capped at 3');
+  for (const k in g.modules) g.modules[k] = 0;   // P1.5: 途中で取得したランダムなモジュールを除く
   // stage 9 -> FUEL_RUN
   clearStage(9); tap(g);
   ok(g.bonus && g.bonus.type === 'FUEL_RUN' && g.fuel === 45, 'after stage 9: FUEL_RUN with 45 fuel');
@@ -253,7 +255,7 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   ok(g.bonus && g.bonus.type === 'MOVING_PAD', 'rotation wraps to MOVING_PAD');
   // bonus gravity/obstacles from stage s
   g.stage = 5; g.bonus = { type: 'MOVING_PAD' }; g._initStage();
-  ok(g.obstacles.length === 5, 'bonus keeps stage obstacles (stage 5 -> 5)');
+  ok(g.obstacles.length === 4, 'P1.5: bonus keeps stage obstacles (stage 5 -> 4 by new formula)');
 }
 
 // ---------- 6. MOVING_PAD uses live pad position ----------
@@ -348,7 +350,12 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   t.onInput('tap', { x: b.x + 5, y: b.y + 5 });
   ok(t.showRank === false, 'RANKING toggles off');
   t.onInput('tap', { x: 10, y: 10 });
-  ok(started === 1, 'tap elsewhere starts game');
+  ok(started === 0, 'P1.5: no stored name -> START waits for name entry');
+  t._submitName('  ');
+  ok(started === 1 && t.name === 'PILOT', 'name submitted -> game starts');
+  t.onInput('tap', { x: 10, y: 10 });
+  ok(started === 2, 'name stored -> tap starts immediately');
+  t.render(ctx);
 }
 
 // ---------- 10. fuzz ----------
@@ -371,7 +378,7 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
         else if (k < 0.9) g._doCrash('FUZZ');
         else { g.continues = 0; g._doCrash('FUZZ'); }
       }
-      if (g.state === 'gameover' && g.goPhase === 'name' && rnd() < 0.5) g._submitName(rnd() < 0.5 ? '' : 'X');
+      if (g.state === 'module' && rnd() < 0.5) g._pickModule(Math.floor(rnd() * 2) % Math.max(1, g.offers.length));
       if (rnd() < 0.002) g.enter();
       g.update(rnd() < 0.05 ? 0.1 : 1 / 60);
       g.render(ctx);

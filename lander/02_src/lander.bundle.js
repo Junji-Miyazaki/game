@@ -361,6 +361,320 @@ class Engine {
 }
 
 
+// ---- 02_src/bodies.js ----
+// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星、12ステージで1周）。
+// ゲーム性に関わる数値（重力・大気）と、P2が描画に使う見た目トークンを1か所に集約する。
+// 真空の天体（moon/europa/io）は風・抗力・視界制限なし（ユーザー指摘どおり）。
+const GRAVITY_BASE = 0.25;   // 月(1.62 m/s^2)でのステージ1重力 px/s^2
+const G_REF = 1.62;
+const STAGES_PER_BODY = 2;
+
+// wind: base = 定常風の大きさ(px/s^2, 符号はステージごとにランダム) / gust = 突風の振幅(px/s^2)。0なら風なし。
+// drag: 水平速度の抗力係数(1/s)。dragY: 垂直（省略時は drag と同じ）。visibility: 視界半径px(null=無制限)。heat: 高温(燃料の受動消費と主エンジン増)。
+// 見た目トークン(P2用): sky=[上,下] / ground=地面塗り / rim=地平線の縁 / accent / fog / haze / skyObject / mood
+const BODIES = [
+  { id: 'moon', celebTier: 0, name: 'MOON', atmoTag: 'NONE', realG: 1.62, atmoLabel: 'NONE', atmoType: 'none',
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'rock',
+    visual: { sky: ['#05060d', '#0a0e1c'], ground: '#2a2d3a', rim: '#8a90a8', accent: '#c9ecff', fog: null, haze: null,
+      skyObject: 'earth', mood: 'grey regolith, Earthrise' } },
+  { id: 'europa', celebTier: 0, name: 'EUROPA', atmoTag: 'NONE', realG: 1.31, atmoLabel: 'NONE (TRACE)', atmoType: 'none',
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'ice',
+    visual: { sky: ['#04060f', '#0c1428'], ground: '#cfe6f2', rim: '#ffffff', accent: '#7fd8ff', fog: null, haze: null,
+      skyObject: 'jupiter', mood: 'cracked white ice, giant Jupiter overhead' } },
+  { id: 'io', celebTier: 1, name: 'IO', atmoTag: 'TRACE', realG: 1.80, atmoLabel: 'TRACE SO₂', atmoType: 'trace',
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'lava',
+    visual: { sky: ['#0a0508', '#241005'], ground: '#b58a1e', rim: '#ffd23f', accent: '#ff6a1a', fog: null, haze: null,
+      skyObject: 'jupiter', mood: 'sulfur yellow plains, lava vents' } },
+  { id: 'mars', celebTier: 1, name: 'MARS', atmoTag: 'THIN CO\u2082', realG: 3.71, atmoLabel: 'THIN CO₂', atmoType: 'thin',
+    wind: { base: 0.08, gust: 0.3 }, drag: 0.05,   // P1.5調整: 仕様値 0.8/1.2 は 0/50 着陸（04_tests/p15.mjs・LOG参照）
+       visibility: null, heat: null, obstacleStyle: 'rock',
+    visual: { sky: ['#3a1a10', '#c2703d'], ground: '#8a3b1e', rim: '#e08a55', accent: '#ffb27a',
+      fog: null, haze: { color: '#c2703d', alpha: 0.22 }, skyObject: 'phobos', mood: 'rust dust, butterscotch sky, dust haze' } },
+  { id: 'titan', celebTier: 2, name: 'TITAN', atmoTag: 'THICK N\u2082', realG: 1.35, atmoLabel: 'THICK N₂ 1.5 BAR', atmoType: 'thick',
+    wind: { base: 0.06, gust: 0.12 }, drag: 0.35, dragY: 0.03,   // 調整: 仕様 風0.6/0.6・縦抗力0.35（終端降下速度 g/drag = 0.65px/s で降下に600秒）
+       visibility: 150, heat: null, obstacleStyle: 'ice',
+    visual: { sky: ['#2b1a05', '#8a5a1a'], ground: '#3b2a14', rim: '#c98a2e', accent: '#ffc04a',
+      fog: '#6b4510', haze: null, skyObject: 'saturn', mood: 'orange methane murk, thick haze' } },
+  { id: 'venus', celebTier: 2, name: 'VENUS', atmoTag: 'EXTREME 460\u00b0C', realG: 8.87, atmoLabel: 'EXTREMELY THICK · 460°C', atmoType: 'extreme',
+    wind: { base: 0.05, gust: 0.12 }, drag: 0.2, dragY: 0.045,   // 調整: 仕様 風0.4/0.5・抗力0.5（終端降下速度 1.2px/s）
+       visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
+    visual: { sky: ['#3a1204', '#b8601a'], ground: '#2a1408', rim: '#ff7a1a', accent: '#ff9a3c',
+      fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
+];
+
+const BODY_COUNT = BODIES.length;
+
+// stage(1始まり) -> { index, loop, body, firstOfBody }
+function stageInfo(stage) {
+  const s = Math.max(1, Math.floor(stage) || 1);
+  const index = Math.floor((s - 1) / STAGES_PER_BODY) % BODY_COUNT;
+  const loop = Math.floor((s - 1) / (STAGES_PER_BODY * BODY_COUNT));
+  return { index, loop, body: BODIES[index], firstOfBody: (s - 1) % STAGES_PER_BODY === 0 };
+}
+
+// 周回内のステージ番号(0始まり、0..11)
+const inLoop = (stage) => (Math.max(1, Math.floor(stage) || 1) - 1) % (STAGES_PER_BODY * BODY_COUNT);
+
+// ゲーム内重力: 実重力を平方根で圧縮（金星でも遊べる）し、周回ごとに+15%
+function bodyGravity(body, loop) {
+  return GRAVITY_BASE * Math.sqrt(body.realG / G_REF) * (1 + 0.15 * loop);
+}
+function padWidth(stage) {
+  return Math.max(22, 54 - 3 * inLoop(stage) - 8 * stageInfo(stage).loop);
+}
+function obstacleCount(stage) {
+  if (stage <= 1) return 0;
+  return Math.min(2 + Math.floor(inLoop(stage) / 2), 7) + 2 * stageInfo(stage).loop;
+}
+function obstacleSpeed(stage) {
+  return 12 + 3 * inLoop(stage) + 6 * stageInfo(stage).loop;
+}
+
+// 風: 定常風(符号ランダム) + 2〜3個の正弦の平均による突風。大気のない天体は null。周回ごとに x(1+0.3*loop)。
+function makeWindSpec(body, loop, rnd = Math.random) {
+  if (!body.wind || (!body.wind.base && !body.wind.gust)) return null;
+  const mul = 1 + 0.3 * loop;
+  const n = rnd() < 0.5 ? 2 : 3;
+  const freqs = [], phases = [];
+  const FREQS = [0.11, 0.27, 0.53];
+  for (let i = 0; i < n; i++) { freqs.push(FREQS[i] * (0.8 + rnd() * 0.4)); phases.push(rnd() * Math.PI * 2); }
+  return { base: (rnd() < 0.5 ? -1 : 1) * body.wind.base * mul, amp: body.wind.gust * mul, freqs, phases };
+}
+function windAt(spec, t) {
+  if (!spec) return 0;
+  let s = 0;
+  for (let i = 0; i < spec.freqs.length; i++) s += Math.sin(2 * Math.PI * spec.freqs[i] * t + spec.phases[i]);
+  return spec.base + spec.amp * s / spec.freqs.length;
+}
+
+function bodyHasWind(body) { return !!(body.wind && (body.wind.base || body.wind.gust)); }
+
+// 例: 'MARS · g 3.71 m/s² · THIN CO₂ · WIND'
+function introText(body) {
+  return body.name + ' · g ' + body.realG.toFixed(2) + ' m/s² · ' + body.atmoLabel + (bodyHasWind(body) ? ' · WIND' : '');
+}
+
+// ---- 着陸後の祝福モーション（データ/位相関数。描画は game.js の _drawAstronaut が仮図形で行う。P2が差し替える）----
+// ジャンプの頂点高さと滞空時間は天体の重力に従う（低重力ほど高く・ゆっくり）。画面外に出ないよう頂点は12..40pxにクランプ。
+function celebrationParams(body) {
+  const k = Math.sqrt(G_REF / body.realG);
+  return { apex: Math.max(12, Math.min(40, 28 * k)), airtime: Math.max(0.45, Math.min(1.9, 1.2 * k)) };
+}
+// 周期シーケンス。kind: hop(跳躍) / rest(待機) / dance(loop>=1の締め)。spin: 回転数(負=バク宙)。arms: up|pump|wave
+function celebrationSequence(body, loop) {
+  const { airtime: T } = celebrationParams(body);
+  const tier = body.celebTier;
+  let seq;
+  if (tier === 0) seq = [{ kind: 'hop', dur: T, spin: 0, arms: 'up' }, { kind: 'rest', dur: 0.7, arms: 'wave' }];
+  else if (tier === 1) seq = [{ kind: 'hop', dur: T, spin: 1, arms: 'up' }, { kind: 'rest', dur: 0.5, arms: 'wave' }];
+  else seq = [{ kind: 'hop', dur: T, spin: -1, arms: 'up' }, { kind: 'hop', dur: T, spin: 0, arms: 'pump' }, { kind: 'rest', dur: 0.6, arms: 'pump' }];
+  if (loop >= 1) seq.push({ kind: 'dance', dur: 0.9, spin: 0, arms: 'wave' });
+  return seq;
+}
+// t = 着陸シーケンス終了からの秒数。戻り値のポーズ: dy(上方向px) dx rot(rad) armL/armR(下向き0..上向きπのrad) phase fx(祝福エフェクト) flagWave
+function celebrationPose(body, loop, t, perfect) {
+  const { apex } = celebrationParams(body);
+  const seq = celebrationSequence(body, loop);
+  const total = seq.reduce((a, s) => a + s.dur, 0);
+  let tc = ((t % total) + total) % total;
+  let seg = seq[0];
+  for (const s of seq) { if (tc < s.dur) { seg = s; break; } tc -= s.dur; }
+  const u = Math.max(0, Math.min(1, tc / seg.dur));
+  const pose = { dy: 0, dx: 0, rot: 0, armL: 0.3, armR: 0.3, phase: seg.kind, u, tier: body.celebTier, fx: null, flagWave: Math.sin(t * 6) };
+  if (seg.kind === 'hop') {
+    pose.dy = 4 * apex * u * (1 - u);
+    pose.rot = (seg.spin || 0) * 2 * Math.PI * u;
+  } else if (seg.kind === 'dance') {
+    pose.dx = 5 * Math.sin(u * 2 * Math.PI * 3);
+    pose.rot = 0.25 * Math.sin(u * 2 * Math.PI * 3);
+  }
+  if (seg.arms === 'up') { pose.armL = 2.6; pose.armR = 2.6; }
+  else if (seg.arms === 'pump') { pose.armL = 0.3; pose.armR = 2.5 + 0.5 * Math.sin(t * 18); }
+  else if (seg.kind === 'dance') { pose.armL = 1.5 + 0.8 * Math.sin(u * 2 * Math.PI * 3); pose.armR = 1.5 - 0.8 * Math.sin(u * 2 * Math.PI * 3); }
+  else { pose.armL = 0.3; pose.armR = 2.3 + 0.5 * Math.sin(t * 14); }
+  if (perfect) pose.fx = { u: (t % 1.2) / 1.2, n: 8 };
+  return pose;
+}
+
+
+// ---- 02_src/modules.js ----
+// モジュール（P1.5）: 3ステージごと（ボーナス終了後）に2択で1つ獲得。ラン中は永続（Continueで維持、新規ランでリセット）。
+const MODULE_DEFS = [
+  { id: 'fuel',   name: 'FUEL TANK',       icon: 'F', max: 2, desc: 'MAX FUEL +25% PER LEVEL' },
+  { id: 'stab',   name: 'STABILIZER',      icon: 'S', max: 2, desc: 'STRONGER ROTATION DAMPING' },
+  { id: 'shock',  name: 'SHOCK ABSORBER',  icon: 'A', max: 2, desc: 'LANDING SPEED LIMITS UP' },
+  { id: 'radar',  name: 'RADAR',           icon: 'R', max: 1, desc: 'SHOWS PREDICTED TOUCHDOWN + VELOCITY' },
+  { id: 'shield', name: 'SHIELD',          icon: 'H', max: 1, desc: 'ABSORBS 1 OBSTACLE HIT PER STAGE' },
+];
+const MODULE_IDS = MODULE_DEFS.map(m => m.id);
+const moduleDef = (id) => MODULE_DEFS.find(m => m.id === id) || null;
+
+function newModules() {
+  const o = {};
+  for (const m of MODULE_DEFS) o[m.id] = 0;
+  return o;
+}
+
+// 効果テーブル（レベル -> 値）
+const FUEL_PER_LEVEL = 0.25;
+const ANG_DAMP_BY_LEVEL = [0.82, 0.6, 0.45];
+const SAFE_VY_PER_LEVEL = 6;
+const BOUNCE_VY_PER_LEVEL = 8;
+const fuelMulFor = (lvl) => 1 + FUEL_PER_LEVEL * lvl;
+const angDampFor = (lvl) => ANG_DAMP_BY_LEVEL[Math.max(0, Math.min(ANG_DAMP_BY_LEVEL.length - 1, lvl))];
+
+function isMaxed(mods, id) {
+  const d = moduleDef(id);
+  return !d || (mods[id] || 0) >= d.max;
+}
+
+// 最大2つ、重複なし、上限到達済みは除外。候補が1つなら1つ、0なら空。
+function rollOffers(mods, rnd = Math.random, count = 2) {
+  const pool = MODULE_DEFS.filter(d => !isMaxed(mods, d.id)).map(d => d.id);
+  const out = [];
+  while (out.length < count && pool.length) {
+    const i = Math.min(pool.length - 1, Math.floor(rnd() * pool.length));
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+
+// ---- 02_src/net.js ----
+// 世界ランキング中継クライアント（P1.5）。RELAY_URL が空なら機能オフ＝ネットワーク呼び出しは一切しない。
+// どの関数も例外を投げない。タイムアウトは AbortController＋競合タイマーの両方で保証。
+let RELAY_URL = '';   // 例: 'https://lander-ranking.xxx.workers.dev'（未設定）
+function __setRelayUrl(u) { RELAY_URL = String(u || '').replace(/\/+$/, ''); }  // テスト用
+function relayEnabled() { return !!RELAY_URL; }
+const NET_TIMEOUT_MS = 5000;
+
+function withTimeout(url, init, ms) {
+  const f = globalThis.fetch;
+  if (typeof f !== 'function') return Promise.reject(new Error('no fetch'));
+  const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  let timer;
+  const timeout = new Promise((_, rej) => {
+    timer = setTimeout(() => { try { ac && ac.abort(); } catch (_) { /* ignore */ } rej(new Error('timeout')); }, ms);
+  });
+  const req = Promise.resolve().then(() => f(url, Object.assign({}, init, ac ? { signal: ac.signal } : {})));
+  return Promise.race([req, timeout]).finally(() => clearTimeout(timer));
+}
+
+// entry = { name, score, stage } -> { ok, status? , error? }
+async function submitScore(entry, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage });
+    const res = await withTimeout(RELAY_URL + '/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs);
+    return { ok: !!(res && res.ok), status: res && res.status };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+// -> 配列（{name,score,stage,date}）または null（オフ/失敗）
+async function fetchWorldTop(timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return null;
+  try {
+    const res = await withTimeout(RELAY_URL + '/ranking', { method: 'GET' }, timeoutMs);
+    if (!res || !res.ok) return null;
+    const j = await res.json();
+    return (j && Array.isArray(j.top)) ? j.top : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+
+// ---- 02_src/debug.js ----
+// 隠しデバッグモード（セッション限り・localStorage には保存しない）。
+// 有効化: URL に ?debug、またはタイトルのロゴを2秒以内に5回タップ。
+let dbgOn = false;
+let dbgTaps = [];
+const DBG_TAPS_NEEDED = 5;
+const DBG_WINDOW_MS = 2000;
+
+function dbgQuery() {
+  try { return typeof location !== 'undefined' && /[?&]debug(=|&|$)/.test(String(location.search || '')); } catch (_) { return false; }
+}
+function isDebug() { return dbgOn || dbgQuery(); }
+function setDebug(v) { dbgOn = !!v; dbgTaps = []; }
+// ロゴタップを1回記録。5回に達したら有効化して true
+function debugLogoTap(nowMs) {
+  const now = (typeof nowMs === 'number') ? nowMs : Date.now();
+  dbgTaps.push(now);
+  dbgTaps = dbgTaps.filter((t) => now - t <= DBG_WINDOW_MS);
+  if (dbgTaps.length >= DBG_TAPS_NEEDED) { dbgOn = true; dbgTaps = []; return true; }
+  return false;
+}
+
+
+// ---- 02_src/autopilot.js ----
+// PD オートパイロット（ランディング可能性テストと、デバッグの AUTO LAND で共用）。
+// 入力は game の状態から {left,right,up} を返す。left = CW回転(機首右) / right = CCW回転(機首左) / up = 主エンジン。
+// 方針: 推力ベクトル制御。遠距離は弾道予測（風・抗力込み）の着地点誤差から必要横速度を求め、近距離はパッド中心への直接誘導。
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const wrap180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+const FAR_H = 45;
+const AP = { WIND_FF: 1 };
+const TMIN = 0.7;   // これ未満の要求加速度では噴射しない（燃料節約のデッドバンド）   // これより高い間は予測誘導
+
+// 平均風(定常成分のみ。突風は予測に入れずフィードバックで吸収)と抗力を含む簡易弾道予測 -> {x, t}
+function predictMean(g, dt = 0.25) {
+  const wb = (g._windSpec && g._windSpec.base) || 0;
+  const dx = (g._body && g._body.drag) || 0;
+  const dy = (g._body && (g._body.dragY !== undefined ? g._body.dragY : g._body.drag)) || 0;
+  let x = g.x, y = g.y, vx = g.vx, vy = g.vy, t = 0;
+  while (t < 200) {
+    vy += g._gravity * dt; vx += wb * dt;
+    vx -= vx * dx * dt; vy -= vy * dy * dt;
+    x += vx * dt; y += vy * dt; t += dt;
+    if (y + 16 >= g._terrainYAt(Math.max(1, Math.min(359, x)))) break;   // 壁は無視（壁際で予測が反転して暴れるのを防ぐ）
+  }
+  return { x, t };
+}
+
+function autopilotKeys(g) {
+  const keys = { left: false, right: false, up: false };
+  if (!g || !g.pad) return keys;
+  const padCx = g.pad.x + g.pad.w / 2;
+  const h = Math.max(0, g.pad.y - (g.y + 16));
+  const tg = h / Math.max(g.vy, 2);                 // 接地までの概算秒
+  const far = h > FAR_H && tg > 6;
+  const tiltLim = clampN((tg - 4) * 10, 15, 68);     // 接地が近いほど傾きを制限（直立で降りるため）
+
+  // 位置PD＋風フィードフォワード: パッド方向への目標横速度を追い、風（HUDの矢印と同じ値）と抗力を打ち消す横加速度を要求する
+  const vlim = far ? 8 : 4;
+  const vxd = clampN(0.12 * (padCx - g.x), -vlim, vlim);
+  const drag = (g._body && g._body.drag) || 0;
+  const Fx = clampN(1.0 * (vxd - g.vx) - AP.WIND_FF * (g._windAccel || 0) + drag * g.vx, -4.5, 4.5);
+  // 目標降下速度: 地面に近いほど遅く
+  const vyd = Math.min(14, 4 + h * 0.03);
+  const Fy = g.vy > vyd ? Math.min(5, g._gravity + 0.8 * (g.vy - vyd)) : 0;
+
+  const T = Math.hypot(Fx, Fy);
+  // 目標傾きは要求加速度に連続に追従（しきい値で0/大角度を行き来すると姿勢制御の燃料を浪費する）
+  const thd = clampN(Math.atan2(Fx, Math.max(Fy, 1.5)) * 180 / Math.PI, -tiltLim, tiltLim);
+  const ang = wrap180(g.angle);
+  const err = thd - ang;
+  const u = err - g.omega * Math.abs(g.omega) / 56;   // 切替曲線（ANG_ACCEL=28 deg/s^2 の制動距離）
+  if (u > 1.5) keys.left = true;
+  else if (u < -1.5) keys.right = true;
+
+  if (T >= TMIN && Math.abs(err) < 8 && !(Fy === 0 && g.vy < -8)) keys.up = true;
+  return keys;
+}
+
+// キーパルスを game に適用して1フレーム進める（テスト用）
+function autopilotFrame(g, dt = 1 / 60) {
+  const k = autopilotKeys(g);
+  if (k.left) g.onInput('left');
+  if (k.right) g.onInput('right');
+  if (k.up) g.onInput('up');
+  g.update(dt);
+}
+
+
 // ---- 02_src/ranking.js ----
 // ローカルランキング（端末ごとの localStorage 保存）。純関数中心でヘッドレステスト可能。
 // Entry = { name, score, stage, date(ISO) }。上位10件を score降順 → stage降順 → 日付が早い順 で保持する。
@@ -424,10 +738,106 @@ function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
   }
 }
 
+// ---- LOCAL / WORLD タブ（RELAY_URL 設定時のみ表示）----
+function createRankTabs() { return { mode: 'local', world: null, status: 'idle', token: 0 }; }
+
+function rankTabRects(x, y, w) {
+  const bw = Math.floor((w - 8) / 2), h = 18;
+  return { local: { x, y, w: bw, h }, world: { x: x + bw + 8, y, w: bw, h } };
+}
+
+const inRect = (r, px, py) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+
+// タップがタブに当たったか処理する。当たったら true（WORLD 選択時は取得を開始）
+function rankTabsTap(tabs, x, y, px, py, w) {
+  if (!relayEnabled()) return false;
+  const r = rankTabRects(x, y, w);
+  if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
+  if (inRect(r.world, px, py)) {
+    tabs.mode = 'world';
+    if (tabs.status === 'idle' || tabs.status === 'offline') loadWorld(tabs);
+    return true;
+  }
+  return false;
+}
+
+function loadWorld(tabs) {
+  tabs.status = 'loading';
+  const tk = ++tabs.token;
+  return fetchWorldTop().then((list) => {
+    if (tk !== tabs.token) return;
+    if (list) { tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
+    else tabs.status = 'offline';
+  });
+}
+
+// タブ＋リスト本体の描画。localList は端末内ランキング。rows は y+24 から
+function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) {
+  const p = P();
+  if (!relayEnabled()) { drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight); return; }
+  const r = rankTabRects(x, y, w);
+  for (const k of ['local', 'world']) {
+    const on = tabs.mode === k;
+    if (on) { ctx.fillStyle = p.dim; ctx.fillRect(r[k].x, r[k].y, r[k].w, r[k].h); }
+    engine.stroke(r[k].x, r[k].y, r[k].w, r[k].h, on ? p.hi : p.dim, 1.5);
+    engine.text(k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 2, 12, on ? p.hi : p.mid, 'center');
+  }
+  if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
+  else if (tabs.status === 'loading' || tabs.status === 'idle') engine.text('LOADING\u2026', x + w / 2, y + 40, 14, p.mid, 'center');
+  else if (tabs.status === 'offline') engine.text('OFFLINE', x + w / 2, y + 40, 14, p.bad, 'center');
+  else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
+}
+
+// ---- プレイヤー名（プレイ前にタイトルで入力。保存キー 'lastName'）----
+function sanitizeName(name) {
+  return Array.from(String(name == null ? '' : name).trim()).slice(0, 10).join('').trim();
+}
+function getPlayerName(storage) {
+  try { return sanitizeName(storage.get('lastName', '') || ''); } catch (_) { return ''; }
+}
+function setPlayerName(storage, name) {
+  const nm = sanitizeName(name) || 'PILOT';
+  try { storage.set('lastName', nm); } catch (_) { /* 保存不可でも続行 */ }
+  return nm;
+}
+
 
 // ---- 02_src/title.js ----
 // タイトル画面（P0の仮実装。P2でリデザインする）。タップで開始。
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
+
+// 名前入力オーバーレイ（HTML）。document が無い環境では false を返し何もしない。確定で onSubmit(name)。
+function showNameOverlay(initial, onSubmit) {
+  if (typeof document === 'undefined') return false;
+  const old = document.getElementById('lander-name-entry');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  const wrap = document.createElement('div');
+  wrap.id = 'lander-name-entry';
+  wrap.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1000;' +
+    'background:#151b32;border:2px solid #3ee6ff;border-radius:6px;padding:16px;width:min(300px,86vw);' +
+    'box-sizing:border-box;text-align:center;color:#c9ecff;font-family:"Rajdhani",sans-serif;';
+  const label = document.createElement('div');
+  label.textContent = 'ENTER YOUR NAME';
+  label.style.cssText = 'font-size:18px;margin-bottom:10px;';
+  const input = document.createElement('input');
+  input.type = 'text'; input.maxLength = 10; input.value = initial || ''; input.autocomplete = 'off';
+  input.setAttribute('autocapitalize', 'off');
+  input.style.cssText = 'width:100%;box-sizing:border-box;font-size:20px;padding:8px;text-align:center;' +
+    'background:#0a0e1c;color:#fff;border:1px solid #33406b;border-radius:4px;outline:none;';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = 'OK';
+  btn.style.cssText = 'margin-top:12px;width:100%;font-size:20px;padding:10px;background:#3ee6ff;color:#0a0e1c;border:0;border-radius:4px;font-weight:700;font-family:inherit;';
+  const done = () => { const v = input.value; if (wrap.parentNode) wrap.parentNode.removeChild(wrap); onSubmit(v); };
+  btn.addEventListener('click', done);
+  input.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') { e.preventDefault(); done(); }
+  });
+  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn);
+  document.body.appendChild(wrap);
+  try { input.focus(); input.select(); } catch (_) { /* ignore */ }
+  return true;
+}
 
 class TitleScene extends Scene {
   constructor(engine, startGame) {
@@ -437,6 +847,12 @@ class TitleScene extends Scene {
     this.t = 0;
     this.showRank = false;
     this.rank = [];
+    this.tabs = createRankTabs();
+    this.name = '';
+    this.pendingStart = false;
+    this.toastT = 0;
+    this.logoBox = { x: W / 2 - 110, y: H * 0.36 - 34, w: 220, h: 68 };
+    this.changeBtn = { x: W / 2 - 34, y: H * 0.545, w: 68, h: 18 };
     this.rankBtn = { x: W / 2 - 60, y: H * 0.88, w: 120, h: 30 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
@@ -444,23 +860,47 @@ class TitleScene extends Scene {
     }
   }
 
-  enter() { this.rank = loadRanking(this.engine.storage); }
+  enter() { this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage); }
+
+  // 名前確定（HTML・テストフック共通）。開始待ち(pendingStart)ならそのままゲーム開始
+  _submitName(name) {
+    this.name = setPlayerName(this.engine.storage, name);
+    if (this.pendingStart) { this.pendingStart = false; this.startGame(); }
+  }
+  _openName(thenStart) {
+    this.pendingStart = !!thenStart;
+    showNameOverlay(this.name || '', (v) => this._submitName(v));
+  }
 
   onInput(action, data) {
     if (action === 'tap' && data) {
       const b = this.rankBtn;
       if (data.x >= b.x && data.x <= b.x + b.w && data.y >= b.y && data.y <= b.y + b.h) {
         this.showRank = !this.showRank;
+        if (this.showRank) this.tabs = createRankTabs();
         return;
       }
+      // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
+      if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
+    }
+    if (action === 'tap' && data) {
+      const lb = this.logoBox;
+      if (data.x >= lb.x && data.x <= lb.x + lb.w && data.y >= lb.y && data.y <= lb.y + lb.h) {
+        // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
+        if (debugLogoTap(data.now)) this.toastT = 2;
+        return;
+      }
+      const cb = this.changeBtn;
+      if (this.name && data.x >= cb.x && data.x <= cb.x + cb.w && data.y >= cb.y && data.y <= cb.y + cb.h) { this._openName(false); return; }
     }
     if (action === 'tap' || action === 'confirm') {
       this.engine.audio.good();
+      if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
       this.startGame();
     }
   }
 
-  update(dt) { this.t += dt; }
+  update(dt) { this.t += dt; if (this.toastT > 0) this.toastT = Math.max(0, this.toastT - dt); }
 
   render(ctx) {
     const p = P();
@@ -476,6 +916,20 @@ class TitleScene extends Scene {
     ctx.globalAlpha = 0.4 + 0.6 * blink;
     this.engine.text('TAP TO START', W / 2, H * 0.62, 16, p.mid, 'center');
     ctx.globalAlpha = 1;
+
+    if (this.name) {
+      this.engine.text('PILOT: ' + this.name, W / 2, H * 0.50, 14, p.fg, 'center');
+      const cb = this.changeBtn;
+      this.engine.stroke(cb.x, cb.y, cb.w, cb.h, p.dim, 1);
+      this.engine.text('CHANGE', W / 2, cb.y + 3, 10, p.mid, 'center');
+    }
+    if (isDebug()) this.engine.text('DEBUG', W - 8, 8, 10, p.warn, 'right');
+    if (this.toastT > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
+      this.engine.rect(W / 2 - 50, 40, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 40, 100, 24, p.warn, 1.5);
+      this.engine.text('DEBUG ON', W / 2, 45, 13, p.warn, 'center');
+      ctx.restore();
+    }
 
     // 上位3件
     for (let i = 0; i < Math.min(3, this.rank.length); i++) {
@@ -496,7 +950,7 @@ class TitleScene extends Scene {
       ctx.restore();
       this.engine.stroke(20, 90, W - 40, 440, p.mid, 2);
       this.engine.text('TOP 10', W / 2, 104, 20, p.hi, 'center');
-      drawRankingRows(this.engine, ctx, this.rank, 32, 150, W - 64, -1);
+      drawRankPanel(this.engine, ctx, this.tabs, this.rank, 32, 130, W - 64, -1);
     }
   }
 }
@@ -523,7 +977,7 @@ const meta = {
 // ANG_ACCEL: RCS回転加速度。慎重な姿勢制御のため抑え目。
 // ANG_DAMP: 角速度の減衰。パイロットが姿勢を安定させやすくする。
 // RCS_DRIFT: サイドジェットの横方向ドリフト量（px/s^2）。ジェット排気の反作用。
-const GRAVITY_BASE      = 0.25;  // px/s^2 — ステージ1はさらにゆっくりとした降下（旧値0.35）
+// GRAVITY_BASE は bodies.js（天体ごとの重力 = BASE*sqrt(realG/1.62)*(1+0.15*loop)）
 const THRUST_ACCEL      = 5.2;   // px/s^2 — 明確に降下を止められる推力（旧値3.5）。保持すれば確実に上昇。
 const ANG_ACCEL         = 28.0;  // deg/s^2 — 慎重な姿勢変更（旧値40.0）
 const ANG_DAMP          = 0.82;  // 角速度減衰（旧値0.88、より強い減衰で安定しやすく）
@@ -553,7 +1007,6 @@ const BOUNCE_FRICTION    = 0.55; // 水平速度の残存率（摩擦）
 const BOUNCE_ANG_DAMP    = 0.45; // バウンス後の角速度残存率
 // バウンスで着陸成功とみなす速度しきい値（バウンス後にこれ以下になったら成功）
 const BOUNCE_SETTLE_VY   = 6;    // px/s
-const PAD_W_BASE        = 54;
 const TERRAIN_SEGS      = 18;
 const LANDER_START_Y    = 90;
 const GUIDE_THRESHOLD   = 30;    // ON COURSEとみなす誘導線からの距離(px)
@@ -582,7 +1035,13 @@ const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
 const BOUNCE_AIRBORNE_PX = 30;   // 地面からこれ以上離れたら「離陸」とみなしバウンス状態を解除
 const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
+const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
+const DBG_STATES = ['play', 'landing', 'cleared', 'crashed', 'bonusfailed'];
 const BONUS_TYPES       = ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'];
+const PRECISION_MUL     = 2;     // PRECISIONボーナスの得点倍率（P1.5: x3 -> x2。x3は3000点超でランキングを歪めた）
+const INTRO_S           = 2.0;   // 天体の最初のステージの紹介バナー秒数
+const RADAR_DT          = 1 / 30;
+const RADAR_MAX_T       = 120;
 const PRECISION_PAD_W   = 22;
 const FUEL_RUN_FUEL     = 45;    // FUEL_MAX の45%
 const MOVING_PLATEAU_SEGS = 8;   // 160px の平坦台地
@@ -605,19 +1064,16 @@ function landingPhase(t) {
 }
 
 // ---- Stage difficulty scaling ----
-// Stage 1: low gravity, no obstacles.
-// Stage 2+: gravity increases per stage; floating obstacles added and multiplied.
+// 天体・重力・パッド幅・障害物は bodies.js（stageInfo / bodyGravity / padWidth / obstacleCount / obstacleSpeed）。
 function stageParams(stage) {
-  const s = Math.min(stage, 8);
+  const info = stageInfo(stage);
   return {
-    // gravity increases ~15% per stage beyond stage 1
-    gravity:      GRAVITY_BASE * (1 + (s - 1) * 0.15),
-    padW:         Math.max(24, PAD_W_BASE - (s - 1) * 4),
-    stageBonus:   s * 50,
-    // obstacles: 0 in stage 1, then 2 + (s-2) extras per stage
-    obstacleCount: s <= 1 ? 0 : 2 + (s - 2),
-    // obstacle drift speed scales with stage
-    obstacleSpeed: 12 + (s - 1) * 4,
+    info,
+    gravity:       bodyGravity(info.body, info.loop),
+    padW:          padWidth(stage),
+    stageBonus:    Math.min(stage, 8) * 50,
+    obstacleCount: obstacleCount(stage),
+    obstacleSpeed: obstacleSpeed(stage),
   };
 }
 
@@ -689,7 +1145,7 @@ function buildGuide(startX, startY, pad, numPts) {
 // ---- Floating obstacles (stages 2+) ----
 // Obstacles drift horizontally. They appear in the mid-descent zone (y 150-480)
 // and bounce off the left/right walls. Touching one = crash.
-function buildObstacles(count, speed) {
+function buildObstacles(count, speed, style) {
   const obs = [];
   if (count <= 0) return obs;
   for (let i = 0; i < count; i++) {
@@ -702,9 +1158,17 @@ function buildObstacles(count, speed) {
       y:  Math.max(150, Math.min(410, yBand)), // 地形帯(440〜)の上に収める
       vx: (speed * 0.6 + Math.random() * speed * 0.8) * vxSign,
       r,
+      style: style || 'rock',   // P2: 'rock' | 'ice' | 'lava'（挙動は同一）
     });
   }
   return obs;
+}
+
+// '#rrggbb' + alpha -> 'rgba(...)'
+function hexA(hex, a) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex));
+  if (!m) return 'rgba(0,0,0,' + a + ')';
+  return 'rgba(' + parseInt(m[1], 16) + ',' + parseInt(m[2], 16) + ',' + parseInt(m[3], 16) + ',' + a + ')';
 }
 
 class Game extends Scene {
@@ -717,20 +1181,31 @@ class Game extends Scene {
     this.bonus      = null;          // 進行中のボーナス {type, afterStage}
     this.bonusCount = 0;             // これまでに発生したボーナス数（種類のローテーション用）
     this._inputLock = 0;
-    this._removeNameDom();
+    this.modules    = newModules();   // 新規ランでリセット（Continueでは維持）
+    this.offers     = [];
+    this._dbgTainted = false;
+    this._dbgBonusI = 0;
+    this._clock = 0;
     this._initStage();
   }
 
-  exit() { this._removeNameDom(); }
+  exit() {}
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
-  blocksBack() { return this.state === 'gameover' && this.goPhase === 'name'; }
+  blocksBack() { return this.state === 'module'; }
+
+  // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
+  _lvl(id) { return (this.modules && this.modules[id]) || 0; }
+  _fuelMax() { return FUEL_MAX * fuelMulFor(this._lvl('fuel')); }
+  _angDamp() { return angDampFor(this._lvl('stab')); }
+  _safeVy() { return SAFE_VY + SAFE_VY_PER_LEVEL * this._lvl('shock'); }
+  _bounceVy() { return BOUNCE_VY + BOUNCE_VY_PER_LEVEL * this._lvl('shock'); }
 
   // ---- Initialize one stage ----
   // this.stage / this.bonus から再構築する。Continue 時も同じステージ番号（＝同じパラメータ）で呼ぶ。
   _initStage() {
     this.state    = 'play';
-    this.fuel     = FUEL_MAX;
+    this.fuel     = this._fuelMax();
     this.angle    = (Math.random() - 0.5) * 8;  // tiny initial tilt (degrees)
     this.omega    = 0;                           // angular velocity (deg/s)
     this.x        = W / 2 + (Math.random() - 0.5) * 50;
@@ -744,9 +1219,17 @@ class Game extends Scene {
 
     const sp       = stageParams(this.stage);
     const btype    = this.bonus ? this.bonus.type : null;
+    this._info     = sp.info;
+    this._body     = sp.info.body;
     this._gravity  = sp.gravity;
+    this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
+    this._windT    = 0;
+    this._windAccel = 0;
+    this._shieldReady = this._lvl('shield') > 0;
+    this._shieldFlash = 0;
+    this._introT   = (sp.info.firstOfBody && !btype) ? INTRO_S : 0;
     this._padW     = btype === 'PRECISION' ? PRECISION_PAD_W : sp.padW;
-    if (btype === 'FUEL_RUN') this.fuel = FUEL_RUN_FUEL;
+    if (btype === 'FUEL_RUN') this.fuel = FUEL_RUN_FUEL * fuelMulFor(this._lvl('fuel'));
 
     const terrain     = buildTerrain(this._padW, { plateau: btype === 'MOVING_PAD' });
     this.terrainPts   = terrain.pts;
@@ -764,6 +1247,8 @@ class Game extends Scene {
     this._bonusGrant    = false;
     this._crashReason   = '';
     this.landingSeq     = null;
+    this._auto          = false;
+    this._perfect       = false;
     this._bannerT       = btype ? 2.8 : 0;   // ボーナス開始バナーの残り秒
     this.particles      = [];
 
@@ -776,7 +1261,7 @@ class Game extends Scene {
     this._onCoursePulse = 0;  // 点滅アニメーション用位相(秒)
 
     // Floating obstacles (stage 2+)。ボーナス中もステージs のパラメータを使う
-    this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed);
+    this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
     this._keys = this._keys || { left: false, right: false, up: false };
   }
@@ -799,6 +1284,13 @@ class Game extends Scene {
   onInput(action, data) {
     const confirm = (action === 'tap' || action === 'confirm');
 
+    if (this.state === 'debug') { this._debugInput(action, data); return; }
+    if (isDebug() && action === 'tap' && data && DBG_STATES.indexOf(this.state) >= 0 && this._inRect(this._dbgBtnRect(), data)) {
+      this._dbgPrev = this.state;
+      this.state = 'debug';
+      return;
+    }
+
     if (this.state === 'landing') {
       // 着陸シーケンスはタップ/決定でスキップ
       if (confirm && this._inputLock <= 0) this._finishLanding();
@@ -809,6 +1301,18 @@ class Game extends Scene {
       if (confirm && this._inputLock <= 0) this._nextAfterClear();
       if (action === 'back') this.engine.toMenu();
       return;
+    }
+    if (this.state === 'module') {
+      if (this._inputLock <= 0) {
+        if (action === 'tap' && data) {
+          for (let i = 0; i < this.offers.length; i++) {
+            const r = this._moduleCardRect(i);
+            if (data.x >= r.x && data.x <= r.x + r.w && data.y >= r.y && data.y <= r.y + r.h) { this._pickModule(i); break; }
+          }
+        } else if (action === 'left' && this.offers.length > 0) this._pickModule(0);
+        else if (action === 'right' && this.offers.length > 1) this._pickModule(1);
+      }
+      return;   // BACKは無効（選択中）
     }
     if (this.state === 'bonusfailed') {
       if (confirm && this._inputLock <= 0) this._nextAfterBonus();
@@ -828,7 +1332,7 @@ class Game extends Scene {
       return;
     }
     if (this.state === 'gameover') {
-      if (this.goPhase === 'name') return; // 名前入力は HTML <input> が担当
+      if (action === 'tap' && data && this._inputLock <= 0 && rankTabsTap(this.rankTabs, 32, 146, data.x, data.y, W - 64)) return;
       if (confirm && this._inputLock <= 0) this.engine.toMenu();
       if (action === 'back') this.engine.toMenu();
       return;
@@ -843,6 +1347,65 @@ class Game extends Scene {
     }
   }
 
+  // ---- デバッグパネル ----
+  _dbgButtons() {
+    const labels = ['AUTO LAND', 'WIN NOW', 'CRASH', 'STAGE -', 'STAGE +', 'NEXT BODY', 'BONUS \u25b6', 'MODULE', 'FUEL FULL', '+3 CONTINUES', 'CLOSE'];
+    return labels.map((label, i) => ({ label, x: 30 + (i % 2) * 150, y: 112 + Math.floor(i / 2) * 44, w: 140, h: 36 }));
+  }
+  _debugInput(action, data) {
+    if (action === 'back') { this._dbgClose(); return; }
+    if (action !== 'tap' || !data) return;
+    const btns = this._dbgButtons();
+    for (let i = 0; i < btns.length; i++) if (this._inRect(btns[i], data)) { this._debugAction(i); return; }
+  }
+  _dbgClose() { this.state = this._dbgPrev || 'play'; }
+  // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）
+  _dbgRestart() { this._auto = false; this._initStage(); }
+  _debugAction(i) {
+    this._dbgTainted = true;
+    const wasPrev = this._dbgPrev || 'play';
+    switch (i) {
+      case 0: // AUTO LAND
+        this.state = wasPrev;
+        if (wasPrev !== 'play') this._dbgRestart();
+        this._auto = true;
+        break;
+      case 1: { // WIN NOW: 完璧な着陸として着陸シーケンスへ
+        this.state = 'play';
+        if (wasPrev !== 'play') this._initStage();
+        this.x = this.pad.x + this.pad.w / 2; this.y = this._terrainYAt(this.x) - 16;
+        this.vx = 0; this.vy = 0.5; this.angle = 0; this.omega = 0;
+        this._doSuccess(0, 0);
+        break; }
+      case 2: // CRASH
+        this.state = 'play';
+        if (wasPrev !== 'play') this._initStage();
+        this._doCrash('DEBUG CRASH');
+        break;
+      case 3: this.bonus = null; this.stage = Math.max(1, this.stage - 1); this._dbgRestart(); break;
+      case 4: this.bonus = null; this.stage += 1; this._dbgRestart(); break;
+      case 5: this.bonus = null; this.stage = (Math.floor((this.stage - 1) / STAGES_PER_BODY) + 1) * STAGES_PER_BODY + 1; this._dbgRestart(); break;
+      case 6: // BONUS: 種類を順番に切替
+        this.bonus = { type: BONUS_TYPES[this._dbgBonusI % BONUS_TYPES.length], afterStage: this.stage };
+        this._dbgBonusI += 1;
+        this._dbgRestart();
+        break;
+      case 7: { // MODULE
+        this.bonus = null;
+        const offers = rollOffers(this.modules);
+        if (offers.length) { this.offers = offers; this._setOverlayState('module'); } else this.state = wasPrev;
+        break; }
+      case 8: // FUEL FULL
+        this.fuel = this._fuelMax(); this.state = wasPrev; break;
+      case 9: // +3 CONTINUES
+        this.continues = (this.continues || 0) + 3; this.state = wasPrev; break;
+      default: this._dbgClose(); break;
+    }
+  }
+
+  _inRect(r, d) { return d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h; }
+  _dbgBtnRect() { return { x: W - 44, y: 100, w: 36, h: 16 }; }
+
   _giveUpRect() { return { x: W / 2 - 50, y: H / 2 + 60, w: 100, h: 32 }; }
 
   // ---- 状態遷移 ----
@@ -852,7 +1415,7 @@ class Game extends Scene {
   }
 
   _finishLanding() {
-    this.landingSeq = null;
+    if (this.landingSeq) this.landingSeq.t = Math.max(this.landingSeq.t, LANDING_SEQ_S);   // 祝福ループへ（シーンは残す）
     this._setOverlayState('cleared');
     this._inputLock = 0.3;
   }
@@ -871,8 +1434,25 @@ class Game extends Scene {
   }
 
   // ボーナス終了（成功・失敗とも）-> 次の通常ステージ
+  // ボーナス結果画面の後、次ステージの前にモジュール2択（選べるものが無ければスキップ）
   _nextAfterBonus() {
     this.bonus = null;
+    const offers = rollOffers(this.modules);
+    if (offers.length === 0) { this.stage += 1; this._initStage(); return; }
+    this.offers = offers;
+    this._setOverlayState('module');
+  }
+
+  _moduleCardRect(i) { return { x: 24, y: 150 + i * 170, w: W - 48, h: 150 }; }
+
+  _pickModule(i) {
+    if (this.state !== 'module') return;
+    const id = this.offers[i];
+    const d = moduleDef(id);
+    if (!d) return;
+    this.modules[id] = Math.min(d.max, (this.modules[id] || 0) + 1);
+    this.offers = [];
+    this.engine.audio.good();
     this.stage += 1;
     this._initStage();
   }
@@ -882,82 +1462,33 @@ class Game extends Scene {
     this._initStage(); // 同一ステージ(同一パラメータ)を新しい地形で再開。totalScore はそのまま
   }
 
+  // デバッグ中/デバッグ操作を使ったランは記録しない（ローカル・世界ランキングとも）
+  _isDebugRun() { return isDebug() || this._dbgTainted; }
+
   _gameOver(applyFuelScore) {
     if (applyFuelScore) this.totalScore += Math.round((this.fuel || 0) * 2);
-    if (this.totalScore > this.high) {
+    const dbgRun = this._isDebugRun();
+    if (!dbgRun && this.totalScore > this.high) {
       this.high = this.totalScore;
       this.engine.storage.setHigh(meta.id, this.high);
     }
     this._setOverlayState('gameover');
     this.rankList = loadRanking(this.engine.storage);
+    this.rankTabs = createRankTabs();
     this.newIdx = -1;
-    if (qualifies(this.rankList, this.totalScore)) {
-      this.goPhase = 'name';
-      this._showNameDom();
-    } else {
-      this.goPhase = 'ranking';
-    }
-  }
-
-  // 名前確定（HTML入力・OKボタン・テストフックから呼ぶ）
-  _submitName(name) {
-    if (this.state !== 'gameover' || this.goPhase !== 'name') return;
-    let nm = Array.from(String(name == null ? '' : name).trim()).slice(0, 10).join('').trim();
-    if (!nm) nm = 'PILOT';
-    try { this.engine.storage.set('lastName', nm); } catch (_) { /* 保存不可でも続行 */ }
-    const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString() };
-    const list = insertEntry(this.rankList, entry);
-    saveRanking(this.engine.storage, list);
-    this.rankList = list;
-    this.newIdx = list.indexOf(entry);
-    this._removeNameDom();
     this.goPhase = 'ranking';
-    this._inputLock = INPUT_LOCK_S;
-  }
-
-  // ---- 名前入力 DOM（document が無いヘッドレス環境では何もしない）----
-  _showNameDom() {
-    if (typeof document === 'undefined') return;
-    this._removeNameDom();
-    let last = '';
-    try { last = this.engine.storage.get('lastName', '') || ''; } catch (_) { /* ignore */ }
-    const wrap = document.createElement('div');
-    wrap.id = 'lander-name-entry';
-    wrap.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1000;' +
-      'background:#151b32;border:2px solid #3ee6ff;border-radius:6px;padding:16px;width:min(300px,86vw);' +
-      'box-sizing:border-box;text-align:center;color:#c9ecff;font-family:"Rajdhani",sans-serif;';
-    const label = document.createElement('div');
-    label.textContent = 'ENTER YOUR NAME';
-    label.style.cssText = 'font-size:18px;margin-bottom:10px;';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.maxLength = 10;
-    input.value = last;
-    input.autocomplete = 'off';
-    input.autofocus = true;
-    input.setAttribute('autocapitalize', 'off');
-    input.style.cssText = 'width:100%;box-sizing:border-box;font-size:20px;padding:8px;text-align:center;' + // 16px以上: iOSの自動ズーム回避
-      'background:#0a0e1c;color:#fff;border:1px solid #33406b;border-radius:4px;outline:none;';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = 'OK';
-    btn.style.cssText = 'margin-top:12px;width:100%;font-size:20px;padding:10px;background:#3ee6ff;color:#0a0e1c;' +
-      'border:0;border-radius:4px;font-weight:700;font-family:inherit;';
-    const submit = () => this._submitName(input.value);
-    btn.addEventListener('click', submit);
-    input.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.keyCode === 229) return; // IME変換確定のEnterは送信しない
-      if (e.key === 'Enter') { e.preventDefault(); submit(); }
-    });
-    wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn);
-    document.body.appendChild(wrap);
-    this._nameDom = wrap;
-    try { input.focus(); input.select(); } catch (_) { /* ignore */ }
-  }
-
-  _removeNameDom() {
-    if (this._nameDom && this._nameDom.parentNode) this._nameDom.parentNode.removeChild(this._nameDom);
-    this._nameDom = null;
+    // 名前はプレイ前にタイトルで入力済み。ここでは自動で記録する（無ければ PILOT）
+    if (!dbgRun && qualifies(this.rankList, this.totalScore)) {
+      const nm = getPlayerName(this.engine.storage) || 'PILOT';
+      const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString() };
+      const list = insertEntry(this.rankList, entry);
+      saveRanking(this.engine.storage, list);
+      this.rankList = list;
+      this.newIdx = list.indexOf(entry);
+    }
+    if (!dbgRun && relayEnabled() && this.totalScore > 0) {
+      try { submitScore({ name: getPlayerName(this.engine.storage) || 'PILOT', score: this.totalScore, stage: this.stage }).catch(() => {}); } catch (_) { /* 送信失敗はゲームに影響させない */ }
+    }
   }
 
   // ---- Control inputs: 全タッチをゾーンごとに評価（同時押し可）----
@@ -967,6 +1498,7 @@ class Game extends Scene {
       : (eng.pointer && eng.pointer.down ? [eng.pointer] : []);
     for (const pt of pts) {
       if (!(pt.y > CONTROL_Y_MIN)) continue;
+      if (isDebug() && this._inRect(this._dbgBtnRect(), pt)) continue;
       if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
       else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
       else                        this._thrustMain = true;
@@ -976,6 +1508,8 @@ class Game extends Scene {
   // ---- Per-frame logic ----
   update(dt) {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
+    if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
+    this._clock = (this._clock || 0) + dt;
 
     if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
 
@@ -985,12 +1519,17 @@ class Game extends Scene {
         this.landingSeq.t += dt;
         this.angle *= Math.pow(0.02, dt);   // 着地後、機体を起こして立たせる（宇宙飛行士の絵と整合）
         if (this.landingSeq.t >= LANDING_SEQ_S) this._finishLanding();
+      } else if (this.state === 'cleared' && this.landingSeq) {
+        this.landingSeq.t += dt;            // クリア画面中も祝福を続ける
+        this.angle *= Math.pow(0.02, dt);
       }
       if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
       return;
     }
 
     if (this._bannerT > 0) this._bannerT = Math.max(0, this._bannerT - dt);
+    if (this._introT > 0) this._introT = Math.max(0, this._introT - dt);
+    if (this._shieldFlash > 0) this._shieldFlash = Math.max(0, this._shieldFlash - dt);
 
     // ---- Moving pad (bonus): パッドは台地上を往復。着地判定は常に現在位置を使う ----
     if (this.pad && this.pad.moving) {
@@ -1006,6 +1545,10 @@ class Game extends Scene {
     this._thrustMain = false;
     this._thrustRcsL = false;
     this._thrustRcsR = false;
+    if (this._auto && this._keys) {   // デバッグ AUTO LAND: PDオートパイロットが操縦
+      const k = autopilotKeys(this);
+      this._keys.left = k.left; this._keys.right = k.right; this._keys.up = k.up;
+    }
     this._readPointerControls();
 
     // Keyboard (one-shot pulse per frame)
@@ -1046,7 +1589,7 @@ class Game extends Scene {
     }
 
     // ---- Angular damping (mild drag so craft can be stabilized) ----
-    this.omega *= Math.pow(ANG_DAMP, dt);
+    this.omega *= Math.pow(this._angDamp(), dt);
 
     // ---- Integrate omega -> angle ----
     this.angle += this.omega * dt;
@@ -1064,12 +1607,24 @@ class Game extends Scene {
       const rad = this.angle * Math.PI / 180;
       this.vx  += ( Math.sin(rad)) * THRUST_ACCEL * dt;
       this.vy  += (-Math.cos(rad)) * THRUST_ACCEL * dt;
-      this.fuel = Math.max(0, this.fuel - FUEL_RATE_MAIN * dt);
+      this.fuel = Math.max(0, this.fuel - FUEL_RATE_MAIN * ((this._body.heat && this._body.heat.mainFuelMul) || 1) * dt);
     }
+
+    // ---- Heat (VENUS): 受動的な燃料消費 ----
+    if (this._body.heat && this.fuel > 0) this.fuel = Math.max(0, this.fuel - this._body.heat.fuelDrain * dt);
 
     // ---- Gravity (straight down = +Y in canvas) ----
     // NO translational damping. Purely Newtonian: only gravity and engine thrust change velocity.
     this.vy += this._gravity * dt;
+
+    // ---- Atmosphere: wind (horizontal accel) and drag. 真空の天体では _windSpec=null, drag=0 で何も起きない ----
+    this._windT += dt;
+    this._windAccel = windAt(this._windSpec, this._windT);
+    this.vx += this._windAccel * dt;
+    if (this._body.drag) {
+      this.vx -= this.vx * this._body.drag * dt;
+      this.vy -= this.vy * (this._body.dragY !== undefined ? this._body.dragY : this._body.drag) * dt;
+    }
 
     // ---- Position update ----
     this.x += this.vx * dt;
@@ -1111,9 +1666,17 @@ class Game extends Scene {
       // Check collision with lander (circle vs. point, craft body ~16x18 -> use 14px radius)
       const craftR = 14;
       for (const ob of this.obstacles) {
+        if (ob.spent || this._auto) continue;   // AUTO LAND中は障害物を無視（デバッグ専用）
         const dx = this.x - ob.x;
         const dy = this.y - ob.y;
         if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
+          if (this._shieldReady) {          // SHIELD: ステージ毎に1回だけ被弾を吸収（その障害物はこのステージ中は無効）
+            this._shieldReady = false;
+            this._shieldFlash = 0.5;
+            ob.spent = true;
+            this.engine.audio.beep && this.engine.audio.beep(660, 0.08, 'triangle', 0.10);
+            continue;
+          }
           // Hit an obstacle — crash
           this._doCrash('HIT AN OBSTACLE');
           return;
@@ -1181,7 +1744,7 @@ class Game extends Scene {
         return;
       }
       // バウンス後もまだ速すぎる/傾きすぎ -> クラッシュ
-      if (absVy > BOUNCE_VY || absVx > BOUNCE_VX || absAngle > BOUNCE_ANGLE) {
+      if (absVy > this._bounceVy() || absVx > BOUNCE_VX || absAngle > BOUNCE_ANGLE) {
         this._bouncing = false;
         this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega));
         return;
@@ -1190,7 +1753,7 @@ class Game extends Scene {
     }
 
     // ---- 即成功ウィンドウ（SAFE_* 以内）----
-    const safeLand = absVy <= SAFE_VY &&
+    const safeLand = absVy <= this._safeVy() &&
                      absVx <= SAFE_VX &&
                      absAngle <= SAFE_ANGLE &&
                      absOmega <= SAFE_OMEGA;
@@ -1204,7 +1767,7 @@ class Game extends Scene {
     // ---- マージナル着地ウィンドウ（BOUNCE_* 以内）-> バウンス ----
     // 速度・角度が「そこそこ許容範囲」なら物理的に弾ませる。
     // 機体が大きく傾いていると、倒れた側のレッグが食い込んでより強く弾む。
-    const canBounce = absVy <= BOUNCE_VY &&
+    const canBounce = absVy <= this._bounceVy() &&
                       absVx <= BOUNCE_VX &&
                       absAngle <= BOUNCE_ANGLE &&
                       absOmega <= BOUNCE_OMEGA;
@@ -1236,7 +1799,7 @@ class Game extends Scene {
 
   _crashReasonFor(absVy, absVx, absAngle, absOmega) {
     if (absAngle > BOUNCE_ANGLE) return 'TIPPED OVER';
-    if (absVy > BOUNCE_VY) return 'TOO FAST';
+    if (absVy > this._bounceVy()) return 'TOO FAST';
     if (absVx > BOUNCE_VX) return 'TOO MUCH SIDEWAYS SPEED';
     if (absOmega > BOUNCE_OMEGA) return 'SPINNING TOO FAST';
     return 'HARD LANDING';
@@ -1259,7 +1822,7 @@ class Game extends Scene {
     if (this.bonus) {
       // ボーナスミッション: 600 + 燃料*10（PRECISIONは3倍）。通常のステージ得点は付かない。
       let sc = 600 + fuelBonus;
-      if (this.bonus.type === 'PRECISION') sc *= 3;
+      if (this.bonus.type === 'PRECISION') sc *= PRECISION_MUL;
       this._bonusScore = sc;
       this._stageScore = sc;
       this._guideBonus = 0;
@@ -1285,8 +1848,10 @@ class Game extends Scene {
       this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
     }
     this.totalScore  += this._stageScore;
+    // PERFECT: とても柔らかく直立した着陸（祝福に星のバーストが付く）
+    this._perfect = landVy <= PERFECT_VY && landVx <= PERFECT_VX && (absAngle || 0) <= PERFECT_ANGLE && (absOmega || 0) <= PERFECT_OMEGA;
 
-    if (this.totalScore > this.high) {
+    if (!this._isDebugRun() && this.totalScore > this.high) {
       this.high = this.totalScore;
       this.engine.storage.setHigh(meta.id, this.high);
     }
@@ -1353,6 +1918,31 @@ class Game extends Scene {
 
   // ---- Main render ----
   render(ctx) {
+    if (this.state === 'debug') {
+      const real = this.state;
+      this.state = this._dbgPrev || 'play';
+      try { this._renderScene(ctx); } finally { this.state = real; }
+      this._drawDebugPanel(ctx);
+      return;
+    }
+    this._renderScene(ctx);
+  }
+
+  _drawDebugPanel(ctx) {
+    const p = P();
+    ctx.save(); ctx.globalAlpha = 0.93;
+    this.engine.rect(20, 70, W - 40, 470, p.dark);
+    ctx.restore();
+    this.engine.stroke(20, 70, W - 40, 470, p.warn, 2);
+    this.engine.text('DEBUG', W / 2, 78, 18, p.warn, 'center');
+    this.engine.text('ST.' + this.stage + ' ' + (this._body ? this._body.name : '') + (this.bonus ? ' BONUS' : ''), W / 2, 98, 11, p.mid, 'center');
+    for (const b of this._dbgButtons()) {
+      this.engine.stroke(b.x, b.y, b.w, b.h, p.mid, 1.5);
+      this.engine.text(b.label, b.x + b.w / 2, b.y + 10, 13, p.fg, 'center');
+    }
+  }
+
+  _renderScene(ctx) {
     const p = P();
 
     // Stars
@@ -1416,16 +2006,45 @@ class Game extends Scene {
       }
     }
 
+    // RADAR: 予測着地点と速度ベクトル
+    if (this.state === 'play' && this._lvl('radar') > 0) this._drawRadar(ctx);
+
     // Lander craft
     if (this.state === 'play' || this.state === 'landing' || this.state === 'cleared') {
       this._drawLander(ctx, this.x, this.y, this.angle);
     }
 
-    // Landing sequence (astronaut scene)。クリア画面はシーケンス終了後にのみ重なる
-    if (this.state === 'landing' && this.landingSeq) this._drawLandingScene(ctx);
+    // SHIELD: 準備完了のリング / 吸収時のフラッシュ
+    if (this.state === 'play' && this._lvl('shield') > 0 && (this._shieldReady || this._shieldFlash > 0)) {
+      ctx.save();
+      ctx.globalAlpha = this._shieldFlash > 0 ? Math.min(1, this._shieldFlash * 2) : 0.35;
+      ctx.strokeStyle = this._shieldFlash > 0 ? p.hi : p.mid;
+      ctx.lineWidth = this._shieldFlash > 0 ? 4 : 1.5;
+      ctx.beginPath(); ctx.arc(this.x, this.y, 22, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Landing sequence (astronaut scene)。クリア画面中も祝福を続けるため、シーンは cleared でも描く（パネルは重ならない位置）
+    if ((this.state === 'landing' || this.state === 'cleared') && this.landingSeq) this._drawLandingScene(ctx);
+
+    // 大気の見た目: 火星の砂塵(視覚のみ) / タイタン・金星の視界制限
+    if (this.state === 'play') this._drawAtmosphere(ctx);
+
+    // 着陸パッドのビーコン（霧の上に常に描く）
+    this._drawBeacon(ctx);
 
     // HUD
     this._drawHUD(ctx);
+
+    // 天体の紹介バナー（天体の最初のステージ）
+    if (this.state === 'play' && this._introT > 0 && this._body) {
+      const parts = introText(this._body).split(' \u00b7 ');
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, this._introT * 2));
+      this.engine.text(parts.slice(0, 2).join(' \u00b7 '), W / 2, 118, 15, p.hi, 'center');
+      if (parts.length > 2) this.engine.text(parts.slice(2).join(' \u00b7 '), W / 2, 138, 11, p.warn, 'center');
+      ctx.restore();
+    }
 
     // Bonus mission banner
     if (this.state === 'play' && this.bonus && this._bannerT > 0) {
@@ -1447,6 +2066,106 @@ class Game extends Scene {
       this._drawBonusFailed(ctx);
     } else if (this.state === 'gameover') {
       this._drawGameOver(ctx);
+    } else if (this.state === 'module') {
+      this._drawModuleSelect(ctx);
+    }
+
+    // デバッグ: DBGボタン
+    if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) {
+      const b = this._dbgBtnRect();
+      this.engine.rect(b.x, b.y, b.w, b.h, p.dark);
+      this.engine.stroke(b.x, b.y, b.w, b.h, p.warn, 1);
+      this.engine.text('DBG', b.x + b.w / 2, b.y + 3, 10, p.warn, 'center');
+    }
+  }
+
+  // ---- 大気: 砂塵 / 霧 ----
+  _drawAtmosphere(ctx) {
+    const b = this._body; if (!b) return;
+    const v = b.visual || {};
+    if (v.haze) {
+      ctx.save(); ctx.globalAlpha = v.haze.alpha; ctx.fillStyle = v.haze.color; ctx.fillRect(0, 0, W, BTN_Y); ctx.restore();
+    }
+    if (b.visibility) {
+      const r = b.visibility;
+      const fog = v.fog || '#000000';
+      const grad = ctx.createRadialGradient(this.x, this.y, r * 0.55, this.x, this.y, r);
+      grad.addColorStop(0, hexA(fog, 0));
+      grad.addColorStop(1, hexA(fog, 0.94));
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, BTN_Y);
+    }
+  }
+
+  _drawBeacon(ctx) {
+    if (!this.pad || this.state === 'module') return;
+    const p = P();
+    const on = Math.floor((this._clock || 0) * 2.5) % 2 === 0;
+    const bx = this.pad.x + this.pad.w / 2, by = this.pad.y - 5;
+    ctx.save();
+    ctx.globalAlpha = on ? 1 : 0.35;
+    ctx.fillStyle = p.bad;
+    ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2); ctx.fill();
+    if (on) { ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+
+  // ---- RADAR ----
+  // 現在の速度のまま推力なしで進んだ場合の着地点（重力・風・抗力を update と同じ順序で積分）
+  predictLanding(dt = RADAR_DT, maxT = RADAR_MAX_T) {
+    let x = this.x, y = this.y, vx = this.vx, vy = this.vy;
+    const drag = (this._body && this._body.drag) || 0;
+    const dragY = (this._body && this._body.dragY !== undefined) ? this._body.dragY : drag;
+    for (let t = 0, step = 1; t < maxT; t += dt, step++) {
+      vy += this._gravity * dt;
+      vx += windAt(this._windSpec, this._windT + step * dt) * dt;
+      if (drag) { vx -= vx * drag * dt; vy -= vy * dragY * dt; }
+      x += vx * dt; y += vy * dt;
+      if (x < 14)     { x = 14;     vx =  Math.abs(vx) * 0.3; }
+      if (x > W - 14) { x = W - 14; vx = -Math.abs(vx) * 0.3; }
+      if (y < 60) { y = 60; vy = Math.max(0, vy); }
+      const ty = this._terrainYAt(x);
+      if (y + 16 >= ty) return { x, y: ty, t: t + dt, hit: true };
+    }
+    return { x, y, t: maxT, hit: false };
+  }
+
+  _drawRadar(ctx) {
+    const p = P();
+    const pr = this.predictLanding();
+    ctx.save();
+    ctx.strokeStyle = p.hi; ctx.fillStyle = p.hi; ctx.lineWidth = 1.5;
+    if (pr.hit) {   // 予測着地点: ×マーカー
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(pr.x - 6, pr.y - 6); ctx.lineTo(pr.x + 6, pr.y + 6);
+      ctx.moveTo(pr.x + 6, pr.y - 6); ctx.lineTo(pr.x - 6, pr.y + 6);
+      ctx.stroke();
+    }
+    // 速度ベクトル
+    const k = 1.5, ex = this.x + this.vx * k, ey = this.y + this.vy * k;
+    ctx.globalAlpha = 0.8; ctx.strokeStyle = p.warn;
+    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- モジュール選択 ----
+  _drawModuleSelect(ctx) {
+    const p = P();
+    ctx.save(); ctx.globalAlpha = 0.9; this.engine.rect(0, 70, W, 440, p.bg); ctx.restore();
+    this.engine.text('CHOOSE A MODULE', W / 2, 96, 20, p.hi, 'center');
+    this.engine.text('ST.' + this.stage + ' COMPLETE', W / 2, 124, 11, p.dim, 'center');
+    for (let i = 0; i < this.offers.length; i++) {
+      const d = moduleDef(this.offers[i]);
+      const r = this._moduleCardRect(i);
+      const lv = this._lvl(d.id);
+      this.engine.rect(r.x, r.y, r.w, r.h, p.dark);
+      this.engine.stroke(r.x, r.y, r.w, r.h, p.mid, 2);
+      this.engine.text('[' + d.icon + ']', r.x + 30, r.y + 18, 28, p.warn, 'center');
+      this.engine.text(d.name, r.x + 60, r.y + 14, 18, p.hi, 'left');
+      this.engine.text(d.desc, r.x + 16, r.y + 62, 11, p.fg, 'left');
+      this.engine.text(d.max > 1 ? 'LV ' + lv + ' \u2192 ' + (lv + 1) + ' / ' + d.max : 'NEW', r.x + 16, r.y + 90, 13, p.mid, 'left');
+      this.engine.text('TAP TO TAKE', r.x + r.w / 2, r.y + r.h - 24, 12, p.dim, 'center');
     }
   }
 
@@ -1494,16 +2213,42 @@ class Game extends Scene {
     // 旗（planting 中〜）
     if (ph.name === 'flag' || ph.name === 'wave' || ph.name === 'done') {
       const ft = ph.name === 'flag' ? ph.p : 1;
-      this._drawLandingFlag(ctx, g.ax + 8, g.groundAt(g.ax + 8), ft);
+      const pose0 = ph.name === 'done' ? celebrationPose(this._body, this._info.loop, g.t - LANDING_SEQ_S, this._perfect) : null;
+      this._drawLandingFlag(ctx, g.ax + 8, g.groundAt(g.ax + 8), ft, pose0 ? pose0.flagWave : 0);
     }
-    // 宇宙飛行士（ハッチ開放後）
-    if (ph.name !== 'hatch') this._drawAstronaut(ctx, g.ax, g.ay, ph.name, g.t);
-    this.engine.text('TOUCHDOWN!', W / 2, 100, 16, p.hi, 'center');
+    // 宇宙飛行士（ハッチ開放後）。シーケンス終了後は天体ごとの祝福ポーズ（ジャンプ/回転/腕）を渡す
+    if (ph.name !== 'hatch') {
+      const pose = ph.name === 'done' ? celebrationPose(this._body, this._info.loop, g.t - LANDING_SEQ_S, this._perfect) : null;
+      this._drawAstronaut(ctx, g.ax, g.ay, ph.name, g.t, pose);
+      if (pose && pose.fx) this._drawCelebFx(ctx, g.ax + pose.dx, g.ay - pose.dy - 8, pose.fx);
+    }
+    if (this.state === 'landing') this.engine.text('TOUCHDOWN!', W / 2, 100, 16, p.hi, 'center');
   }
 
   // 宇宙飛行士（仮の簡易図形）。(x,y)=足元。phase: 'descend'|'walk'|'flag'|'wave'|'done'
-  _drawAstronaut(ctx, x, y, phase, t) {
+  // pose（任意）: { dy, dx, rot, armL, armR } — 祝福ループ用。P2はこのポーズ値で描き直す
+  _drawAstronaut(ctx, x, y, phase, t, pose) {
     const p = P();
+    if (pose) {
+      const py = Math.max(40, y - pose.dy);   // 画面外に出ない
+      ctx.save();
+      ctx.translate(x + pose.dx, py - 6);
+      ctx.rotate(pose.rot);
+      ctx.translate(0, 6);
+      ctx.fillStyle = p.fg;
+      ctx.fillRect(-3, -8, 6, 6);
+      ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2);
+      ctx.beginPath(); ctx.arc(0, -11, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.mid; ctx.fillRect(-1.5, -12, 3, 2);
+      ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5;
+      const L = 5;
+      ctx.beginPath();
+      ctx.moveTo(3, -7);  ctx.lineTo(3 + L * Math.sin(pose.armR), -7 + L * Math.cos(pose.armR));
+      ctx.moveTo(-3, -7); ctx.lineTo(-3 - L * Math.sin(pose.armL), -7 + L * Math.cos(pose.armL));
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     const bob = phase === 'walk' ? Math.sin(t * 24) * 1 : 0;
     ctx.save();
     ctx.translate(x, y + bob);
@@ -1525,14 +2270,27 @@ class Game extends Scene {
   }
 
   // 旗（仮）。(x,y)=地面の根元。t: 0..1 立てる進行
-  _drawLandingFlag(ctx, x, y, t) {
+  // PERFECT着陸の祝福エフェクト（仮: 放射状の星）
+  _drawCelebFx(ctx, x, y, fx) {
+    const p = P();
+    ctx.save();
+    ctx.fillStyle = p.warn;
+    ctx.globalAlpha = Math.max(0, 1 - fx.u);
+    for (let i = 0; i < fx.n; i++) {
+      const a = (i / fx.n) * Math.PI * 2, r = 8 + 34 * fx.u;
+      ctx.fillRect(x + Math.cos(a) * r - 1.5, y + Math.sin(a) * r - 1.5, 3, 3);
+    }
+    ctx.restore();
+  }
+
+  _drawLandingFlag(ctx, x, y, t, wave) {
     const p = P();
     const h = 20 * Math.max(0, Math.min(1, t));
     ctx.fillStyle = p.fg;
     ctx.fillRect(x - 0.5, y - h, 1.5, h);
     if (t > 0.6) {
       ctx.fillStyle = p.warn;
-      ctx.fillRect(x + 1, y - h, 10, 7);
+      ctx.fillRect(x + 1, y - h, 10 + (wave || 0) * 2, 7);
     }
   }
 
@@ -1781,9 +2539,11 @@ class Game extends Scene {
     const p = P();
 
     this.engine.text('LANDER', 52, 8, 16, p.fg, 'left');
-    this.engine.text('ST.' + this.stage + (this.bonus ? ' BONUS' : ''), 52, 26, 12, this.bonus ? p.warn : p.mid, 'left');
+    this.engine.text('ST.' + this.stage + ' ' + (this._body ? this._body.name : '') + (this.bonus ? ' BONUS' : ''), 52, 26, 12, this.bonus ? p.warn : p.mid, 'left');
     // 残り Continue（小さな機体アイコン）
-    for (let i = 0; i < (this.continues || 0); i++) {
+    const nIcons = Math.min(this.continues || 0, 3);
+    if ((this.continues || 0) > 3) this.engine.text('x' + this.continues, 206 + 3 * 14, 44, 10, p.mid, 'left');
+    for (let i = 0; i < nIcons; i++) {
       const ix = 206 + i * 14;
       this.engine.rect(ix, 45, 8, 9, p.mid);
       this.engine.rect(ix + 2, 47, 4, 3, p.hi);
@@ -1795,17 +2555,50 @@ class Game extends Scene {
     // Fuel bar
     const bx = 52, by = 44, bw = 110, bh = 10;
     this.engine.rect(bx, by, bw, bh, p.dark);
-    const fr   = Math.max(0, Math.min(1, (this.fuel || 0) / FUEL_MAX));
+    const fr   = Math.max(0, Math.min(1, (this.fuel || 0) / this._fuelMax()));
     const fclr = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
     if (fr > 0) this.engine.rect(bx, by, Math.round(bw * fr), bh, fclr);
     this.engine.stroke(bx, by, bw, bh, p.dim, 1);
     this.engine.text('FUEL', bx + bw + 4, by, 10, p.dim, 'left');
 
+    // 天体情報（実重力・大気タグ）、モジュール、デバッグタグ
+    if (this._body) {
+      this.engine.text('g ' + this._body.realG.toFixed(2) + ' m/s\u00b2', 52, 70, 10, p.mid, 'left');
+      this.engine.text(this._body.atmoTag, 52, 82, 10, p.dim, 'left');
+    }
+    let mk = 0;
+    for (const d of MODULE_DEFS) {
+      const lv = this._lvl(d.id);
+      if (!lv) continue;
+      const mx = W - 8 - 22 * (mk + 1);
+      this.engine.rect(mx, 80, 20, 14, p.dark);
+      this.engine.stroke(mx, 80, 20, 14, p.mid, 1);
+      this.engine.text(d.icon + (d.max > 1 ? lv : ''), mx + 10, 82, 10, p.warn, 'center');
+      mk++;
+    }
+    if (isDebug()) this.engine.text('DEBUG', 52, 94, 10, p.warn, 'left');
+
     if (this.state !== 'play') return;
+
+    // 風の矢印（風のある天体のみ）
+    if (this._windSpec) {
+      const wa = this._windAccel || 0;
+      const dir = wa >= 0 ? 1 : -1;
+      const len = Math.min(48, 6 + Math.abs(wa) * 60);
+      const ax = W / 2, ay = 100;
+      ctx.save();
+      ctx.strokeStyle = p.mid; ctx.fillStyle = p.mid; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ax - dir * len / 2, ay); ctx.lineTo(ax + dir * len / 2, ay); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ax + dir * len / 2, ay); ctx.lineTo(ax + dir * (len / 2 - 6), ay - 4); ctx.lineTo(ax + dir * (len / 2 - 6), ay + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+      this.engine.text('WIND', ax, ay + 6, 9, p.dim, 'center');
+    }
 
     // Vertical speed
     const vy    = this.vy || 0;
-    const vyclr = Math.abs(vy) <= SAFE_VY ? p.mid : Math.abs(vy) <= SAFE_VY * 1.6 ? p.warn : p.bad;
+    const vyclr = Math.abs(vy) <= this._safeVy() ? p.mid : Math.abs(vy) <= this._safeVy() * 1.6 ? p.warn : p.bad;
     this.engine.text('VY ' + Math.round(vy), W - 8, 38, 11, vyclr, 'right');
 
     // Horizontal speed
@@ -1872,46 +2665,49 @@ class Game extends Scene {
   }
 
   // ---- Stage Clear overlay ----
+  // パネルは y 128..344 に固定（パッド面は y>=455 なので下端は111px以上上。宇宙飛行士・旗・機体に重ならない）
+  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 }; }
+
   _drawClearScreen(ctx) {
     const p  = P();
     const cx = W / 2;
-    const cy = H / 2;
+    const r  = this._clearPanelRect();
+    const y0 = r.y;
     const b  = this.bonus;
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(20, cy - 130, W - 40, 270, p.dark);
-    this.engine.stroke(20, cy - 130, W - 40, 270, p.mid, 2);
+    this.engine.rect(r.x, r.y, r.w, r.h, p.dark);
+    this.engine.stroke(r.x, r.y, r.w, r.h, p.mid, 2);
     ctx.restore();
 
     if (b) {
-      this.engine.text('BONUS CLEAR!',                cx, cy - 116, 24, p.warn, 'center');
-      this.engine.text(b.type.replace('_', ' '),      cx, cy - 86, 13, p.mid, 'center');
-      this.engine.text('BONUS SCORE',                 cx, cy - 62,  12, p.dim,  'center');
-      this.engine.text('+' + (this._bonusScore || 0), cx, cy - 46,  20, p.fg,   'center');
-      if (this._bonusGrant) this.engine.text('+1 CONTINUE!', cx, cy - 22, 12, p.hi, 'center');
+      this.engine.text('BONUS CLEAR!',                cx, y0 + 6, 22, p.warn, 'center');
+      this.engine.text(b.type.replace('_', ' '),      cx, y0 + 34, 12, p.mid, 'center');
+      this.engine.text('BONUS SCORE',                 cx, y0 + 54, 11, p.dim,  'center');
+      this.engine.text('+' + (this._bonusScore || 0), cx, y0 + 68, 20, p.fg,   'center');
+      if (this._bonusGrant) this.engine.text('+1 CONTINUE!', cx, y0 + 94, 12, p.hi, 'center');
     } else {
-      this.engine.text('STAGE CLEAR!',                cx, cy - 116, 24, p.hi,   'center');
-      this.engine.text('ST.' + this.stage + ' COMPLETE', cx, cy - 86, 13, p.mid, 'center');
-      this.engine.text('STAGE SCORE',                 cx, cy - 62,  12, p.dim,  'center');
-      this.engine.text('+' + (this._stageScore || 0), cx, cy - 46,  20, p.fg,   'center');
-      this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, cy - 22, 11, p.warn, 'center');
+      this.engine.text('STAGE CLEAR!',                cx, y0 + 6, 22, p.hi,   'center');
+      this.engine.text('ST.' + this.stage + ' COMPLETE' + (this._perfect ? '  PERFECT!' : ''), cx, y0 + 34, 12, p.mid, 'center');
+      this.engine.text('STAGE SCORE',                 cx, y0 + 54, 11, p.dim,  'center');
+      this.engine.text('+' + (this._stageScore || 0), cx, y0 + 68, 20, p.fg,   'center');
+      this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, y0 + 94, 11, p.warn, 'center');
     }
 
     ctx.strokeStyle = p.dim;
     ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(40, cy + 4); ctx.lineTo(W - 40, cy + 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(40, y0 + 112); ctx.lineTo(W - 40, y0 + 112); ctx.stroke();
 
-    this.engine.text('TOTAL SCORE',                 cx, cy + 14,  12, p.dim,  'center');
-    this.engine.text('' + this.totalScore,          cx, cy + 30,  24, p.hi,   'center');
-    this.engine.text('BEST ' + (this.high || 0),    cx, cy + 60,  14, p.mid,  'center');
+    this.engine.text('TOTAL ' + this.totalScore,    cx, y0 + 120, 20, p.hi,   'center');
+    this.engine.text('BEST ' + (this.high || 0),    cx, y0 + 148, 12, p.mid,  'center');
 
     let next;
-    if (b) next = 'TAP → STAGE ' + (this.stage + 1);
-    else if (this.stage % BONUS_EVERY === 0) next = 'TAP → BONUS MISSION';
-    else next = 'TAP → STAGE ' + (this.stage + 1);
-    this.engine.text(next, cx, cy + 90, 14, p.fg,  'center');
-    this.engine.text('BACK → MENU', cx, cy + 110, 11, p.dim, 'center');
+    if (b) next = 'TAP \u2192 STAGE ' + (this.stage + 1);
+    else if (this.stage % BONUS_EVERY === 0) next = 'TAP \u2192 BONUS MISSION';
+    else next = 'TAP \u2192 STAGE ' + (this.stage + 1);
+    this.engine.text(next, cx, y0 + 172, 14, p.fg,  'center');
+    this.engine.text('BACK \u2192 MENU', cx, y0 + 194, 10, p.dim, 'center');
   }
 
   // ---- Crashed (continue available) ----
@@ -1949,23 +2745,10 @@ class Game extends Scene {
     this.engine.text('TAP → STAGE ' + (this.stage + 1), cx, cy + 20, 15, p.hi, 'center');
   }
 
-  // ---- Game Over: name entry (DOM) -> ranking ----
+  // ---- Game Over: ranking（名前はプレイ前に入力済み）----
   _drawGameOver(ctx) {
     const p  = P();
     const cx = W / 2;
-    const cy = H / 2;
-
-    if (this.goPhase === 'name') {
-      ctx.save();
-      ctx.globalAlpha = 0.92;
-      this.engine.rect(20, 70, W - 40, 90, p.dark);
-      this.engine.stroke(20, 70, W - 40, 90, p.bad, 2);
-      ctx.restore();
-      this.engine.text('GAME OVER',                cx, 78, 26, p.bad, 'center');
-      this.engine.text('SCORE ' + this.totalScore + '  ST.' + this.stage, cx, 114, 15, p.fg, 'center');
-      this.engine.text('NEW RECORD!',              cx, 136, 12, p.warn, 'center');
-      return;
-    }
 
     ctx.save();
     ctx.globalAlpha = 0.95;
@@ -1974,9 +2757,10 @@ class Game extends Scene {
     ctx.restore();
     this.engine.text('GAME OVER',  cx, 70, 24, p.bad, 'center');
     this.engine.text('SCORE ' + this.totalScore + '  ST.' + this.stage, cx, 102, 14, p.fg, 'center');
-    this.engine.text('RANKING',    cx, 128, 16, p.hi, 'center');
-    drawRankingRows(this.engine, ctx, this.rankList || [], 32, 160, W - 64, this.newIdx);
-    this.engine.text('TAP → TITLE', cx, 540, 14, p.fg, 'center');
+    if (this._isDebugRun()) this.engine.text('DEBUG RUN - NOT RECORDED', cx, 122, 11, p.warn, 'center');
+    else this.engine.text(this.newIdx >= 0 ? 'NEW RECORD!' : 'RANKING', cx, 122, 14, this.newIdx >= 0 ? p.warn : p.hi, 'center');
+    drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
+    this.engine.text('TAP \u2192 TITLE', cx, 540, 14, p.fg, 'center');
   }
 }
 

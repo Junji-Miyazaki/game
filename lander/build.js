@@ -7,7 +7,7 @@ const path = require('path');
 const ROOT = __dirname;
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const stripImports = (s) => s.replace(/^\s*import\b[^\n]*\n/gm, '');
-const stripExport = (s) => s.replace(/\bexport\s+(?=(const|class|function|let|var)\b)/g, '');
+const stripExport = (s) => s.replace(/\bexport\s+(?=(const|class|function|async|let|var)\b)/g, '');
 
 // 結合順（依存順）。すべて同一IIFEスコープに展開する。新ファイルを足したらここにも追加する。
 const FILES = [
@@ -15,6 +15,11 @@ const FILES = [
   '02_src/core/audio.js',
   '02_src/core/storage.js',
   '02_src/core/engine.js',
+  '02_src/bodies.js',
+  '02_src/modules.js',
+  '02_src/net.js',
+  '02_src/debug.js',
+  '02_src/autopilot.js',
   '02_src/ranking.js',
   '02_src/title.js',
   '02_src/game.js',
