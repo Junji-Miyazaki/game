@@ -96,7 +96,7 @@ log.length = 0; win.fire('keydown', { key: ' ', repeat: true });
 ok(log.length === 1 && log[0][1] && log[0][1].repeat === true, 'D1: repeated Space delivered flagged repeat=true (thrust pulses)');
 
 // Game: held press through result screens
-function freshGame() { const g = new Game(E); E.changeScene(g); return g; }
+function freshGame() { const g = new Game(E); E.changeScene(g); if (g.state === 'tip') g._endTip(); return g; }   // 初回ヒント(P5)は閉じてから使う
 function frames(g, sec) { for (let t = 0; t < sec; t += 1 / 60) { g.update(1 / 60); clock += 1000 / 60; } }
 const setups = [
   ['crashed', (g) => g._doCrash('X')],

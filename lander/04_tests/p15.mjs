@@ -19,7 +19,7 @@ const ctx = new Proxy({}, { get: (t, k) => {
   if (k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop: noop });
   return noop; }, set: () => true });
 function makeStorage() {
-  const m = new Map();
+  const m = new Map([['hudTipSeen', '1']]);
   return { m, getHigh: () => 0, setHigh: () => false, get: (k, d = null) => m.has(k) ? m.get(k) : d, set: (k, v) => m.set(k, String(v)) };
 }
 function makeEngine() {

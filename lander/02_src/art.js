@@ -10,7 +10,7 @@ const AH = 640;
 const ART_BTN_Y = AH - 80;     // game.js と同じ値（操作ゾーンのジオメトリは不変）
 const TAU = Math.PI * 2;
 
-export const FONT = '-apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", sans-serif';
+export const FONT = '-apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", "Noto Sans CJK JP", sans-serif';
 
 // ---------------------------------------------------------------- 色ユーティリティ
 function hexRGB(h) {
@@ -933,16 +933,62 @@ export function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
 
 // ================================================================ HUD
 // h: { stage, bodyName, atmoTag, realG, bonus, total, high, fuel(0..1), continues, modDefs, mods, debug, play,
-//      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t }
+//      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t, pilot(string|''), atmoLabel }
 function sevColor(s) { const p = P(); return s === 2 ? p.bad : s === 1 ? p.warn : null; }
+
+// 文字列の描画幅（txt と同じ字間・フォントで合算）。日本語など全角はブラウザの実測に従う
+export function textW(ctx, s, size, sp, wt) {
+  s = String(s == null ? '' : s);
+  const font = fontStr(wt || 400, size);
+  ctx.save(); ctx.font = font;
+  let total = 0;
+  for (let i = 0; i < s.length; i++) total += charW(ctx, font, s[i]) + (i < s.length - 1 ? (sp || 0) : 0);
+  ctx.restore();
+  return total;
+}
+// maxW に収まるように末尾を省略（…）。サロゲートペアは崩さない
+export function fitText(ctx, s, maxW, size, sp, wt) {
+  s = String(s == null ? '' : s);
+  if (textW(ctx, s, size, sp, wt) <= maxW) return s;
+  const chars = Array.from(s);
+  while (chars.length > 0 && textW(ctx, chars.join('') + '…', size, sp, wt) > maxW) chars.pop();
+  return chars.length ? chars.join('') + '…' : '';
+}
+// HUD の新規テキスト/計測行の配置（game のテストが重なり検査に使う。幅は上限=最大幅で保守的に見積もる）
+export const HUD_LAYOUT = {
+  row: { x: 8, y: 64, w: AW - 16, h: 26 },
+  labelY: 67, labelSize: 7,
+  info: { x: 14, y: 94, maxW: 176, size: 7 },
+  wind: { x: 200, y: 94 },
+  pilot: { right: AW - 12, y: 40, maxW: 112, size: 7 },
+  tip: { x: 20, y: 124, w: AW - 40, h: 84 },
+};
+export const HUD_LABELS = ['DESCENT', 'DRIFT', 'TILT', 'SPIN'];
+export function hudInfoText(h) {
+  const g = (h.realG != null) ? 'g ' + Number(h.realG).toFixed(2) + ' m/s²' : '';
+  const tag = String(h.atmoTag || '');
+  const a = (!tag || tag === 'NONE') ? 'NO ATMOSPHERE' : tag;
+  return g ? g + '  ·  ' + a : a;
+}
 export function drawHUD(ctx, h) {
   const p = P();
   const t = h.t || 0;
+  const L = HUD_LAYOUT;
   // 行A: ステージ/天体名 と スコア
   txt(ctx, (h.bonus ? 'BONUS  ·  ' : '') + 'STAGE ' + h.stage, 52, 8, 8, h.bonus ? p.warn : p.dim, 'left', { sp: 2.5, w: 500 });
   txt(ctx, h.bodyName, 52, 19, 15, p.fg, 'left', { sp: 4, w: 300 });
   num(ctx, h.total, AW - 12, 7, 20, p.fg, { w: 200 });
   txt(ctx, 'BEST ' + (h.high || 0), AW - 12, 31, 8, p.dim, 'right', { sp: 2, w: 500 });
+  // パイロット名（BEST の下。ラベルは dim、名前は少し明るく。長い名前は省略）
+  if (h.pilot) {
+    const lab = 'PILOT', lw = textW(ctx, lab, L.pilot.size, 1.5, 500), gap = 5;
+    const nm = fitText(ctx, h.pilot, L.pilot.maxW - lw - gap, L.pilot.size + 1, 0.5, 500);
+    if (nm) {
+      txt(ctx, nm, L.pilot.right, L.pilot.y - 0.5, L.pilot.size + 1, rgba(p.fg, 0.82), 'right', { sp: 0.5, w: 500 });
+      const nw = textW(ctx, nm, L.pilot.size + 1, 0.5, 500);
+      txt(ctx, lab, L.pilot.right - nw - gap, L.pilot.y, L.pilot.size, p.dim, 'right', { sp: 1.5, w: 500 });
+    }
+  }
   // 行B: 燃料 / 残機 / モジュール
   const fr = Math.max(0, Math.min(1, h.fuel));
   const fcol = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
@@ -960,34 +1006,54 @@ export function drawHUD(ctx, h) {
     const d = h.modDefs[i], lv = h.mods[d.id] || 0;
     if (!lv) continue;
     const cx = AW - 20 - 20 * mk;
-    drawModuleGlyph(ctx, d.id, cx, 52, 5.6, p.warn);
-    if (d.max > 1) for (let k = 0; k < lv; k++) { ctx.fillStyle = p.warn; ctx.fillRect(cx - 3.5 + k * 4, 60, 3, 1.4); }
+    drawModuleGlyph(ctx, d.id, cx, 53, 5.6, p.warn);
+    if (d.max > 1) for (let k = 0; k < lv; k++) { ctx.fillStyle = p.warn; ctx.fillRect(cx - 3.5 + k * 4, 61, 3, 1.4); }
     mk++;
   }
   if (h.debug) txt(ctx, 'DEBUG', 178, 8, 8, p.warn, 'left', { sp: 2.5, w: 500 });
   if (!h.play) return;
-  // 行C: 計測（ヘアライン枠）
+  // 行C: 計測（ヘアライン枠。各セルに小さなラベル）
   ctx.save();
-  rr(ctx, 8, 64, AW - 16, 22, 11); ctx.strokeStyle = rgba(p.fg, 0.13); ctx.lineWidth = 1; ctx.stroke();
+  rr(ctx, L.row.x, L.row.y, L.row.w, L.row.h, 13); ctx.strokeStyle = rgba(p.fg, 0.13); ctx.lineWidth = 1; ctx.stroke();
   ctx.restore();
-  const cells = 4, cw = (AW - 16) / cells;
-  for (let i = 1; i < cells; i++) hair(ctx, 8 + cw * i, 69, 8 + cw * i, 81, p.fg, 0.10);
+  const cells = 4, cw = L.row.w / cells;
+  for (let i = 1; i < cells; i++) hair(ctx, 8 + cw * i, 70, 8 + cw * i, 84, p.fg, 0.10);
   const cell = (i, ico, sev, value) => {
     const x0 = 8 + cw * i, c = sevColor(sev);
-    ico(ctx, x0 + 17, 75, 5, c || p.mid);
-    num(ctx, value, x0 + cw - 20, 68, 13, c || p.fg, { w: 300 });
+    txt(ctx, HUD_LABELS[i], x0 + cw / 2, L.labelY, L.labelSize, rgba(p.fg, 0.64), 'center', { sp: 1.6, w: 500 });
+    ico(ctx, x0 + 17, 82, 5, c || p.mid);
+    num(ctx, value, x0 + cw - 20, 75, 12, c || p.fg, { w: 300 });
   };
   cell(0, icoDown, h.sVy, Math.round(h.vy));
   cell(1, icoSide, h.sVx, Math.round(h.vx));
   cell(2, (c, x, y, s, col) => icoAngle(c, x, y, s, col, h.ang), h.sAng, Math.round(h.ang) + '°');
   cell(3, icoSpin, h.sOm, Math.round(h.om));
-  // 行D: 風
+  // 行D: 天体情報（重力 · 大気）と、風のある天体では風の矢印
+  const info = fitText(ctx, hudInfoText(h), L.info.maxW, L.info.size, 1.2, 500);
+  if (info) txt(ctx, info, L.info.x, L.info.y, L.info.size, rgba(p.fg, 0.64), 'left', { sp: 1.2, w: 500 });
   if (h.wind) {
     const wa = h.windAccel || 0, dir = wa >= 0 ? 1 : -1;
     const len = Math.min(34, 8 + Math.abs(wa) * 60);
-    txt(ctx, 'WIND', 14, 92, 8, p.dim, 'left', { sp: 2.5, w: 500 });
-    icoWind(ctx, 78, 96, len, dir, p.mid);
+    txt(ctx, 'WIND', L.wind.x, L.wind.y, 7, p.dim, 'left', { sp: 1.6, w: 500 });
+    icoWind(ctx, L.wind.x + 62, L.wind.y + 4, len, dir, p.mid);
   }
+}
+// 初回のみ表示する計器ヒント。行C を指す小さなキャレット付きの静かなパネル。k: 0..1（フェード）
+export function drawHudTip(ctx, k) {
+  const p = P(), L = HUD_LAYOUT.tip;
+  const a = Math.max(0, Math.min(1, k));
+  ctx.save();
+  ctx.globalAlpha = a;
+  panel(ctx, L.x, L.y, L.w, L.h, { a: 0.88, border: p.mid, ba: 0.28 });
+  // キャレット（パネル上辺から計測行へ）
+  ctx.beginPath(); ctx.moveTo(L.x + 40 - 7, L.y + 0.5); ctx.lineTo(L.x + 40, L.y - 8); ctx.lineTo(L.x + 40 + 7, L.y + 0.5);
+  ctx.strokeStyle = rgba(p.mid, 0.55); ctx.lineWidth = 1; ctx.stroke();
+  const cx = AW / 2;
+  txt(ctx, 'DESCENT ↓   DRIFT ↔   TILT   SPIN', cx, L.y + 14, 9, p.hi, 'center', { sp: 1.6, w: 500 });
+  txt(ctx, 'KEEP THEM WHITE TO LAND SAFELY', cx, L.y + 34, 9, p.fg, 'center', { sp: 2, w: 400 });
+  txt(ctx, 'AMBER = CAUTION    RED = TOO FAST', cx, L.y + 50, 8, p.warn, 'center', { sp: 1.8, w: 500 });
+  txt(ctx, 'TAP TO START', cx, L.y + 68, 7, p.dim, 'center', { sp: 3, w: 500 });
+  ctx.restore();
 }
 
 // ================================================================ 操作ボタン（下部バー）

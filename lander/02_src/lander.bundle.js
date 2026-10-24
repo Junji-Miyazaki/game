@@ -1000,7 +1000,7 @@ const AH = 640;
 const ART_BTN_Y = AH - 80;     // game.js と同じ値（操作ゾーンのジオメトリは不変）
 const TAU = Math.PI * 2;
 
-const FONT = '-apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", sans-serif';
+const FONT = '-apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", "Noto Sans CJK JP", sans-serif';
 
 // ---------------------------------------------------------------- 色ユーティリティ
 function hexRGB(h) {
@@ -1923,16 +1923,62 @@ function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
 
 // ================================================================ HUD
 // h: { stage, bodyName, atmoTag, realG, bonus, total, high, fuel(0..1), continues, modDefs, mods, debug, play,
-//      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t }
+//      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t, pilot(string|''), atmoLabel }
 function sevColor(s) { const p = P(); return s === 2 ? p.bad : s === 1 ? p.warn : null; }
+
+// 文字列の描画幅（txt と同じ字間・フォントで合算）。日本語など全角はブラウザの実測に従う
+function textW(ctx, s, size, sp, wt) {
+  s = String(s == null ? '' : s);
+  const font = fontStr(wt || 400, size);
+  ctx.save(); ctx.font = font;
+  let total = 0;
+  for (let i = 0; i < s.length; i++) total += charW(ctx, font, s[i]) + (i < s.length - 1 ? (sp || 0) : 0);
+  ctx.restore();
+  return total;
+}
+// maxW に収まるように末尾を省略（…）。サロゲートペアは崩さない
+function fitText(ctx, s, maxW, size, sp, wt) {
+  s = String(s == null ? '' : s);
+  if (textW(ctx, s, size, sp, wt) <= maxW) return s;
+  const chars = Array.from(s);
+  while (chars.length > 0 && textW(ctx, chars.join('') + '…', size, sp, wt) > maxW) chars.pop();
+  return chars.length ? chars.join('') + '…' : '';
+}
+// HUD の新規テキスト/計測行の配置（game のテストが重なり検査に使う。幅は上限=最大幅で保守的に見積もる）
+const HUD_LAYOUT = {
+  row: { x: 8, y: 64, w: AW - 16, h: 26 },
+  labelY: 67, labelSize: 7,
+  info: { x: 14, y: 94, maxW: 176, size: 7 },
+  wind: { x: 200, y: 94 },
+  pilot: { right: AW - 12, y: 40, maxW: 112, size: 7 },
+  tip: { x: 20, y: 124, w: AW - 40, h: 84 },
+};
+const HUD_LABELS = ['DESCENT', 'DRIFT', 'TILT', 'SPIN'];
+function hudInfoText(h) {
+  const g = (h.realG != null) ? 'g ' + Number(h.realG).toFixed(2) + ' m/s²' : '';
+  const tag = String(h.atmoTag || '');
+  const a = (!tag || tag === 'NONE') ? 'NO ATMOSPHERE' : tag;
+  return g ? g + '  ·  ' + a : a;
+}
 function drawHUD(ctx, h) {
   const p = P();
   const t = h.t || 0;
+  const L = HUD_LAYOUT;
   // 行A: ステージ/天体名 と スコア
   txt(ctx, (h.bonus ? 'BONUS  ·  ' : '') + 'STAGE ' + h.stage, 52, 8, 8, h.bonus ? p.warn : p.dim, 'left', { sp: 2.5, w: 500 });
   txt(ctx, h.bodyName, 52, 19, 15, p.fg, 'left', { sp: 4, w: 300 });
   num(ctx, h.total, AW - 12, 7, 20, p.fg, { w: 200 });
   txt(ctx, 'BEST ' + (h.high || 0), AW - 12, 31, 8, p.dim, 'right', { sp: 2, w: 500 });
+  // パイロット名（BEST の下。ラベルは dim、名前は少し明るく。長い名前は省略）
+  if (h.pilot) {
+    const lab = 'PILOT', lw = textW(ctx, lab, L.pilot.size, 1.5, 500), gap = 5;
+    const nm = fitText(ctx, h.pilot, L.pilot.maxW - lw - gap, L.pilot.size + 1, 0.5, 500);
+    if (nm) {
+      txt(ctx, nm, L.pilot.right, L.pilot.y - 0.5, L.pilot.size + 1, rgba(p.fg, 0.82), 'right', { sp: 0.5, w: 500 });
+      const nw = textW(ctx, nm, L.pilot.size + 1, 0.5, 500);
+      txt(ctx, lab, L.pilot.right - nw - gap, L.pilot.y, L.pilot.size, p.dim, 'right', { sp: 1.5, w: 500 });
+    }
+  }
   // 行B: 燃料 / 残機 / モジュール
   const fr = Math.max(0, Math.min(1, h.fuel));
   const fcol = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
@@ -1950,34 +1996,54 @@ function drawHUD(ctx, h) {
     const d = h.modDefs[i], lv = h.mods[d.id] || 0;
     if (!lv) continue;
     const cx = AW - 20 - 20 * mk;
-    drawModuleGlyph(ctx, d.id, cx, 52, 5.6, p.warn);
-    if (d.max > 1) for (let k = 0; k < lv; k++) { ctx.fillStyle = p.warn; ctx.fillRect(cx - 3.5 + k * 4, 60, 3, 1.4); }
+    drawModuleGlyph(ctx, d.id, cx, 53, 5.6, p.warn);
+    if (d.max > 1) for (let k = 0; k < lv; k++) { ctx.fillStyle = p.warn; ctx.fillRect(cx - 3.5 + k * 4, 61, 3, 1.4); }
     mk++;
   }
   if (h.debug) txt(ctx, 'DEBUG', 178, 8, 8, p.warn, 'left', { sp: 2.5, w: 500 });
   if (!h.play) return;
-  // 行C: 計測（ヘアライン枠）
+  // 行C: 計測（ヘアライン枠。各セルに小さなラベル）
   ctx.save();
-  rr(ctx, 8, 64, AW - 16, 22, 11); ctx.strokeStyle = rgba(p.fg, 0.13); ctx.lineWidth = 1; ctx.stroke();
+  rr(ctx, L.row.x, L.row.y, L.row.w, L.row.h, 13); ctx.strokeStyle = rgba(p.fg, 0.13); ctx.lineWidth = 1; ctx.stroke();
   ctx.restore();
-  const cells = 4, cw = (AW - 16) / cells;
-  for (let i = 1; i < cells; i++) hair(ctx, 8 + cw * i, 69, 8 + cw * i, 81, p.fg, 0.10);
+  const cells = 4, cw = L.row.w / cells;
+  for (let i = 1; i < cells; i++) hair(ctx, 8 + cw * i, 70, 8 + cw * i, 84, p.fg, 0.10);
   const cell = (i, ico, sev, value) => {
     const x0 = 8 + cw * i, c = sevColor(sev);
-    ico(ctx, x0 + 17, 75, 5, c || p.mid);
-    num(ctx, value, x0 + cw - 20, 68, 13, c || p.fg, { w: 300 });
+    txt(ctx, HUD_LABELS[i], x0 + cw / 2, L.labelY, L.labelSize, rgba(p.fg, 0.64), 'center', { sp: 1.6, w: 500 });
+    ico(ctx, x0 + 17, 82, 5, c || p.mid);
+    num(ctx, value, x0 + cw - 20, 75, 12, c || p.fg, { w: 300 });
   };
   cell(0, icoDown, h.sVy, Math.round(h.vy));
   cell(1, icoSide, h.sVx, Math.round(h.vx));
   cell(2, (c, x, y, s, col) => icoAngle(c, x, y, s, col, h.ang), h.sAng, Math.round(h.ang) + '°');
   cell(3, icoSpin, h.sOm, Math.round(h.om));
-  // 行D: 風
+  // 行D: 天体情報（重力 · 大気）と、風のある天体では風の矢印
+  const info = fitText(ctx, hudInfoText(h), L.info.maxW, L.info.size, 1.2, 500);
+  if (info) txt(ctx, info, L.info.x, L.info.y, L.info.size, rgba(p.fg, 0.64), 'left', { sp: 1.2, w: 500 });
   if (h.wind) {
     const wa = h.windAccel || 0, dir = wa >= 0 ? 1 : -1;
     const len = Math.min(34, 8 + Math.abs(wa) * 60);
-    txt(ctx, 'WIND', 14, 92, 8, p.dim, 'left', { sp: 2.5, w: 500 });
-    icoWind(ctx, 78, 96, len, dir, p.mid);
+    txt(ctx, 'WIND', L.wind.x, L.wind.y, 7, p.dim, 'left', { sp: 1.6, w: 500 });
+    icoWind(ctx, L.wind.x + 62, L.wind.y + 4, len, dir, p.mid);
   }
+}
+// 初回のみ表示する計器ヒント。行C を指す小さなキャレット付きの静かなパネル。k: 0..1（フェード）
+function drawHudTip(ctx, k) {
+  const p = P(), L = HUD_LAYOUT.tip;
+  const a = Math.max(0, Math.min(1, k));
+  ctx.save();
+  ctx.globalAlpha = a;
+  panel(ctx, L.x, L.y, L.w, L.h, { a: 0.88, border: p.mid, ba: 0.28 });
+  // キャレット（パネル上辺から計測行へ）
+  ctx.beginPath(); ctx.moveTo(L.x + 40 - 7, L.y + 0.5); ctx.lineTo(L.x + 40, L.y - 8); ctx.lineTo(L.x + 40 + 7, L.y + 0.5);
+  ctx.strokeStyle = rgba(p.mid, 0.55); ctx.lineWidth = 1; ctx.stroke();
+  const cx = AW / 2;
+  txt(ctx, 'DESCENT ↓   DRIFT ↔   TILT   SPIN', cx, L.y + 14, 9, p.hi, 'center', { sp: 1.6, w: 500 });
+  txt(ctx, 'KEEP THEM WHITE TO LAND SAFELY', cx, L.y + 34, 9, p.fg, 'center', { sp: 2, w: 400 });
+  txt(ctx, 'AMBER = CAUTION    RED = TOO FAST', cx, L.y + 50, 8, p.warn, 'center', { sp: 1.8, w: 500 });
+  txt(ctx, 'TAP TO START', cx, L.y + 68, 7, p.dim, 'center', { sp: 3, w: 500 });
+  ctx.restore();
 }
 
 // ================================================================ 操作ボタン（下部バー）
@@ -3719,6 +3785,8 @@ const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無�
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
 const HOLD_GRACE_S      = 0.5;   // RESUME直後は操縦入力を無視する秒数
+const HUD_TIP_S        = 4;     // 初回ヒントの表示秒数
+const HUD_TIP_LOCK_S   = 0.3;   // 表示直後のタップ無視
 const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン無視（誤タップ防止）
 const ADMIN_PER_PAGE    = 5;
 let _adminKeyMem = '';   // 管理キー（セッション中のみ・メモリ上。保存しない）
@@ -3885,11 +3953,32 @@ class Game extends Scene {
       this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
     }
     this._initStage();
+    this._maybeShowTip();
   }
 
   exit() { this._admin = null; this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
+  // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
+  _maybeShowTip() {
+    const st = this.engine.storage;
+    if (this.state !== 'play') return;
+    let seen = null; try { seen = st.get('hudTipSeen', null); } catch (_) { /* ignore */ }
+    if (seen) return;
+    try { st.set('hudTipSeen', '1'); } catch (_) { /* ignore */ }
+    this._tipT = HUD_TIP_S;
+    this._tipPrev = this.state;
+    this.state = 'tip';
+    this._inputLock = HUD_TIP_LOCK_S;
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  }
+  _endTip() {
+    if (this.state !== 'tip') return;
+    this.state = this._tipPrev || 'play';
+    this._tipPrev = null; this._tipT = 0;
+    this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+  }
   blocksBack() { return this.state === 'module' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
@@ -4003,6 +4092,10 @@ class Game extends Scene {
       if (action === 'tap' && data && data.t0 < this._overlayAt) return;          // この画面に入る前から押していた指の解除は無視
     }
 
+    if (this.state === 'tip') {   // ヒント表示中: タップで閉じる（出現前から押していた指の解除や直後0.3秒は無視）。操縦には使わない
+      if (action === 'tap' && data && !data.repeat && data.t0 >= this._overlayAt && this._inputLock <= 0) this._endTip();
+      return;
+    }
     if (this.state === 'hold') { this._holdInput(action, data); return; }
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
@@ -4379,6 +4472,11 @@ class Game extends Scene {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
+    if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
+      if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
+      this._tipT -= dt; if (this._tipT <= 0) this._endTip();
+      return;
+    }
     if (this.state === 'hold') { if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt); return; }   // MISSION HOLD: 全て凍結
     this._clock = (this._clock || 0) + dt;
 
@@ -4806,6 +4904,14 @@ class Game extends Scene {
       if (this._admin) this._drawAdmin(ctx); else this._drawDebugPanel(ctx);
       return;
     }
+    if (this.state === 'tip') {
+      const real = this.state;
+      this.state = this._tipPrev || 'play';
+      this._tipOn = true;
+      try { this._renderScene(ctx); } finally { this.state = real; this._tipOn = false; }
+      drawHudTip(ctx, Math.min(1, (HUD_TIP_S - this._tipT) / 0.25, this._tipT / 0.3));
+      return;
+    }
     if (this.state === 'hold') {
       const real = this.state;
       this.state = this._holdPrev || 'play';
@@ -4866,7 +4972,7 @@ class Game extends Scene {
     this._drawHUD(ctx);
 
     // 天体の紹介バナー（天体の最初のステージ）
-    if (this.state === 'play' && this._introT > 0 && body) {
+    if (this.state === 'play' && !this._tipOn && this._introT > 0 && body) {
       const parts = introText(body).split(' · ');
       drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
@@ -5039,6 +5145,9 @@ class Game extends Scene {
     h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
     h.debug = isDebug(); h.play = this.state === 'play';
     h.t = this._clock || 0;
+    h.realG = b ? b.realG : null; h.atmoTag = b ? b.atmoTag : '';
+    if (this._pilotFor !== this.runId) { this._pilotFor = this.runId; const pr = getActiveProfile(this.engine.storage); this._pilotName = (pr && pr.name) || ''; }
+    h.pilot = this._pilotName || '';
     h.wind = !!this._windSpec; h.windAccel = this._windAccel || 0;
     const vy = this.vy || 0, vx = this.vx || 0, ang = this.angle || 0, om = this.omega || 0;
     const absAng = Math.abs(((ang + 180) % 360 + 360) % 360 - 180);

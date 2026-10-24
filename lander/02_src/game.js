@@ -13,7 +13,7 @@ import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstac
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
 import { relayEnabled, submitScore, adminList, adminDelete } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay } from './title.js';
-import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote } from './art.js';
+import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -89,6 +89,8 @@ const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無�
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
 const HOLD_GRACE_S      = 0.5;   // RESUME直後は操縦入力を無視する秒数
+const HUD_TIP_S        = 4;     // 初回ヒントの表示秒数
+const HUD_TIP_LOCK_S   = 0.3;   // 表示直後のタップ無視
 const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン無視（誤タップ防止）
 const ADMIN_PER_PAGE    = 5;
 let _adminKeyMem = '';   // 管理キー（セッション中のみ・メモリ上。保存しない）
@@ -255,11 +257,32 @@ export class Game extends Scene {
       this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
     }
     this._initStage();
+    this._maybeShowTip();
   }
 
   exit() { this._admin = null; this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
+  // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
+  _maybeShowTip() {
+    const st = this.engine.storage;
+    if (this.state !== 'play') return;
+    let seen = null; try { seen = st.get('hudTipSeen', null); } catch (_) { /* ignore */ }
+    if (seen) return;
+    try { st.set('hudTipSeen', '1'); } catch (_) { /* ignore */ }
+    this._tipT = HUD_TIP_S;
+    this._tipPrev = this.state;
+    this.state = 'tip';
+    this._inputLock = HUD_TIP_LOCK_S;
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  }
+  _endTip() {
+    if (this.state !== 'tip') return;
+    this.state = this._tipPrev || 'play';
+    this._tipPrev = null; this._tipT = 0;
+    this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+  }
   blocksBack() { return this.state === 'module' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
@@ -373,6 +396,10 @@ export class Game extends Scene {
       if (action === 'tap' && data && data.t0 < this._overlayAt) return;          // この画面に入る前から押していた指の解除は無視
     }
 
+    if (this.state === 'tip') {   // ヒント表示中: タップで閉じる（出現前から押していた指の解除や直後0.3秒は無視）。操縦には使わない
+      if (action === 'tap' && data && !data.repeat && data.t0 >= this._overlayAt && this._inputLock <= 0) this._endTip();
+      return;
+    }
     if (this.state === 'hold') { this._holdInput(action, data); return; }
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
@@ -749,6 +776,11 @@ export class Game extends Scene {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
+    if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
+      if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
+      this._tipT -= dt; if (this._tipT <= 0) this._endTip();
+      return;
+    }
     if (this.state === 'hold') { if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt); return; }   // MISSION HOLD: 全て凍結
     this._clock = (this._clock || 0) + dt;
 
@@ -1176,6 +1208,14 @@ export class Game extends Scene {
       if (this._admin) this._drawAdmin(ctx); else this._drawDebugPanel(ctx);
       return;
     }
+    if (this.state === 'tip') {
+      const real = this.state;
+      this.state = this._tipPrev || 'play';
+      this._tipOn = true;
+      try { this._renderScene(ctx); } finally { this.state = real; this._tipOn = false; }
+      drawHudTip(ctx, Math.min(1, (HUD_TIP_S - this._tipT) / 0.25, this._tipT / 0.3));
+      return;
+    }
     if (this.state === 'hold') {
       const real = this.state;
       this.state = this._holdPrev || 'play';
@@ -1236,7 +1276,7 @@ export class Game extends Scene {
     this._drawHUD(ctx);
 
     // 天体の紹介バナー（天体の最初のステージ）
-    if (this.state === 'play' && this._introT > 0 && body) {
+    if (this.state === 'play' && !this._tipOn && this._introT > 0 && body) {
       const parts = introText(body).split(' · ');
       drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
@@ -1409,6 +1449,9 @@ export class Game extends Scene {
     h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
     h.debug = isDebug(); h.play = this.state === 'play';
     h.t = this._clock || 0;
+    h.realG = b ? b.realG : null; h.atmoTag = b ? b.atmoTag : '';
+    if (this._pilotFor !== this.runId) { this._pilotFor = this.runId; const pr = getActiveProfile(this.engine.storage); this._pilotName = (pr && pr.name) || ''; }
+    h.pilot = this._pilotName || '';
     h.wind = !!this._windSpec; h.windAccel = this._windAccel || 0;
     const vy = this.vy || 0, vx = this.vx || 0, ang = this.angle || 0, om = this.omega || 0;
     const absAng = Math.abs(((ang + 180) % 360 + 360) % 360 - 180);

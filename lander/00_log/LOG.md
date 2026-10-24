@@ -2,6 +2,12 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 中継差し替えの確認・HUD公開（Opus 5.5 リーダー）
+- **中継**: ユーザーが ranking-worker.js を貼り替え、Secret `ADMIN_KEY` を追加。書き込みなしで確認：/ranking 正常、/name で「みや」=登録済み・「ミヤ」=未使用（全角・カナは別名）、鍵なし送信400、管理キーなし/誤り401、他人の削除403。**ユーザーが実機で名前の追加・削除（WORLD記録の削除を含む）を確認済み**。
+- **HUD（Sonnet）**: 計器ラベル DESCENT/DRIFT/TILT/SPIN、重力・大気の常時表示、PILOT名、初回だけの計器説明（表示中は物理停止）。全テスト 2,388件通過、画面を目視確認。
+- **既知の軽微点**: ステージ開始直後、機体（Y=90）が情報行の右端と一瞬重なる（すぐ降下して解消）。
+- **次**: ボーナス再設計（PLAN §7f：TERRA＋3択＋SKIP）。
+
 ## 2026-10-25 統合・公開：HOLD/ABORT・再開・パイロット・所有キー・WORLD ADMIN（Opus 5.5 リーダー）
 - **統合**: ゲーム側（Sonnet: HOLD/ABORT、保存と再開、PUBLIC BETA、パイロット3名、WORLD ADMIN）と中継側（Sonnet: 名前ごとベスト、names.json、所有キー、/name /delete /admin/*）を並行実装→統合。全テスト 1,212件通過（smoke p1 p15 p2a p2m p2b p2j p3fix p4hold p4save p4net）。
 - **問題と対処**: 2担当が同じ p3fix.mjs を編集し、中継担当の「送信に鍵を自動付与」修正が後勝ちで消えていた → リーダーが1行で復元。教訓: 並行担当に同じテストファイルを触らせない。
@@ -109,3 +115,15 @@
 - **p3fix の失敗1件（本担当外）**: `D3: valid submit writes monthly log + top.json` が失敗（06_server/ranking-worker.js を並行担当が改修中で、鍵無しの submit が拒否されるため）。私の変更範囲の p3fix 項目はすべて通過。ワーカー側テストの更新が必要。
 - **目視（Chrome ペイン 280px幅, ?debug / 通常）**: HUD の HOLD ボタン、MISSION HOLD、ABORT MISSION? 確認パネル、チェックポイント有りのタイトル（PUBLIC BETA / PILOTS / CONTINUE MISSION・NEW MISSION）、PILOTS パネルを確認。コンソールの既存の古いエラー（'Unexpected token export' 履歴, 404）以外に新規なし。
 - **未確認**: 音（duck の聞こえ方、uiTap）は聴いていない。実機 iOS（blur/visibilitychange の発火、タップ感、名前入力 DOM の CHECKING…/エラー表示）。WORLD ADMIN と実サーバーとの通し（ここでは fetch スタブのみ。管理パネルの目視は未実施）。サーバーの submit が名前の所有者違いで返すステータスを 403/409 と仮定（net.js の `errOf` と実装側に合わせて要確認）。deleteName の 'unknown' は net.js の 404 対応に依存。
+
+## 2026-10-25 P5 — HUD 改善（計器ラベル・天体情報・PILOT・初回ヒント）（Sonnet 5.5）
+- **要望**: 「画面上部の矢印と数字の意味が分からない。ステージの重力等とパイロット名も表示して」。
+- **計器行**: 枠を y64..90（h26）に拡大し、各セル上部に 7px の薄い字間ラベル（ivory 64%）を追加。文言 `DESCENT / DRIFT / TILT / SPIN`（↓縦速度・↔横速度・傾き角・回転速度）。数値は 12px、アイコン/数値の下げ（cy82）。安全限界値の併記は混むため見送り（色 ivory→amber→red は初回ヒントで説明）。
+- **天体情報**: y94 左 x14、7px 'g 1.62 m/s²  ·  NO ATMOSPHERE'（真空は NONE→NO ATMOSPHERE、他は bodies.js の atmoTag）。幅 176 を超えたら省略。風のある天体は WIND ラベル＋矢印を x200 に移動（BACK/HOLD/ミュートの下で衝突しない。DBG は x316 以降）。BONUS 表示は従来どおり行Aのまま。
+- **PILOT**: BEST の下（右端 x348、y40、7px）。`PILOT` は dim、名前は明るく 8px。最大幅 112 を超えると『…』で省略（`fitText`、サロゲート対応）。名前は `getActiveProfile(storage)`（ranking.js 既存）を runId 変更時のみ解決して `_pilotName` にキャッシュ。日本語は FONT に Hiragino/Yu Gothic/Noto Sans JP を追加。DEBUG タグ（x178）と重ならない（右端区間 x>=236）。
+- **初回ヒント**: `hudTipSeen`（storage）が無い端末で `enter()` 後に state 'tip' を1回だけ表示（表示時にフラグ保存。ブロックされた storage でも例外なし。その場合は保存できないので毎回出る）。物理・時計・風・障害物・紹介バナーとも凍結、約 4 秒で自動、またはタップで解除。表示後 0.3 秒と出現前から押していた指の解除は無視。解除後は RESUME と同じ 0.5 秒の操縦無効（`_holdGrace`）で、タップが推力にならない。HOLD/ミュート位置のタップも解除のみ。パネルは y124（機体の初期位置 y90 の下）、キャレットは計器行を指す。文言 `DESCENT ↓  DRIFT ↔  TILT  SPIN / KEEP THEM WHITE TO LAND SAFELY / AMBER = CAUTION  RED = TOO FAST / TAP TO START`。
+- **コード**: art.js（drawHUD、drawHudTip、textW/fitText/HUD_LAYOUT/HUD_LABELS/hudInfoText 新規 export）、game.js（HUD データ受け渡し、'tip' 状態、_maybeShowTip/_endTip）。コミットなし。
+- **既存テストの最小変更**: 新規端末では tip が出るため、p1/p15/p2b/p4save/p4hold のストレージ初期値に `hudTipSeen` を入れ、p3fix の freshGame と p4hold のエンジン経由 2 箇所で tip を閉じる。ロジックは無改変。
+- **テスト**: 新規 `04_tests/p5hud.mjs` 1271 件（文言、全 6 天体×ボーナス有無×デバッグ有無×6 種の名前（長い ASCII/日本語含む）×8 状態の描画で例外なし、文字グリフ単位で BACK/ミュート/HOLD/DBG と非重複・画面外なし、レイアウト非重複、tip の1回限り・凍結・自動/タップ解除・誤推力なし・ブロック storage）。既存 smoke 2, p1 104, p15 392, p2a 30, p2m 47, p2b 99, p2j 54, p3fix 104, p4hold 72, p4save 81, p4net 132 すべて通過。bundle 再生成・`node --check` OK。
+- **目視（Chrome ペイン 360x640, ?debug）**: MOON（初回ヒント表示中）、MARS（風矢印）、IO（日本語長名の省略）、VENUS（明るい空でのラベル可読性→alpha 0.46→0.64 に調整）を確認。コンソールは既存の古いエラーのみ。
+- **未確認**: 実機 iOS の字面幅（canvas フォント）、開始直後（y90）の機体が左の情報行に一瞬重なる点（機体は落下で離れる）。
