@@ -560,7 +560,7 @@ function rollOffers(mods, rnd = Math.random, count = 2) {
 // ---- 02_src/net.js ----
 // 世界ランキング中継クライアント（P1.5）。RELAY_URL が空なら機能オフ＝ネットワーク呼び出しは一切しない。
 // どの関数も例外を投げない。タイムアウトは AbortController＋競合タイマーの両方で保証し、本文の読み取り(json)まで含めて覆う。
-let RELAY_URL = '';   // 例: 'https://lander-ranking.xxx.workers.dev'（未設定）
+let RELAY_URL = 'https://lander-ranking.euler057721.workers.dev';   // ランキング中継（Cloudflare Worker、06_server/）。空にすると機能オフ
 function __setRelayUrl(u) { RELAY_URL = String(u || '').replace(/\/+$/, ''); }  // テスト用
 function relayEnabled() { return !!RELAY_URL; }
 const NET_TIMEOUT_MS = 5000;
