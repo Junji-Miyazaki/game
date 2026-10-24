@@ -81,28 +81,39 @@ class Audio {
 
 // ---- 02_src/core/storage.js ----
 // ハイスコア等のローカル保存。localStorageの薄いラッパ。
+// localStorage はブロック(SecurityError)・容量超過で例外を投げうるため、全メソッドが決して投げない。
 const PREFIX = 'lander.';
 
 const Storage = {
   getHigh(gameId) {
-    const v = localStorage.getItem(PREFIX + 'high.' + gameId);
-    return v ? parseInt(v, 10) : 0;
+    try {
+      const v = localStorage.getItem(PREFIX + 'high.' + gameId);
+      const n = v ? parseInt(v, 10) : 0;
+      return Number.isFinite(n) ? n : 0;
+    } catch (_) { return 0; }
   },
-  // 新記録なら保存してtrueを返す
+  // 新記録なら保存してtrueを返す（保存失敗・非新記録は false）
   setHigh(gameId, score) {
-    const cur = this.getHigh(gameId);
-    if (score > cur) {
-      localStorage.setItem(PREFIX + 'high.' + gameId, String(score));
-      return true;
-    }
+    try {
+      const cur = this.getHigh(gameId);
+      if (score > cur) {
+        localStorage.setItem(PREFIX + 'high.' + gameId, String(score));
+        return true;
+      }
+    } catch (_) { /* ignore */ }
     return false;
   },
   get(key, def = null) {
-    const v = localStorage.getItem(PREFIX + key);
-    return v == null ? def : v;
+    try {
+      const v = localStorage.getItem(PREFIX + key);
+      return v == null ? def : v;
+    } catch (_) { return def; }
   },
   set(key, val) {
-    localStorage.setItem(PREFIX + key, String(val));
+    try {
+      localStorage.setItem(PREFIX + key, String(val));
+      return true;
+    } catch (_) { return false; }
   },
 };
 
@@ -235,10 +246,18 @@ class Engine {
 
     // キーボード。入力欄(名前入力など)にフォーカス中はゲーム操作として扱わない
     // （Backspace=戻る / Space・Enter の preventDefault が入力を壊すため）。
-    const isTextTarget = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable === true);
+    const isTextTarget = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SELECT' || t.isContentEditable === true);
     window.addEventListener('keydown', (e) => {
       if (isTextTarget(e.target)) return;
       const k = e.key;
+      // オートリピート: 決定/戻るは無視（押しっぱなしで結果画面が進むのを防ぐ）。
+      // 矢印・WASDはゲーム側が「リピートで推力/RCSを継続」する設計なので届ける。
+      if (e.repeat && (k === 'Enter' || k === ' ' || k === 'Escape' || k === 'Backspace')) {
+        // 推力(Space)はプレイ中のみ必要。repeat フラグ付きで届け、結果画面側が無視する。
+        if (k === ' ' || k === 'Enter') dispatch('confirm', { repeat: true });
+        e.preventDefault();
+        return;
+      }
       if (k === 'ArrowUp' || k === 'w') { dispatch('up'); e.preventDefault(); }
       else if (k === 'ArrowDown' || k === 's') { dispatch('down'); e.preventDefault(); }
       else if (k === 'ArrowLeft' || k === 'a') { dispatch('left'); e.preventDefault(); }
@@ -248,7 +267,9 @@ class Engine {
     });
 
     // ---- ポインタ追跡 ----
-    const SWIPE = 24; // スワイプとみなす最小移動量(px CSS)
+    const SWIPE = 24;
+    const TAP_MAX_MS = 400; // これより長く押した指の解除はタップにしない（長押しは操作入力）
+    const nowMs = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // スワイプとみなす最小移動量(px CSS)
     this._touchMap = new Map(); // id -> {x,y}（論理座標。this.touches の要素と同一オブジェクト＝常に最新）
     this.touches = [];          // 現在押されている全点（挿入順）
     this._gesture = null;       // タップ/スワイプ判定用。「他の指が無い状態で最初に置かれた指」のみ
@@ -267,7 +288,7 @@ class Engine {
       const wasEmpty = this._touchMap.size === 0;
       this._touchMap.set(id, toLogical(cx, cy));
       // 2本目以降の指が来たらジェスチャ判定は無効（単一指のみ）
-      this._gesture = wasEmpty ? { id, sx: cx, sy: cy } : null;
+      this._gesture = wasEmpty ? { id, sx: cx, sy: cy, t0: nowMs() } : null;
       sync();
     };
     this._pMove = (id, cx, cy) => {
@@ -287,7 +308,11 @@ class Engine {
       if (cancelled) return; // キャンセルされた接触はタップ扱いにしない
       const dx = cx - g.sx, dy = cy - g.sy;
       const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (adx < SWIPE && ady < SWIPE) dispatch('tap', toLogical(cx, cy));
+      if (adx < SWIPE && ady < SWIPE) {
+        if (nowMs() - g.t0 > TAP_MAX_MS) return;   // 長押し解除はタップではない
+        const d = toLogical(cx, cy); d.t0 = g.t0;  // 押下時刻（結果画面側が「入る前から押していた指」を弾くのに使う）
+        dispatch('tap', d);
+      }
       else if (adx > ady) dispatch(dx > 0 ? 'right' : 'left');
       else dispatch(dy > 0 ? 'down' : 'up');
     };
@@ -305,9 +330,11 @@ class Engine {
     c.addEventListener('touchcancel', (e) => { each(e, (t) => this._pEnd(t.identifier, t.clientX, t.clientY, true)); e.preventDefault(); }, { passive: false });
 
     // マウス（PC確認用）。move/up は window で受け、キャンバス外で離しても必ず解除する。
-    c.addEventListener('mousedown', (e) => { this._pStart('mouse', e.clientX, e.clientY); });
+    c.addEventListener('mousedown', (e) => { if (e.button) return; this._pStart('mouse', e.clientX, e.clientY); });
     window.addEventListener('mousemove', (e) => { this._pMove('mouse', e.clientX, e.clientY); });
-    window.addEventListener('mouseup', (e) => { this._pEnd('mouse', e.clientX, e.clientY, false); });
+    window.addEventListener('mouseup', (e) => { if (e.button) return; this._pEnd('mouse', e.clientX, e.clientY, false); });
+
+    c.addEventListener('contextmenu', (e) => { e.preventDefault(); this._clearPointers(); });
 
     // フォーカス喪失・非表示・ページ離脱では全ポインタ解除（押しっぱなし固着の防止）
     window.addEventListener('blur', this._clearPointers);
@@ -532,13 +559,14 @@ function rollOffers(mods, rnd = Math.random, count = 2) {
 
 // ---- 02_src/net.js ----
 // 世界ランキング中継クライアント（P1.5）。RELAY_URL が空なら機能オフ＝ネットワーク呼び出しは一切しない。
-// どの関数も例外を投げない。タイムアウトは AbortController＋競合タイマーの両方で保証。
+// どの関数も例外を投げない。タイムアウトは AbortController＋競合タイマーの両方で保証し、本文の読み取り(json)まで含めて覆う。
 let RELAY_URL = '';   // 例: 'https://lander-ranking.xxx.workers.dev'（未設定）
 function __setRelayUrl(u) { RELAY_URL = String(u || '').replace(/\/+$/, ''); }  // テスト用
 function relayEnabled() { return !!RELAY_URL; }
 const NET_TIMEOUT_MS = 5000;
 
-function withTimeout(url, init, ms) {
+// fetch〜本文の読み取り(parse)までを1本のタイムアウトで覆う。決して throw しない（失敗は reject→呼び出し側で握る）。
+function request(url, init, ms, parse) {
   const f = globalThis.fetch;
   if (typeof f !== 'function') return Promise.reject(new Error('no fetch'));
   const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -546,8 +574,11 @@ function withTimeout(url, init, ms) {
   const timeout = new Promise((_, rej) => {
     timer = setTimeout(() => { try { ac && ac.abort(); } catch (_) { /* ignore */ } rej(new Error('timeout')); }, ms);
   });
-  const req = Promise.resolve().then(() => f(url, Object.assign({}, init, ac ? { signal: ac.signal } : {})));
-  return Promise.race([req, timeout]).finally(() => clearTimeout(timer));
+  const work = Promise.resolve()
+    .then(() => f(url, Object.assign({}, init, ac ? { signal: ac.signal } : {})))
+    .then((res) => parse(res));
+  work.catch(() => {});   // timeout 後に遅れて失敗しても未処理 rejection にしない
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
 // entry = { name, score, stage } -> { ok, status? , error? }
@@ -555,8 +586,8 @@ async function submitScore(entry, timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return { ok: false, error: 'disabled' };
   try {
     const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage });
-    const res = await withTimeout(RELAY_URL + '/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs);
-    return { ok: !!(res && res.ok), status: res && res.status };
+    return await request(RELAY_URL + '/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs,
+      (res) => ({ ok: !!(res && res.ok), status: res && res.status }));
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   }
@@ -566,10 +597,11 @@ async function submitScore(entry, timeoutMs = NET_TIMEOUT_MS) {
 async function fetchWorldTop(timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return null;
   try {
-    const res = await withTimeout(RELAY_URL + '/ranking', { method: 'GET' }, timeoutMs);
-    if (!res || !res.ok) return null;
-    const j = await res.json();
-    return (j && Array.isArray(j.top)) ? j.top : null;
+    return await request(RELAY_URL + '/ranking', { method: 'GET' }, timeoutMs, async (res) => {
+      if (!res || !res.ok) return null;
+      const j = await res.json();
+      return (j && Array.isArray(j.top)) ? j.top : null;
+    });
   } catch (_) {
     return null;
   }
@@ -2951,6 +2983,17 @@ function showNameOverlay(initial, onSubmit) {
   return true;
 }
 
+function nameOverlayOpen() {
+  return typeof document !== 'undefined' && !!(document.getElementById && document.getElementById('lander-name-entry'));
+}
+function hideNameOverlay() {
+  try {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    const old = document.getElementById('lander-name-entry');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  } catch (_) { /* ignore */ }
+}
+
 class TitleScene extends Scene {
   // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
   constructor(engine, startGame, opts) {
@@ -3021,7 +3064,11 @@ class TitleScene extends Scene {
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
+  exit() { hideNameOverlay(); }
+
   onInput(action, data) {
+    if (nameOverlayOpen()) return;           // 名前入力中はキャンバスの入力を受けない（下で発射が始まらない）
+    if (data && data.repeat) return;         // キーのオートリピートでは開始・スキップしない
     if (this.launch) {            // 発射中: タップ/決定でスキップ
       if (action === 'tap' || action === 'confirm') this._finishLaunch();
       return;
@@ -3258,6 +3305,7 @@ const CONTINUES_MAX     = 3;
 const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
 const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
 const BOUNCE_AIRBORNE_PX = 30;   // 地面からこれ以上離れたら「離陸」とみなしバウンス状態を解除
+const RESULT_STATES = ['landing', 'cleared', 'crashed', 'bonusfailed', 'module', 'gameover', 'ranking'];   // 結果画面（長押し解除・キーリピートで進めない）
 const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
@@ -3399,6 +3447,7 @@ function hexA(hex, a) {
 class Game extends Scene {
 
   enter() {
+    hideNameOverlay();   // 名前入力DOMがゲーム画面に残らないように
     this.high       = (this.engine.storage.getHigh(meta.id) || 0);
     this.totalScore = 0;
     this.stage      = 1;
@@ -3414,7 +3463,7 @@ class Game extends Scene {
     this._initStage();
   }
 
-  exit() { const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() { hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   blocksBack() { return this.state === 'module'; }
@@ -3513,6 +3562,10 @@ class Game extends Scene {
   // ---- Discrete input (keyboard / tap) ----
   onInput(action, data) {
     const confirm = (action === 'tap' || action === 'confirm');
+    if (RESULT_STATES.indexOf(this.state) >= 0) {
+      if (data && data.repeat) return;                                            // キーのオートリピートは進行に使わない
+      if (action === 'tap' && data && data.t0 < this._overlayAt) return;          // この画面に入る前から押していた指の解除は無視
+    }
 
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
@@ -3646,6 +3699,7 @@ class Game extends Scene {
   _setOverlayState(state) {
     this.state = state;
     this._inputLock = INPUT_LOCK_S;
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   }
 
   _finishLanding() {

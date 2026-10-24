@@ -112,6 +112,17 @@ export function showNameOverlay(initial, onSubmit) {
   return true;
 }
 
+export function nameOverlayOpen() {
+  return typeof document !== 'undefined' && !!(document.getElementById && document.getElementById('lander-name-entry'));
+}
+export function hideNameOverlay() {
+  try {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    const old = document.getElementById('lander-name-entry');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  } catch (_) { /* ignore */ }
+}
+
 export class TitleScene extends Scene {
   // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
   constructor(engine, startGame, opts) {
@@ -182,7 +193,11 @@ export class TitleScene extends Scene {
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
+  exit() { hideNameOverlay(); }
+
   onInput(action, data) {
+    if (nameOverlayOpen()) return;           // 名前入力中はキャンバスの入力を受けない（下で発射が始まらない）
+    if (data && data.repeat) return;         // キーのオートリピートでは開始・スキップしない
     if (this.launch) {            // 発射中: タップ/決定でスキップ
       if (action === 'tap' || action === 'confirm') this._finishLaunch();
       return;

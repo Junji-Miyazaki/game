@@ -2,6 +2,13 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 リーダー統合（Opus 5.5）— P2b後の調整
+- **実施**: 新SFXと重複していた旧8bitビープを削除（モジュール取得・着陸・タイトル開始。開始は uiTap に置換）。**クラッシュ音はユーザー指定で旧来の低いビープ（120Hz・ノコギリ波・0.25秒）に戻した**（生成SFXは不採用）。p2bのテストを意図に合わせて更新。
+- **判断**: 発射演出は `TitleScene` に `{launch:true}` を渡したときだけ有効（main.jsで指定済み）。既存テストの前提を壊さないため、この形を採用。初回タップがSTARTだとタイトル曲が鳴らずに発射へ進む（iOSの仕様で最初の入力までは音を出せない）→ 許容。
+- **確認**: 全テスト 657/657。タイトル画面をスクリーンショットで目視確認。
+- **未確認**: 実機での音の聴感（全音源）、iOSでのフォント・fps、名前入力DOM。
+- **次**: P3 Opus第三者検証（1回）→ ユーザーの push 指示待ち → 中継URLの組み込み（ユーザーのWorker作成後）。
+
 ## 2026-10-25 P2b — アニメーションタイトル・発射シーケンス・音楽フック・ミュート（Sonnet 5.5）
 - **実施**: (1) タイトル再設計（art.js に追加のみ: `SITE/astronautCycle/drawTitleSky/drawLaunchSite/drawTower/drawRocket/drawLaunchFlame/drawGroundBlast/drawSmoke/drawSpeaker`。既存関数は無変更）。地球の青の時間帯の発射場: まばらに瞬く星・低い地平線の暁光・遠景の丘と灯り・パッドと照明柱。白い汎用の再使用型ブースター（ロゴ/ブランド/既存リバリー無し。象牙〜青白のグラデ、段間にティールの細線、グリッドフィン、折りたたみ脚）、格子のサービスタワー（クルーアクセスアーム＋上段アーム、航空障害灯2つがゆっくり点滅）、足元と側面の蒸気。宇宙飛行士は `drawAstronaut` を1.4倍で使用、22秒周期: タワーから歩く→手を振る→ハッチへ搭乗(フェード、ハッチが点灯)→内部→ハッチで再び手を振る→引っ込む→無人→再開。ロゴ=軽いウェイト・字間16の `LANDER`、デバッグ5連打ターゲットはロゴ枠のまま。UI: PILOT/CHANGE・START(ピル、呼吸する枠)・BEST・RANKING・右上にスピーカー(MUTE)。全UIは発射場の地面(y>=408)に置きロケット/タワーと重ならない。
 - **(2) 発射**: `LAUNCH={total:3.5, ignite:0.75, arm 1.0-1.7, lift:1.6, accel:300}`。0〜0.75s 控えめな3-2-1、点火(閃光＋`sfx.launch`＋煙バースト12個)、アーム退避、上昇は 0.5*300*u^2（ゆっくり→加速）、カメラは上昇量の0.6倍で追従＋空が宇宙色へ、2.85s から暗転→3.5s で `startGame()`。ゲーム側は `fadeInScene()`（main.js）が暗転から0.8sでフェードイン。タップ/決定でスキップ（1回だけ発火）。名前未設定は従来どおり名前入力→確定→発射。**`new TitleScene(engine, startGame, {launch:true})` のときだけ発射を挟む**（省略時は従来の即開始。p1/p15 の既存テストが「タップ→即 started」を前提にしているため。main.js は launch:true を指定）。
@@ -58,3 +65,10 @@
 - **SFX**: landing=C-E-Gの上昇3音チャイム／crash=サイン低音(110→32Hz)＋ノイズバースト／module=三角波5音の速いアルペジオ／launch=ローパスノイズ120→2500Hz＋サブ上昇、約3秒／uiTap=1.8kHz 35msクリック。`engine.audio.enabled===false`ならSFXは無音。
 - **ボイス上限**: 一過性は音楽14＋SFX10＝最大24。持続ノードはシーン毎に約10〜14（クロスフェード中は2シーン分）。終了ノードはtick内のsweepでstop/disconnect。
 - **検証**: `node 04_tests/p2m.mjs` 47/47（偽AudioContext、120秒×7シーン、SFX連打、クロスフェード破棄、mute/unmute、ctx差し替え）、`node --check`、`node build.js`、smoke 2/2。**実際の音は未試聴**（音量バランス・音色の良否は実機/ブラウザで要確認）。フック（タイトル/ゲーム側の呼び出し・ミュートUI・永続化）はリーダー側。
+
+## 2026-10-25 P3fix — 第三者検証指摘の修正（Sonnet 5.5）
+- **D1**: engine.js — 押下時刻 t0 を記録し、400ms 超の押下の解除、およびマウスの長押しは 'tap' にしない（スワイプは従来どおり）。tap データに t0 を載せ、Game は結果画面（landing/cleared/crashed/bonusfailed/module/gameover）に入る前から押していた指のタップを無視（`_overlayAt`）。キーの `e.repeat`: Escape/Backspace は破棄、Space/Enter は `confirm {repeat:true}` で届け、結果画面とタイトルは無視（プレイ中の推力パルスは維持）。矢印キーのリピートは従来どおり（プレイが依存）。
+- **D2**: storage.js 4メソッドを try/catch（getHigh=0/NaN→0、get=既定値、set/setHigh=false）。game.js の遷移順は変更不要（storage が投げなくなったため setOverlayState に必ず到達）。
+- **D3**: ranking-worker.js を月別ログ `LOG_DIR/YYYY-MM[-n].jsonl`（約900KBで繰り上げ）＋`TOP_FILE`（上位100）へ再設計。GET は top.json のみ。sha は object 形式、内容は raw 形式。409/422 再試行は両書き込みに維持。名前は bidi/書式制御除去＋書記素12文字（Intl.Segmenter、無ければコードポイント）、結合文字の暴走対策でコードポイント総数32上限。環境変数 FILE→LOG_DIR/TOP_FILE、README 更新、ALLOWED_ORIGINS は本番 Pages のみ推奨。
+- **軽微**: 非主ボタンの mousedown/mouseup 無視＋canvas の contextmenu で preventDefault と全ポインタ解除／キー入力は BUTTON/SELECT 上でも無視／名前入力オーバーレイ表示中は TitleScene が入力無視、TitleScene.exit と Game.enter/exit でオーバーレイ除去（export: nameOverlayOpen/hideNameOverlay）／net.js のタイムアウトを本文 json() まで含めて覆う。
+- **検証**: `node build.js`＋`node --check`、smoke 2/2、p1 104、p15 387、p2a 30、p2m 47、p2b 99、p2j 54、新規 `04_tests/p3fix.mjs` 104/104。物理・見た目・音楽は未変更。実機（iOS タッチ長押し、実 GitHub API、実 DOM のフォーカス挙動）は未確認。

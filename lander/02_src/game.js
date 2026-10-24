@@ -12,7 +12,7 @@ import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose } from './bodies.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
 import { relayEnabled, submitScore } from './net.js';
-import { musicOf, toggleMute, isMuted } from './title.js';
+import { musicOf, toggleMute, isMuted, hideNameOverlay } from './title.js';
 import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker } from './art.js';
 
 export const meta = {
@@ -84,6 +84,7 @@ const CONTINUES_MAX     = 3;
 const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
 const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
 const BOUNCE_AIRBORNE_PX = 30;   // 地面からこれ以上離れたら「離陸」とみなしバウンス状態を解除
+const RESULT_STATES = ['landing', 'cleared', 'crashed', 'bonusfailed', 'module', 'gameover', 'ranking'];   // 結果画面（長押し解除・キーリピートで進めない）
 const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
@@ -225,6 +226,7 @@ function hexA(hex, a) {
 export class Game extends Scene {
 
   enter() {
+    hideNameOverlay();   // 名前入力DOMがゲーム画面に残らないように
     this.high       = (this.engine.storage.getHigh(meta.id) || 0);
     this.totalScore = 0;
     this.stage      = 1;
@@ -240,7 +242,7 @@ export class Game extends Scene {
     this._initStage();
   }
 
-  exit() { const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() { hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   blocksBack() { return this.state === 'module'; }
@@ -339,6 +341,10 @@ export class Game extends Scene {
   // ---- Discrete input (keyboard / tap) ----
   onInput(action, data) {
     const confirm = (action === 'tap' || action === 'confirm');
+    if (RESULT_STATES.indexOf(this.state) >= 0) {
+      if (data && data.repeat) return;                                            // キーのオートリピートは進行に使わない
+      if (action === 'tap' && data && data.t0 < this._overlayAt) return;          // この画面に入る前から押していた指の解除は無視
+    }
 
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
@@ -472,6 +478,7 @@ export class Game extends Scene {
   _setOverlayState(state) {
     this.state = state;
     this._inputLock = INPUT_LOCK_S;
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   }
 
   _finishLanding() {

@@ -129,10 +129,18 @@ export class Engine {
 
     // キーボード。入力欄(名前入力など)にフォーカス中はゲーム操作として扱わない
     // （Backspace=戻る / Space・Enter の preventDefault が入力を壊すため）。
-    const isTextTarget = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable === true);
+    const isTextTarget = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SELECT' || t.isContentEditable === true);
     window.addEventListener('keydown', (e) => {
       if (isTextTarget(e.target)) return;
       const k = e.key;
+      // オートリピート: 決定/戻るは無視（押しっぱなしで結果画面が進むのを防ぐ）。
+      // 矢印・WASDはゲーム側が「リピートで推力/RCSを継続」する設計なので届ける。
+      if (e.repeat && (k === 'Enter' || k === ' ' || k === 'Escape' || k === 'Backspace')) {
+        // 推力(Space)はプレイ中のみ必要。repeat フラグ付きで届け、結果画面側が無視する。
+        if (k === ' ' || k === 'Enter') dispatch('confirm', { repeat: true });
+        e.preventDefault();
+        return;
+      }
       if (k === 'ArrowUp' || k === 'w') { dispatch('up'); e.preventDefault(); }
       else if (k === 'ArrowDown' || k === 's') { dispatch('down'); e.preventDefault(); }
       else if (k === 'ArrowLeft' || k === 'a') { dispatch('left'); e.preventDefault(); }
@@ -142,7 +150,9 @@ export class Engine {
     });
 
     // ---- ポインタ追跡 ----
-    const SWIPE = 24; // スワイプとみなす最小移動量(px CSS)
+    const SWIPE = 24;
+    const TAP_MAX_MS = 400; // これより長く押した指の解除はタップにしない（長押しは操作入力）
+    const nowMs = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // スワイプとみなす最小移動量(px CSS)
     this._touchMap = new Map(); // id -> {x,y}（論理座標。this.touches の要素と同一オブジェクト＝常に最新）
     this.touches = [];          // 現在押されている全点（挿入順）
     this._gesture = null;       // タップ/スワイプ判定用。「他の指が無い状態で最初に置かれた指」のみ
@@ -161,7 +171,7 @@ export class Engine {
       const wasEmpty = this._touchMap.size === 0;
       this._touchMap.set(id, toLogical(cx, cy));
       // 2本目以降の指が来たらジェスチャ判定は無効（単一指のみ）
-      this._gesture = wasEmpty ? { id, sx: cx, sy: cy } : null;
+      this._gesture = wasEmpty ? { id, sx: cx, sy: cy, t0: nowMs() } : null;
       sync();
     };
     this._pMove = (id, cx, cy) => {
@@ -181,7 +191,11 @@ export class Engine {
       if (cancelled) return; // キャンセルされた接触はタップ扱いにしない
       const dx = cx - g.sx, dy = cy - g.sy;
       const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (adx < SWIPE && ady < SWIPE) dispatch('tap', toLogical(cx, cy));
+      if (adx < SWIPE && ady < SWIPE) {
+        if (nowMs() - g.t0 > TAP_MAX_MS) return;   // 長押し解除はタップではない
+        const d = toLogical(cx, cy); d.t0 = g.t0;  // 押下時刻（結果画面側が「入る前から押していた指」を弾くのに使う）
+        dispatch('tap', d);
+      }
       else if (adx > ady) dispatch(dx > 0 ? 'right' : 'left');
       else dispatch(dy > 0 ? 'down' : 'up');
     };
@@ -199,9 +213,11 @@ export class Engine {
     c.addEventListener('touchcancel', (e) => { each(e, (t) => this._pEnd(t.identifier, t.clientX, t.clientY, true)); e.preventDefault(); }, { passive: false });
 
     // マウス（PC確認用）。move/up は window で受け、キャンバス外で離しても必ず解除する。
-    c.addEventListener('mousedown', (e) => { this._pStart('mouse', e.clientX, e.clientY); });
+    c.addEventListener('mousedown', (e) => { if (e.button) return; this._pStart('mouse', e.clientX, e.clientY); });
     window.addEventListener('mousemove', (e) => { this._pMove('mouse', e.clientX, e.clientY); });
-    window.addEventListener('mouseup', (e) => { this._pEnd('mouse', e.clientX, e.clientY, false); });
+    window.addEventListener('mouseup', (e) => { if (e.button) return; this._pEnd('mouse', e.clientX, e.clientY, false); });
+
+    c.addEventListener('contextmenu', (e) => { e.preventDefault(); this._clearPointers(); });
 
     // フォーカス喪失・非表示・ページ離脱では全ポインタ解除（押しっぱなし固着の防止）
     window.addEventListener('blur', this._clearPointers);

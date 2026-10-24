@@ -1,25 +1,36 @@
 // ハイスコア等のローカル保存。localStorageの薄いラッパ。
+// localStorage はブロック(SecurityError)・容量超過で例外を投げうるため、全メソッドが決して投げない。
 const PREFIX = 'lander.';
 
 export const Storage = {
   getHigh(gameId) {
-    const v = localStorage.getItem(PREFIX + 'high.' + gameId);
-    return v ? parseInt(v, 10) : 0;
+    try {
+      const v = localStorage.getItem(PREFIX + 'high.' + gameId);
+      const n = v ? parseInt(v, 10) : 0;
+      return Number.isFinite(n) ? n : 0;
+    } catch (_) { return 0; }
   },
-  // 新記録なら保存してtrueを返す
+  // 新記録なら保存してtrueを返す（保存失敗・非新記録は false）
   setHigh(gameId, score) {
-    const cur = this.getHigh(gameId);
-    if (score > cur) {
-      localStorage.setItem(PREFIX + 'high.' + gameId, String(score));
-      return true;
-    }
+    try {
+      const cur = this.getHigh(gameId);
+      if (score > cur) {
+        localStorage.setItem(PREFIX + 'high.' + gameId, String(score));
+        return true;
+      }
+    } catch (_) { /* ignore */ }
     return false;
   },
   get(key, def = null) {
-    const v = localStorage.getItem(PREFIX + key);
-    return v == null ? def : v;
+    try {
+      const v = localStorage.getItem(PREFIX + key);
+      return v == null ? def : v;
+    } catch (_) { return def; }
   },
   set(key, val) {
-    localStorage.setItem(PREFIX + key, String(val));
+    try {
+      localStorage.setItem(PREFIX + key, String(val));
+      return true;
+    } catch (_) { return false; }
   },
 };
