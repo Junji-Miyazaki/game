@@ -323,6 +323,8 @@ export class TitleScene extends Scene {
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
+      // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
+      if (this.showRank) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; return; }
       if (this._hit(this.logoBox, data) || this._hit(this.betaBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
@@ -335,6 +337,7 @@ export class TitleScene extends Scene {
         return;
       }
     }
+    if (this.showRank && (action === 'confirm' || action === 'back')) { this.showRank = false; return; }   // キー操作でも一覧を閉じるだけ
     if (action === 'confirm' && this.cp) { this._continueMission(); return; }
     if (action === 'tap' || action === 'confirm') {
       musicOf(this.engine).sfx.uiTap();
@@ -472,6 +475,9 @@ export class TitleScene extends Scene {
       this.engine.stroke(20, 90, W - 40, 440, p.mid, 2);
       this.engine.text('TOP 10', W / 2, 104, 20, p.hi, 'center');
       drawRankPanel(this.engine, ctx, this.tabs, this.rank, 32, 130, W - 64, -1);
+      ctx.save(); ctx.globalAlpha = 0.55 + 0.25 * Math.sin(this.t * 2.4);
+      this.engine.text('TAP TO CLOSE', W / 2, 508, 9, p.dim, 'center');
+      ctx.restore();
     }
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;
