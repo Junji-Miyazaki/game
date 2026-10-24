@@ -2,6 +2,11 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 公開（Opus 5.5 リーダー）
+- **実施**: ポータル `index.html` に LANDER のリンクを追加し、18コミットを push。GitHub Pages で `lander/index.html` が 200、公開バンドルが最新（シールドLv2の文言で確認）、ポータルのリンク反映を確認。公開URL: https://junji-miyazaki.github.io/game/lander/index.html （デバッグは `?debug`）。
+- **問題と対処**: 旧トークン（classic）とキーチェーンの認証が失効しており push 不可。ユーザーが fine-grained トークンを作成。`token.txt` に複数のトークンが入っており、`game` への push は上から2番目で成功。一番下のトークンは `game` に拒否された（`lander-scores` 専用なら正しい）。push のトークン抽出は `github_pat_` 形式にも対応させた。
+- **次**: 実機での確認（音・操作感・名前入力・fps）。ランキング中継は Worker の URL 待ち（受け取ったら `02_src/net.js` の `RELAY_URL` に設定）。`token.txt` の失効済みトークンの整理はユーザー側で行う。
+
 ## 2026-10-25 モジュール調整（Opus 5.5 リーダー、直接実装）
 - **実施**: ユーザー判断で FUEL TANK（燃料+25%）を候補から除外。SHIELD を Lv2 まで重ねられるように変更（レベル＝ステージ毎の吸収回数、毎ステージ回復、残り回数ぶん同心円リングを表示）。候補は STABILIZER / SHOCK ABSORBER / RADAR / SHIELD の4種・合計7レベル。
 - **テスト**: p15 にシールドLv2（2回吸収→3回目でクラッシュ→次ステージで回復）を追加。燃料150前提だった PRECISION の期待値と、モジュール数を5と決め打ちしていたファズを修正。全テスト832件通過。
