@@ -1,0 +1,53 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "microarcade",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "MiniRogueGame/server.js"
+      ],
+      "port": 4173
+    },
+    {
+      "name": "shinsoku",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "shinsoku/server.js"
+      ],
+      "port": 4180
+    },
+    {
+      "name": "impossible-score",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "impossible_score/server.js"
+      ],
+      "port": 4190
+    },
+    {
+      "name": "cyber-shogi",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "shogi/server.js"
+      ],
+      "port": 4195
+    },
+    {
+      "name": "meteor",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "meteor/server.js"
+      ],
+      "port": 4174
+    },
+    {
+      "name": "lander",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "lander/server.js"
+      ],
+      "port": 4176
+    }
+  ]
+}
