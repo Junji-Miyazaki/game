@@ -1163,3 +1163,284 @@ export function drawDebugTag(ctx, b) {
   pill(ctx, b.x, b.y, b.w, b.h, rgba('#06080E', 0.5), rgba(p.warn, 0.55));
   txt(ctx, 'DBG', b.x + b.w / 2, b.y + 3.5, 8, p.warn, 'center', { sp: 1.5, w: 500 });
 }
+
+// ================================================================ P2b: タイトル（地球の発射場）と発射シーケンス
+// 世界座標は論理画面(360x640)と同じ。発射中はカメラ(camY)で世界を下へずらす。
+// 機体は汎用の白い再使用型ブースター（ロゴ・ブランド・既存機体のリバリーは使わない）。
+export const SITE = { groundY: 396, rocketX: 200, towerX: 111, armY: 262, upperArmY: 214, towerTop: 176, rocketH: 232, hw: 15 };
+
+// 宇宙飛行士の1サイクル(22秒): タワーから歩く → 手を振る → 搭乗 → 内部 → ハッチで手を振る → 引っ込む → 無人
+export function astronautCycle(t) {
+  const C = 22, u = ((t % C) + C) % C;
+  const x0 = 114, x1 = 174, x2 = 180;
+  const sm = (a) => a * a * (3 - 2 * a);
+  if (u < 0.5) return { x: x0, mode: 'walk', a: sm(u / 0.5), glow: 0 };
+  if (u < 4.5) return { x: x0 + (x1 - x0) * (u - 0.5) / 4, mode: 'walk', a: 1, glow: 0 };
+  if (u < 7) return { x: x1, mode: 'wave', a: 1, glow: 0.25 };
+  if (u < 7.8) { const k = (u - 7) / 0.8; return { x: x1 + (x2 - x1) * k, mode: 'walk', a: 1 - sm(k), glow: 0.25 + 0.75 * k }; }
+  if (u < 14) return { x: x2, mode: 'hidden', a: 0, glow: 1 };
+  if (u < 14.6) return { x: x2, mode: 'wave', a: sm((u - 14) / 0.6), glow: 1 };
+  if (u < 17) return { x: x2, mode: 'wave', a: 1, glow: 1 };
+  if (u < 17.6) return { x: x2, mode: 'wave', a: 1 - sm((u - 17) / 0.6), glow: 1 };
+  if (u < 19.5) return { x: x2, mode: 'hidden', a: 0, glow: 1 - (u - 17.6) / 1.9 };
+  return { x: x0, mode: 'hidden', a: 0, glow: 0 };
+}
+
+export function drawTitleSky(ctx, o) {
+  const k = Math.max(0, Math.min(1, o.space || 0)), gY = SITE.groundY, camY = o.camY || 0;
+  const hy = gY + camY;
+  const c = (hex) => mixHex(hex, '#06080E', k);
+  const g = mkL(ctx, 0, 0, 0, Math.max(200, hy));
+  g.addColorStop(0, c('#04060f')); g.addColorStop(0.5, c('#0a142b')); g.addColorStop(0.8, c('#16294a'));
+  g.addColorStop(0.94, c('#2c4466')); g.addColorStop(1, c('#8f6a66'));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, AW, AH);
+  // 地平線のほのかな暁光
+  if (k < 0.98) {
+    ctx.save(); ctx.translate(120, hy); ctx.scale(280, 96);
+    ctx.globalAlpha = 0.20 * (1 - k);
+    ctx.fillStyle = gRad(ctx, 'tsGlow', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,164,108,0.9)'], [0.45, 'rgba(255,140,96,0.35)'], [1, 'rgba(255,120,90,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+  // 星（まばら・ゆっくり瞬く。深い星は宇宙に近づくほど現れる）
+  const stars = o.stars || [], t = o.t || 0, fg = P().fg;
+  ctx.save();
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    const y = s.y + camY * 0.35;
+    const fh = Math.max(0, Math.min(1, (hy - 26 - y) / 150));
+    if (fh <= 0 || y < -2) continue;
+    let a = (0.28 + 0.5 * Math.abs(Math.sin(t * 0.7 + s.tw))) * fh * (0.7 + 0.8 * k);
+    if (s.deep) a *= k;
+    if (a < 0.02) continue;
+    ctx.globalAlpha = Math.min(1, a);
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.arc(s.x, y, s.r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function avLight(ctx, x, y, t, ph) {
+  const u = (t + ph) % 2.6;
+  const a = u < 0.5 ? 1 - u / 0.5 : 0;
+  ctx.fillStyle = rgba('#ff4a3d', 0.28 + 0.72 * a);
+  ctx.beginPath(); ctx.arc(x, y, 1.5, 0, TAU); ctx.fill();
+  if (a > 0.02) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(9, 9); ctx.globalAlpha = 0.6 * a;
+    ctx.fillStyle = gRad(ctx, 'tsRed', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,74,61,0.9)'], [1, 'rgba(255,74,61,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  }
+}
+
+// 地面・遠景・パッド（世界座標）
+export function drawLaunchSite(ctx, o) {
+  const gY = SITE.groundY, rx = SITE.rocketX, t = (o && o.t) || 0;
+  ctx.save();
+  // 遠景の丘と灯り
+  ctx.beginPath(); ctx.moveTo(-10, gY + 2);
+  for (let x = -10; x <= AW + 10; x += 10) ctx.lineTo(x, gY - 7 - 5 * Math.sin(x * 0.031 + 1) - 4 * Math.sin(x * 0.073 + 2));
+  ctx.lineTo(AW + 10, gY + 2); ctx.closePath();
+  ctx.fillStyle = '#0a111d'; ctx.fill();
+  for (let i = 0; i < 6; i++) {
+    const x = 18 + i * 61 + (i % 2) * 14, y = gY - 9 - 5 * Math.sin(x * 0.031 + 1) - 4 * Math.sin(x * 0.073 + 2);
+    ctx.fillStyle = rgba('#ffc878', 0.30 + 0.2 * Math.sin(t * 0.9 + i * 2));
+    ctx.fillRect(x, y, 1.4, 1.4);
+  }
+  // 地面
+  ctx.fillStyle = gLin(ctx, 'tsGround', 0, gY, 0, gY + 130, [[0, '#101826'], [0.35, '#0a0f19'], [1, '#06080E']]);
+  ctx.fillRect(-20, gY, AW + 40, 900);
+  ctx.fillStyle = rgba('#9db4d6', 0.16); ctx.fillRect(-20, gY, AW + 40, 1);
+  // パッドの床照明
+  ctx.save(); ctx.translate(rx, gY + 2); ctx.scale(130, 14); ctx.globalAlpha = 0.5;
+  ctx.fillStyle = gRad(ctx, 'tsPadLight', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,214,160,0.28)'], [1, 'rgba(255,214,160,0)']]);
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  // パッド（スラブ）
+  ctx.beginPath(); ctx.moveTo(rx - 88, gY); ctx.lineTo(rx + 88, gY); ctx.lineTo(rx + 102, gY + 10); ctx.lineTo(rx - 102, gY + 10); ctx.closePath();
+  ctx.fillStyle = '#1b2433'; ctx.fill();
+  ctx.fillStyle = '#2d3a4f'; ctx.fillRect(rx - 88, gY, 176, 2);
+  ctx.fillStyle = '#0a0e16'; ctx.fillRect(rx - 20, gY + 2, 40, 8);        // 炎導坑
+  // 照明柱
+  for (const lx of [rx - 74, rx + 78]) {
+    ctx.strokeStyle = '#3a475c'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(lx, gY); ctx.lineTo(lx, gY - 17); ctx.stroke();
+    ctx.fillStyle = '#ffd9a0'; ctx.fillRect(lx - 2.5, gY - 18.5, 5, 1.6);
+    ctx.save(); ctx.translate(lx, gY - 18); ctx.scale(15, 15); ctx.globalAlpha = 0.7;
+    ctx.fillStyle = gRad(ctx, 'tsLamp', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,214,160,0.55)'], [1, 'rgba(255,214,160,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+}
+
+// サービスタワー（格子・デッキ・クルーアクセスアーム・航空障害灯）。o.arm: 0=接続 → 1=退避
+export function drawTower(ctx, o) {
+  const x = SITE.towerX, gY = SITE.groundY, top = SITE.towerTop, t = (o && o.t) || 0;
+  const k = Math.max(0, Math.min(1, (o && o.arm) || 0));
+  const STEEL = '#3b485d', LIT = '#6a7d99';
+  const rEdge = SITE.rocketX - SITE.hw;
+  ctx.save();
+  ctx.lineCap = 'butt';
+  // 脚
+  ctx.strokeStyle = STEEL; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - 9, gY); ctx.lineTo(x - 9, top); ctx.moveTo(x + 9, gY); ctx.lineTo(x + 9, top); ctx.stroke();
+  ctx.strokeStyle = rgba(LIT, 0.75); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(x + 9.9, gY); ctx.lineTo(x + 9.9, top); ctx.stroke();
+  // ブレース
+  ctx.strokeStyle = rgba(STEEL, 0.95); ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0, y = gY; y - 22 >= top; i++, y -= 22) {
+    if (i % 2) { ctx.moveTo(x + 9, y); ctx.lineTo(x - 9, y - 22); } else { ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y - 22); }
+    ctx.moveTo(x - 9, y - 22); ctx.lineTo(x + 9, y - 22);
+  }
+  ctx.stroke();
+  // キャップとマスト
+  ctx.fillStyle = STEEL; ctx.fillRect(x - 11, top - 3, 22, 4);
+  ctx.strokeStyle = LIT; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, top - 3); ctx.lineTo(x, top - 26); ctx.stroke();
+  // アーム（ヒンジ=タワー側。退避は奥へ回る表現として横幅を縮める）
+  const sx = Math.max(0.04, 1 - k * 0.96);
+  const arm = (y, tipX, withRail) => {
+    ctx.save(); ctx.translate(x + 9, y); ctx.scale(sx, 1);
+    const len = tipX - (x + 9);
+    ctx.fillStyle = '#566782'; ctx.fillRect(0, 0, len, 3);
+    ctx.fillStyle = '#2b3445'; ctx.fillRect(0, 3, len, 1.5);
+    if (withRail) {
+      ctx.strokeStyle = rgba(LIT, 0.7); ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(len, -9);
+      for (let px = 0; px <= len; px += 13) { ctx.moveTo(px, 0); ctx.lineTo(px, -9); }
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  ctx.fillStyle = STEEL; ctx.fillRect(x - 12, SITE.armY - 1, 8, 4); ctx.fillRect(x - 12, SITE.upperArmY - 1, 8, 4);
+  arm(SITE.upperArmY, rEdge - 1, false);
+  arm(SITE.armY, rEdge - 0.5, true);
+  // アンビリカル（アーム退避で外れる）
+  if (k < 0.35) {
+    ctx.globalAlpha = 1 - k / 0.35;
+    ctx.strokeStyle = '#1a212e'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(x + 9, 318); ctx.quadraticCurveTo((x + rEdge) / 2, 330, rEdge, 316); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // 航空障害灯（ゆっくり点滅）
+  avLight(ctx, x, top - 26, t, 0);
+  avLight(ctx, x + 9, top + 70, t, 1.3);
+  ctx.restore();
+}
+
+// 汎用の白い再使用型ブースター。(x, y) = エンジン下端の中央。
+export function drawRocket(ctx, x, y, o) {
+  const hw = SITE.hw, glow = (o && o.glow) || 0;
+  ctx.save();
+  ctx.translate(x, y);
+  // エンジン・脚（折りたたみ）
+  ctx.fillStyle = '#2a303b'; ctx.fillRect(-12, -9, 24, 9);
+  ctx.fillStyle = '#3a342f';
+  for (const bx of [-8, 0, 8]) { ctx.beginPath(); ctx.moveTo(bx - 3, 0); ctx.lineTo(bx + 3, 0); ctx.lineTo(bx + 2, 3.5); ctx.lineTo(bx - 2, 3.5); ctx.closePath(); ctx.fill(); }
+  ctx.strokeStyle = '#c9d2de'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-hw, -38); ctx.lineTo(-hw - 3.5, -3); ctx.moveTo(hw, -38); ctx.lineTo(hw + 3.5, -3); ctx.stroke();
+  ctx.strokeStyle = '#8b97aa'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(-hw - 6, -2.5); ctx.lineTo(-hw - 1, -2.5); ctx.moveTo(hw + 1, -2.5); ctx.lineTo(hw + 6, -2.5); ctx.stroke();
+  // グリッドフィン
+  ctx.fillStyle = '#39424f'; ctx.fillRect(-hw - 5, -119, 5, 10); ctx.fillRect(hw, -119, 5, 10);
+  ctx.strokeStyle = 'rgba(190,200,215,0.35)'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(-hw - 5, -114); ctx.lineTo(-hw, -114); ctx.moveTo(hw, -114); ctx.lineTo(hw + 5, -114); ctx.stroke();
+  // 本体（横方向のグラデ: 左=暁光の暖色、右=夜側の青）
+  const body = gLin(ctx, 'rkBody', -hw, 0, hw, 0, [[0, '#e8dccd'], [0.28, '#fbf8f2'], [0.62, '#dbe2ec'], [1, '#8e9cb3']]);
+  ctx.fillStyle = body;
+  ctx.fillRect(-hw, -126, hw * 2, 117);                       // 1段目
+  ctx.fillRect(-hw, -192, hw * 2, 64);                        // 2段目
+  ctx.beginPath(); ctx.moveTo(-hw, -192); ctx.quadraticCurveTo(-hw, -220, 0, -SITE.rocketH); ctx.quadraticCurveTo(hw, -220, hw, -192); ctx.closePath(); ctx.fill();   // フェアリング
+  // 段間
+  ctx.fillStyle = '#9aa7ba'; ctx.fillRect(-hw, -130, hw * 2, 4);
+  ctx.fillStyle = rgba(P().mid, 0.75); ctx.fillRect(-hw, -126, hw * 2, 1.2);
+  // パネルの継ぎ目
+  ctx.strokeStyle = 'rgba(120,135,160,0.28)'; ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  for (const yy of [-34, -62, -92, -158, -190]) { ctx.moveTo(-hw, yy); ctx.lineTo(hw, yy); }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.7;      // ハイライトの縦線
+  ctx.beginPath(); ctx.moveTo(-hw + 4.5, -126); ctx.lineTo(-hw + 4.5, -12); ctx.moveTo(-hw + 4.5, -190); ctx.lineTo(-hw + 4.5, -132); ctx.stroke();
+  // クルーハッチ（アーム高さ）
+  const hy = -(SITE.groundY - SITE.armY);
+  rr(ctx, -hw + 1.5, hy - 24, 7, 24, 3);
+  ctx.fillStyle = rgba('#202a3a', 0.78); ctx.fill();
+  if (glow > 0.01) {
+    ctx.fillStyle = rgba('#ffcf8a', 0.85 * glow);
+    rr(ctx, -hw + 2.5, hy - 22, 5, 20, 2); ctx.fill();
+    ctx.save(); ctx.translate(-hw + 5, hy - 12); ctx.scale(14, 18); ctx.globalAlpha = 0.5 * glow;
+    ctx.fillStyle = gRad(ctx, 'rkHatch', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,200,130,0.7)'], [1, 'rgba(255,200,130,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+}
+
+// 噴射炎（ノズルは (x,y)）。k: 0..1。clipY: これより下は描かない（パッド上では炎導坑の中に収める）
+export function drawLaunchFlame(ctx, x, y, k, t, clipY) {
+  if (k <= 0.01) return;
+  ctx.save();
+  if (clipY !== undefined && clipY !== null) { ctx.beginPath(); ctx.rect(x - 160, y - 400, 320, clipY - (y - 400)); ctx.clip(); }
+  const fl = 0.92 + 0.08 * Math.sin(t * 47) + 0.05 * Math.sin(t * 29);
+  const L = (26 + 92 * k) * fl;
+  // 外炎（琥珀）
+  ctx.save(); ctx.translate(x, y + 2); ctx.scale(1, L); ctx.globalAlpha = Math.min(1, 0.6 + k);
+  ctx.fillStyle = gLin(ctx, 'flOut', 0, 0, 0, 1, [[0, 'rgba(255,248,230,1)'], [0.25, 'rgba(255,200,112,0.95)'], [0.7, 'rgba(255,156,64,0.5)'], [1, 'rgba(255,120,40,0)']]);
+  ctx.beginPath(); ctx.moveTo(-12, 0); ctx.quadraticCurveTo(-11, 0.45, 0, 1); ctx.quadraticCurveTo(11, 0.45, 12, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 白い芯
+  ctx.save(); ctx.translate(x, y + 2); ctx.scale(1, L * 0.62); ctx.globalAlpha = Math.min(1, 0.5 + k);
+  ctx.fillStyle = gLin(ctx, 'flCore', 0, 0, 0, 1, [[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,248,230,0.8)'], [1, 'rgba(255,230,180,0)']]);
+  ctx.beginPath(); ctx.moveTo(-6, 0); ctx.quadraticCurveTo(-5, 0.5, 0, 1); ctx.quadraticCurveTo(5, 0.5, 6, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 根元のグロー
+  ctx.save(); ctx.translate(x, y + 4); ctx.scale(34 + 26 * k, 22 + 14 * k); ctx.globalAlpha = 0.55 * k;
+  ctx.fillStyle = gRad(ctx, 'flGlow', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,230,180,0.95)'], [0.4, 'rgba(255,170,90,0.45)'], [1, 'rgba(255,140,60,0)']]);
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  ctx.restore();
+}
+
+// 地面を横に走る炎の照り返し
+export function drawGroundBlast(ctx, x, gY, k) {
+  if (k <= 0.01) return;
+  ctx.save(); ctx.translate(x, gY + 1); ctx.scale(60 + 90 * k, 12 + 10 * k); ctx.globalAlpha = 0.55 * k;
+  ctx.fillStyle = gRad(ctx, 'flGround', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,196,120,0.9)'], [0.5, 'rgba(255,140,70,0.35)'], [1, 'rgba(255,120,60,0)']]);
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+}
+
+// 煙・蒸気。粒子 {x,y,r,age,life,ph,spin,peak,kind(0=煙,1=蒸気),warm}。1粒 = 複数の柔らかい円(ローブ)＋下側の陰
+export function drawSmoke(ctx, parts) {
+  if (!parts || !parts.length) return;
+  const cool = gRad(ctx, 'smC', 0, 0, 0, 0, 0, 1, [[0, 'rgba(246,247,251,0.98)'], [0.58, 'rgba(228,233,243,0.86)'], [0.84, 'rgba(208,216,234,0.34)'], [1, 'rgba(200,208,228,0)']]);
+  const shd = gRad(ctx, 'smS', 0, 0, 0, 0, 0, 1, [[0, 'rgba(66,78,108,0.95)'], [0.6, 'rgba(76,88,118,0.6)'], [0.9, 'rgba(80,92,120,0.2)'], [1, 'rgba(80,92,120,0)']]);
+  const wrm = gRad(ctx, 'smW', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,226,176,0.95)'], [0.5, 'rgba(255,172,98,0.45)'], [1, 'rgba(255,140,70,0)']]);
+  const blob = (g, cx, cy, rad, al) => {
+    if (!(rad > 0.5) || al < 0.01) return;
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(rad, rad); ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  };
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    const u = p.age / p.life;
+    const a = p.peak * Math.min(1, p.age / 0.2) * Math.pow(Math.max(0, 1 - u), 1.0);
+    if (a < 0.01) continue;
+    if (p.kind === 1) { blob(cool, p.x, p.y, p.r, a); blob(cool, p.x + p.r * 0.35, p.y - p.r * 0.25, p.r * 0.7, a * 0.7); continue; }
+    blob(shd, p.x + p.r * 0.08, p.y + p.r * 0.3, p.r * 0.92, a * 0.62);
+    if (p.warm > 0 && p.age < 1.2) blob(wrm, p.x, p.y + p.r * 0.3, p.r * 0.9, a * 0.6 * (1 - p.age / 1.2));
+    for (let j = 0; j < 4; j++) {
+      const ang = p.ph + p.spin * p.age + j * 1.571;
+      blob(cool, p.x + Math.cos(ang) * p.r * 0.5, p.y + Math.sin(ang) * p.r * 0.34 - p.r * 0.06, p.r * (0.5 + 0.07 * j), a * 0.78);
+    }
+  }
+}
+
+// スピーカーのピクトグラム（ミュート時は×）。s=1 で約14px
+export function drawSpeaker(ctx, cx, cy, s, color, muted) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(s, s);
+  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-6, -2.6); ctx.lineTo(-3, -2.6); ctx.lineTo(1, -6); ctx.lineTo(1, 6); ctx.lineTo(-3, 2.6); ctx.lineTo(-6, 2.6); ctx.closePath(); ctx.fill();
+  if (!muted) {
+    ctx.beginPath(); ctx.arc(1.5, 0, 4.2, -0.95, 0.95); ctx.stroke();
+    ctx.beginPath(); ctx.arc(1.5, 0, 7.6, -0.9, 0.9); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(9, 3); ctx.moveTo(9, -3); ctx.lineTo(4, 3); ctx.stroke();
+  }
+  ctx.restore();
+}

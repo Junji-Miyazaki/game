@@ -12,7 +12,8 @@ import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose } from './bodies.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
 import { relayEnabled, submitScore } from './net.js';
-import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag } from './art.js';
+import { musicOf, toggleMute, isMuted } from './title.js';
+import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -239,7 +240,7 @@ export class Game extends Scene {
     this._initStage();
   }
 
-  exit() {}
+  exit() { musicOf(this.engine).stopAll(0.6); }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   blocksBack() { return this.state === 'module'; }
@@ -271,6 +272,7 @@ export class Game extends Scene {
     const btype    = this.bonus ? this.bonus.type : null;
     this._info     = sp.info;
     this._body     = sp.info.body;
+    if (this._body.id !== this._musBodyId) { this._musBodyId = this._body.id; musicOf(this.engine).playBody(this._body.id); }   // 天体が変わったら曲を切替
     this._gravity  = sp.gravity;
     this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
     this._windT    = 0;
@@ -335,6 +337,7 @@ export class Game extends Scene {
     const confirm = (action === 'tap' || action === 'confirm');
 
     if (this.state === 'debug') { this._debugInput(action, data); return; }
+    if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
     if (isDebug() && action === 'tap' && data && DBG_STATES.indexOf(this.state) >= 0 && this._inRect(this._dbgBtnRect(), data)) {
       this._dbgPrev = this.state;
       this.state = 'debug';
@@ -371,6 +374,7 @@ export class Game extends Scene {
     }
     if (this.state === 'crashed') {
       if (confirm && this._inputLock <= 0) {
+        musicOf(this.engine).sfx.uiTap();
         const g = this._giveUpRect();
         if (action === 'tap' && data && data.x >= g.x && data.x <= g.x + g.w && data.y >= g.y && data.y <= g.y + g.h) {
           this._gameOver();
@@ -454,6 +458,8 @@ export class Game extends Scene {
   }
 
   _inRect(r, d) { return d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h; }
+  // ミュートボタン: 上部ストリップ(y<52は操作入力が無効)の BACK/スコア/DEBUG タグのどれとも重ならない位置
+  _muteRect() { return { x: 140, y: 18, w: 38, h: 32 }; }
   _dbgBtnRect() { return { x: W - 44, y: 100, w: 36, h: 16 }; }
 
   _giveUpRect() { return { x: W / 2 - 50, y: H / 2 + 60, w: 100, h: 32 }; }
@@ -502,7 +508,7 @@ export class Game extends Scene {
     if (!d) return;
     this.modules[id] = Math.min(d.max, (this.modules[id] || 0) + 1);
     this.offers = [];
-    this.engine.audio.good();
+    musicOf(this.engine).sfx.module();
     this.stage += 1;
     this._initStage();
   }
@@ -558,6 +564,7 @@ export class Game extends Scene {
   // ---- Per-frame logic ----
   update(dt) {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
+    musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     this._clock = (this._clock || 0) + dt;
 
@@ -906,7 +913,7 @@ export class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
 
-    this.engine.audio.good();
+    musicOf(this.engine).sfx.landing();
     this.landingSeq = { t: 0 };
     this._setOverlayState('landing');
   }
@@ -915,7 +922,7 @@ export class Game extends Scene {
   // ボーナス中: Continue を消費せず BONUS FAILED。通常: Continue が残っていれば 'crashed'、無ければ GAME OVER。
   _doCrash(reason) {
     this._explode();
-    this.engine.audio.bad();
+    musicOf(this.engine).sfx.crash();
     this._crashReason = reason || 'CRASHED';
     this._bouncing = false;
     this._bounceTime = 0;
@@ -1054,6 +1061,9 @@ export class Game extends Scene {
 
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
+
+    // ミュート（小さなスピーカー）
+    { const m = this._muteRect(); drawSpeaker(ctx, m.x + m.w / 2, m.y + m.h / 2 + 1, 0.8, 'rgba(236,230,216,0.6)', isMuted(this.engine)); }
   }
 
   // ---- 大気: 砂塵 / 霧 ----

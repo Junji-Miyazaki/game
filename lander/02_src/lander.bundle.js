@@ -1958,6 +1958,287 @@ function drawDebugTag(ctx, b) {
   txt(ctx, 'DBG', b.x + b.w / 2, b.y + 3.5, 8, p.warn, 'center', { sp: 1.5, w: 500 });
 }
 
+// ================================================================ P2b: タイトル（地球の発射場）と発射シーケンス
+// 世界座標は論理画面(360x640)と同じ。発射中はカメラ(camY)で世界を下へずらす。
+// 機体は汎用の白い再使用型ブースター（ロゴ・ブランド・既存機体のリバリーは使わない）。
+const SITE = { groundY: 396, rocketX: 200, towerX: 111, armY: 262, upperArmY: 214, towerTop: 176, rocketH: 232, hw: 15 };
+
+// 宇宙飛行士の1サイクル(22秒): タワーから歩く → 手を振る → 搭乗 → 内部 → ハッチで手を振る → 引っ込む → 無人
+function astronautCycle(t) {
+  const C = 22, u = ((t % C) + C) % C;
+  const x0 = 114, x1 = 174, x2 = 180;
+  const sm = (a) => a * a * (3 - 2 * a);
+  if (u < 0.5) return { x: x0, mode: 'walk', a: sm(u / 0.5), glow: 0 };
+  if (u < 4.5) return { x: x0 + (x1 - x0) * (u - 0.5) / 4, mode: 'walk', a: 1, glow: 0 };
+  if (u < 7) return { x: x1, mode: 'wave', a: 1, glow: 0.25 };
+  if (u < 7.8) { const k = (u - 7) / 0.8; return { x: x1 + (x2 - x1) * k, mode: 'walk', a: 1 - sm(k), glow: 0.25 + 0.75 * k }; }
+  if (u < 14) return { x: x2, mode: 'hidden', a: 0, glow: 1 };
+  if (u < 14.6) return { x: x2, mode: 'wave', a: sm((u - 14) / 0.6), glow: 1 };
+  if (u < 17) return { x: x2, mode: 'wave', a: 1, glow: 1 };
+  if (u < 17.6) return { x: x2, mode: 'wave', a: 1 - sm((u - 17) / 0.6), glow: 1 };
+  if (u < 19.5) return { x: x2, mode: 'hidden', a: 0, glow: 1 - (u - 17.6) / 1.9 };
+  return { x: x0, mode: 'hidden', a: 0, glow: 0 };
+}
+
+function drawTitleSky(ctx, o) {
+  const k = Math.max(0, Math.min(1, o.space || 0)), gY = SITE.groundY, camY = o.camY || 0;
+  const hy = gY + camY;
+  const c = (hex) => mixHex(hex, '#06080E', k);
+  const g = mkL(ctx, 0, 0, 0, Math.max(200, hy));
+  g.addColorStop(0, c('#04060f')); g.addColorStop(0.5, c('#0a142b')); g.addColorStop(0.8, c('#16294a'));
+  g.addColorStop(0.94, c('#2c4466')); g.addColorStop(1, c('#8f6a66'));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, AW, AH);
+  // 地平線のほのかな暁光
+  if (k < 0.98) {
+    ctx.save(); ctx.translate(120, hy); ctx.scale(280, 96);
+    ctx.globalAlpha = 0.20 * (1 - k);
+    ctx.fillStyle = gRad(ctx, 'tsGlow', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,164,108,0.9)'], [0.45, 'rgba(255,140,96,0.35)'], [1, 'rgba(255,120,90,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+  // 星（まばら・ゆっくり瞬く。深い星は宇宙に近づくほど現れる）
+  const stars = o.stars || [], t = o.t || 0, fg = P().fg;
+  ctx.save();
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    const y = s.y + camY * 0.35;
+    const fh = Math.max(0, Math.min(1, (hy - 26 - y) / 150));
+    if (fh <= 0 || y < -2) continue;
+    let a = (0.28 + 0.5 * Math.abs(Math.sin(t * 0.7 + s.tw))) * fh * (0.7 + 0.8 * k);
+    if (s.deep) a *= k;
+    if (a < 0.02) continue;
+    ctx.globalAlpha = Math.min(1, a);
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.arc(s.x, y, s.r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function avLight(ctx, x, y, t, ph) {
+  const u = (t + ph) % 2.6;
+  const a = u < 0.5 ? 1 - u / 0.5 : 0;
+  ctx.fillStyle = rgba('#ff4a3d', 0.28 + 0.72 * a);
+  ctx.beginPath(); ctx.arc(x, y, 1.5, 0, TAU); ctx.fill();
+  if (a > 0.02) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(9, 9); ctx.globalAlpha = 0.6 * a;
+    ctx.fillStyle = gRad(ctx, 'tsRed', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,74,61,0.9)'], [1, 'rgba(255,74,61,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  }
+}
+
+// 地面・遠景・パッド（世界座標）
+function drawLaunchSite(ctx, o) {
+  const gY = SITE.groundY, rx = SITE.rocketX, t = (o && o.t) || 0;
+  ctx.save();
+  // 遠景の丘と灯り
+  ctx.beginPath(); ctx.moveTo(-10, gY + 2);
+  for (let x = -10; x <= AW + 10; x += 10) ctx.lineTo(x, gY - 7 - 5 * Math.sin(x * 0.031 + 1) - 4 * Math.sin(x * 0.073 + 2));
+  ctx.lineTo(AW + 10, gY + 2); ctx.closePath();
+  ctx.fillStyle = '#0a111d'; ctx.fill();
+  for (let i = 0; i < 6; i++) {
+    const x = 18 + i * 61 + (i % 2) * 14, y = gY - 9 - 5 * Math.sin(x * 0.031 + 1) - 4 * Math.sin(x * 0.073 + 2);
+    ctx.fillStyle = rgba('#ffc878', 0.30 + 0.2 * Math.sin(t * 0.9 + i * 2));
+    ctx.fillRect(x, y, 1.4, 1.4);
+  }
+  // 地面
+  ctx.fillStyle = gLin(ctx, 'tsGround', 0, gY, 0, gY + 130, [[0, '#101826'], [0.35, '#0a0f19'], [1, '#06080E']]);
+  ctx.fillRect(-20, gY, AW + 40, 900);
+  ctx.fillStyle = rgba('#9db4d6', 0.16); ctx.fillRect(-20, gY, AW + 40, 1);
+  // パッドの床照明
+  ctx.save(); ctx.translate(rx, gY + 2); ctx.scale(130, 14); ctx.globalAlpha = 0.5;
+  ctx.fillStyle = gRad(ctx, 'tsPadLight', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,214,160,0.28)'], [1, 'rgba(255,214,160,0)']]);
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  // パッド（スラブ）
+  ctx.beginPath(); ctx.moveTo(rx - 88, gY); ctx.lineTo(rx + 88, gY); ctx.lineTo(rx + 102, gY + 10); ctx.lineTo(rx - 102, gY + 10); ctx.closePath();
+  ctx.fillStyle = '#1b2433'; ctx.fill();
+  ctx.fillStyle = '#2d3a4f'; ctx.fillRect(rx - 88, gY, 176, 2);
+  ctx.fillStyle = '#0a0e16'; ctx.fillRect(rx - 20, gY + 2, 40, 8);        // 炎導坑
+  // 照明柱
+  for (const lx of [rx - 74, rx + 78]) {
+    ctx.strokeStyle = '#3a475c'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(lx, gY); ctx.lineTo(lx, gY - 17); ctx.stroke();
+    ctx.fillStyle = '#ffd9a0'; ctx.fillRect(lx - 2.5, gY - 18.5, 5, 1.6);
+    ctx.save(); ctx.translate(lx, gY - 18); ctx.scale(15, 15); ctx.globalAlpha = 0.7;
+    ctx.fillStyle = gRad(ctx, 'tsLamp', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,214,160,0.55)'], [1, 'rgba(255,214,160,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+}
+
+// サービスタワー（格子・デッキ・クルーアクセスアーム・航空障害灯）。o.arm: 0=接続 → 1=退避
+function drawTower(ctx, o) {
+  const x = SITE.towerX, gY = SITE.groundY, top = SITE.towerTop, t = (o && o.t) || 0;
+  const k = Math.max(0, Math.min(1, (o && o.arm) || 0));
+  const STEEL = '#3b485d', LIT = '#6a7d99';
+  const rEdge = SITE.rocketX - SITE.hw;
+  ctx.save();
+  ctx.lineCap = 'butt';
+  // 脚
+  ctx.strokeStyle = STEEL; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - 9, gY); ctx.lineTo(x - 9, top); ctx.moveTo(x + 9, gY); ctx.lineTo(x + 9, top); ctx.stroke();
+  ctx.strokeStyle = rgba(LIT, 0.75); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(x + 9.9, gY); ctx.lineTo(x + 9.9, top); ctx.stroke();
+  // ブレース
+  ctx.strokeStyle = rgba(STEEL, 0.95); ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0, y = gY; y - 22 >= top; i++, y -= 22) {
+    if (i % 2) { ctx.moveTo(x + 9, y); ctx.lineTo(x - 9, y - 22); } else { ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y - 22); }
+    ctx.moveTo(x - 9, y - 22); ctx.lineTo(x + 9, y - 22);
+  }
+  ctx.stroke();
+  // キャップとマスト
+  ctx.fillStyle = STEEL; ctx.fillRect(x - 11, top - 3, 22, 4);
+  ctx.strokeStyle = LIT; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, top - 3); ctx.lineTo(x, top - 26); ctx.stroke();
+  // アーム（ヒンジ=タワー側。退避は奥へ回る表現として横幅を縮める）
+  const sx = Math.max(0.04, 1 - k * 0.96);
+  const arm = (y, tipX, withRail) => {
+    ctx.save(); ctx.translate(x + 9, y); ctx.scale(sx, 1);
+    const len = tipX - (x + 9);
+    ctx.fillStyle = '#566782'; ctx.fillRect(0, 0, len, 3);
+    ctx.fillStyle = '#2b3445'; ctx.fillRect(0, 3, len, 1.5);
+    if (withRail) {
+      ctx.strokeStyle = rgba(LIT, 0.7); ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(len, -9);
+      for (let px = 0; px <= len; px += 13) { ctx.moveTo(px, 0); ctx.lineTo(px, -9); }
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  ctx.fillStyle = STEEL; ctx.fillRect(x - 12, SITE.armY - 1, 8, 4); ctx.fillRect(x - 12, SITE.upperArmY - 1, 8, 4);
+  arm(SITE.upperArmY, rEdge - 1, false);
+  arm(SITE.armY, rEdge - 0.5, true);
+  // アンビリカル（アーム退避で外れる）
+  if (k < 0.35) {
+    ctx.globalAlpha = 1 - k / 0.35;
+    ctx.strokeStyle = '#1a212e'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(x + 9, 318); ctx.quadraticCurveTo((x + rEdge) / 2, 330, rEdge, 316); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // 航空障害灯（ゆっくり点滅）
+  avLight(ctx, x, top - 26, t, 0);
+  avLight(ctx, x + 9, top + 70, t, 1.3);
+  ctx.restore();
+}
+
+// 汎用の白い再使用型ブースター。(x, y) = エンジン下端の中央。
+function drawRocket(ctx, x, y, o) {
+  const hw = SITE.hw, glow = (o && o.glow) || 0;
+  ctx.save();
+  ctx.translate(x, y);
+  // エンジン・脚（折りたたみ）
+  ctx.fillStyle = '#2a303b'; ctx.fillRect(-12, -9, 24, 9);
+  ctx.fillStyle = '#3a342f';
+  for (const bx of [-8, 0, 8]) { ctx.beginPath(); ctx.moveTo(bx - 3, 0); ctx.lineTo(bx + 3, 0); ctx.lineTo(bx + 2, 3.5); ctx.lineTo(bx - 2, 3.5); ctx.closePath(); ctx.fill(); }
+  ctx.strokeStyle = '#c9d2de'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-hw, -38); ctx.lineTo(-hw - 3.5, -3); ctx.moveTo(hw, -38); ctx.lineTo(hw + 3.5, -3); ctx.stroke();
+  ctx.strokeStyle = '#8b97aa'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(-hw - 6, -2.5); ctx.lineTo(-hw - 1, -2.5); ctx.moveTo(hw + 1, -2.5); ctx.lineTo(hw + 6, -2.5); ctx.stroke();
+  // グリッドフィン
+  ctx.fillStyle = '#39424f'; ctx.fillRect(-hw - 5, -119, 5, 10); ctx.fillRect(hw, -119, 5, 10);
+  ctx.strokeStyle = 'rgba(190,200,215,0.35)'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(-hw - 5, -114); ctx.lineTo(-hw, -114); ctx.moveTo(hw, -114); ctx.lineTo(hw + 5, -114); ctx.stroke();
+  // 本体（横方向のグラデ: 左=暁光の暖色、右=夜側の青）
+  const body = gLin(ctx, 'rkBody', -hw, 0, hw, 0, [[0, '#e8dccd'], [0.28, '#fbf8f2'], [0.62, '#dbe2ec'], [1, '#8e9cb3']]);
+  ctx.fillStyle = body;
+  ctx.fillRect(-hw, -126, hw * 2, 117);                       // 1段目
+  ctx.fillRect(-hw, -192, hw * 2, 64);                        // 2段目
+  ctx.beginPath(); ctx.moveTo(-hw, -192); ctx.quadraticCurveTo(-hw, -220, 0, -SITE.rocketH); ctx.quadraticCurveTo(hw, -220, hw, -192); ctx.closePath(); ctx.fill();   // フェアリング
+  // 段間
+  ctx.fillStyle = '#9aa7ba'; ctx.fillRect(-hw, -130, hw * 2, 4);
+  ctx.fillStyle = rgba(P().mid, 0.75); ctx.fillRect(-hw, -126, hw * 2, 1.2);
+  // パネルの継ぎ目
+  ctx.strokeStyle = 'rgba(120,135,160,0.28)'; ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  for (const yy of [-34, -62, -92, -158, -190]) { ctx.moveTo(-hw, yy); ctx.lineTo(hw, yy); }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.7;      // ハイライトの縦線
+  ctx.beginPath(); ctx.moveTo(-hw + 4.5, -126); ctx.lineTo(-hw + 4.5, -12); ctx.moveTo(-hw + 4.5, -190); ctx.lineTo(-hw + 4.5, -132); ctx.stroke();
+  // クルーハッチ（アーム高さ）
+  const hy = -(SITE.groundY - SITE.armY);
+  rr(ctx, -hw + 1.5, hy - 24, 7, 24, 3);
+  ctx.fillStyle = rgba('#202a3a', 0.78); ctx.fill();
+  if (glow > 0.01) {
+    ctx.fillStyle = rgba('#ffcf8a', 0.85 * glow);
+    rr(ctx, -hw + 2.5, hy - 22, 5, 20, 2); ctx.fill();
+    ctx.save(); ctx.translate(-hw + 5, hy - 12); ctx.scale(14, 18); ctx.globalAlpha = 0.5 * glow;
+    ctx.fillStyle = gRad(ctx, 'rkHatch', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,200,130,0.7)'], [1, 'rgba(255,200,130,0)']]);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+}
+
+// 噴射炎（ノズルは (x,y)）。k: 0..1。clipY: これより下は描かない（パッド上では炎導坑の中に収める）
+function drawLaunchFlame(ctx, x, y, k, t, clipY) {
+  if (k <= 0.01) return;
+  ctx.save();
+  if (clipY !== undefined && clipY !== null) { ctx.beginPath(); ctx.rect(x - 160, y - 400, 320, clipY - (y - 400)); ctx.clip(); }
+  const fl = 0.92 + 0.08 * Math.sin(t * 47) + 0.05 * Math.sin(t * 29);
+  const L = (26 + 92 * k) * fl;
+  // 外炎（琥珀）
+  ctx.save(); ctx.translate(x, y + 2); ctx.scale(1, L); ctx.globalAlpha = Math.min(1, 0.6 + k);
+  ctx.fillStyle = gLin(ctx, 'flOut', 0, 0, 0, 1, [[0, 'rgba(255,248,230,1)'], [0.25, 'rgba(255,200,112,0.95)'], [0.7, 'rgba(255,156,64,0.5)'], [1, 'rgba(255,120,40,0)']]);
+  ctx.beginPath(); ctx.moveTo(-12, 0); ctx.quadraticCurveTo(-11, 0.45, 0, 1); ctx.quadraticCurveTo(11, 0.45, 12, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 白い芯
+  ctx.save(); ctx.translate(x, y + 2); ctx.scale(1, L * 0.62); ctx.globalAlpha = Math.min(1, 0.5 + k);
+  ctx.fillStyle = gLin(ctx, 'flCore', 0, 0, 0, 1, [[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,248,230,0.8)'], [1, 'rgba(255,230,180,0)']]);
+  ctx.beginPath(); ctx.moveTo(-6, 0); ctx.quadraticCurveTo(-5, 0.5, 0, 1); ctx.quadraticCurveTo(5, 0.5, 6, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 根元のグロー
+  ctx.save(); ctx.translate(x, y + 4); ctx.scale(34 + 26 * k, 22 + 14 * k); ctx.globalAlpha = 0.55 * k;
+  ctx.fillStyle = gRad(ctx, 'flGlow', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,230,180,0.95)'], [0.4, 'rgba(255,170,90,0.45)'], [1, 'rgba(255,140,60,0)']]);
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  ctx.restore();
+}
+
+// 地面を横に走る炎の照り返し
+function drawGroundBlast(ctx, x, gY, k) {
+  if (k <= 0.01) return;
+  ctx.save(); ctx.translate(x, gY + 1); ctx.scale(60 + 90 * k, 12 + 10 * k); ctx.globalAlpha = 0.55 * k;
+  ctx.fillStyle = gRad(ctx, 'flGround', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,196,120,0.9)'], [0.5, 'rgba(255,140,70,0.35)'], [1, 'rgba(255,120,60,0)']]);
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+}
+
+// 煙・蒸気。粒子 {x,y,r,age,life,ph,spin,peak,kind(0=煙,1=蒸気),warm}。1粒 = 複数の柔らかい円(ローブ)＋下側の陰
+function drawSmoke(ctx, parts) {
+  if (!parts || !parts.length) return;
+  const cool = gRad(ctx, 'smC', 0, 0, 0, 0, 0, 1, [[0, 'rgba(246,247,251,0.98)'], [0.58, 'rgba(228,233,243,0.86)'], [0.84, 'rgba(208,216,234,0.34)'], [1, 'rgba(200,208,228,0)']]);
+  const shd = gRad(ctx, 'smS', 0, 0, 0, 0, 0, 1, [[0, 'rgba(66,78,108,0.95)'], [0.6, 'rgba(76,88,118,0.6)'], [0.9, 'rgba(80,92,120,0.2)'], [1, 'rgba(80,92,120,0)']]);
+  const wrm = gRad(ctx, 'smW', 0, 0, 0, 0, 0, 1, [[0, 'rgba(255,226,176,0.95)'], [0.5, 'rgba(255,172,98,0.45)'], [1, 'rgba(255,140,70,0)']]);
+  const blob = (g, cx, cy, rad, al) => {
+    if (!(rad > 0.5) || al < 0.01) return;
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(rad, rad); ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, TAU); ctx.fill(); ctx.restore();
+  };
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    const u = p.age / p.life;
+    const a = p.peak * Math.min(1, p.age / 0.2) * Math.pow(Math.max(0, 1 - u), 1.0);
+    if (a < 0.01) continue;
+    if (p.kind === 1) { blob(cool, p.x, p.y, p.r, a); blob(cool, p.x + p.r * 0.35, p.y - p.r * 0.25, p.r * 0.7, a * 0.7); continue; }
+    blob(shd, p.x + p.r * 0.08, p.y + p.r * 0.3, p.r * 0.92, a * 0.62);
+    if (p.warm > 0 && p.age < 1.2) blob(wrm, p.x, p.y + p.r * 0.3, p.r * 0.9, a * 0.6 * (1 - p.age / 1.2));
+    for (let j = 0; j < 4; j++) {
+      const ang = p.ph + p.spin * p.age + j * 1.571;
+      blob(cool, p.x + Math.cos(ang) * p.r * 0.5, p.y + Math.sin(ang) * p.r * 0.34 - p.r * 0.06, p.r * (0.5 + 0.07 * j), a * 0.78);
+    }
+  }
+}
+
+// スピーカーのピクトグラム（ミュート時は×）。s=1 で約14px
+function drawSpeaker(ctx, cx, cy, s, color, muted) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(s, s);
+  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-6, -2.6); ctx.lineTo(-3, -2.6); ctx.lineTo(1, -6); ctx.lineTo(1, 6); ctx.lineTo(-3, 2.6); ctx.lineTo(-6, 2.6); ctx.closePath(); ctx.fill();
+  if (!muted) {
+    ctx.beginPath(); ctx.arc(1.5, 0, 4.2, -0.95, 0.95); ctx.stroke();
+    ctx.beginPath(); ctx.arc(1.5, 0, 7.6, -0.9, 0.9); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(9, 3); ctx.moveTo(9, -3); ctx.lineTo(4, 3); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 
 // ---- 02_src/music.js ----
 // 生成音楽 + 効果音（P2m）。WebAudioのみで合成、素材ファイル・既存旋律の引用なし。
@@ -2409,6 +2690,78 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // タイトル画面（P0の仮実装。P2でリデザインする）。タップで開始。
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
 
+// ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
+// テストでは engine.music に差し替えられる。実機は music.js の Music。
+function musicOf(engine) { return (engine && engine.music) || Music; }
+const MUTE_KEY = 'muted';
+function isMuted(engine) { try { return engine.storage.get(MUTE_KEY, '0') === '1'; } catch (_) { return false; } }
+// ミュート適用: 生成音楽(Music) と engine.audio のビープ両方を止める。保存は persist=true の時のみ
+function applyMute(engine, m, persist) {
+  m = !!m;
+  try { musicOf(engine).setMuted(m); } catch (_) { /* ignore */ }
+  if (engine.audio) engine.audio.enabled = !m;
+  if (persist) { try { engine.storage.set(MUTE_KEY, m ? '1' : '0'); } catch (_) { /* ignore */ } }
+  return m;
+}
+function toggleMute(engine) { return applyMute(engine, !isMuted(engine), true); }
+function restoreMute(engine) { return applyMute(engine, isMuted(engine), false); }
+
+// ---- 発射シーケンスの時間割（秒）----
+const LAUNCH = { total: 3.5, ignite: 0.75, armStart: 1.0, armEnd: 1.7, lift: 1.6, accel: 300, camK: 0.6, fadeStart: 2.85 };
+const SMOKE_MAX = 80;     // 煙(kind 0)の同時粒子数の上限（モバイル性能のため）
+const STEAM_MAX = 18;     // 蒸気(kind 1)の上限
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+// 発射の経過時間 e から機体の上昇量
+function launchRise(e) { const u = Math.max(0, e - LAUNCH.lift); return 0.5 * LAUNCH.accel * u * u; }
+
+// 煙粒子を1つ追加（上限超過なら捨てる）。side: -1|1
+function spawnSmoke(parts, side, burst) {
+  let n = 0; for (let i = 0; i < parts.length; i++) if (parts[i].kind === 0) n++;
+  if (n >= SMOKE_MAX) return false;
+  const sp = (burst ? 110 : 60) + Math.random() * (burst ? 150 : 110);
+  parts.push({
+    kind: 0, x: SITE.rocketX + (Math.random() - 0.5) * 36, y: SITE.groundY - 3 + Math.random() * 5,
+    vx: side * sp, vy: -(6 + Math.random() * 34), r: 11 + Math.random() * 8, gr: 30 + Math.random() * 30,
+    age: 0, life: 2.3 + Math.random() * 1.1, ph: Math.random() * 6.28, spin: side * (0.5 + Math.random() * 0.8),
+    peak: 0.9, warm: 1,
+  });
+  return true;
+}
+function spawnSteam(parts, x, y, side, low) {
+  let n = 0; for (let i = 0; i < parts.length; i++) if (parts[i].kind === 1) n++;
+  if (n >= STEAM_MAX) return false;
+  parts.push({
+    kind: 1, x, y, vx: side * (8 + Math.random() * 8), vy: low ? -2 : -(9 + Math.random() * 6), r: low ? 6 : 3, gr: low ? 6 : 4,
+    age: 0, life: 2.8 + Math.random() * 0.8, ph: 0, spin: 0, peak: low ? 0.14 : 0.2, warm: 0,
+  });
+  return true;
+}
+// 粒子の更新: 広がる・減速する・横へ流れる・薄れる。寿命切れは除去
+function stepSmoke(parts, dt) {
+  const dragH = Math.exp(-1.5 * dt), dragV = Math.exp(-0.9 * dt), grD = Math.exp(-1.15 * dt);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.age += dt;
+    if (p.age >= p.life) { parts.splice(i, 1); continue; }
+    p.vx *= dragH; p.vy = p.vy * dragV - (p.kind === 0 ? 26 : 3) * dt;
+    p.x += (p.vx + 9) * dt; p.y += p.vy * dt;     // +9: ゆるい横風
+    p.r += p.gr * dt; p.gr *= grD;
+    if (p.kind === 0 && p.y > SITE.groundY + 3) { p.y = SITE.groundY + 3; p.vy = -Math.abs(p.vy) * 0.3; }
+  }
+}
+
+// 次のシーンにフェードイン（暗転から）を被せる。ゲーム側のコードは触らない
+function fadeInScene(scene, dur) {
+  const d = dur || 0.8;
+  let ft = 0;
+  const upd = scene.update.bind(scene), rnd = scene.render.bind(scene);
+  scene.update = (dt) => { ft += (typeof dt === 'number' && dt > 0 ? dt : 0); return upd(dt); };
+  scene.render = (ctx) => { rnd(ctx); if (ft < d) veil(ctx, 1 - ft / d); };
+  return scene;
+}
+
+
 // 名前入力オーバーレイ（HTML）。document が無い環境では false を返し何もしない。確定で onSubmit(name)。
 function showNameOverlay(initial, onSubmit) {
   if (typeof document === 'undefined') return false;
@@ -2443,9 +2796,11 @@ function showNameOverlay(initial, onSubmit) {
 }
 
 class TitleScene extends Scene {
-  constructor(engine, startGame) {
+  // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
+  constructor(engine, startGame, opts) {
     super(engine);
     this.startGame = startGame;
+    this.useLaunch = !!(opts && opts.launch);
     this.isRoot = true;    // 最上位＝BACKボタン非表示
     this.t = 0;
     this.showRank = false;
@@ -2454,96 +2809,207 @@ class TitleScene extends Scene {
     this.name = '';
     this.pendingStart = false;
     this.toastT = 0;
-    this.logoBox = { x: W / 2 - 110, y: H * 0.36 - 34, w: 220, h: 68 };
-    this.changeBtn = { x: W / 2 - 34, y: H * 0.545, w: 68, h: 18 };
-    this.rankBtn = { x: W / 2 - 60, y: H * 0.88, w: 120, h: 30 };
+    this.launch = null;    // 発射中: { e, ign, done, parts }
+    this.parts = [];       // 煙/蒸気の粒子
+    this._musicOn = false;
+    this._steamAcc = 0; this._smokeAcc = 0; this._steamSide = 1;
+    // タップ対象（互いに重ならない。8pxグリッド）
+    this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
+    this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
+    this.changeBtn = { x: W / 2 - 34, y: 436, w: 68, h: 20 };
+    this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
+    this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
-      this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.2 ? 1.6 : 0.9, tw: Math.random() * 6.28 });
+      this.stars.push({ x: Math.random() * W, y: Math.random() * 380, r: Math.random() < 0.2 ? 1.5 : 0.9, tw: Math.random() * 6.28, deep: i >= 40 });
     }
   }
 
-  enter() { this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage); }
+  enter() {
+    this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
+    // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
+    if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
+  }
+
+  _ensureMusic() {
+    if (this._musicOn || this.launch) return;
+    this._musicOn = true;
+    musicOf(this.engine).playTitle();
+  }
 
   // 名前確定（HTML・テストフック共通）。開始待ち(pendingStart)ならそのままゲーム開始
   _submitName(name) {
     this.name = setPlayerName(this.engine.storage, name);
-    if (this.pendingStart) { this.pendingStart = false; this.startGame(); }
+    if (this.pendingStart) { this.pendingStart = false; this._begin(); }
   }
   _openName(thenStart) {
     this.pendingStart = !!thenStart;
     showNameOverlay(this.name || '', (v) => this._submitName(v));
   }
 
+  // START 確定後: 発射シーケンス（または即ゲーム）
+  _begin() {
+    if (!this.useLaunch) { this.startGame(); return; }
+    if (this.launch) return;
+    this.launch = { e: 0, ign: false, done: false };
+    this.showRank = false;
+    const m = musicOf(this.engine);
+    m.stopAll(2.5);               // タイトル曲をフェードアウト
+    this._musicOn = false;
+  }
+  _finishLaunch() {
+    if (!this.launch || this.launch.done) return;
+    this.launch.done = true;
+    this.startGame();
+  }
+
+  _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
+
   onInput(action, data) {
+    if (this.launch) {            // 発射中: タップ/決定でスキップ
+      if (action === 'tap' || action === 'confirm') this._finishLaunch();
+      return;
+    }
+    this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
     if (action === 'tap' && data) {
-      const b = this.rankBtn;
-      if (data.x >= b.x && data.x <= b.x + b.w && data.y >= b.y && data.y <= b.y + b.h) {
+      if (this._hit(this.muteBtn, data)) {
+        const m = toggleMute(this.engine);
+        if (!m) musicOf(this.engine).sfx.uiTap();
+        return;
+      }
+      if (this._hit(this.rankBtn, data)) {
+        musicOf(this.engine).sfx.uiTap();
         this.showRank = !this.showRank;
         if (this.showRank) this.tabs = createRankTabs();
         return;
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
-    }
-    if (action === 'tap' && data) {
-      const lb = this.logoBox;
-      if (data.x >= lb.x && data.x <= lb.x + lb.w && data.y >= lb.y && data.y <= lb.y + lb.h) {
+      if (this._hit(this.logoBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
         return;
       }
-      const cb = this.changeBtn;
-      if (this.name && data.x >= cb.x && data.x <= cb.x + cb.w && data.y >= cb.y && data.y <= cb.y + cb.h) { this._openName(false); return; }
+      if (this.name && this._hit(this.changeBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openName(false); return; }
     }
     if (action === 'tap' || action === 'confirm') {
-      this.engine.audio.good();
+      musicOf(this.engine).sfx.uiTap();
       if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
-      this.startGame();
+      this._begin();
     }
   }
 
-  update(dt) { this.t += dt; if (this.toastT > 0) this.toastT = Math.max(0, this.toastT - dt); }
+  update(dt) {
+    if (!(dt > 0)) dt = 0.016;
+    this.t += dt;
+    if (this.toastT > 0) this.toastT = Math.max(0, this.toastT - dt);
+    musicOf(this.engine).tick(dt);
+    const L = this.launch;
+    if (L) {
+      L.e += dt;
+      if (!L.ign && L.e >= LAUNCH.ignite) {
+        L.ign = true;
+        musicOf(this.engine).sfx.launch();
+        for (let i = 0; i < 12; i++) spawnSmoke(this.parts, i % 2 ? 1 : -1, true);   // 点火の初期バースト
+      }
+      if (L.ign) {
+        // 点火〜上昇初期は濃く、上昇しきったら絞る
+        const rate = L.e < LAUNCH.lift + 0.9 ? 30 : 12;
+        this._smokeAcc += rate * dt;
+        while (this._smokeAcc >= 1) { this._smokeAcc -= 1; this._steamSide = -this._steamSide; spawnSmoke(this.parts, this._steamSide, false); }
+      }
+      if (L.e >= LAUNCH.total) this._finishLaunch();
+    } else {
+      // 待機中の蒸気（ベント）。射点の足元と側面から
+      this._steamAcc += dt;
+      if (this._steamAcc >= 0.45) {
+        this._steamAcc = 0; this._steamSide = -this._steamSide;
+        if (Math.random() < 0.5) spawnSteam(this.parts, SITE.rocketX + this._steamSide * 15, SITE.groundY - 46 - Math.random() * 60, this._steamSide, false);
+        else spawnSteam(this.parts, SITE.rocketX + this._steamSide * 20, SITE.groundY - 3, this._steamSide, true);
+      }
+    }
+    stepSmoke(this.parts, dt);
+  }
 
   render(ctx) {
     const p = P();
-    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
-    for (const s of this.stars) {
-      ctx.globalAlpha = 0.35 + 0.5 * Math.abs(Math.sin(this.t * 0.8 + s.tw));
-      ctx.fillStyle = p.fg;
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    this.engine.text('LANDER', W / 2, H * 0.36, 44, p.hi, 'center');
-    const blink = 0.5 + 0.5 * Math.sin(this.t * 3);
-    ctx.globalAlpha = 0.4 + 0.6 * blink;
-    this.engine.text('TAP TO START', W / 2, H * 0.62, 16, p.mid, 'center');
-    ctx.globalAlpha = 1;
+    const L = this.launch, e = L ? L.e : 0;
+    const rise = L ? launchRise(e) : 0;
+    const camY = rise * LAUNCH.camK;
+    const space = clamp01((rise - 60) / 320);
+    const ui = L ? clamp01(1 - e / 0.35) : 1;
+    const logoA = L ? clamp01(1 - (e - 0.15) / 0.9) : 1;
+    const arm = L ? clamp01((e - LAUNCH.armStart) / (LAUNCH.armEnd - LAUNCH.armStart)) : 0;
+    const flame = L && L.ign ? clamp01((e - LAUNCH.ignite) / 0.5) : 0;
+    const shake = L && L.ign && e < LAUNCH.lift + 0.9 ? 1.1 * clamp01((e - LAUNCH.ignite) / 0.4) : 0;
+    const shx = shake ? Math.sin(this.t * 71) * shake : 0, shy = shake ? Math.cos(this.t * 83) * shake * 0.7 : 0;
+    const as = astronautCycle(this.t);
+    const asA = L ? as.a * clamp01(1 - e / 0.2) : as.a;
+    const glow = L ? as.glow * clamp01(1 - (e - 0.4) / 0.4) : as.glow;
 
-    if (this.name) {
-      this.engine.text('PILOT: ' + this.name, W / 2, H * 0.50, 14, p.fg, 'center');
-      const cb = this.changeBtn;
-      this.engine.stroke(cb.x, cb.y, cb.w, cb.h, p.dim, 1);
-      this.engine.text('CHANGE', W / 2, cb.y + 3, 10, p.mid, 'center');
-    }
-    if (isDebug()) this.engine.text('DEBUG', W - 8, 8, 10, p.warn, 'right');
-    if (this.toastT > 0) {
-      ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
-      this.engine.rect(W / 2 - 50, 40, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 40, 100, 24, p.warn, 1.5);
-      this.engine.text('DEBUG ON', W / 2, 45, 13, p.warn, 'center');
+    drawTitleSky(ctx, { t: this.t, stars: this.stars, space, camY });
+    ctx.save();
+    ctx.translate(shx, camY + shy);
+    drawLaunchSite(ctx, { t: this.t });
+    drawTower(ctx, { t: this.t, arm });
+    drawRocket(ctx, SITE.rocketX, SITE.groundY - rise, { glow });
+    if (asA > 0.01 && as.mode !== 'hidden') {
+      ctx.save();
+      ctx.globalAlpha = asA;
+      ctx.translate(as.x, SITE.armY); ctx.scale(1.4, 1.4);
+      drawAstronaut(ctx, 0, 0, as.mode, this.t * 0.5);
       ctx.restore();
     }
+    if (flame > 0) drawGroundBlast(ctx, SITE.rocketX, SITE.groundY, flame * (rise < 200 ? 1 : 1 - clamp01((rise - 200) / 200)));
+    drawSmoke(ctx, this.parts);
+    if (flame > 0) drawLaunchFlame(ctx, SITE.rocketX, SITE.groundY - rise, flame, this.t, rise < 10 ? SITE.groundY + 4 + rise * 6 : null);   // 炎は煙の手前で明るく
+    ctx.restore();
 
-    // 上位3件
-    for (let i = 0; i < Math.min(3, this.rank.length); i++) {
-      const e = this.rank[i];
-      this.engine.text((i + 1) + '. ' + e.name + '  ' + e.score, W / 2, H * 0.68 + i * 20, 13, p.fg, 'center');
+    if (L) {
+      // 点火の閃光と最後の暗転（次の画面はこの暗転から立ち上がる）
+      const fa = clamp01(1 - (e - LAUNCH.ignite) / 0.3);
+      if (L.ign && fa > 0) { ctx.save(); ctx.globalAlpha = 0.09 * fa; ctx.fillStyle = '#ffe2b8'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+      const v = clamp01((e - LAUNCH.fadeStart) / (LAUNCH.total - LAUNCH.fadeStart));
+      if (v > 0) veil(ctx, v * v * (3 - 2 * v));
+      // 控えめなカウントダウン 3-2-1（点火直前）
+      if (e < LAUNCH.ignite) {
+        const n = 3 - Math.min(2, Math.floor(e / (LAUNCH.ignite / 3)));
+        txt(ctx, String(n), W / 2, 478, 28, p.fg, 'center', { w: 200, a: 0.8 });
+      }
     }
 
-    // RANKING ターゲット
-    const b = this.rankBtn;
-    this.engine.stroke(b.x, b.y, b.w, b.h, p.dim, 1.5);
-    this.engine.text('RANKING', W / 2, b.y + 7, 14, p.mid, 'center');
+    // ---- UI ----
+    if (logoA > 0) {
+      txt(ctx, 'LANDER', W / 2, 60, 34, p.hi, 'center', { sp: 16, w: 300, a: logoA });
+      txt(ctx, 'SOFT LANDING TOUR', W / 2, 98, 8, p.dim, 'center', { sp: 5, w: 400, a: logoA });
+    }
+    if (ui > 0) {
+      const sp = drawSpeaker;
+      sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
+      if (this.name) {
+        txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
+        const cb = this.changeBtn;
+        pill(ctx, cb.x, cb.y, cb.w, cb.h, rgba(p.fg, 0.04 * ui), rgba(p.fg, 0.22 * ui));
+        txt(ctx, 'CHANGE', W / 2, cb.y + 6, 8, p.mid, 'center', { sp: 3, w: 500, a: ui });
+      } else {
+        txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
+      }
+      const sb = this.startBtn;
+      const breath = 0.5 + 0.5 * Math.sin(this.t * 2);
+      pill(ctx, sb.x, sb.y, sb.w, sb.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
+      txt(ctx, 'START', W / 2, sb.y + 15, 14, p.hi, 'center', { sp: 9, w: 500, a: ui });
+      if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
+      const b = this.rankBtn;
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
+      txt(ctx, 'RANKING', W / 2, b.y + 9, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
+    }
+    if (isDebug()) txt(ctx, 'DEBUG', 12, 16, 9, p.warn, 'left', { sp: 3, w: 500 });
+    if (this.toastT > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
+      this.engine.rect(W / 2 - 50, 120, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 120, 100, 24, p.warn, 1.5);
+      this.engine.text('DEBUG ON', W / 2, 125, 13, p.warn, 'center');
+      ctx.restore();
+    }
 
     // 全件一覧
     if (this.showRank) {
@@ -2792,7 +3258,7 @@ class Game extends Scene {
     this._initStage();
   }
 
-  exit() {}
+  exit() { musicOf(this.engine).stopAll(0.6); }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   blocksBack() { return this.state === 'module'; }
@@ -2824,6 +3290,7 @@ class Game extends Scene {
     const btype    = this.bonus ? this.bonus.type : null;
     this._info     = sp.info;
     this._body     = sp.info.body;
+    if (this._body.id !== this._musBodyId) { this._musBodyId = this._body.id; musicOf(this.engine).playBody(this._body.id); }   // 天体が変わったら曲を切替
     this._gravity  = sp.gravity;
     this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
     this._windT    = 0;
@@ -2888,6 +3355,7 @@ class Game extends Scene {
     const confirm = (action === 'tap' || action === 'confirm');
 
     if (this.state === 'debug') { this._debugInput(action, data); return; }
+    if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
     if (isDebug() && action === 'tap' && data && DBG_STATES.indexOf(this.state) >= 0 && this._inRect(this._dbgBtnRect(), data)) {
       this._dbgPrev = this.state;
       this.state = 'debug';
@@ -2924,6 +3392,7 @@ class Game extends Scene {
     }
     if (this.state === 'crashed') {
       if (confirm && this._inputLock <= 0) {
+        musicOf(this.engine).sfx.uiTap();
         const g = this._giveUpRect();
         if (action === 'tap' && data && data.x >= g.x && data.x <= g.x + g.w && data.y >= g.y && data.y <= g.y + g.h) {
           this._gameOver();
@@ -3007,6 +3476,8 @@ class Game extends Scene {
   }
 
   _inRect(r, d) { return d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h; }
+  // ミュートボタン: 上部ストリップ(y<52は操作入力が無効)の BACK/スコア/DEBUG タグのどれとも重ならない位置
+  _muteRect() { return { x: 140, y: 18, w: 38, h: 32 }; }
   _dbgBtnRect() { return { x: W - 44, y: 100, w: 36, h: 16 }; }
 
   _giveUpRect() { return { x: W / 2 - 50, y: H / 2 + 60, w: 100, h: 32 }; }
@@ -3055,7 +3526,7 @@ class Game extends Scene {
     if (!d) return;
     this.modules[id] = Math.min(d.max, (this.modules[id] || 0) + 1);
     this.offers = [];
-    this.engine.audio.good();
+    musicOf(this.engine).sfx.module();
     this.stage += 1;
     this._initStage();
   }
@@ -3111,6 +3582,7 @@ class Game extends Scene {
   // ---- Per-frame logic ----
   update(dt) {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
+    musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     this._clock = (this._clock || 0) + dt;
 
@@ -3459,7 +3931,7 @@ class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
 
-    this.engine.audio.good();
+    musicOf(this.engine).sfx.landing();
     this.landingSeq = { t: 0 };
     this._setOverlayState('landing');
   }
@@ -3468,7 +3940,7 @@ class Game extends Scene {
   // ボーナス中: Continue を消費せず BONUS FAILED。通常: Continue が残っていれば 'crashed'、無ければ GAME OVER。
   _doCrash(reason) {
     this._explode();
-    this.engine.audio.bad();
+    musicOf(this.engine).sfx.crash();
     this._crashReason = reason || 'CRASHED';
     this._bouncing = false;
     this._bounceTime = 0;
@@ -3607,6 +4079,9 @@ class Game extends Scene {
 
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
+
+    // ミュート（小さなスピーカー）
+    { const m = this._muteRect(); drawSpeaker(ctx, m.x + m.w / 2, m.y + m.h / 2 + 1, 0.8, 'rgba(236,230,216,0.6)', isMuted(this.engine)); }
   }
 
   // ---- 大気: 砂塵 / 霧 ----
@@ -3814,12 +4289,16 @@ window.addEventListener('load', () => {
   const canvas = document.getElementById('screen');
   const engine = new Engine(canvas);
 
-  // 単独ゲームの遷移：BACK/ゲームオーバー→タイトル、タイトル→ゲーム
-  const toTitle = () => engine.changeScene(new TitleScene(engine, startGame));
-  const startGame = () => engine.changeScene(new Game(engine));
+  // 生成音楽/効果音: engine.audio の AudioContext を共有（初回タップ後に生成される）。ミュートは保存値を復元
+  Music.attach(engine.audio);
+  restoreMute(engine);
+
+  // 単独ゲームの遷移：BACK/ゲームオーバー→タイトル、タイトル→(発射)→ゲーム
+  const toTitle = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true }));
+  const startGame = () => engine.changeScene(fadeInScene(new Game(engine), 0.8));
   engine.toMenu = toTitle;
 
-  engine.start(new TitleScene(engine, startGame));
+  engine.start(new TitleScene(engine, startGame, { launch: true }));
 });
 
 })();

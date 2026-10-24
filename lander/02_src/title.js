@@ -4,6 +4,80 @@ import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
 import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName } from './ranking.js';
 import { isDebug, debugLogoTap } from './debug.js';
+import { Music } from './music.js';
+import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut } from './art.js';
+
+// ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
+// テストでは engine.music に差し替えられる。実機は music.js の Music。
+export function musicOf(engine) { return (engine && engine.music) || Music; }
+export const MUTE_KEY = 'muted';
+export function isMuted(engine) { try { return engine.storage.get(MUTE_KEY, '0') === '1'; } catch (_) { return false; } }
+// ミュート適用: 生成音楽(Music) と engine.audio のビープ両方を止める。保存は persist=true の時のみ
+export function applyMute(engine, m, persist) {
+  m = !!m;
+  try { musicOf(engine).setMuted(m); } catch (_) { /* ignore */ }
+  if (engine.audio) engine.audio.enabled = !m;
+  if (persist) { try { engine.storage.set(MUTE_KEY, m ? '1' : '0'); } catch (_) { /* ignore */ } }
+  return m;
+}
+export function toggleMute(engine) { return applyMute(engine, !isMuted(engine), true); }
+export function restoreMute(engine) { return applyMute(engine, isMuted(engine), false); }
+
+// ---- 発射シーケンスの時間割（秒）----
+export const LAUNCH = { total: 3.5, ignite: 0.75, armStart: 1.0, armEnd: 1.7, lift: 1.6, accel: 300, camK: 0.6, fadeStart: 2.85 };
+export const SMOKE_MAX = 80;     // 煙(kind 0)の同時粒子数の上限（モバイル性能のため）
+export const STEAM_MAX = 18;     // 蒸気(kind 1)の上限
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+// 発射の経過時間 e から機体の上昇量
+export function launchRise(e) { const u = Math.max(0, e - LAUNCH.lift); return 0.5 * LAUNCH.accel * u * u; }
+
+// 煙粒子を1つ追加（上限超過なら捨てる）。side: -1|1
+export function spawnSmoke(parts, side, burst) {
+  let n = 0; for (let i = 0; i < parts.length; i++) if (parts[i].kind === 0) n++;
+  if (n >= SMOKE_MAX) return false;
+  const sp = (burst ? 110 : 60) + Math.random() * (burst ? 150 : 110);
+  parts.push({
+    kind: 0, x: SITE.rocketX + (Math.random() - 0.5) * 36, y: SITE.groundY - 3 + Math.random() * 5,
+    vx: side * sp, vy: -(6 + Math.random() * 34), r: 11 + Math.random() * 8, gr: 30 + Math.random() * 30,
+    age: 0, life: 2.3 + Math.random() * 1.1, ph: Math.random() * 6.28, spin: side * (0.5 + Math.random() * 0.8),
+    peak: 0.9, warm: 1,
+  });
+  return true;
+}
+export function spawnSteam(parts, x, y, side, low) {
+  let n = 0; for (let i = 0; i < parts.length; i++) if (parts[i].kind === 1) n++;
+  if (n >= STEAM_MAX) return false;
+  parts.push({
+    kind: 1, x, y, vx: side * (8 + Math.random() * 8), vy: low ? -2 : -(9 + Math.random() * 6), r: low ? 6 : 3, gr: low ? 6 : 4,
+    age: 0, life: 2.8 + Math.random() * 0.8, ph: 0, spin: 0, peak: low ? 0.14 : 0.2, warm: 0,
+  });
+  return true;
+}
+// 粒子の更新: 広がる・減速する・横へ流れる・薄れる。寿命切れは除去
+export function stepSmoke(parts, dt) {
+  const dragH = Math.exp(-1.5 * dt), dragV = Math.exp(-0.9 * dt), grD = Math.exp(-1.15 * dt);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.age += dt;
+    if (p.age >= p.life) { parts.splice(i, 1); continue; }
+    p.vx *= dragH; p.vy = p.vy * dragV - (p.kind === 0 ? 26 : 3) * dt;
+    p.x += (p.vx + 9) * dt; p.y += p.vy * dt;     // +9: ゆるい横風
+    p.r += p.gr * dt; p.gr *= grD;
+    if (p.kind === 0 && p.y > SITE.groundY + 3) { p.y = SITE.groundY + 3; p.vy = -Math.abs(p.vy) * 0.3; }
+  }
+}
+
+// 次のシーンにフェードイン（暗転から）を被せる。ゲーム側のコードは触らない
+export function fadeInScene(scene, dur) {
+  const d = dur || 0.8;
+  let ft = 0;
+  const upd = scene.update.bind(scene), rnd = scene.render.bind(scene);
+  scene.update = (dt) => { ft += (typeof dt === 'number' && dt > 0 ? dt : 0); return upd(dt); };
+  scene.render = (ctx) => { rnd(ctx); if (ft < d) veil(ctx, 1 - ft / d); };
+  return scene;
+}
+
 
 // 名前入力オーバーレイ（HTML）。document が無い環境では false を返し何もしない。確定で onSubmit(name)。
 export function showNameOverlay(initial, onSubmit) {
@@ -39,9 +113,11 @@ export function showNameOverlay(initial, onSubmit) {
 }
 
 export class TitleScene extends Scene {
-  constructor(engine, startGame) {
+  // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
+  constructor(engine, startGame, opts) {
     super(engine);
     this.startGame = startGame;
+    this.useLaunch = !!(opts && opts.launch);
     this.isRoot = true;    // 最上位＝BACKボタン非表示
     this.t = 0;
     this.showRank = false;
@@ -50,96 +126,207 @@ export class TitleScene extends Scene {
     this.name = '';
     this.pendingStart = false;
     this.toastT = 0;
-    this.logoBox = { x: W / 2 - 110, y: H * 0.36 - 34, w: 220, h: 68 };
-    this.changeBtn = { x: W / 2 - 34, y: H * 0.545, w: 68, h: 18 };
-    this.rankBtn = { x: W / 2 - 60, y: H * 0.88, w: 120, h: 30 };
+    this.launch = null;    // 発射中: { e, ign, done, parts }
+    this.parts = [];       // 煙/蒸気の粒子
+    this._musicOn = false;
+    this._steamAcc = 0; this._smokeAcc = 0; this._steamSide = 1;
+    // タップ対象（互いに重ならない。8pxグリッド）
+    this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
+    this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
+    this.changeBtn = { x: W / 2 - 34, y: 436, w: 68, h: 20 };
+    this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
+    this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
-      this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.2 ? 1.6 : 0.9, tw: Math.random() * 6.28 });
+      this.stars.push({ x: Math.random() * W, y: Math.random() * 380, r: Math.random() < 0.2 ? 1.5 : 0.9, tw: Math.random() * 6.28, deep: i >= 40 });
     }
   }
 
-  enter() { this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage); }
+  enter() {
+    this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
+    // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
+    if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
+  }
+
+  _ensureMusic() {
+    if (this._musicOn || this.launch) return;
+    this._musicOn = true;
+    musicOf(this.engine).playTitle();
+  }
 
   // 名前確定（HTML・テストフック共通）。開始待ち(pendingStart)ならそのままゲーム開始
   _submitName(name) {
     this.name = setPlayerName(this.engine.storage, name);
-    if (this.pendingStart) { this.pendingStart = false; this.startGame(); }
+    if (this.pendingStart) { this.pendingStart = false; this._begin(); }
   }
   _openName(thenStart) {
     this.pendingStart = !!thenStart;
     showNameOverlay(this.name || '', (v) => this._submitName(v));
   }
 
+  // START 確定後: 発射シーケンス（または即ゲーム）
+  _begin() {
+    if (!this.useLaunch) { this.startGame(); return; }
+    if (this.launch) return;
+    this.launch = { e: 0, ign: false, done: false };
+    this.showRank = false;
+    const m = musicOf(this.engine);
+    m.stopAll(2.5);               // タイトル曲をフェードアウト
+    this._musicOn = false;
+  }
+  _finishLaunch() {
+    if (!this.launch || this.launch.done) return;
+    this.launch.done = true;
+    this.startGame();
+  }
+
+  _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
+
   onInput(action, data) {
+    if (this.launch) {            // 発射中: タップ/決定でスキップ
+      if (action === 'tap' || action === 'confirm') this._finishLaunch();
+      return;
+    }
+    this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
     if (action === 'tap' && data) {
-      const b = this.rankBtn;
-      if (data.x >= b.x && data.x <= b.x + b.w && data.y >= b.y && data.y <= b.y + b.h) {
+      if (this._hit(this.muteBtn, data)) {
+        const m = toggleMute(this.engine);
+        if (!m) musicOf(this.engine).sfx.uiTap();
+        return;
+      }
+      if (this._hit(this.rankBtn, data)) {
+        musicOf(this.engine).sfx.uiTap();
         this.showRank = !this.showRank;
         if (this.showRank) this.tabs = createRankTabs();
         return;
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
-    }
-    if (action === 'tap' && data) {
-      const lb = this.logoBox;
-      if (data.x >= lb.x && data.x <= lb.x + lb.w && data.y >= lb.y && data.y <= lb.y + lb.h) {
+      if (this._hit(this.logoBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
         return;
       }
-      const cb = this.changeBtn;
-      if (this.name && data.x >= cb.x && data.x <= cb.x + cb.w && data.y >= cb.y && data.y <= cb.y + cb.h) { this._openName(false); return; }
+      if (this.name && this._hit(this.changeBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openName(false); return; }
     }
     if (action === 'tap' || action === 'confirm') {
-      this.engine.audio.good();
+      musicOf(this.engine).sfx.uiTap();
       if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
-      this.startGame();
+      this._begin();
     }
   }
 
-  update(dt) { this.t += dt; if (this.toastT > 0) this.toastT = Math.max(0, this.toastT - dt); }
+  update(dt) {
+    if (!(dt > 0)) dt = 0.016;
+    this.t += dt;
+    if (this.toastT > 0) this.toastT = Math.max(0, this.toastT - dt);
+    musicOf(this.engine).tick(dt);
+    const L = this.launch;
+    if (L) {
+      L.e += dt;
+      if (!L.ign && L.e >= LAUNCH.ignite) {
+        L.ign = true;
+        musicOf(this.engine).sfx.launch();
+        for (let i = 0; i < 12; i++) spawnSmoke(this.parts, i % 2 ? 1 : -1, true);   // 点火の初期バースト
+      }
+      if (L.ign) {
+        // 点火〜上昇初期は濃く、上昇しきったら絞る
+        const rate = L.e < LAUNCH.lift + 0.9 ? 30 : 12;
+        this._smokeAcc += rate * dt;
+        while (this._smokeAcc >= 1) { this._smokeAcc -= 1; this._steamSide = -this._steamSide; spawnSmoke(this.parts, this._steamSide, false); }
+      }
+      if (L.e >= LAUNCH.total) this._finishLaunch();
+    } else {
+      // 待機中の蒸気（ベント）。射点の足元と側面から
+      this._steamAcc += dt;
+      if (this._steamAcc >= 0.45) {
+        this._steamAcc = 0; this._steamSide = -this._steamSide;
+        if (Math.random() < 0.5) spawnSteam(this.parts, SITE.rocketX + this._steamSide * 15, SITE.groundY - 46 - Math.random() * 60, this._steamSide, false);
+        else spawnSteam(this.parts, SITE.rocketX + this._steamSide * 20, SITE.groundY - 3, this._steamSide, true);
+      }
+    }
+    stepSmoke(this.parts, dt);
+  }
 
   render(ctx) {
     const p = P();
-    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
-    for (const s of this.stars) {
-      ctx.globalAlpha = 0.35 + 0.5 * Math.abs(Math.sin(this.t * 0.8 + s.tw));
-      ctx.fillStyle = p.fg;
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    this.engine.text('LANDER', W / 2, H * 0.36, 44, p.hi, 'center');
-    const blink = 0.5 + 0.5 * Math.sin(this.t * 3);
-    ctx.globalAlpha = 0.4 + 0.6 * blink;
-    this.engine.text('TAP TO START', W / 2, H * 0.62, 16, p.mid, 'center');
-    ctx.globalAlpha = 1;
+    const L = this.launch, e = L ? L.e : 0;
+    const rise = L ? launchRise(e) : 0;
+    const camY = rise * LAUNCH.camK;
+    const space = clamp01((rise - 60) / 320);
+    const ui = L ? clamp01(1 - e / 0.35) : 1;
+    const logoA = L ? clamp01(1 - (e - 0.15) / 0.9) : 1;
+    const arm = L ? clamp01((e - LAUNCH.armStart) / (LAUNCH.armEnd - LAUNCH.armStart)) : 0;
+    const flame = L && L.ign ? clamp01((e - LAUNCH.ignite) / 0.5) : 0;
+    const shake = L && L.ign && e < LAUNCH.lift + 0.9 ? 1.1 * clamp01((e - LAUNCH.ignite) / 0.4) : 0;
+    const shx = shake ? Math.sin(this.t * 71) * shake : 0, shy = shake ? Math.cos(this.t * 83) * shake * 0.7 : 0;
+    const as = astronautCycle(this.t);
+    const asA = L ? as.a * clamp01(1 - e / 0.2) : as.a;
+    const glow = L ? as.glow * clamp01(1 - (e - 0.4) / 0.4) : as.glow;
 
-    if (this.name) {
-      this.engine.text('PILOT: ' + this.name, W / 2, H * 0.50, 14, p.fg, 'center');
-      const cb = this.changeBtn;
-      this.engine.stroke(cb.x, cb.y, cb.w, cb.h, p.dim, 1);
-      this.engine.text('CHANGE', W / 2, cb.y + 3, 10, p.mid, 'center');
-    }
-    if (isDebug()) this.engine.text('DEBUG', W - 8, 8, 10, p.warn, 'right');
-    if (this.toastT > 0) {
-      ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
-      this.engine.rect(W / 2 - 50, 40, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 40, 100, 24, p.warn, 1.5);
-      this.engine.text('DEBUG ON', W / 2, 45, 13, p.warn, 'center');
+    drawTitleSky(ctx, { t: this.t, stars: this.stars, space, camY });
+    ctx.save();
+    ctx.translate(shx, camY + shy);
+    drawLaunchSite(ctx, { t: this.t });
+    drawTower(ctx, { t: this.t, arm });
+    drawRocket(ctx, SITE.rocketX, SITE.groundY - rise, { glow });
+    if (asA > 0.01 && as.mode !== 'hidden') {
+      ctx.save();
+      ctx.globalAlpha = asA;
+      ctx.translate(as.x, SITE.armY); ctx.scale(1.4, 1.4);
+      drawAstronaut(ctx, 0, 0, as.mode, this.t * 0.5);
       ctx.restore();
     }
+    if (flame > 0) drawGroundBlast(ctx, SITE.rocketX, SITE.groundY, flame * (rise < 200 ? 1 : 1 - clamp01((rise - 200) / 200)));
+    drawSmoke(ctx, this.parts);
+    if (flame > 0) drawLaunchFlame(ctx, SITE.rocketX, SITE.groundY - rise, flame, this.t, rise < 10 ? SITE.groundY + 4 + rise * 6 : null);   // 炎は煙の手前で明るく
+    ctx.restore();
 
-    // 上位3件
-    for (let i = 0; i < Math.min(3, this.rank.length); i++) {
-      const e = this.rank[i];
-      this.engine.text((i + 1) + '. ' + e.name + '  ' + e.score, W / 2, H * 0.68 + i * 20, 13, p.fg, 'center');
+    if (L) {
+      // 点火の閃光と最後の暗転（次の画面はこの暗転から立ち上がる）
+      const fa = clamp01(1 - (e - LAUNCH.ignite) / 0.3);
+      if (L.ign && fa > 0) { ctx.save(); ctx.globalAlpha = 0.09 * fa; ctx.fillStyle = '#ffe2b8'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+      const v = clamp01((e - LAUNCH.fadeStart) / (LAUNCH.total - LAUNCH.fadeStart));
+      if (v > 0) veil(ctx, v * v * (3 - 2 * v));
+      // 控えめなカウントダウン 3-2-1（点火直前）
+      if (e < LAUNCH.ignite) {
+        const n = 3 - Math.min(2, Math.floor(e / (LAUNCH.ignite / 3)));
+        txt(ctx, String(n), W / 2, 478, 28, p.fg, 'center', { w: 200, a: 0.8 });
+      }
     }
 
-    // RANKING ターゲット
-    const b = this.rankBtn;
-    this.engine.stroke(b.x, b.y, b.w, b.h, p.dim, 1.5);
-    this.engine.text('RANKING', W / 2, b.y + 7, 14, p.mid, 'center');
+    // ---- UI ----
+    if (logoA > 0) {
+      txt(ctx, 'LANDER', W / 2, 60, 34, p.hi, 'center', { sp: 16, w: 300, a: logoA });
+      txt(ctx, 'SOFT LANDING TOUR', W / 2, 98, 8, p.dim, 'center', { sp: 5, w: 400, a: logoA });
+    }
+    if (ui > 0) {
+      const sp = drawSpeaker;
+      sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
+      if (this.name) {
+        txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
+        const cb = this.changeBtn;
+        pill(ctx, cb.x, cb.y, cb.w, cb.h, rgba(p.fg, 0.04 * ui), rgba(p.fg, 0.22 * ui));
+        txt(ctx, 'CHANGE', W / 2, cb.y + 6, 8, p.mid, 'center', { sp: 3, w: 500, a: ui });
+      } else {
+        txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
+      }
+      const sb = this.startBtn;
+      const breath = 0.5 + 0.5 * Math.sin(this.t * 2);
+      pill(ctx, sb.x, sb.y, sb.w, sb.h, rgba(p.mid, 0.07 + 0.04 * breath), rgba(p.mid, (0.5 + 0.25 * breath) * ui), 1.2);
+      txt(ctx, 'START', W / 2, sb.y + 15, 14, p.hi, 'center', { sp: 9, w: 500, a: ui });
+      if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
+      const b = this.rankBtn;
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
+      txt(ctx, 'RANKING', W / 2, b.y + 9, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
+    }
+    if (isDebug()) txt(ctx, 'DEBUG', 12, 16, 9, p.warn, 'left', { sp: 3, w: 500 });
+    if (this.toastT > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, this.toastT);
+      this.engine.rect(W / 2 - 50, 120, 100, 24, p.dark); this.engine.stroke(W / 2 - 50, 120, 100, 24, p.warn, 1.5);
+      this.engine.text('DEBUG ON', W / 2, 125, 13, p.warn, 'center');
+      ctx.restore();
+    }
 
     // 全件一覧
     if (this.showRank) {
