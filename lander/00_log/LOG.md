@@ -2,6 +2,10 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 FAQ: PCでWORLDが「OFFLINE」になる件（Opus 5.5）
+- **原因（確定）**: 中継は `ALLOWED_ORIGINS=https://junji-miyazaki.github.io` のみ許可。ローカルのファイル（file://）や localhost から開くとブラウザがCORSで応答を受け取れず OFFLINE 表示になる。公開URLから開けばPCでも表示される。中継自体は正常（GET /ranking 200、記録あり）。
+- **判断**: ユーザー了承により現状維持。読み取り系（/ranking, /name）だけ全オリジン許可にする改善案は保留（必要時に実施、Worker再デプロイが必要）。
+
 ## 2026-10-25 起動画面 TAP TO BEGIN を追加（Opus 5.5 リーダー、直接実装）
 - **背景（ユーザー質問）**: タイトル曲が最初の操作まで鳴らない → ブラウザの自動再生制限による仕様（最初のユーザー操作まで音を出せない。Webでは回避不可、アプリ化すれば可）。ユーザーが「起動画面を1枚挟む」案を選択。
 - **実施**: `title.js` に `BootScene`（星空＋LANDER＋TAP TO BEGIN＋SOUND ON）。`main.js` は起動時のみ BootScene→タイトル。タップ時に engine が audio.unlock() し、TitleScene.enter が即タイトル曲を再生。ゲームからタイトルへ戻る時は直接タイトル。
