@@ -2,6 +2,11 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 世界ランキング有効化（Opus 5.5 リーダー）
+- **実施**: ユーザーが Cloudflare Worker `lander-ranking` を作成（https://lander-ranking.euler057721.workers.dev）。`02_src/net.js` の `RELAY_URL` に設定して公開。
+- **確認（データを書かない範囲）**: GET /ranking 200 `{"top":[]}`、CORS許可元 `https://junji-miyazaki.github.io`、OPTIONS 204、許可外Origin 403、不正値 400。テスト実行後も本番ランキングは空（Node の fetch は Origin を付けないため 403 で弾かれ、書き込まれない）。
+- **未確認**: Worker のトークンで `lander-scores` に実際に書けるか（GET の 404 は「新規ファイル」と「権限なし」を区別できない）。最初の実プレイの送信で確認する。失敗時の確認先は Cloudflare の Observability（Logs）と `lander-scores` のコミット履歴。
+
 ## 2026-10-25 公開（Opus 5.5 リーダー）
 - **実施**: ポータル `index.html` に LANDER のリンクを追加し、18コミットを push。GitHub Pages で `lander/index.html` が 200、公開バンドルが最新（シールドLv2の文言で確認）、ポータルのリンク反映を確認。公開URL: https://junji-miyazaki.github.io/game/lander/index.html （デバッグは `?debug`）。
 - **問題と対処**: 旧トークン（classic）とキーチェーンの認証が失効しており push 不可。ユーザーが fine-grained トークンを作成。`token.txt` に複数のトークンが入っており、`game` への push は上から2番目で成功。一番下のトークンは `game` に拒否された（`lander-scores` 専用なら正しい）。push のトークン抽出は `github_pat_` 形式にも対応させた。
