@@ -80,7 +80,7 @@ Music.setMuted(false);
 
 ok(!throws(() => Music.playTitle()), 'playTitle');
 ok(Music._debug().cur === 'title', 'title is current');
-for (const id of ['moon', 'europa', 'io', 'mars', 'titan', 'venus']) {
+for (const id of ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'terra']) {   // P6: terra（ボーナス専用）を追加
   ok(!throws(() => Music.playBody(id)), 'playBody ' + id);
   ok(Music._debug().cur === id, 'cur=' + id);
   for (let i = 0; i < 50; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
@@ -106,7 +106,7 @@ ok(created === cBefore, 'same body replay is idempotent');
 // 4) 120秒シミュレーション: ボイス数が有界、停止ノードは切断
 const BOUND_VOICES = 24; // 一過性: 音楽14 + SFX10
 let maxV = 0, maxPersist = 0;
-for (const id of ['title', 'moon', 'europa', 'io', 'mars', 'titan', 'venus']) {
+for (const id of ['title', 'moon', 'europa', 'io', 'mars', 'titan', 'venus', 'terra']) {
   if (id === 'title') Music.playTitle(); else Music.playBody(id);
   for (let i = 0; i < 1200; i++) { // 120 s @ 10 Hz
     ctx.currentTime += 0.1; Music.tick(0.1);

@@ -424,6 +424,37 @@ const BODIES = [
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
 ];
 
+
+// ---- TERRA: ボーナス専用の地球型惑星（6天体のツアーには含めない）----
+// 実重力 9.81 m/s^2 をツアーと同じ平方根圧縮で使う（≈0.615）。風・抗力はミッションごとに与える（既定は無風・無抗力）。
+const TERRA = { id: 'terra', celebTier: 0, name: 'TERRA', atmoTag: 'EARTH-LIKE', realG: 9.81, atmoLabel: 'N₂/O₂ 1 BAR', atmoType: 'earth',
+  wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'rock',
+  visual: { sky: ['#3f78bd', '#b9dcf0'], ground: '#5c8f4a', rim: '#d9f0a8', accent: '#fff2c0', fog: null, haze: null,
+    skyObject: 'day', mood: 'daylight blue sky, drifting clouds, ocean horizon, green hills' } };
+
+// ボーナスミッション。mult: 得点倍率 / stars: 難度 / moving: 移動パッド / wind,drag,dragY: TERRA の大気(null/0なら無し)。
+// 数値は 04_tests/p6bonus.mjs の着陸可能性（自動操縦で 50 シード中 80% 以上）で調整済み。
+const BONUS_MISSIONS = {
+  CALM:      { id: 'CALM', name: 'CALM APPROACH', stars: 1, mult: 1.0, line: 'TERRA GRAVITY ONLY', padW: 48, moving: false, plateauSegs: 0, padPeriod: 0, wind: null, drag: 0, dragY: 0, grantContinue: false },
+  ROVER:     { id: 'ROVER', name: 'ROVER DOCK', stars: 2, mult: 1.5, line: 'THE PAD ROLLS SIDEWAYS', padW: 44, moving: true, plateauSegs: 6, padPeriod: 8, wind: null, drag: 0, dragY: 0, grantContinue: false },
+  CROSSWIND: { id: 'CROSSWIND', name: 'CROSSWIND', stars: 2, mult: 1.5, line: 'GUSTING WIND AND DRAG', padW: 44, moving: false, plateauSegs: 0, padPeriod: 0, wind: { base: 0.06, gust: 0.16 }, drag: 0.1, dragY: 0.02, grantContinue: false },
+  STORM:     { id: 'STORM', name: 'STORM LANDING', stars: 3, mult: 2.5, line: 'MOVING PAD, WIND, SMALL PAD', padW: 32, moving: true, plateauSegs: 6, padPeriod: 8, wind: { base: 0.05, gust: 0.12 }, drag: 0.08, dragY: 0.02, grantContinue: true },
+};
+const BONUS_ORDER = ['CALM', 'ROVER', 'CROSSWIND', 'STORM'];
+const BONUS_ALT = ['ROVER', 'CROSSWIND'];   // ★★ は成立の度に交互
+function missionOf(type) { return Object.prototype.hasOwnProperty.call(BONUS_MISSIONS, type) ? BONUS_MISSIONS[type] : BONUS_MISSIONS.CALM; }
+// ミッション用の天体データ: TERRA に風・抗力を載せ、祝福の格を ★-1（最大2）にする
+function bonusBody(type) {
+  const m = missionOf(type);
+  return Object.assign({}, TERRA, {
+    wind: m.wind ? { base: m.wind.base, gust: m.wind.gust } : { base: 0, gust: 0 },
+    drag: m.drag || 0, dragY: m.dragY || 0,
+    celebTier: Math.min(2, m.stars - 1),
+  });
+}
+// ボーナス得点 = round((600 + 残燃料*10) * 倍率)
+function bonusScoreFor(type, fuel) { return Math.round((600 + (fuel || 0) * 10) * missionOf(type).mult); }
+
 const BODY_COUNT = BODIES.length;
 
 // stage(1始まり) -> { index, loop, body, firstOfBody }
@@ -718,12 +749,39 @@ function predictMean(g, dt = 0.25) {
   return { x, t };
 }
 
+// 移動パッド（ROVER DOCK / STORM LANDING）: パッド位置 = minX..maxX を余弦で往復（t=0 は左端）。
+// 戦略: 近い方の「端」の上で待ち、パッドがその端に止まる瞬間（折り返し。速度≈0）に接地するよう降下速度で時刻を合わせる。
+function padCenterAhead(g, tAhead) {
+  const p = g.pad;
+  if (!p.moving) return p.x + p.w / 2;
+  const k = 0.5 - 0.5 * Math.cos(2 * Math.PI * ((g._padT || 0) + tAhead) / (p.period || 8));
+  return p.minX + (p.maxX - p.minX) * k + p.w / 2;
+}
+const VY_CAP = 14;
+
 function autopilotKeys(g) {
   const keys = { left: false, right: false, up: false };
   if (!g || !g.pad) return keys;
-  const padCx = g.pad.x + g.pad.w / 2;
   const h = Math.max(0, g.pad.y - (g.y + 16));
-  const tg = h / Math.max(g.vy, 2);                 // 接地までの概算秒
+  let tg = h / Math.max(g.vy, 2);                   // 接地までの概算秒
+  let padCx = g.pad.x + g.pad.w / 2;
+  let vyCmd = null;                                  // 移動パッド: 接地時刻を折り返しに合わせるための目標降下速度
+  if (g.pad.moving) {
+    const P = g.pad.period || 8, tNow = g._padT || 0;
+    if (g._apEnd !== 0 && g._apEnd !== 1) g._apEnd = (g.x < (g.pad.minX + g.pad.maxX) / 2 + g.pad.w / 2) ? 0 : 1;   // 0=左端 1=右端（最初に近い方を選ぶ）
+    padCx = (g._apEnd ? g.pad.maxX : g.pad.minX) + g.pad.w / 2;
+    const phase0 = g._apEnd ? P / 2 : 0;
+    // 通常の降下プロファイル(vyd)で降りた場合の所要時間より早い折り返しは選べない（降下は遅くはできるが速くはできない）
+    const need = h / Math.max(2, Math.min(VY_CAP, 4 + h * 0.03)) + 0.2;
+    // いったん決めた折り返し時刻は、間に合わなくなる(1秒以上遅れる)まで変えない
+    if (g._apTE === undefined || g._apTE - tNow < need - 1.0) {
+      const n = Math.ceil((tNow + need - phase0) / P);
+      g._apTE = phase0 + n * P;                     // 次に折り返す時刻（間に合う最も早いもの）
+    }
+    const tE = g._apTE;
+    vyCmd = h / Math.max(0.4, tE - tNow);
+    if (h < 140 && Math.abs(padCx - g.x) > 10) vyCmd = Math.min(vyCmd, 1.5);   // 横位置が合うまで降りない
+  }
   const far = h > FAR_H && tg > 6;
   const tiltLim = clampN((tg - 4) * 10, 15, 68);     // 接地が近いほど傾きを制限（直立で降りるため）
 
@@ -733,7 +791,7 @@ function autopilotKeys(g) {
   const drag = (g._body && g._body.drag) || 0;
   const Fx = clampN(1.0 * (vxd - g.vx) - AP.WIND_FF * (g._windAccel || 0) + drag * g.vx, -4.5, 4.5);
   // 目標降下速度: 地面に近いほど遅く
-  const vyd = Math.min(14, 4 + h * 0.03);
+  const vyd = vyCmd !== null ? Math.max(1.5, Math.min(VY_CAP, 4 + h * 0.03, vyCmd)) : Math.min(14, 4 + h * 0.03);
   const Fy = g.vy > vyd ? Math.min(5, g._gravity + 0.8 * (g.vy - vyd)) : 0;
 
   const T = Math.hypot(Fx, Fy);
@@ -1386,8 +1444,47 @@ function paintSunGlow(c, o) {
   c.fillStyle = 'rgba(70,24,6,0.16)';                         // 雲の筋
   for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
 }
+// TERRA（ボーナス専用）の昼空: 柔らかい青のグラデーション + やさしい太陽光 + 遠い海の水平線。雲は drawBackdrop が毎フレーム流す。
+function paintDaySky(c, body) {
+  const v = body.visual;
+  const g = mkL(c, 0, 0, 0, 400);
+  g.addColorStop(0, v.sky[0]); g.addColorStop(1, v.sky[1]);
+  c.fillStyle = g; c.fillRect(0, 0, AW, AH);
+  const sun = mkR(c, 262, 168, 4, 262, 168, 190);                 // 太陽の光（やわらかく、まぶしくしない）
+  sun.addColorStop(0, 'rgba(255,250,225,0.80)'); sun.addColorStop(0.12, 'rgba(255,244,200,0.40)'); sun.addColorStop(1, 'rgba(255,240,190,0)');
+  c.fillStyle = sun; c.fillRect(0, 0, AW, 420);
+  c.fillStyle = 'rgba(255,252,236,0.85)'; c.beginPath(); c.arc(262, 168, 11, 0, TAU); c.fill();
+  const hz = mkL(c, 0, 330, 0, 396);                              // 水平線の霞
+  hz.addColorStop(0, 'rgba(255,255,255,0)'); hz.addColorStop(1, 'rgba(235,246,252,0.55)');
+  c.fillStyle = hz; c.fillRect(0, 330, AW, 66);
+  const oc = mkL(c, 0, 396, 0, 520);                              // 遠い海
+  oc.addColorStop(0, '#7fb6dc'); oc.addColorStop(1, '#2d6ca4');
+  c.fillStyle = oc; c.fillRect(0, 396, AW, AH - 396);
+  c.fillStyle = 'rgba(255,248,215,0.30)';                        // 太陽の反射
+  for (let i = 0; i < 6; i++) c.fillRect(262 - 22 + i * 7 - (i % 2) * 6, 398 + i * 8, 26 - i * 2, 1.4);
+  c.strokeStyle = 'rgba(240,250,255,0.55)'; c.lineWidth = 1;     // 水平線
+  c.beginPath(); c.moveTo(0, 396.5); c.lineTo(AW, 396.5); c.stroke();
+  const top = mkL(c, 0, 0, 0, 150);                              // 上部HUDの可読性のため上端を沈める
+  top.addColorStop(0, 'rgba(10,32,64,0.58)'); top.addColorStop(0.7, 'rgba(10,32,64,0.2)'); top.addColorStop(1, 'rgba(10,32,64,0)');
+  c.fillStyle = top; c.fillRect(0, 0, AW, 150);
+}
+function drawClouds(ctx, t) {
+  const defs = [[40, 150, 1.0, 5], [190, 214, 1.3, 3.5], [300, 128, 0.8, 4.5], [110, 290, 1.1, 2.8], [250, 340, 0.9, 3.2]];
+  ctx.save();
+  for (let i = 0; i < defs.length; i++) {
+    const d = defs[i], span = AW + 180;
+    const x = ((d[0] + 90 + t * d[3]) % span + span) % span - 90;
+    const y = d[1] + Math.sin(t * 0.07 + i * 2) * 2, s = d[2];
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';                      // 影側
+    for (const e of [[0, 4, 26, 7], [-18, 1, 17, 6], [16, 2, 19, 6]]) { ctx.beginPath(); ctx.ellipse(x + e[0] * s, y + e[1] * s + 2, e[2] * s, e[3] * s, 0, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.62)';
+    for (const e of [[0, 2, 24, 6.5], [-14, -3, 14, 7], [10, -5, 16, 8], [24, 3, 12, 4.5]]) { ctx.beginPath(); ctx.ellipse(x + e[0] * s, y + e[1] * s, e[2] * s, e[3] * s, 0, 0, TAU); ctx.fill(); }
+  }
+  ctx.restore();
+}
 function paintSky(c, body) {
   const v = body.visual;
+  if (v.skyObject === 'day') { paintDaySky(c, body); return; }
   const g = mkL(c, 0, 0, 0, AH * 0.82);
   g.addColorStop(0, v.sky[0]); g.addColorStop(1, v.sky[1]);
   c.fillStyle = g; c.fillRect(0, 0, AW, AH);
@@ -1408,6 +1505,7 @@ function paintSky(c, body) {
 }
 function drawBackdrop(ctx, body, t, stars) {
   cachedLayer(ctx, 'sky', body.id, (c) => paintSky(c, body));
+  if (body.visual.skyObject === 'day') { drawClouds(ctx, t); return; }
   if (!isVacuum(body) || !stars) return;
   const o = skyObjFor(body);
   ctx.save();
@@ -1483,6 +1581,16 @@ function paintTerrain(c, body, pts) {
       const x = T() * AW, y = 470 + T() * 130, rx = 7 + T() * 18;
       c.fillStyle = 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
       c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
+    }
+  } else if (body.id === 'terra') {                              // TERRA: 畑の帯と木々
+    for (let k = 0; k < 8; k++) {
+      c.fillStyle = k % 2 ? 'rgba(255,238,150,0.12)' : 'rgba(18,70,34,0.16)';
+      c.beginPath(); c.ellipse(T() * AW, 480 + T() * 120, 30 + T() * 50, 4 + T() * 5, 0, 0, TAU); c.fill();
+    }
+    for (let k = 0; k < 16; k++) {
+      const x = T() * AW, y = 468 + T() * 140, r = 2.4 + T() * 2.2;
+      c.fillStyle = 'rgba(20,64,34,0.55)'; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+      c.fillStyle = 'rgba(180,230,120,0.22)'; c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.5, 0, TAU); c.fill();
     }
   } else {                                                       // 火星・タイタン: 緩い地層
     c.strokeStyle = 'rgba(0,0,0,0.20)'; c.lineWidth = 1;
@@ -1956,6 +2064,7 @@ const HUD_LAYOUT = {
 const HUD_LABELS = ['DESCENT', 'DRIFT', 'TILT', 'SPIN'];
 function hudInfoText(h) {
   const g = (h.realG != null) ? 'g ' + Number(h.realG).toFixed(2) + ' m/s²' : '';
+  if (h.mission) return g ? g + '  ·  ' + h.mission : String(h.mission);   // ボーナス中: 重力 · ミッション名
   const tag = String(h.atmoTag || '');
   const a = (!tag || tag === 'NONE') ? 'NO ATMOSPHERE' : tag;
   return g ? g + '  ·  ' + a : a;
@@ -2114,11 +2223,21 @@ function drawIntro(ctx, name, line1, line2, alpha) {
   txt(ctx, line1, AW / 2, 148, 9, p.fg, 'center', { sp: 3, w: 400, a: a * 0.85, sh: 1 });
   if (line2) txt(ctx, line2, AW / 2, 163, 9, p.warn, 'center', { sp: 3, w: 500, a: a * 0.85, sh: 1 });
 }
-function drawBonusBanner(ctx, kind, alpha) {
+function star(ctx, cx, cy, r, fill) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr_ = i % 2 ? r * 0.42 : r; const x = cx + Math.cos(a) * rr_, y = cy + Math.sin(a) * rr_; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+}
+function drawStars(ctx, cx, cy, n, r, fill, gap) {   // cx = 中央
+  const step = r * 2 + (gap == null ? 3 : gap), x0 = cx - (n - 1) * step / 2;
+  for (let i = 0; i < n; i++) star(ctx, x0 + i * step, cy, r, fill);
+}
+function drawBonusBanner(ctx, kind, alpha, stars) {
   const p = P();
   const a = Math.max(0, Math.min(1, alpha));
   txt(ctx, 'BONUS MISSION', AW / 2, 122, 9, p.warn, 'center', { sp: 5, w: 500, a, sh: 1 });
   txt(ctx, kind, AW / 2, 138, 20, p.hi, 'center', { sp: 6, w: 200, a, sh: 1 });
+  if (stars > 0) { ctx.save(); ctx.globalAlpha = a; drawStars(ctx, AW / 2, 172, Math.min(3, stars), 5, p.warn); ctx.restore(); }
 }
 function drawTouchdown(ctx) {
   txt(ctx, 'TOUCHDOWN', AW / 2, 100, 12, P().fg, 'center', { sp: 6, w: 300, sh: 1 });
@@ -2190,6 +2309,26 @@ function drawModuleCards(ctx, d) {
     txt(ctx, c.desc, r.x + 20, r.y + 90, 10, p.fg, 'left', { sp: 1.2, w: 400, a: 0.85 });
     txt(ctx, 'TAP TO TAKE', r.x + r.w / 2, r.y + r.h - 28, 8, p.dim, 'center', { sp: 4, w: 500 });
   }
+}
+// ボーナスミッション選択: 3枚のカード（星・名前・条件・倍率）と控えめな SKIP BONUS。背景は TERRA の昼空なので薄めの幕。
+function drawBonusCards(ctx, d) {
+  const p = P();
+  veil(ctx, 0.3);
+  txt(ctx, 'BONUS MISSION', AW / 2, 62, 16, p.hi, 'center', { sp: 6, w: 300 });
+  txt(ctx, d.sub, AW / 2, 88, 8, p.fg, 'center', { sp: 3, w: 500, sh: 1 });
+  for (let i = 0; i < d.cards.length; i++) {
+    const c = d.cards[i], r = c.rect;
+    panel(ctx, r.x, r.y, r.w, r.h, { a: 0.8, border: p.warn, ba: 0.2 + 0.05 * c.stars });
+    drawStars(ctx, r.x + 20 + (c.stars - 1) * 6.5, r.y + 20, c.stars, 5, p.warn);
+    txt(ctx, c.name, r.x + 20, r.y + 36, 15, p.hi, 'left', { sp: 3, w: 400 });
+    txt(ctx, c.line, r.x + 20, r.y + 62, 8, p.fg, 'left', { sp: 2, w: 500, a: 0.85 });
+    if (c.extra) txt(ctx, c.extra, r.x + 20, r.y + 80, 8, p.warn, 'left', { sp: 2, w: 500 });
+    txt(ctx, 'SCORE', r.x + r.w - 20, r.y + 14, 7, p.dim, 'right', { sp: 2.5, w: 500 });
+    txt(ctx, '\u00d7' + c.mult.toFixed(1), r.x + r.w - 20, r.y + 28, 24, p.hi, 'right', { w: 300 });
+  }
+  const k = d.skip;
+  pill(ctx, k.x, k.y, k.w, k.h, rgba('#06080E', 0.6), rgba(p.fg, 0.32));
+  txt(ctx, 'SKIP BONUS', k.x + k.w / 2, k.y + k.h / 2 - 5, 9, p.fg, 'center', { sp: 3, w: 500, a: 0.85 });
 }
 function drawGameOverFrame(ctx, d) {
   const p = P();
@@ -2911,6 +3050,18 @@ const _musSCENES = {
         lp: 240, q: 1.5, gain: 0.7, drive: 3.5, swellRate: 0.06, swellDepth: 0.35, lfoRate: 0.04, lfoDepth: 90 });
     },
     step() { return 5; },
+  },
+  terra: {   // ボーナス専用の昼の惑星: 明るい長調のやわらかいパッド + やさしい風 + 稀なやわらかいベル（ハーモニック）
+    build(sc) {
+      _musDelay(sc, 0.6, 0.4, 0.35);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 130.8 }, { type: 'triangle', f: 164.8, det: 4 }, { type: 'sine', f: 196, det: -3 }, { type: 'sine', f: 293.7, det: 5 }],
+        lp: 1100, gain: 0.14, lfoRate: 0.05, lfoDepth: 260, swellRate: 0.07, swellDepth: 0.04 });
+      _musAir(sc, 'bandpass', 650, 0.6, 0.02, 0.06, 180, 0.012);
+    },
+    step(t, sc) {
+      _musBell(sc, t, _musHz(523.25, _musPick(_musPENT) + _musPick([0, 12])), 3.2, 0.07, 2);
+      return _musRand(5, 10);
+    },
   },
 };
 
@@ -3780,7 +3931,7 @@ const CONTINUES_MAX     = 3;
 const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
 const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
 const BOUNCE_AIRBORNE_PX = 30;   // 地面からこれ以上離れたら「離陸」とみなしバウンス状態を解除
-const RESULT_STATES = ['landing', 'cleared', 'crashed', 'bonusfailed', 'module', 'gameover', 'ranking'];   // 結果画面（長押し解除・キーリピートで進めない）
+const RESULT_STATES = ['landing', 'cleared', 'crashed', 'bonusfailed', 'bonusselect', 'module', 'gameover', 'ranking'];   // 結果画面（長押し解除・キーリピートで進めない）
 const INPUT_LOCK_S      = 0.5;   // 結果画面に入った直後の入力無視（押しっぱなしの指を離した際の誤タップ対策）
 const BONUS_EVERY       = 3;     // sステージクリア後 (s % 3 === 0) にボーナス
 const PERFECT_VY = 8, PERFECT_VX = 3, PERFECT_ANGLE = 5, PERFECT_OMEGA = 6;   // PERFECT着陸の閾値
@@ -3791,15 +3942,9 @@ const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン
 const ADMIN_PER_PAGE    = 5;
 let _adminKeyMem = '';   // 管理キー（セッション中のみ・メモリ上。保存しない）
 const DBG_STATES = ['play', 'landing', 'cleared', 'crashed', 'bonusfailed'];
-const BONUS_TYPES       = ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'];
-const PRECISION_MUL     = 2;     // PRECISIONボーナスの得点倍率（P1.5: x3 -> x2。x3は3000点超でランキングを歪めた）
 const INTRO_S           = 2.0;   // 天体の最初のステージの紹介バナー秒数
 const RADAR_DT          = 1 / 30;
 const RADAR_MAX_T       = 120;
-const PRECISION_PAD_W   = 22;
-const FUEL_RUN_FUEL     = 45;    // FUEL_MAX の45%
-const MOVING_PLATEAU_SEGS = 8;   // 160px の平坦台地
-const MOVING_PAD_PERIOD = 6;     // 秒
 const LANDING_SEQ_S     = 2.6;
 
 // 着陸シーケンスのフェーズ（データ駆動）。t(秒) -> {name, p(0..1: フェーズ内進行)}
@@ -3832,9 +3977,9 @@ function stageParams(stage) {
 }
 
 // ---- Terrain generation ----
-// opts.plateau: true -> MOVING_PAD用。MOVING_PLATEAU_SEGS 区間ぶんの平坦台地を作り、pad に移動範囲 minX/maxX を持たせる。
+// opts.plateau: 台地の区間数(>0) -> 移動パッド用（ROVER DOCK / STORM LANDING）。その区間ぶんの平坦台地を作り、pad に移動範囲 minX/maxX と周期 period を持たせる。
 function buildTerrain(padW, opts) {
-  const plateau = !!(opts && opts.plateau);
+  const plateau = (opts && opts.plateau) | 0;   // 台地の区間数。0 = 固定パッド
   const segW    = W / TERRAIN_SEGS;
   const pts     = [];
 
@@ -3847,8 +3992,8 @@ function buildTerrain(padW, opts) {
   const flatY = PAD_Y_MIN + Math.random() * PAD_Y_RANGE;
   let flatX0, flatX1, i0, i1;
   if (plateau) {
-    i0 = 1 + Math.floor(Math.random() * (TERRAIN_SEGS - MOVING_PLATEAU_SEGS - 1)); // 1 .. TERRAIN_SEGS-SEGS-1
-    i1 = i0 + MOVING_PLATEAU_SEGS;
+    i0 = 1 + Math.floor(Math.random() * (TERRAIN_SEGS - plateau - 1)); // 1 .. TERRAIN_SEGS-SEGS-1
+    i1 = i0 + plateau;
     flatX0 = i0 * segW; flatX1 = i1 * segW;
   } else {
     // パッドを置く区間（従来どおり i=2..TERRAIN_SEGS-4 から選ぶ）
@@ -3863,8 +4008,8 @@ function buildTerrain(padW, opts) {
   if (i0 > 0)                pts[i0 - 1].y = (pts[i0 - 1].y + flatY) / 2;
   if (i1 + 1 <= TERRAIN_SEGS) pts[i1 + 1].y = (pts[i1 + 1].y + flatY) / 2;
 
-  const pad = { x: (flatX0 + flatX1) / 2 - padW / 2, y: flatY, w: padW, moving: plateau };
-  if (plateau) { pad.minX = flatX0; pad.maxX = flatX1 - padW; pad.x = (pad.minX + pad.maxX) / 2; }
+  const pad = { x: (flatX0 + flatX1) / 2 - padW / 2, y: flatY, w: padW, moving: plateau > 0 };
+  if (plateau) { pad.period = (opts && opts.period) || 8; pad.minX = flatX0; pad.maxX = flatX1 - padW; pad.x = pad.minX; }   // t=0 の往復位相(余弦)は左端
   return { pts, pad };
 }
 
@@ -3933,13 +4078,13 @@ class Game extends Scene {
     this.totalScore = 0;
     this.stage      = 1;
     this.continues  = CONTINUES_MAX;
-    this.bonus      = null;          // 進行中のボーナス {type, afterStage}
-    this.bonusCount = 0;             // これまでに発生したボーナス数（種類のローテーション用）
+    this.bonus      = null;          // 進行中のボーナス {type, afterStage}。type は CALM / ROVER / CROSSWIND / STORM
+    this.bonusCount = 0;             // これまでに発生したボーナスの機会数（★★ を ROVER / CROSSWIND で交互にする）
+    this.bonusOffers = [];           // 選択画面の3枚（type の配列）
     this._inputLock = 0;
     this.modules    = newModules();   // 新規ランでリセット（Continueでは維持）
     this.offers     = [];
     this._dbgTainted = false;
-    this._dbgBonusI = 0;
     this._clock = 0;
     this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
     this._duck(false);
@@ -3979,7 +4124,7 @@ class Game extends Scene {
     this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
   }
-  blocksBack() { return this.state === 'module' || this.state === 'hold'; }
+  blocksBack() { return this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -4005,15 +4150,17 @@ class Game extends Scene {
     this._thrustRcsR = false;
 
     const sp       = stageParams(this.stage);
-    const btype    = this.bonus ? this.bonus.type : null;
-    this._info     = sp.info;
-    this._body     = sp.info.body;
+    const mission  = this.bonus ? missionOf(this.bonus.type) : null;
+    const btype    = mission ? mission.id : null;
+    this._mission  = mission;
+    this._info     = sp.info;   // 周回(loop)はボーナス中もステージs のもの
+    this._body     = mission ? bonusBody(mission.id) : sp.info.body;   // ボーナスは TERRA（ミッションごとに風・抗力）
     // 天体が変わった／成功・クラッシュでBGMを止めていた場合は曲を（再）開始。ジングルは止める
     if (this._body.id !== this._musBodyId || !this._bgmOn) {
       this._musBodyId = this._body.id; this._bgmOn = true;
       const mu = musicOf(this.engine); mu.stopJingle(0.3); mu.playBody(this._body.id);
     }
-    this._gravity  = sp.gravity;
+    this._gravity  = mission ? bodyGravity(TERRA, sp.info.loop) : sp.gravity;
     this._windSpec = makeWindSpec(this._body, sp.info.loop);   // 真空の天体は null（風なし）
     this._windT    = 0;
     this._windAccel = 0;
@@ -4021,13 +4168,13 @@ class Game extends Scene {
     this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
     this._introT   = (sp.info.firstOfBody && !btype) ? INTRO_S : 0;
-    this._padW     = btype === 'PRECISION' ? PRECISION_PAD_W : sp.padW;
-    if (btype === 'FUEL_RUN') this.fuel = FUEL_RUN_FUEL * fuelMulFor(this._lvl('fuel'));
+    this._padW     = mission ? mission.padW : sp.padW;
 
-    const terrain     = buildTerrain(this._padW, { plateau: btype === 'MOVING_PAD' });
+    const terrain     = buildTerrain(this._padW, mission && mission.moving ? { plateau: mission.plateauSegs, period: mission.padPeriod } : null);
     this.terrainPts   = terrain.pts;
     this.pad          = terrain.pad;
     this._padT        = 0;
+    this._apEnd = undefined; this._apTE = undefined;   // 自動操縦の移動パッド用メモ（新しいステージで初期化）
     this.stars        = this.stars || buildStars(40);
 
     this.guidePts = buildGuide(this.x, this.y, this.pad, GUIDE_PTS);
@@ -4053,8 +4200,8 @@ class Game extends Scene {
     this._onCourseTime = 0;   // ON COURSE状態の累積時間(秒)
     this._onCoursePulse = 0;  // 点滅アニメーション用位相(秒)
 
-    // Floating obstacles (stage 2+)。ボーナス中もステージs のパラメータを使う
-    this.obstacles = buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
+    // Floating obstacles (stage 2+)。ボーナスミッションは障害物なし（穏やかな特別ステージ。難度は重力・パッド・風・抗力で作る）
+    this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
     this._keys = this._keys || { left: false, right: false, up: false };
     this._saveCheckpoint();
@@ -4126,6 +4273,17 @@ class Game extends Scene {
           }
         } else if (action === 'left' && this.offers.length > 0) this._pickModule(0);
         else if (action === 'right' && this.offers.length > 1) this._pickModule(1);
+      }
+      return;   // BACKは無効（選択中）
+    }
+    if (this.state === 'bonusselect') {
+      if (this._inputLock <= 0) {
+        if (action === 'tap' && data) {
+          for (let i = 0; i < this.bonusOffers.length; i++) { if (this._inRect(this._bonusCardRect(i), data)) { this._pickBonus(i); return; } }
+          if (this._inRect(this._bonusSkipRect(), data)) this._skipBonus();
+        } else if (action === 'left') this._pickBonus(0);
+        else if (action === 'up') this._pickBonus(1);
+        else if (action === 'right') this._pickBonus(2);
       }
       return;   // BACKは無効（選択中）
     }
@@ -4335,10 +4493,9 @@ class Game extends Scene {
       case 3: this.bonus = null; this.stage = Math.max(1, this.stage - 1); this._dbgRestart(); break;
       case 4: this.bonus = null; this.stage += 1; this._dbgRestart(); break;
       case 5: this.bonus = null; this.stage = (Math.floor((this.stage - 1) / STAGES_PER_BODY) + 1) * STAGES_PER_BODY + 1; this._dbgRestart(); break;
-      case 6: // BONUS: 種類を順番に切替
-        this.bonus = { type: BONUS_TYPES[this._dbgBonusI % BONUS_TYPES.length], afterStage: this.stage };
-        this._dbgBonusI += 1;
-        this._dbgRestart();
+      case 6: // BONUS: ミッション選択画面を開く
+        this.bonus = null; this._auto = false;
+        this._enterBonusSelect();
         break;
       case 7: { // MODULE
         this.bonus = null;
@@ -4373,17 +4530,41 @@ class Game extends Scene {
     this._inputLock = 0.3;
   }
 
-  // クリア画面からの遷移: s%3===0 の通常ステージ後はボーナスを挟む
+  // クリア画面からの遷移: s%3===0 の通常ステージ後はボーナスミッションの選択画面を挟む
   _nextAfterClear() {
     if (this.bonus) { this._nextAfterBonus(); return; }
-    if (this.stage % BONUS_EVERY === 0) {
-      this.bonus = { type: BONUS_TYPES[this.bonusCount % BONUS_TYPES.length], afterStage: this.stage };
-      this.bonusCount += 1;
-      this._initStage();
-      return;
-    }
+    if (this.stage % BONUS_EVERY === 0) { this._enterBonusSelect(); return; }
     this.stage += 1;
     this._initStage();
+  }
+
+  // ---- ボーナスミッションの選択（3枚 + SKIP BONUS）----
+  // ★ CALM APPROACH / ★★ ROVER DOCK か CROSSWIND（機会ごとに交互）/ ★★★ STORM LANDING。
+  _enterBonusSelect() {
+    const mid = BONUS_ALT[this.bonusCount % BONUS_ALT.length];
+    this.bonusCount += 1;
+    this.bonusOffers = ['CALM', mid, 'STORM'];
+    this._selTerrain = buildTerrain(48, null);   // 背景に見せる TERRA の丘（直前の天体の地形は使わない）
+    this._setOverlayState('bonusselect');
+  }
+  _bonusCardRect(i) { return { x: 24, y: 112 + i * 122, w: W - 48, h: 112 }; }
+  _bonusSkipRect() { return { x: W / 2 - 70, y: 488, w: 140, h: 30 }; }
+  _pickBonus(i) {
+    if (this.state !== 'bonusselect') return;
+    const type = this.bonusOffers[i];
+    if (!type) return;
+    this._uiTap();
+    this.bonusOffers = [];
+    this.bonus = { type, afterStage: this.stage };
+    this._initStage();
+  }
+  // SKIP BONUS: ボーナス無し・得点無し。通常どおりモジュール選択 -> 次のステージへ
+  _skipBonus() {
+    if (this.state !== 'bonusselect') return;
+    this._uiTap();
+    this.bonusOffers = [];
+    this.bonus = null;
+    this._nextAfterBonus();
   }
 
   // ボーナス終了（成功・失敗とも）-> 次の通常ステージ
@@ -4500,10 +4681,10 @@ class Game extends Scene {
     if (this._introT > 0) this._introT = Math.max(0, this._introT - dt);
     if (this._shieldFlash > 0) this._shieldFlash = Math.max(0, this._shieldFlash - dt);
 
-    // ---- Moving pad (bonus): パッドは台地上を往復。着地判定は常に現在位置を使う ----
+    // ---- Moving pad (ROVER DOCK / STORM): パッドは台地上を往復。着地判定は常に現在位置を使う ----
     if (this.pad && this.pad.moving) {
       this._padT += dt;
-      const k = 0.5 - 0.5 * Math.cos(2 * Math.PI * this._padT / MOVING_PAD_PERIOD);
+      const k = 0.5 - 0.5 * Math.cos(2 * Math.PI * this._padT / (this.pad.period || 8));
       this.pad.x = this.pad.minX + (this.pad.maxX - this.pad.minX) * k;
       this.guidePts = buildGuide(this.guidePts[0].x, this.guidePts[0].y, this.pad, GUIDE_PTS);
     }
@@ -4795,14 +4976,13 @@ class Game extends Scene {
     const fuelBonus = Math.round((this.fuel || 0) * 10);
 
     if (this.bonus) {
-      // ボーナスミッション: 600 + 燃料*10（PRECISIONは3倍）。通常のステージ得点は付かない。
-      let sc = 600 + fuelBonus;
-      if (this.bonus.type === 'PRECISION') sc *= PRECISION_MUL;
+      // ボーナスミッション: round((600 + 残燃料*10) * 倍率)。通常のステージ得点・誘導線ボーナスは付かない。
+      const sc = bonusScoreFor(this.bonus.type, this.fuel);
       this._bonusScore = sc;
       this._stageScore = sc;
       this._guideBonus = 0;
       this._bonusGrant = false;
-      if (this.bonus.type === 'PRECISION' && this.continues < CONTINUES_MAX) {
+      if (missionOf(this.bonus.type).grantContinue && this.continues < CONTINUES_MAX) {
         this.continues += 1;
         this._bonusGrant = true;
       }
@@ -4833,7 +5013,7 @@ class Game extends Scene {
 
     // 成功: BGMを止めて7/8拍子のジングル（着陸チャイム sfx.landing はジングルと衝突するため廃止）
     { const mu = musicOf(this.engine); mu.stopAll(0.3); this._bgmOn = false;
-      mu.playJingle({ tier: Math.min(2, this._body.celebTier + (this._info.loop > 0 ? 1 : 0)), perfect: !!this._perfect }); }
+      mu.playJingle({ tier: this.bonus ? Math.min(2, this._body.celebTier) : Math.min(2, this._body.celebTier + (this._info.loop > 0 ? 1 : 0)), perfect: !!this._perfect }); }
     this.landingSeq = { t: 0 };
     this._setOverlayState('landing');
   }
@@ -4929,19 +5109,23 @@ class Game extends Scene {
   // ---- シーン描画（見た目は art.js。ここは「何をどの順で描くか」だけ）----
   _renderScene(ctx) {
     const t = this._clock || 0;
-    const body = this._body;
+    const body = this.state === 'bonusselect' ? TERRA : this._body;   // 選択画面の背景は TERRA の昼空（これから行く先を見せる）
 
     if (body) drawBackdrop(ctx, body, t, this.stars);
 
+    const sel = this.state === 'bonusselect' && this._selTerrain;
     // Floating obstacles (stages 2+)
-    this._drawObstacles(ctx);
+    if (!sel) this._drawObstacles(ctx);
 
     // Terrain + landing pad
-    if (body && this.terrainPts && this.terrainPts.length > 0) drawTerrain(ctx, body, this.terrainPts, this.pad, t);
-    if (this.pad) drawPad(ctx, this.pad, t);
+    if (sel) drawTerrain(ctx, TERRA, this._selTerrain.pts, null, t);
+    else {
+      if (body && this.terrainPts && this.terrainPts.length > 0) drawTerrain(ctx, body, this.terrainPts, this.pad, t);
+      if (this.pad) drawPad(ctx, this.pad, t);
+    }
 
     // Descent trajectory guide（常に描画）— 地形・パッドより手前に描き、山に隠れずパッドまで繋がって見えるようにする
-    this._drawGuide(ctx);
+    if (!sel) this._drawGuide(ctx);
 
     // Explosion particles
     drawParticles(ctx, this.particles);
@@ -4978,7 +5162,7 @@ class Game extends Scene {
     }
 
     // Bonus mission banner
-    if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, this.bonus.type.replace('_', ' '), this._bannerT);
+    if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, (this._mission || missionOf(this.bonus.type)).name, this._bannerT, (this._mission || missionOf(this.bonus.type)).stars);
 
     // Bottom button controls
     this._drawButtons(ctx);
@@ -4994,6 +5178,8 @@ class Game extends Scene {
       this._drawGameOver(ctx);
     } else if (this.state === 'module') {
       this._drawModuleSelect(ctx);
+    } else if (this.state === 'bonusselect') {
+      this._drawBonusSelect(ctx);
     }
 
     // デバッグ: DBGボタン
@@ -5013,7 +5199,7 @@ class Game extends Scene {
   }
 
   _drawBeacon(ctx) {
-    if (!this.pad || this.state === 'module') return;
+    if (!this.pad || this.state === 'module' || this.state === 'bonusselect') return;
     drawBeacon(ctx, this.pad, this._clock || 0);
   }
 
@@ -5138,7 +5324,8 @@ class Game extends Scene {
   _drawHUD(ctx) {
     const h = this._hud || (this._hud = {});
     const b = this._body;
-    h.stage = this.stage; h.bodyName = b ? b.name : ''; h.bonus = !!this.bonus;
+    h.stage = this.stage; h.bodyName = this.state === 'bonusselect' ? TERRA.name : (b ? b.name : ''); h.bonus = !!this.bonus;
+    h.mission = (this.bonus && this._mission) ? this._mission.name : '';
     h.total = this.totalScore; h.high = this.high || 0;
     h.fuel = (this.fuel || 0) / this._fuelMax();
     h.continues = this.continues || 0;
@@ -5181,7 +5368,7 @@ class Game extends Scene {
       : [['GUIDE BONUS', '+' + (this._guideBonus || 0)], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]];
     drawClearPanel(ctx, this._clearPanelRect(), {
       bonus: !!b, perfect: !!this._perfect,
-      sub: b ? b.type.replace('_', ' ') : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
+      sub: b ? missionOf(b.type).name + '  ·  \u00d7' + missionOf(b.type).mult : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
       score: (b ? this._bonusScore : this._stageScore) || 0, cols, next, t: this._clock || 0,
     });
   }
@@ -5189,6 +5376,12 @@ class Game extends Scene {
   // ---- Crashed (continue available) ----
   _drawCrashed(ctx) {
     drawCrashPanel(ctx, { reason: this._crashReason || '', score: this.totalScore, left: this.continues, giveUp: this._giveUpRect() });
+  }
+
+  // ---- ボーナスミッション選択 ----
+  _drawBonusSelect(ctx) {
+    const cards = this.bonusOffers.map((type, i) => { const m = missionOf(type); return { rect: this._bonusCardRect(i), stars: m.stars, name: m.name, line: m.line, mult: m.mult, extra: m.grantContinue ? '+1 CONTINUE ON SUCCESS' : '' }; });
+    drawBonusCards(ctx, { sub: 'TERRA  \u00b7  g 9.81 m/s\u00b2', cards, skip: this._bonusSkipRect(), t: this._clock || 0 });
   }
 
   // ---- Bonus failed (no continue consumed) ----

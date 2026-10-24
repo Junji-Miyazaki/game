@@ -22,12 +22,39 @@ export function predictMean(g, dt = 0.25) {
   return { x, t };
 }
 
+// 移動パッド（ROVER DOCK / STORM LANDING）: パッド位置 = minX..maxX を余弦で往復（t=0 は左端）。
+// 戦略: 近い方の「端」の上で待ち、パッドがその端に止まる瞬間（折り返し。速度≈0）に接地するよう降下速度で時刻を合わせる。
+export function padCenterAhead(g, tAhead) {
+  const p = g.pad;
+  if (!p.moving) return p.x + p.w / 2;
+  const k = 0.5 - 0.5 * Math.cos(2 * Math.PI * ((g._padT || 0) + tAhead) / (p.period || 8));
+  return p.minX + (p.maxX - p.minX) * k + p.w / 2;
+}
+const VY_CAP = 14;
+
 export function autopilotKeys(g) {
   const keys = { left: false, right: false, up: false };
   if (!g || !g.pad) return keys;
-  const padCx = g.pad.x + g.pad.w / 2;
   const h = Math.max(0, g.pad.y - (g.y + 16));
-  const tg = h / Math.max(g.vy, 2);                 // 接地までの概算秒
+  let tg = h / Math.max(g.vy, 2);                   // 接地までの概算秒
+  let padCx = g.pad.x + g.pad.w / 2;
+  let vyCmd = null;                                  // 移動パッド: 接地時刻を折り返しに合わせるための目標降下速度
+  if (g.pad.moving) {
+    const P = g.pad.period || 8, tNow = g._padT || 0;
+    if (g._apEnd !== 0 && g._apEnd !== 1) g._apEnd = (g.x < (g.pad.minX + g.pad.maxX) / 2 + g.pad.w / 2) ? 0 : 1;   // 0=左端 1=右端（最初に近い方を選ぶ）
+    padCx = (g._apEnd ? g.pad.maxX : g.pad.minX) + g.pad.w / 2;
+    const phase0 = g._apEnd ? P / 2 : 0;
+    // 通常の降下プロファイル(vyd)で降りた場合の所要時間より早い折り返しは選べない（降下は遅くはできるが速くはできない）
+    const need = h / Math.max(2, Math.min(VY_CAP, 4 + h * 0.03)) + 0.2;
+    // いったん決めた折り返し時刻は、間に合わなくなる(1秒以上遅れる)まで変えない
+    if (g._apTE === undefined || g._apTE - tNow < need - 1.0) {
+      const n = Math.ceil((tNow + need - phase0) / P);
+      g._apTE = phase0 + n * P;                     // 次に折り返す時刻（間に合う最も早いもの）
+    }
+    const tE = g._apTE;
+    vyCmd = h / Math.max(0.4, tE - tNow);
+    if (h < 140 && Math.abs(padCx - g.x) > 10) vyCmd = Math.min(vyCmd, 1.5);   // 横位置が合うまで降りない
+  }
   const far = h > FAR_H && tg > 6;
   const tiltLim = clampN((tg - 4) * 10, 15, 68);     // 接地が近いほど傾きを制限（直立で降りるため）
 
@@ -37,7 +64,7 @@ export function autopilotKeys(g) {
   const drag = (g._body && g._body.drag) || 0;
   const Fx = clampN(1.0 * (vxd - g.vx) - AP.WIND_FF * (g._windAccel || 0) + drag * g.vx, -4.5, 4.5);
   // 目標降下速度: 地面に近いほど遅く
-  const vyd = Math.min(14, 4 + h * 0.03);
+  const vyd = vyCmd !== null ? Math.max(1.5, Math.min(VY_CAP, 4 + h * 0.03, vyCmd)) : Math.min(14, 4 + h * 0.03);
   const Fy = g.vy > vyd ? Math.min(5, g._gravity + 0.8 * (g.vy - vyd)) : 0;
 
   const T = Math.hypot(Fx, Fy);

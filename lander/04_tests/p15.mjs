@@ -188,7 +188,7 @@ const MOONLIKE = [0, 1, 2];
 
   // flow: bonus resolves -> module state -> pick -> next stage
   let { e, g } = newGame();
-  g.stage = 3; g.bonus = { type: 'MOVING_PAD' }; g._initStage();
+  g.stage = 3; g.bonus = { type: 'ROVER' }; g._initStage();
   onPad(g); g.vy = 1; g._doSuccess(0, 0); tick(g, 3); tap(g);
   ok(g.state === 'module' && g.offers.length === 2 && g.stage === 3, 'bonus success -> module state (stage not advanced yet)');
   ok(g.blocksBack() === true, 'blocksBack during module choice');
@@ -200,12 +200,12 @@ const MOONLIKE = [0, 1, 2];
   tap(g, r.x + 5, r.y + 5);
   ok(g.state === 'play' && g.stage === 4 && g.modules[chosen] === 1 && !g.bonus && g.blocksBack() === false, 'tap card -> module taken, stage 4 starts');
   // failure also offers
-  ({ g } = newGame()); g.stage = 3; g.bonus = { type: 'PRECISION' }; g._initStage(); g._doCrash('X'); tick(g, 0.6); tap(g);
+  ({ g } = newGame()); g.stage = 3; g.bonus = { type: 'STORM' }; g._initStage(); g._doCrash('X'); tick(g, 0.6); tap(g);
   ok(g.state === 'module', 'bonus failure -> module offer');
   tick(g, 0.6); g.onInput('left'); ok(g.state === 'play' && g.stage === 4, 'keyboard picks card 0');
   // all maxed -> skipped
   ({ g } = newGame()); for (const d of MODULE_DEFS) g.modules[d.id] = d.max;
-  g.stage = 3; g.bonus = { type: 'FUEL_RUN' }; g._initStage(); g._doCrash('X'); tick(g, 0.6); tap(g);
+  g.stage = 3; g.bonus = { type: 'CALM' }; g._initStage(); g._doCrash('X'); tick(g, 0.6); tap(g);
   ok(g.state === 'play' && g.stage === 4, 'all maxed -> no offer, next stage');
   // persistence through continue, reset on new run
   ({ e, g } = newGame()); g.modules.fuel = 2; g.modules.radar = 1;
@@ -220,7 +220,7 @@ const MOONLIKE = [0, 1, 2];
   ok(g._fuelMax() === 100 && g._angDamp() === 0.82 && g._safeVy() === 22 && g._bounceVy() === 45, 'baseline values');
   g.modules.fuel = 1; g._initStage(); ok(g.fuel === 125, 'FUEL TANK lvl1 +25%');
   g.modules.fuel = 2; g._initStage(); ok(g.fuel === 150, 'FUEL TANK lvl2 +50%');
-  g.bonus = { type: 'FUEL_RUN' }; g._initStage(); ok(near(g.fuel, 45 * 1.5, 1e-9), 'FUEL_RUN scales with tank'); g.bonus = null;
+  g.bonus = { type: 'CALM' }; g._initStage(); ok(near(g.fuel, 150, 1e-9), 'P6: bonus missions start with the full (module-scaled) tank'); g.bonus = null;
   g.modules.stab = 1; ok(g._angDamp() === 0.6, 'STABILIZER lvl1 0.6'); g.modules.stab = 2; ok(g._angDamp() === 0.45, 'STABILIZER lvl2 0.45');
   { const a = newGame().g, b = newGame().g; a.obstacles = b.obstacles = []; b.modules.stab = 2; a.omega = b.omega = 10; a.y = b.y = 80; a._gravity = b._gravity = 0; a.angle = b.angle = 0;
     tick(a, 1); tick(b, 1); ok(near(a.omega, 8.2, 0.05) && near(b.omega, 4.5, 0.05), 'damping effect on omega: ' + a.omega.toFixed(2) + '/' + b.omega.toFixed(2)); }
@@ -279,21 +279,21 @@ const MOONLIKE = [0, 1, 2];
     g.continues = 3; g._initStage(); ok(g._shieldCharges === 2, 'lv2: recharges to 2 next stage'); }
 }
 
-// ---------- 7. balance: PRECISION x2, per-stage score < 8000 with maxed modules ----------
+// ---------- 7. balance: bonus multipliers, per-stage score < 8000 with maxed modules ----------
 {
   let worst = 0;
-  for (const bonus of [null, 'PRECISION', 'MOVING_PAD', 'FUEL_RUN']) for (const stage of [1, 6, 12, 24, 36, 60]) {
+  for (const bonus of [null, 'CALM', 'ROVER', 'CROSSWIND', 'STORM']) for (const stage of [1, 6, 12, 24, 36, 60]) {
     const { g } = newGame(); for (const d of MODULE_DEFS) g.modules[d.id] = d.max;
     g.stage = stage; g.bonus = bonus ? { type: bonus } : null; g._initStage();
     g.fuel = g._fuelMax(); onPad(g); g.vx = 0; g.vy = 0; g.angle = 0; g.omega = 0;
     g._guideDevCount = 1; g._guideDevTotal = 0;   // 誘導ボーナス最大
     g._doSuccess(0, 0);
     worst = Math.max(worst, g._stageScore);
-    if (bonus === 'PRECISION') ok(g._bonusScore === (600 + 1000) * 2, 'PRECISION x2 with full 100 fuel (no fuel tank module): ' + g._bonusScore);
+    if (bonus === 'STORM') ok(g._bonusScore === Math.round((600 + g._fuelMax() * 10) * 2.5), 'P6: STORM x2.5 with a full tank: ' + g._bonusScore);
   }
   ok(worst < 8000, 'max per-stage score with all modules maxed < 8000: ' + worst);
-  const { g: gn } = newGame(); gn.bonus = { type: 'PRECISION' }; gn._initStage(); gn.fuel = 100; onPad(gn); gn._doSuccess(0, 0);
-  ok(gn._bonusScore === 3200, 'PRECISION x2 baseline (600+1000)*2 = 3200: ' + gn._bonusScore);
+  const { g: gn } = newGame(); gn.bonus = { type: 'STORM' }; gn._initStage(); gn.fuel = 100; onPad(gn); gn._doSuccess(0, 0);
+  ok(gn._bonusScore === 4000, 'P6: STORM x2.5 baseline (600+1000)*2.5 = 4000: ' + gn._bonusScore);
 }
 
 // ---------- 8. net.js ----------
@@ -407,9 +407,10 @@ const realFetch = globalThis.fetch;
     open(g); press(g, 3); open(g); press(g, 3); ok(g.stage === 1, 'STAGE - (min 1)');
     open(g); press(g, 5); ok(g.stage === 3 && g._body.id === 'europa', 'NEXT BODY');
     open(g); press(g, 5); ok(g.stage === 5 && g._body.id === 'io', 'NEXT BODY again');
-    open(g); press(g, 6); ok(g.bonus && g.bonus.type === 'MOVING_PAD', 'BONUS 1: MOVING_PAD');
-    open(g); press(g, 6); ok(g.bonus.type === 'PRECISION', 'BONUS 2: PRECISION');
-    open(g); press(g, 6); ok(g.bonus.type === 'FUEL_RUN', 'BONUS 3: FUEL_RUN');
+    // P6: BONUS ▶ はミッション選択画面を開く（旧: 種類を順に切替）
+    open(g); press(g, 6); ok(g.state === 'bonusselect' && g.bonusOffers.length === 3 && !g.bonus, 'BONUS opens the mission selection'); g.render(ctx);
+    tick(g, 0.6); { const r = g._bonusCardRect(1); tap(g, r.x + 5, r.y + 5); } ok(g.state === 'play' && !!g.bonus, 'selection pick starts a mission');
+    open(g); press(g, 6); tick(g, 0.6); { const r = g._bonusSkipRect(); tap(g, r.x + 5, r.y + 5); } ok(g.state === 'module' && !g.bonus, 'SKIP BONUS from the debug-opened selection -> module choice'); tick(g, 0.6); g._pickModule(0);
     open(g); press(g, 7); ok(g.state === 'module' && g.offers.length === 2 && !g.bonus, 'MODULE opens choice'); g.render(ctx);
     tick(g, 0.6); g._pickModule(0);
     open(g); press(g, 2); ok(g.state === 'crashed' && g._crashReason === 'DEBUG CRASH', 'CRASH');
@@ -449,7 +450,7 @@ const realFetch = globalThis.fetch;
   seeded(4242);
   let worstGap = 1e9;
   for (let i = 0; i < 400; i++) {
-    const { g } = newGame(); g.stage = 1 + (i % 36); g.bonus = (i % 5 === 0) ? { type: 'MOVING_PAD' } : null; g._initStage();
+    const { g } = newGame(); g.stage = 1 + (i % 36); g.bonus = (i % 5 === 0) ? { type: 'ROVER' } : null; g._initStage();
     const r = g._clearPanelRect(); worstGap = Math.min(worstGap, g.pad.y - (r.y + r.h));
   }
   unseed();
@@ -517,7 +518,7 @@ const realFetch = globalThis.fetch;
       else if (r < 0.06) g.onInput(['left', 'right', 'up', 'down', 'confirm', 'back'][Math.floor(rnd() * 6)]);
       if (rnd() < 0.012) {
         const k = rnd();
-        if (k < 0.25) { g.bonus = rnd() < 0.5 ? { type: ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'][Math.floor(rnd() * 3)] } : null; g.stage = 1 + Math.floor(rnd() * 40); g._initStage(); }
+        if (k < 0.25) { g.bonus = rnd() < 0.5 ? { type: ['CALM', 'ROVER', 'CROSSWIND', 'STORM'][Math.floor(rnd() * 4)] } : null; g.stage = 1 + Math.floor(rnd() * 40); g._initStage(); }
         else if (k < 0.45) { onPad(g); g.vy = 1; g.angle = 0; if (g.state === 'play') g._doSuccess(0, 0); }
         else if (k < 0.6) { if (g.state === 'play') g._doCrash('FUZZ'); }
         else if (k < 0.7) { g.continues = 0; if (g.state === 'play') g._doCrash('FUZZ'); }
@@ -536,7 +537,7 @@ const realFetch = globalThis.fetch;
   setDebug(false); globalThis.fetch = savedFetch;
   ok(!threw, '5000 random frames, no exception: ' + (threw && threw.stack));
   ok(['play', 'landing', 'cleared', 'crashed', 'bonusfailed', 'gameover', 'module'].every(s => visited.has(s)), 'fuzz visited states: ' + [...visited].join(','));
-  ok(bodiesSeen.size === 6, 'fuzz visited all 6 bodies: ' + [...bodiesSeen].join(','));
+  ok(BODIES.every(b => bodiesSeen.has(b.id)), 'fuzz visited all 6 bodies (+ TERRA via bonus): ' + [...bodiesSeen].join(','));
 }
 
 console.log(pass + '/' + (pass + fail) + ' PASS');

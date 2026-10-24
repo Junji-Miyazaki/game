@@ -76,14 +76,14 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   let worst = -1e9, movingOk = true;
   for (let i = 0; i < 2000; i++) {
     g.stage = 1 + (i % 12);
-    g.bonus = (i % 4 === 0) ? { type: 'MOVING_PAD' } : (i % 4 === 1) ? { type: 'PRECISION' } : null;
+    g.bonus = (i % 4 === 0) ? { type: 'ROVER' } : (i % 4 === 1) ? { type: 'STORM' } : null;   // P6: 旧 MOVING_PAD/PRECISION の対応先
     g._initStage();
     const bottom = g.pad.y + 10;
     worst = Math.max(worst, bottom);
     if (g.pad.moving) {
       if (!(g.pad.minX >= 0 && g.pad.maxX + g.pad.w <= 360 && g.pad.maxX > g.pad.minX)) movingOk = false;
-      // 台地の幅 ~150px
-      if (Math.abs((g.pad.maxX + g.pad.w - g.pad.minX) - 160) > 1) movingOk = false;
+      // 台地の幅 = plateauSegs x 20px（P6: 8区間160px -> 6区間120px）
+      if (Math.abs((g.pad.maxX + g.pad.w - g.pad.minX) - 120) > 1) movingOk = false;
     }
     // 地形は左右端でボタン帯の背後まで塗りが続く（端点 y <= BTN_Y、描画は H まで）
     if (g.terrainPts[0].y > BTN_Y || g.terrainPts[g.terrainPts.length - 1].y > BTN_Y) worst = 1e9;
@@ -211,7 +211,10 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   clearStage(3);
   ok(g.state === 'cleared', 'landing seq ends in cleared');
   tap(g);
-  ok(g.bonus && g.bonus.type === 'MOVING_PAD' && g.stage === 3 && g.state === 'play', 'after stage 3: MOVING_PAD bonus, stage stays 3');
+  // P6: s%3===0 のクリア後はミッション選択画面（旧: 自動でボーナス開始）
+  ok(g.state === 'bonusselect' && g.stage === 3 && !g.bonus, 'P6: after stage 3: mission selection');
+  tick(g, 0.6); tap(g, ...[180, 100 + 122 + 56]);   // 2枚目（★★）
+  ok(g.bonus && g.bonus.type === 'ROVER' && g.stage === 3 && g.state === 'play', 'after stage 3: ROVER DOCK (first 2-star), stage stays 3');
   ok(g.pad.moving === true, 'moving pad active');
   // bonus crash does not consume continue
   const c0 = g.continues;
@@ -224,44 +227,47 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   ok(g.stage === 4 && !g.bonus && g.state === 'play', 'bonus failed tap -> module pick -> stage 4');
   clearStage(4); tap(g);
   ok(g.stage === 5 && !g.bonus, 'stage 4 clear: no bonus');
-  // stage 6 -> PRECISION
+  // stage 6 -> 選択 -> STORM LANDING（旧 PRECISION の対応先: 小パッド・成功で +1 continue）
   clearStage(6); tap(g);
-  ok(g.bonus && g.bonus.type === 'PRECISION' && g.stage === 6, 'after stage 6: PRECISION');
-  ok(g._padW === 22 && g.pad.w === 22, 'precision pad width 22');
+  ok(g.state === 'bonusselect', 'P6: after stage 6: selection');
+  tick(g, 0.6); tap(g, 180, 112 + 244 + 56);   // 3枚目（★★★）
+  ok(g.bonus && g.bonus.type === 'STORM' && g.stage === 6, 'after stage 6: STORM');
+  ok(g._padW === 32 && g.pad.w === 32, 'storm pad width 32');
   g.continues = 2; g.fuel = 40;
   g.x = g.pad.x + g.pad.w / 2; g.y = g._terrainYAt(g.x) - 16; g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0;
   const t0 = g.totalScore;
   g._doSuccess(0, 0);
-  ok(g.continues === 3 && g._bonusGrant, 'PRECISION success: +1 continue (2->3)');
-  ok(g._bonusScore === (600 + 400) * 2 && g.totalScore === t0 + 2000, 'P1.5: PRECISION score x2: ' + g._bonusScore);
+  ok(g.continues === 3 && g._bonusGrant, 'STORM success: +1 continue (2->3)');
+  ok(g._bonusScore === Math.round((600 + 400) * 2.5) && g.totalScore === t0 + 2500, 'P6: STORM score x2.5: ' + g._bonusScore);
   tick(g, 3);
   g.render(ctx);
   tap(g);
   ok(g.state === 'module', 'bonus clear -> module choice'); g._pickModule(0);
   ok(g.stage === 7 && !g.bonus, 'bonus clear -> stage 7');
   // cap at 3
-  g.stage = 6; g.bonus = { type: 'PRECISION' }; g._initStage(); g.continues = 3;
+  g.stage = 6; g.bonus = { type: 'STORM' }; g._initStage(); g.continues = 3;
   g.x = g.pad.x + g.pad.w / 2; g.y = g._terrainYAt(g.x) - 16; g.vx = 0; g.vy = 1; g.angle = 0;
   g._doSuccess(0, 0);
   ok(g.continues === 3 && !g._bonusGrant, 'continue capped at 3');
   for (const k in g.modules) g.modules[k] = 0;   // P1.5: 途中で取得したランダムなモジュールを除く
-  // stage 9 -> FUEL_RUN
+  // stage 9 -> 選択（★★ は ROVER / CROSSWIND の交互で、3回目は ROVER）-> CALM APPROACH
   clearStage(9); tap(g);
-  ok(g.bonus && g.bonus.type === 'FUEL_RUN' && g.fuel === 45, 'after stage 9: FUEL_RUN with 45 fuel');
-  ok(g._gravity === g._gravity && g.stage === 9, 'bonus uses stage 9 params');
+  ok(g.state === 'bonusselect' && g.bonusOffers[1] === 'ROVER', 'P6: stage 9 selection, 2-star alternates back to ROVER');
+  tick(g, 0.6); tap(g, 180, 112 + 56);   // 1枚目（★）
+  ok(g.bonus && g.bonus.type === 'CALM' && g.fuel === g._fuelMax(), 'after stage 9: CALM APPROACH with a full tank');
+  ok(g._body.id === 'terra' && g.stage === 9, 'bonus is on TERRA, stage 9');
   tick(g, 2.5); g.render(ctx); // banner
-  // rotation continues
   clearStage(12); tap(g);
-  ok(g.bonus && g.bonus.type === 'MOVING_PAD', 'rotation wraps to MOVING_PAD');
-  // bonus gravity/obstacles from stage s
-  g.stage = 5; g.bonus = { type: 'MOVING_PAD' }; g._initStage();
-  ok(g.obstacles.length === 4, 'P1.5: bonus keeps stage obstacles (stage 5 -> 4 by new formula)');
+  ok(g.state === 'bonusselect' && g.bonusOffers[1] === 'CROSSWIND', 'P6: stage 12 selection offers CROSSWIND');
+  // ボーナスに障害物は無い
+  g.stage = 5; g.bonus = { type: 'ROVER' }; g._initStage();
+  ok(g.obstacles.length === 0, 'P6: bonus missions have no obstacles');
 }
 
-// ---------- 6. MOVING_PAD uses live pad position ----------
+// ---------- 6. ROVER DOCK (moving pad) uses live pad position ----------
 {
   const { g } = newGame();
-  g.stage = 5; g.bonus = { type: 'MOVING_PAD' }; g._initStage();
+  g.stage = 3; g.bonus = { type: 'ROVER' }; g._initStage();
   g.obstacles = [];
   const { minX, maxX, w } = g.pad;
   const staticCenter = (minX + maxX) / 2 + w / 2; // 初期位置(静的パッド)の中心
@@ -277,9 +283,9 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
   g.update(1 / 60);
   ok(g.state === 'landing', 'landing on live pad position succeeds: ' + g.state);
   // パッドが実際に動いている
-  const { g: g2 } = newGame(); g2.stage = 5; g2.bonus = { type: 'MOVING_PAD' }; g2._initStage(); g2.obstacles = [];
+  const { g: g2 } = newGame(); g2.stage = 3; g2.bonus = { type: 'ROVER' }; g2._initStage(); g2.obstacles = [];
   const xs = []; for (let i = 0; i < 360; i++) { g2.y = 90; g2.vy = 0; g2.update(1 / 60); xs.push(g2.pad.x); }
-  ok(Math.max(...xs) - Math.min(...xs) > 90, 'pad slides back and forth: range ' + (Math.max(...xs) - Math.min(...xs)).toFixed(0));
+  ok(Math.max(...xs) - Math.min(...xs) > 60, 'pad slides back and forth: range ' + (Math.max(...xs) - Math.min(...xs)).toFixed(0));
 }
 
 // ---------- 7. landing sequence ----------
@@ -373,7 +379,7 @@ function tap(g, x = 10, y = 300) { g.onInput('tap', { x, y }); }
       else if (r < 0.05) g.onInput(['left', 'right', 'up', 'down', 'confirm', 'back'][Math.floor(rnd() * 6)]);
       if (rnd() < 0.01) { // 全状態へ到達させるための強制イベント
         const k = rnd();
-        if (k < 0.25) { g.bonus = { type: ['MOVING_PAD', 'PRECISION', 'FUEL_RUN'][Math.floor(rnd() * 3)] }; g.stage = 1 + Math.floor(rnd() * 12); g._initStage(); }
+        if (k < 0.25) { g.bonus = { type: ['CALM', 'ROVER', 'CROSSWIND', 'STORM'][Math.floor(rnd() * 4)] }; g.stage = 1 + Math.floor(rnd() * 12); g._initStage(); }
         else if (k < 0.5) { g.x = g.pad.x + g.pad.w / 2; g.y = g._terrainYAt(g.x) - 16; g.vy = 1; g.angle = 0; g._doSuccess(0, 0); }
         else if (k < 0.9) g._doCrash('FUZZ');
         else { g.continues = 0; g._doCrash('FUZZ'); }

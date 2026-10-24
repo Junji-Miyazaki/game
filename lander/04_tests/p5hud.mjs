@@ -115,7 +115,7 @@ for (const dbg of [false, true]) {
       for (const bonus of [false, true]) {
         const g = newGame(true, (e) => { if (nm) addProfile(e.storage, nm); });
         g.stage = 1 + bi * 2 + (bi % 2); g.modules = { fuel: 2, stab: 2, shock: 2, radar: 1, shield: 1 };
-        if (bonus) g.bonus = { type: 'MOVING_PAD', afterStage: g.stage };
+        if (bonus) g.bonus = { type: 'STORM', afterStage: g.stage };   // P6: 風ありのボーナス（旧 MOVING_PAD は風なしの CALM/ROVER 相当になるため STORM で風ラベルとの非重複も検査）
         g._initStage(); if (g.state === 'tip') g._endTip();
         // 状態ごとに描画
         for (const s of states) {

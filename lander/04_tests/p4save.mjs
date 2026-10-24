@@ -60,7 +60,7 @@ setDebug(false); __setRelayUrl('');
   cp = cpOf(e); ok(cp.stage === 2 && cp.totalScore === 700, 'saved at each stage start with score');
   g.modules.stab = 1; g.stage = 3; g._initStage(); ok(cpOf(e).modules.stab === 1, 'modules saved');
   // ボーナス: 次のステージを保存
-  g.stage = 3; g.bonus = { type: 'MOVING_PAD', afterStage: 3 }; g._initStage();
+  g.stage = 3; g.bonus = { type: 'ROVER', afterStage: 3 }; g._initStage();
   ok(cpOf(e).stage === 4, 'bonus pending -> saves the following stage (' + cpOf(e).stage + ')');
   g.bonus = null; g.stage = 4; g.continues = 2; g._initStage(); ok(cpOf(e).continues === 2, 'continue count saved');
   // 本当のゲームオーバーで破棄 (残機切れ)

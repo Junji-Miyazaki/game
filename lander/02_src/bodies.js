@@ -38,6 +38,37 @@ export const BODIES = [
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
 ];
 
+
+// ---- TERRA: ボーナス専用の地球型惑星（6天体のツアーには含めない）----
+// 実重力 9.81 m/s^2 をツアーと同じ平方根圧縮で使う（≈0.615）。風・抗力はミッションごとに与える（既定は無風・無抗力）。
+export const TERRA = { id: 'terra', celebTier: 0, name: 'TERRA', atmoTag: 'EARTH-LIKE', realG: 9.81, atmoLabel: 'N₂/O₂ 1 BAR', atmoType: 'earth',
+  wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'rock',
+  visual: { sky: ['#3f78bd', '#b9dcf0'], ground: '#5c8f4a', rim: '#d9f0a8', accent: '#fff2c0', fog: null, haze: null,
+    skyObject: 'day', mood: 'daylight blue sky, drifting clouds, ocean horizon, green hills' } };
+
+// ボーナスミッション。mult: 得点倍率 / stars: 難度 / moving: 移動パッド / wind,drag,dragY: TERRA の大気(null/0なら無し)。
+// 数値は 04_tests/p6bonus.mjs の着陸可能性（自動操縦で 50 シード中 80% 以上）で調整済み。
+export const BONUS_MISSIONS = {
+  CALM:      { id: 'CALM', name: 'CALM APPROACH', stars: 1, mult: 1.0, line: 'TERRA GRAVITY ONLY', padW: 48, moving: false, plateauSegs: 0, padPeriod: 0, wind: null, drag: 0, dragY: 0, grantContinue: false },
+  ROVER:     { id: 'ROVER', name: 'ROVER DOCK', stars: 2, mult: 1.5, line: 'THE PAD ROLLS SIDEWAYS', padW: 44, moving: true, plateauSegs: 6, padPeriod: 8, wind: null, drag: 0, dragY: 0, grantContinue: false },
+  CROSSWIND: { id: 'CROSSWIND', name: 'CROSSWIND', stars: 2, mult: 1.5, line: 'GUSTING WIND AND DRAG', padW: 44, moving: false, plateauSegs: 0, padPeriod: 0, wind: { base: 0.06, gust: 0.16 }, drag: 0.1, dragY: 0.02, grantContinue: false },
+  STORM:     { id: 'STORM', name: 'STORM LANDING', stars: 3, mult: 2.5, line: 'MOVING PAD, WIND, SMALL PAD', padW: 32, moving: true, plateauSegs: 6, padPeriod: 8, wind: { base: 0.05, gust: 0.12 }, drag: 0.08, dragY: 0.02, grantContinue: true },
+};
+export const BONUS_ORDER = ['CALM', 'ROVER', 'CROSSWIND', 'STORM'];
+export const BONUS_ALT = ['ROVER', 'CROSSWIND'];   // ★★ は成立の度に交互
+export function missionOf(type) { return Object.prototype.hasOwnProperty.call(BONUS_MISSIONS, type) ? BONUS_MISSIONS[type] : BONUS_MISSIONS.CALM; }
+// ミッション用の天体データ: TERRA に風・抗力を載せ、祝福の格を ★-1（最大2）にする
+export function bonusBody(type) {
+  const m = missionOf(type);
+  return Object.assign({}, TERRA, {
+    wind: m.wind ? { base: m.wind.base, gust: m.wind.gust } : { base: 0, gust: 0 },
+    drag: m.drag || 0, dragY: m.dragY || 0,
+    celebTier: Math.min(2, m.stars - 1),
+  });
+}
+// ボーナス得点 = round((600 + 残燃料*10) * 倍率)
+export function bonusScoreFor(type, fuel) { return Math.round((600 + (fuel || 0) * 10) * missionOf(type).mult); }
+
 export const BODY_COUNT = BODIES.length;
 
 // stage(1始まり) -> { index, loop, body, firstOfBody }

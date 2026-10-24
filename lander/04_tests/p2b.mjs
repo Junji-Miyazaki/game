@@ -234,7 +234,9 @@ setDebug(false);
   i0 = mark(); g._continue(); seq = since(i0);
   ok(seq.includes('stopJingle:0.3') && seq.includes('playBody:moon'), 'CONTINUE after crash: stopJingle + playBody: ' + seq.join('|'));
   // ボーナス開始 / モジュール選択後の次ステージ
-  g.state = "play"; g.stage = 3; g._doSuccess(0, 0); i0 = mark(); g._nextAfterClear(); seq = since(i0);
+  g.state = "play"; g.stage = 3; g._doSuccess(0, 0); g._nextAfterClear();
+  ok(g.state === 'bonusselect' && !g.bonus, 'P6: stage 3 clear -> mission selection (music unchanged until a mission is picked)');
+  g._inputLock = 0; i0 = mark(); g._pickBonus(1); seq = since(i0);
   ok(g.bonus && seq.includes('stopJingle:0.3') && seq.some((x) => x.startsWith('playBody:')), 'bonus mission start: stopJingle + playBody: ' + seq.join('|'));
   g.state = 'play'; g._doSuccess(0, 0); g.offers = [MODULE_DEFS[0].id]; g.state = 'module'; g._inputLock = 0; i0 = mark(); g._pickModule(0); seq = since(i0);
   ok(seq.includes('stopJingle:0.3') && seq.some((x) => x.startsWith('playBody:')), 'module chosen then next stage: stopJingle + playBody: ' + seq.join('|'));

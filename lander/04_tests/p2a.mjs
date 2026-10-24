@@ -87,7 +87,7 @@ const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
   let threw = null, frames = 0;
   const { ctx, st } = makeCtx();
   try {
-    for (let b = 0; b < BODIES.length; b++) for (const loop of [0, 1]) for (const bonus of [null, 'MOVING_PAD', 'PRECISION', 'FUEL_RUN']) {
+    for (let b = 0; b < BODIES.length; b++) for (const loop of [0, 1]) for (const bonus of [null, 'CALM', 'ROVER', 'CROSSWIND', 'STORM']) {
       const g = new Game(makeEngine(ctx)); g.enter();
       g.stage = b * STAGES_PER_BODY + 1 + loop * 12; g.bonus = bonus ? { type: bonus, afterStage: g.stage } : null; g._initStage();
       g.modules = { stab: 2, shock: 1, radar: 1, shield: 2 };

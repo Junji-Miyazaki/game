@@ -294,6 +294,18 @@ const _musSCENES = {
     },
     step() { return 5; },
   },
+  terra: {   // ボーナス専用の昼の惑星: 明るい長調のやわらかいパッド + やさしい風 + 稀なやわらかいベル（ハーモニック）
+    build(sc) {
+      _musDelay(sc, 0.6, 0.4, 0.35);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 130.8 }, { type: 'triangle', f: 164.8, det: 4 }, { type: 'sine', f: 196, det: -3 }, { type: 'sine', f: 293.7, det: 5 }],
+        lp: 1100, gain: 0.14, lfoRate: 0.05, lfoDepth: 260, swellRate: 0.07, swellDepth: 0.04 });
+      _musAir(sc, 'bandpass', 650, 0.6, 0.02, 0.06, 180, 0.012);
+    },
+    step(t, sc) {
+      _musBell(sc, t, _musHz(523.25, _musPick(_musPENT) + _musPick([0, 12])), 3.2, 0.07, 2);
+      return _musRand(5, 10);
+    },
+  },
 };
 
 function _musStartScene(id, fade) {

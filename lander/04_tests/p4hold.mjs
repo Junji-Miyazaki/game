@@ -211,10 +211,10 @@ __setRelayUrl('');
 
 // ---- 6. 継続中の状態 (bonus / 他天体) でも復帰が同一 ----
 {
-  const g = newGame(); g.bonus = { type: 'MOVING_PAD', afterStage: 3 }; g._initStage(); run(g, 1);
+  const g = newGame(); g.bonus = { type: 'ROVER', afterStage: 3 }; g._initStage(); run(g, 1);
   enterHold(g); const s0 = snap(g); run(g, 2); tapAt(g, center(btn(g, 'resume')));
   ok(g.state === 'play' && snap(g) === s0, 'bonus stage: resume restores exactly');
-  ok(g.bonus && g.bonus.type === 'MOVING_PAD', 'bonus preserved');
+  ok(g.bonus && g.bonus.type === 'ROVER', 'bonus preserved');
 }
 
 // ---- 7. HUD タップ対象の非重複 ----
@@ -261,7 +261,7 @@ __setRelayUrl('');
 
 // ---- 9. render は全 hold/confirm 状態で投げない ----
 {
-  for (const bonus of [null, { type: 'MOVING_PAD', afterStage: 3 }, { type: 'PRECISION', afterStage: 6 }, { type: 'FUEL_RUN', afterStage: 9 }]) {
+  for (const bonus of [null, { type: 'CALM', afterStage: 3 }, { type: 'ROVER', afterStage: 3 }, { type: 'CROSSWIND', afterStage: 6 }, { type: 'STORM', afterStage: 9 }]) {
     for (const stage of [1, 4, 7, 10, 13, 16, 19]) {
       const g = newGame(); g.stage = stage; g.bonus = bonus; g._initStage(); run(g, 0.3);
       enterHold(g); if (!renderOK(g)) ok(false, 'render hold stage ' + stage);

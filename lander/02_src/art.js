@@ -396,8 +396,47 @@ function paintSunGlow(c, o) {
   c.fillStyle = 'rgba(70,24,6,0.16)';                         // 雲の筋
   for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
 }
+// TERRA（ボーナス専用）の昼空: 柔らかい青のグラデーション + やさしい太陽光 + 遠い海の水平線。雲は drawBackdrop が毎フレーム流す。
+function paintDaySky(c, body) {
+  const v = body.visual;
+  const g = mkL(c, 0, 0, 0, 400);
+  g.addColorStop(0, v.sky[0]); g.addColorStop(1, v.sky[1]);
+  c.fillStyle = g; c.fillRect(0, 0, AW, AH);
+  const sun = mkR(c, 262, 168, 4, 262, 168, 190);                 // 太陽の光（やわらかく、まぶしくしない）
+  sun.addColorStop(0, 'rgba(255,250,225,0.80)'); sun.addColorStop(0.12, 'rgba(255,244,200,0.40)'); sun.addColorStop(1, 'rgba(255,240,190,0)');
+  c.fillStyle = sun; c.fillRect(0, 0, AW, 420);
+  c.fillStyle = 'rgba(255,252,236,0.85)'; c.beginPath(); c.arc(262, 168, 11, 0, TAU); c.fill();
+  const hz = mkL(c, 0, 330, 0, 396);                              // 水平線の霞
+  hz.addColorStop(0, 'rgba(255,255,255,0)'); hz.addColorStop(1, 'rgba(235,246,252,0.55)');
+  c.fillStyle = hz; c.fillRect(0, 330, AW, 66);
+  const oc = mkL(c, 0, 396, 0, 520);                              // 遠い海
+  oc.addColorStop(0, '#7fb6dc'); oc.addColorStop(1, '#2d6ca4');
+  c.fillStyle = oc; c.fillRect(0, 396, AW, AH - 396);
+  c.fillStyle = 'rgba(255,248,215,0.30)';                        // 太陽の反射
+  for (let i = 0; i < 6; i++) c.fillRect(262 - 22 + i * 7 - (i % 2) * 6, 398 + i * 8, 26 - i * 2, 1.4);
+  c.strokeStyle = 'rgba(240,250,255,0.55)'; c.lineWidth = 1;     // 水平線
+  c.beginPath(); c.moveTo(0, 396.5); c.lineTo(AW, 396.5); c.stroke();
+  const top = mkL(c, 0, 0, 0, 150);                              // 上部HUDの可読性のため上端を沈める
+  top.addColorStop(0, 'rgba(10,32,64,0.58)'); top.addColorStop(0.7, 'rgba(10,32,64,0.2)'); top.addColorStop(1, 'rgba(10,32,64,0)');
+  c.fillStyle = top; c.fillRect(0, 0, AW, 150);
+}
+function drawClouds(ctx, t) {
+  const defs = [[40, 150, 1.0, 5], [190, 214, 1.3, 3.5], [300, 128, 0.8, 4.5], [110, 290, 1.1, 2.8], [250, 340, 0.9, 3.2]];
+  ctx.save();
+  for (let i = 0; i < defs.length; i++) {
+    const d = defs[i], span = AW + 180;
+    const x = ((d[0] + 90 + t * d[3]) % span + span) % span - 90;
+    const y = d[1] + Math.sin(t * 0.07 + i * 2) * 2, s = d[2];
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';                      // 影側
+    for (const e of [[0, 4, 26, 7], [-18, 1, 17, 6], [16, 2, 19, 6]]) { ctx.beginPath(); ctx.ellipse(x + e[0] * s, y + e[1] * s + 2, e[2] * s, e[3] * s, 0, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.62)';
+    for (const e of [[0, 2, 24, 6.5], [-14, -3, 14, 7], [10, -5, 16, 8], [24, 3, 12, 4.5]]) { ctx.beginPath(); ctx.ellipse(x + e[0] * s, y + e[1] * s, e[2] * s, e[3] * s, 0, 0, TAU); ctx.fill(); }
+  }
+  ctx.restore();
+}
 function paintSky(c, body) {
   const v = body.visual;
+  if (v.skyObject === 'day') { paintDaySky(c, body); return; }
   const g = mkL(c, 0, 0, 0, AH * 0.82);
   g.addColorStop(0, v.sky[0]); g.addColorStop(1, v.sky[1]);
   c.fillStyle = g; c.fillRect(0, 0, AW, AH);
@@ -418,6 +457,7 @@ function paintSky(c, body) {
 }
 export function drawBackdrop(ctx, body, t, stars) {
   cachedLayer(ctx, 'sky', body.id, (c) => paintSky(c, body));
+  if (body.visual.skyObject === 'day') { drawClouds(ctx, t); return; }
   if (!isVacuum(body) || !stars) return;
   const o = skyObjFor(body);
   ctx.save();
@@ -493,6 +533,16 @@ function paintTerrain(c, body, pts) {
       const x = T() * AW, y = 470 + T() * 130, rx = 7 + T() * 18;
       c.fillStyle = 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
       c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
+    }
+  } else if (body.id === 'terra') {                              // TERRA: 畑の帯と木々
+    for (let k = 0; k < 8; k++) {
+      c.fillStyle = k % 2 ? 'rgba(255,238,150,0.12)' : 'rgba(18,70,34,0.16)';
+      c.beginPath(); c.ellipse(T() * AW, 480 + T() * 120, 30 + T() * 50, 4 + T() * 5, 0, 0, TAU); c.fill();
+    }
+    for (let k = 0; k < 16; k++) {
+      const x = T() * AW, y = 468 + T() * 140, r = 2.4 + T() * 2.2;
+      c.fillStyle = 'rgba(20,64,34,0.55)'; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+      c.fillStyle = 'rgba(180,230,120,0.22)'; c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.5, 0, TAU); c.fill();
     }
   } else {                                                       // 火星・タイタン: 緩い地層
     c.strokeStyle = 'rgba(0,0,0,0.20)'; c.lineWidth = 1;
@@ -966,6 +1016,7 @@ export const HUD_LAYOUT = {
 export const HUD_LABELS = ['DESCENT', 'DRIFT', 'TILT', 'SPIN'];
 export function hudInfoText(h) {
   const g = (h.realG != null) ? 'g ' + Number(h.realG).toFixed(2) + ' m/s²' : '';
+  if (h.mission) return g ? g + '  ·  ' + h.mission : String(h.mission);   // ボーナス中: 重力 · ミッション名
   const tag = String(h.atmoTag || '');
   const a = (!tag || tag === 'NONE') ? 'NO ATMOSPHERE' : tag;
   return g ? g + '  ·  ' + a : a;
@@ -1124,11 +1175,21 @@ export function drawIntro(ctx, name, line1, line2, alpha) {
   txt(ctx, line1, AW / 2, 148, 9, p.fg, 'center', { sp: 3, w: 400, a: a * 0.85, sh: 1 });
   if (line2) txt(ctx, line2, AW / 2, 163, 9, p.warn, 'center', { sp: 3, w: 500, a: a * 0.85, sh: 1 });
 }
-export function drawBonusBanner(ctx, kind, alpha) {
+function star(ctx, cx, cy, r, fill) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr_ = i % 2 ? r * 0.42 : r; const x = cx + Math.cos(a) * rr_, y = cy + Math.sin(a) * rr_; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+}
+export function drawStars(ctx, cx, cy, n, r, fill, gap) {   // cx = 中央
+  const step = r * 2 + (gap == null ? 3 : gap), x0 = cx - (n - 1) * step / 2;
+  for (let i = 0; i < n; i++) star(ctx, x0 + i * step, cy, r, fill);
+}
+export function drawBonusBanner(ctx, kind, alpha, stars) {
   const p = P();
   const a = Math.max(0, Math.min(1, alpha));
   txt(ctx, 'BONUS MISSION', AW / 2, 122, 9, p.warn, 'center', { sp: 5, w: 500, a, sh: 1 });
   txt(ctx, kind, AW / 2, 138, 20, p.hi, 'center', { sp: 6, w: 200, a, sh: 1 });
+  if (stars > 0) { ctx.save(); ctx.globalAlpha = a; drawStars(ctx, AW / 2, 172, Math.min(3, stars), 5, p.warn); ctx.restore(); }
 }
 export function drawTouchdown(ctx) {
   txt(ctx, 'TOUCHDOWN', AW / 2, 100, 12, P().fg, 'center', { sp: 6, w: 300, sh: 1 });
@@ -1200,6 +1261,26 @@ export function drawModuleCards(ctx, d) {
     txt(ctx, c.desc, r.x + 20, r.y + 90, 10, p.fg, 'left', { sp: 1.2, w: 400, a: 0.85 });
     txt(ctx, 'TAP TO TAKE', r.x + r.w / 2, r.y + r.h - 28, 8, p.dim, 'center', { sp: 4, w: 500 });
   }
+}
+// ボーナスミッション選択: 3枚のカード（星・名前・条件・倍率）と控えめな SKIP BONUS。背景は TERRA の昼空なので薄めの幕。
+export function drawBonusCards(ctx, d) {
+  const p = P();
+  veil(ctx, 0.3);
+  txt(ctx, 'BONUS MISSION', AW / 2, 62, 16, p.hi, 'center', { sp: 6, w: 300 });
+  txt(ctx, d.sub, AW / 2, 88, 8, p.fg, 'center', { sp: 3, w: 500, sh: 1 });
+  for (let i = 0; i < d.cards.length; i++) {
+    const c = d.cards[i], r = c.rect;
+    panel(ctx, r.x, r.y, r.w, r.h, { a: 0.8, border: p.warn, ba: 0.2 + 0.05 * c.stars });
+    drawStars(ctx, r.x + 20 + (c.stars - 1) * 6.5, r.y + 20, c.stars, 5, p.warn);
+    txt(ctx, c.name, r.x + 20, r.y + 36, 15, p.hi, 'left', { sp: 3, w: 400 });
+    txt(ctx, c.line, r.x + 20, r.y + 62, 8, p.fg, 'left', { sp: 2, w: 500, a: 0.85 });
+    if (c.extra) txt(ctx, c.extra, r.x + 20, r.y + 80, 8, p.warn, 'left', { sp: 2, w: 500 });
+    txt(ctx, 'SCORE', r.x + r.w - 20, r.y + 14, 7, p.dim, 'right', { sp: 2.5, w: 500 });
+    txt(ctx, '\u00d7' + c.mult.toFixed(1), r.x + r.w - 20, r.y + 28, 24, p.hi, 'right', { w: 300 });
+  }
+  const k = d.skip;
+  pill(ctx, k.x, k.y, k.w, k.h, rgba('#06080E', 0.6), rgba(p.fg, 0.32));
+  txt(ctx, 'SKIP BONUS', k.x + k.w / 2, k.y + k.h / 2 - 5, 9, p.fg, 'center', { sp: 3, w: 500, a: 0.85 });
 }
 export function drawGameOverFrame(ctx, d) {
   const p = P();
