@@ -21,6 +21,8 @@ const FILES = [
   '02_src/debug.js',
   '02_src/autopilot.js',
   '02_src/ranking.js',
+  '02_src/art.js',
+  '02_src/music.js',
   '02_src/title.js',
   '02_src/game.js',
   '02_src/main.js',

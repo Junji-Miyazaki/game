@@ -3,24 +3,23 @@
 "use strict";
 
 // ---- 02_src/core/palette.js ----
-// METEOR // PROTOCOL — 宇宙ネオンパレット（単一テーマ）
-// 参照: Falltopia / The Tower（深宇宙ネイビー＋ネオンワイヤーフレーム、色＝役割）
-// 既存コードとの互換のため P() のキー名は MICRO ARCADE と同一に保つ。
+// LANDER — レトロフューチャー × 抑制のパレット（単一テーマ）。
+// 近黒の背景 / 象牙の船体 / ティールの計器 / 琥珀の燃料・推力 / 赤は危険状態（低燃料・クラッシュ・速度超過）のみ。
+// 既存コードとの互換のため P() のキー名は維持する。
 const PALETTES = {
   SPACE: {
     name: 'DEEP SPACE',
-    bg:   '#0a0e1c', // 深宇宙ネイビー（背景ベース）
-    dark: '#151b32', // パネル/シルエット
-    dim:  '#33406b', // 弱いライン・非活性
-    mid:  '#3ee6ff', // 主役シアン（防衛網・自機側）
-    fg:   '#c9ecff', // 明るい本文
-    hi:   '#ffffff', // ハイライト（白＝雑魚隕石にも使用）
-    warn: '#ffb347', // 琥珀（巨大隕石・報酬・強調）
-    bad:  '#ff4f6d', // ピンクレッド（危険・被弾・ボス）
-    // 追加の役割色（新規コードから使用可）
-    violet: '#b06bff', // 紫（高速隕石）
-    pink:   '#ff5cd0', // マゼンタ（特殊/アイテム）
-    green:  '#54f0a8', // 緑（$・回復・成功）
+    bg:   '#06080E', // 近黒（背景）
+    dark: '#0D111B', // パネル/シルエット
+    dim:  '#5B667C', // 弱いライン・補助ラベル
+    mid:  '#63D8C9', // ティール（計器・案内）
+    fg:   '#ECE6D8', // 象牙（船体・本文）
+    hi:   '#F8F4EA', // ハイライト
+    warn: '#FFB547', // 琥珀（燃料・推力・強調）
+    bad:  '#FF4A3D', // 赤（危険のみ）
+    violet: '#A79BFF',
+    pink:   '#FF9DB8',
+    green:  '#7FE3B0',
   },
 };
 
@@ -165,7 +164,7 @@ class Engine {
     this.canvas.width = Math.floor(W * this.scale * dpr);
     this.canvas.height = Math.floor(H * this.scale * dpr);
     this.ctx.setTransform(this.scale * dpr, 0, 0, this.scale * dpr, 0, 0);
-    this.ctx.imageSmoothingEnabled = false; // ドット絵をクッキリ
+    this.ctx.imageSmoothingEnabled = true; // P2a: 滑らかな描画（キャッシュ層の縮小に必要）
     this.offsetX = (vw - cssW) / 2;
     this.offsetY = (vh - cssH) / 2;
   }
@@ -326,23 +325,14 @@ class Engine {
 
   // BACKボタン描画（左上・全ゲーム共通）
   _drawBack() {
-    const p = P();
-    const b = this.backBtn;
-    this.rect(b.x, b.y, b.w, b.h, p.dark);
-    this.stroke(b.x, b.y, b.w, b.h, p.dim, 2);
-    this.text('‹', b.x + b.w / 2, b.y + 4, 26, p.fg, 'center');
+    drawBackButton(this.ctx, this.backBtn);   // ヘアラインの円 + シェブロン（art.js）
   }
 
   // ---- 描画ヘルパー（各ゲームから利用）----
 
-  // ビットマップ風テキスト。align: 'left'|'center'|'right'
+  // テキスト（P2a: SF Pro / Helvetica Neue / Rajdhani のスタック、軽めのウェイト）。align: 'left'|'center'|'right'
   text(str, x, y, size = 16, color = null, align = 'left') {
-    const ctx = this.ctx;
-    ctx.fillStyle = color || P().mid;
-    ctx.font = `${size}px "Rajdhani", sans-serif`;
-    ctx.textAlign = align;
-    ctx.textBaseline = 'top';
-    ctx.fillText(str, x, y);
+    txt(this.ctx, str, x, y, size, color || P().mid, align);
   }
 
   // 角丸なしの矩形（塗り）
@@ -375,30 +365,30 @@ const STAGES_PER_BODY = 2;
 const BODIES = [
   { id: 'moon', celebTier: 0, name: 'MOON', atmoTag: 'NONE', realG: 1.62, atmoLabel: 'NONE', atmoType: 'none',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'rock',
-    visual: { sky: ['#05060d', '#0a0e1c'], ground: '#2a2d3a', rim: '#8a90a8', accent: '#c9ecff', fog: null, haze: null,
+    visual: { sky: ['#04050a', '#0b0f1a'], ground: '#4a4d58', rim: '#b4bac8', accent: '#c9ecff', fog: null, haze: null,
       skyObject: 'earth', mood: 'grey regolith, Earthrise' } },
   { id: 'europa', celebTier: 0, name: 'EUROPA', atmoTag: 'NONE', realG: 1.31, atmoLabel: 'NONE (TRACE)', atmoType: 'none',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'ice',
-    visual: { sky: ['#04060f', '#0c1428'], ground: '#cfe6f2', rim: '#ffffff', accent: '#7fd8ff', fog: null, haze: null,
+    visual: { sky: ['#04060e', '#0b1426'], ground: '#a9c2d2', rim: '#f2fbff', accent: '#7fd8ff', fog: null, haze: null,
       skyObject: 'jupiter', mood: 'cracked white ice, giant Jupiter overhead' } },
   { id: 'io', celebTier: 1, name: 'IO', atmoTag: 'TRACE', realG: 1.80, atmoLabel: 'TRACE SO₂', atmoType: 'trace',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'lava',
-    visual: { sky: ['#0a0508', '#241005'], ground: '#b58a1e', rim: '#ffd23f', accent: '#ff6a1a', fog: null, haze: null,
+    visual: { sky: ['#0a0507', '#2a1208'], ground: '#a98424', rim: '#ffd96a', accent: '#ff6a1a', fog: null, haze: null,
       skyObject: 'jupiter', mood: 'sulfur yellow plains, lava vents' } },
   { id: 'mars', celebTier: 1, name: 'MARS', atmoTag: 'THIN CO\u2082', realG: 3.71, atmoLabel: 'THIN CO₂', atmoType: 'thin',
     wind: { base: 0.08, gust: 0.3 }, drag: 0.05,   // P1.5調整: 仕様値 0.8/1.2 は 0/50 着陸（04_tests/p15.mjs・LOG参照）
        visibility: null, heat: null, obstacleStyle: 'rock',
-    visual: { sky: ['#3a1a10', '#c2703d'], ground: '#8a3b1e', rim: '#e08a55', accent: '#ffb27a',
+    visual: { sky: ['#43211a', '#d08a52'], ground: '#8a3b1e', rim: '#eaa070', accent: '#ffb27a',
       fog: null, haze: { color: '#c2703d', alpha: 0.22 }, skyObject: 'phobos', mood: 'rust dust, butterscotch sky, dust haze' } },
   { id: 'titan', celebTier: 2, name: 'TITAN', atmoTag: 'THICK N\u2082', realG: 1.35, atmoLabel: 'THICK N₂ 1.5 BAR', atmoType: 'thick',
     wind: { base: 0.06, gust: 0.12 }, drag: 0.35, dragY: 0.03,   // 調整: 仕様 風0.6/0.6・縦抗力0.35（終端降下速度 g/drag = 0.65px/s で降下に600秒）
        visibility: 150, heat: null, obstacleStyle: 'ice',
-    visual: { sky: ['#2b1a05', '#8a5a1a'], ground: '#3b2a14', rim: '#c98a2e', accent: '#ffc04a',
+    visual: { sky: ['#6a4514', '#946620'], ground: '#4a3519', rim: '#dca048', accent: '#ffc04a',
       fog: '#6b4510', haze: null, skyObject: 'saturn', mood: 'orange methane murk, thick haze' } },
   { id: 'venus', celebTier: 2, name: 'VENUS', atmoTag: 'EXTREME 460\u00b0C', realG: 8.87, atmoLabel: 'EXTREMELY THICK · 460°C', atmoType: 'extreme',
     wind: { base: 0.05, gust: 0.12 }, drag: 0.2, dragY: 0.045,   // 調整: 仕様 風0.4/0.5・抗力0.5（終端降下速度 1.2px/s）
        visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
-    visual: { sky: ['#3a1204', '#b8601a'], ground: '#2a1408', rim: '#ff7a1a', accent: '#ff9a3c',
+    visual: { sky: ['#7a3410', '#c26a1c'], ground: '#33180a', rim: '#ff8a2a', accent: '#ff9a3c',
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
 ];
 
@@ -720,21 +710,22 @@ function qualifies(list, score) {
   return score > sorted[RANK_MAX - 1].score;
 }
 
-// ランキング行の描画（タイトル/ゲームオーバー共通・仮デザイン）。highlight = 強調する行index
+// ランキング行の描画（タイトル/ゲームオーバー共通）。P2a: ヘアライン区切り + 控えめな強調。highlight = 強調する行index
 function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
   const p = P();
-  const rowH = 22;
-  if (!list.length) { engine.text('NO RECORDS YET', x + w / 2, y + 8, 13, p.dim, 'center'); return; }
+  const rowH = 30;
+  if (!list.length) { txt(ctx, 'NO RECORDS YET', x + w / 2, y + 12, 10, p.dim, 'center', { sp: 3, w: 500 }); return; }
   for (let i = 0; i < list.length; i++) {
     const e = list[i];
     const ry = y + i * rowH;
     const hl = i === highlight;
-    if (hl) { ctx.fillStyle = p.dim; ctx.fillRect(x, ry - 2, w, rowH); }
-    const c = hl ? p.hi : p.fg;
-    engine.text(String(i + 1), x + 6, ry, 13, c, 'left');
-    engine.text(e.name, x + 30, ry, 13, c, 'left');
-    engine.text(String(e.score), x + w - 46, ry, 13, c, 'right');
-    engine.text('ST.' + e.stage, x + w - 6, ry, 11, hl ? p.hi : p.mid, 'right');
+    if (hl) { pill(ctx, x - 4, ry, w + 8, rowH - 4, rgba(p.warn, 0.10), rgba(p.warn, 0.4)); }
+    else if (i > 0) hair(ctx, x + 4, ry - 2, x + w - 4, ry - 2, p.fg, 0.08);
+    const c = hl ? p.warn : p.fg;
+    txt(ctx, String(i + 1).padStart(2, '0'), x + 10, ry + 5, 11, p.dim, 'left', { w: 300, sp: 1 });
+    txt(ctx, e.name, x + 38, ry + 4, 13, c, 'left', { w: 400, sp: 1 });
+    txt(ctx, String(e.score), x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
+    txt(ctx, 'ST.' + e.stage, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
   }
 }
 
@@ -778,13 +769,12 @@ function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) {
   const r = rankTabRects(x, y, w);
   for (const k of ['local', 'world']) {
     const on = tabs.mode === k;
-    if (on) { ctx.fillStyle = p.dim; ctx.fillRect(r[k].x, r[k].y, r[k].w, r[k].h); }
-    engine.stroke(r[k].x, r[k].y, r[k].w, r[k].h, on ? p.hi : p.dim, 1.5);
-    engine.text(k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 2, 12, on ? p.hi : p.mid, 'center');
+    pill(ctx, r[k].x, r[k].y, r[k].w, r[k].h, on ? rgba(p.fg, 0.10) : null, rgba(p.fg, on ? 0.4 : 0.16));
+    txt(ctx, k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 5, 9, on ? p.hi : p.dim, 'center', { sp: 3, w: 500 });
   }
   if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
-  else if (tabs.status === 'loading' || tabs.status === 'idle') engine.text('LOADING\u2026', x + w / 2, y + 40, 14, p.mid, 'center');
-  else if (tabs.status === 'offline') engine.text('OFFLINE', x + w / 2, y + 40, 14, p.bad, 'center');
+  else if (tabs.status === 'loading' || tabs.status === 'idle') txt(ctx, 'LOADING\u2026', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
+  else if (tabs.status === 'offline') txt(ctx, 'OFFLINE', x + w / 2, y + 40, 11, p.bad, 'center', { sp: 3 });
   else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
 }
 
@@ -799,6 +789,1619 @@ function setPlayerName(storage, name) {
   const nm = sanitizeName(name) || 'PILOT';
   try { storage.set('lastName', nm); } catch (_) { /* 保存不可でも続行 */ }
   return nm;
+}
+
+
+// ---- 02_src/art.js ----
+// LANDER 描画モジュール（P2a）。ゲームロジックは持たない。すべて ctx と素のデータを受け取る純粋な描画関数。
+// デザイン方針: レトロフューチャー × 2001 × Solaris × Blade Runner × Akira + 現代的ピクトグラム + Appleの抑制。
+//   静かな余白 / ゆっくりしたフェード / 1画面2アクセントまで / スキャンライン・強いネオン・過剰なグロー無し。
+// 性能: 静的な背景・地形は画面外キャンバス(layer)へ1回だけ描いてキャッシュ。グラデーションもキーでキャッシュ。
+
+const ART_VERSION = 1;
+const AW = 360;
+const AH = 640;
+const ART_BTN_Y = AH - 80;     // game.js と同じ値（操作ゾーンのジオメトリは不変）
+const TAU = Math.PI * 2;
+
+const FONT = '-apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", sans-serif';
+
+// ---------------------------------------------------------------- 色ユーティリティ
+function hexRGB(h) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(h));
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
+}
+const _rgbaMemo = new Map();
+function rgba(hex, a) {
+  a = Math.max(0, Math.min(1, a));
+  const k = hex + '|' + a.toFixed(2);
+  let v = _rgbaMemo.get(k);
+  if (!v) { const c = hexRGB(hex); v = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a.toFixed(2) + ')'; _rgbaMemo.set(k, v); }
+  return v;
+}
+const _mixMemo = new Map();
+function mixHex(a, b, t) {
+  t = Math.max(0, Math.min(1, t));
+  const k = a + b + t.toFixed(2);
+  let v = _mixMemo.get(k);
+  if (!v) {
+    const x = hexRGB(a), y = hexRGB(b);
+    const h = (i) => ('0' + Math.round(x[i] + (y[i] - x[i]) * t).toString(16)).slice(-2);
+    v = '#' + h(0) + h(1) + h(2); _mixMemo.set(k, v);
+  }
+  return v;
+}
+// amt>0: 白へ / amt<0: 黒へ
+function shade(hex, amt) { return amt >= 0 ? mixHex(hex, '#ffffff', amt) : mixHex(hex, '#000000', -amt); }
+const artRnd = (seed) => { let s = (seed * 9301 + 49297) % 233280; return () => ((s = (s * 9301 + 49297) % 233280) / 233280); };
+
+// ---------------------------------------------------------------- グラデーションのキャッシュ
+const NOGRAD = { addColorStop() {} };
+function mkL(c, a, b, d, e) { return c.createLinearGradient(a, b, d, e) || NOGRAD; }
+function mkR(c, a, b, d, e, f, g) { return c.createRadialGradient(a, b, d, e, f, g) || NOGRAD; }
+const _gc = new Map();
+function gLin(ctx, key, x0, y0, x1, y1, stops) {
+  let g = _gc.get(key);
+  if (!g) { g = mkL(ctx, x0, y0, x1, y1); for (let i = 0; i < stops.length; i++) g.addColorStop(stops[i][0], stops[i][1]); _gc.set(key, g); }
+  return g;
+}
+function gRad(ctx, key, x0, y0, r0, x1, y1, r1, stops) {
+  let g = _gc.get(key);
+  if (!g) { g = mkR(ctx, x0, y0, r0, x1, y1, r1); for (let i = 0; i < stops.length; i++) g.addColorStop(stops[i][0], stops[i][1]); _gc.set(key, g); }
+  return g;
+}
+
+// ---------------------------------------------------------------- 画面外レイヤー（静的な背景/地形のキャッシュ）
+const LAYER_SCALE = 2;
+const _layers = new Map();
+function makeCanvas(w, h) {
+  try {
+    if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+    if (typeof document !== 'undefined') { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  } catch (_) { /* fall through */ }
+  return null;
+}
+// slot ごとに1枚のキャンバスを使い回し、key が変わった時だけ再描画する
+function cachedLayer(ctx, slot, key, paint) {
+  let L = _layers.get(slot);
+  if (L === undefined) {
+    const cv = makeCanvas(AW * LAYER_SCALE, AH * LAYER_SCALE);
+    L = cv ? { cv, key: null } : null;
+    _layers.set(slot, L);
+  }
+  if (!L) { paint(ctx); return; }
+  if (L.key !== key) {
+    const c = L.cv.getContext('2d');
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, L.cv.width, L.cv.height);
+    c.setTransform(LAYER_SCALE, 0, 0, LAYER_SCALE, 0, 0);
+    paint(c);
+    L.key = key;
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  try { ctx.imageSmoothingQuality = 'high'; } catch (_) { /* noop */ }
+  ctx.drawImage(L.cv, 0, 0, AW, AH);
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- テキスト
+const ART_LS = (typeof CanvasRenderingContext2D !== 'undefined') && ('letterSpacing' in CanvasRenderingContext2D.prototype);
+const _fontMemo = new Map();
+function fontStr(w, size) {
+  const k = w * 1000 + size;
+  let f = _fontMemo.get(k);
+  if (!f) { f = w + ' ' + size + 'px ' + FONT; _fontMemo.set(k, f); }
+  return f;
+}
+const _wMemo = new Map();
+function charW(ctx, font, ch) {
+  const k = font + ch;
+  let w = _wMemo.get(k);
+  if (w === undefined) { w = ctx.measureText(ch).width; if (!(w >= 0)) w = 6; _wMemo.set(k, w); }
+  return w;
+}
+// y は文字の上端（engine.text と同じ）。o: { w:太さ, sp:字間px, a:不透明度, sh:影 }
+function txt(ctx, s, x, y, size, color, align, o) {
+  s = String(s == null ? '' : s);
+  const wt = (o && o.w) || 400, sp = (o && o.sp) || 0;
+  const font = fontStr(wt, size);
+  ctx.save();
+  if (o && o.a !== undefined) ctx.globalAlpha = Math.max(0, Math.min(1, (typeof ctx.globalAlpha === 'number' ? ctx.globalAlpha : 1) * o.a));
+  ctx.font = font;
+  ctx.fillStyle = color || P().fg;
+  ctx.textBaseline = 'top';
+  if (o && o.sh) { ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 8; }
+  align = align || 'left';
+  if (!sp) {
+    ctx.textAlign = align;
+    ctx.fillText(s, x, y);
+  } else if (ART_LS) {
+    ctx.letterSpacing = sp + 'px';
+    ctx.textAlign = align;
+    ctx.fillText(s, align === 'center' ? x + sp / 2 : align === 'right' ? x + sp : x, y);
+  } else {
+    // 字間の手動シミュレーション
+    let total = 0;
+    for (let i = 0; i < s.length; i++) total += charW(ctx, font, s[i]) + (i < s.length - 1 ? sp : 0);
+    let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+    ctx.textAlign = 'left';
+    for (let i = 0; i < s.length; i++) { ctx.fillText(s[i], cx, y); cx += charW(ctx, font, s[i]) + sp; }
+  }
+  ctx.restore();
+}
+// 等幅スロットの数値（桁が動いてもジッターしない）。xRight=右端
+function num(ctx, s, xRight, y, size, color, o) {
+  s = String(s);
+  const slot = size * 0.6;
+  const wt = (o && o.w) || 300;
+  ctx.save();
+  ctx.font = fontStr(wt, size);
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'center';
+  if (ART_LS) ctx.letterSpacing = '0px';
+  for (let i = s.length - 1, k = 0; i >= 0; i--, k++) ctx.fillText(s[i], xRight - slot * (k + 0.5), y);
+  ctx.restore();
+}
+function numWidth(s, size) { return String(s).length * size * 0.6; }
+
+// ---------------------------------------------------------------- 図形
+function rr(ctx, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+// すりガラス風の暗い半透明パネル + ヘアライン枠
+function panel(ctx, x, y, w, h, o) {
+  const p = P();
+  const r = (o && o.r !== undefined) ? o.r : 14;
+  const a = (o && o.a !== undefined) ? o.a : 0.74;
+  ctx.save();
+  rr(ctx, x, y, w, h, r);
+  ctx.fillStyle = rgba('#080b14', a); ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgba((o && o.border) || p.fg, (o && o.ba !== undefined) ? o.ba : 0.16); ctx.stroke();
+  // 上端のごく薄いハイライト
+  ctx.beginPath();
+  ctx.moveTo(x + r, y + 0.5); ctx.lineTo(x + w - r, y + 0.5);
+  ctx.strokeStyle = rgba('#ffffff', 0.10); ctx.stroke();
+  ctx.restore();
+}
+function pill(ctx, x, y, w, h, fill, stroke, lw) {
+  ctx.save();
+  rr(ctx, x, y, w, h, h / 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = lw || 1; ctx.strokeStyle = stroke; ctx.stroke(); }
+  ctx.restore();
+}
+function hair(ctx, x0, y0, x1, y1, color, a) {
+  ctx.save(); ctx.strokeStyle = rgba(color || P().fg, a === undefined ? 0.14 : a); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.restore();
+}
+
+// ================================================================ ピクトグラム（ベクトル線画）
+function strokeStyleSet(ctx, color, lw) { ctx.strokeStyle = color; ctx.lineWidth = lw || 1.3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
+function icoFuel(ctx, cx, cy, s, color) {      // しずく
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s);
+  ctx.bezierCurveTo(cx + s * 0.2, cy - s * 0.5, cx + s * 0.75, cy - s * 0.05, cx + s * 0.75, cy + s * 0.32);
+  ctx.arc(cx, cy + s * 0.32, s * 0.75, 0, Math.PI, false);
+  ctx.bezierCurveTo(cx - s * 0.75, cy - s * 0.05, cx - s * 0.2, cy - s * 0.5, cx, cy - s);
+  ctx.stroke(); ctx.restore();
+}
+function icoDown(ctx, cx, cy, s, color) {      // 垂直速度: 下向き矢印
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  ctx.beginPath(); ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s);
+  ctx.moveTo(cx - s * 0.6, cy + s * 0.4); ctx.lineTo(cx, cy + s); ctx.lineTo(cx + s * 0.6, cy + s * 0.4);
+  ctx.stroke(); ctx.restore();
+}
+function icoSide(ctx, cx, cy, s, color) {      // 水平速度: 左右矢印
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  ctx.beginPath(); ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
+  ctx.moveTo(cx + s * 0.4, cy - s * 0.6); ctx.lineTo(cx + s, cy); ctx.lineTo(cx + s * 0.4, cy + s * 0.6);
+  ctx.moveTo(cx - s * 0.4, cy - s * 0.6); ctx.lineTo(cx - s, cy); ctx.lineTo(cx - s * 0.4, cy + s * 0.6);
+  ctx.stroke(); ctx.restore();
+}
+function icoAngle(ctx, cx, cy, s, color, angDeg) {   // 傾き: 実角度で傾くバー + 基準の水平ティック
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  ctx.globalAlpha *= 0.35;
+  ctx.beginPath(); ctx.moveTo(cx - s, cy + s * 0.9); ctx.lineTo(cx + s, cy + s * 0.9); ctx.stroke();
+  ctx.globalAlpha /= 0.35;
+  const a = Math.max(-70, Math.min(70, angDeg || 0)) * Math.PI / 180;
+  ctx.translate(cx, cy); ctx.rotate(a);
+  ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(0, -s * 0.85); ctx.lineTo(0, s * 0.45); ctx.stroke();
+  ctx.restore();
+}
+function icoSpin(ctx, cx, cy, s, color) {      // 角速度: 円弧矢印
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  ctx.beginPath(); ctx.arc(cx, cy, s * 0.85, -2.4, 0.8, false); ctx.stroke();
+  const ex = cx + Math.cos(0.8) * s * 0.85, ey = cy + Math.sin(0.8) * s * 0.85;
+  ctx.beginPath(); ctx.moveTo(ex + 3.2, ey - 1.2); ctx.lineTo(ex, ey); ctx.lineTo(ex - 0.6, ey - 3.6); ctx.stroke();
+  ctx.restore();
+}
+function icoWind(ctx, cx, cy, len, dir, color) {   // 風: 矢印 + 流線
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  const h = len / 2;
+  ctx.beginPath(); ctx.moveTo(cx - dir * h, cy); ctx.lineTo(cx + dir * h, cy);
+  ctx.moveTo(cx + dir * (h - 4.5), cy - 3.4); ctx.lineTo(cx + dir * h, cy); ctx.lineTo(cx + dir * (h - 4.5), cy + 3.4);
+  ctx.stroke();
+  ctx.globalAlpha *= 0.5; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - dir * (h - 2), cy - 4.5); ctx.lineTo(cx - dir * (h - 2) + dir * Math.min(10, len * 0.4), cy - 4.5);
+  ctx.moveTo(cx - dir * (h - 2), cy + 4.5); ctx.lineTo(cx - dir * (h - 2) + dir * Math.min(14, len * 0.5), cy + 4.5);
+  ctx.stroke();
+  ctx.restore();
+}
+function icoShipMini(ctx, cx, cy, s, color) {  // 残機: 小さな船のシルエット
+  ctx.save();
+  ctx.fillStyle = color;
+  rr(ctx, cx - 3 * s, cy - 4.5 * s, 6 * s, 8 * s, 3 * s); ctx.fill();
+  ctx.fillStyle = rgba('#06080E', 0.85);
+  ctx.beginPath(); ctx.arc(cx, cy - 1.5 * s, 1.6 * s, 0, TAU); ctx.fill();
+  strokeStyleSet(ctx, color, 1);
+  ctx.beginPath(); ctx.moveTo(cx - 2.6 * s, cy + 3 * s); ctx.lineTo(cx - 4.6 * s, cy + 5.6 * s);
+  ctx.moveTo(cx + 2.6 * s, cy + 3 * s); ctx.lineTo(cx + 4.6 * s, cy + 5.6 * s); ctx.stroke();
+  ctx.restore();
+}
+// モジュールの小グリフ（id: fuel/stab/shock/radar/shield）
+function drawModuleGlyph(ctx, id, cx, cy, s, color) {
+  ctx.save(); strokeStyleSet(ctx, color, 1.3);
+  ctx.beginPath();
+  if (id === 'fuel') {
+    ctx.moveTo(cx, cy - s); ctx.bezierCurveTo(cx + s * 0.1, cy - s * 0.5, cx + s * 0.7, cy - s * 0.1, cx + s * 0.7, cy + s * 0.3);
+    ctx.arc(cx, cy + s * 0.3, s * 0.7, 0, Math.PI, false);
+    ctx.bezierCurveTo(cx - s * 0.7, cy - s * 0.1, cx - s * 0.1, cy - s * 0.5, cx, cy - s);
+    ctx.moveTo(cx - s * 0.25, cy + s * 0.3); ctx.lineTo(cx + s * 0.25, cy + s * 0.3);
+    ctx.moveTo(cx, cy + s * 0.05); ctx.lineTo(cx, cy + s * 0.55);
+  } else if (id === 'stab') {
+    ctx.arc(cx, cy, s * 0.8, 0, TAU);
+    ctx.moveTo(cx - s * 1.0, cy); ctx.lineTo(cx + s * 1.0, cy);
+    ctx.moveTo(cx, cy - s * 0.8); ctx.lineTo(cx, cy + s * 0.8);
+  } else if (id === 'shock') {
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy - s * 0.6);
+    ctx.lineTo(cx - s * 0.6, cy - s * 0.3); ctx.lineTo(cx + s * 0.6, cy + 0.0); ctx.lineTo(cx - s * 0.6, cy + s * 0.3);
+    ctx.lineTo(cx, cy + s * 0.6); ctx.lineTo(cx, cy + s);
+  } else if (id === 'radar') {
+    ctx.arc(cx, cy + s * 0.5, s * 1.0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.moveTo(cx + s * 0.62, cy + s * 0.5 - s * 0.2); ctx.arc(cx, cy + s * 0.5, s * 0.55, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.moveTo(cx + 0.1, cy + s * 0.5); ctx.arc(cx, cy + s * 0.5, 0.6, 0, TAU);
+  } else if (id === 'shield') {
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.8, cy - s * 0.55); ctx.lineTo(cx + s * 0.7, cy + s * 0.2);
+    ctx.quadraticCurveTo(cx + s * 0.4, cy + s * 0.75, cx, cy + s); ctx.quadraticCurveTo(cx - s * 0.4, cy + s * 0.75, cx - s * 0.7, cy + s * 0.2);
+    ctx.lineTo(cx - s * 0.8, cy - s * 0.55); ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, s * 0.6, 0, TAU);
+  }
+  ctx.stroke(); ctx.restore();
+}
+
+// ================================================================ 背景（空・天体・星）
+const SKYOBJ = {
+  earth:    { x: 270, y: 178, r: 19 },
+  jupiter:  { x: 252, y: 226, r: 78 },
+  jupiterIo: { x: 84, y: 214, r: 58 },
+  phobos:   { x: 268, y: 160, r: 9 },
+  saturn:   { x: 248, y: 182, r: 22 },
+  'sun-glow': { x: 208, y: 168, r: 150 },
+};
+function skyObjFor(body) {
+  const k = body.visual.skyObject;
+  return (body.id === 'io' && k === 'jupiter') ? SKYOBJ.jupiterIo : SKYOBJ[k];
+}
+function isVacuum(body) { return body.atmoType === 'none' || body.atmoType === 'trace'; }
+
+function paintEarth(c, o) {
+  const { x, y, r } = o;
+  const g0 = mkR(c, x, y, r * 0.9, x, y, r * 1.5);
+  g0.addColorStop(0, 'rgba(130,185,255,0.30)'); g0.addColorStop(1, 'rgba(130,185,255,0)');
+  c.fillStyle = g0; c.fillRect(x - r * 1.6, y - r * 1.6, r * 3.2, r * 3.2);
+  c.save();
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.clip();
+  const og = mkL(c, x - r, y - r, x + r, y + r);
+  og.addColorStop(0, '#2a68a8'); og.addColorStop(1, '#0f2f5a');
+  c.fillStyle = og; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.fillStyle = 'rgba(86,140,96,0.85)';                      // 大陸
+  c.beginPath(); c.moveTo(x - r * 0.5, y - r * 0.5); c.quadraticCurveTo(x - r * 0.1, y - r * 0.8, x + r * 0.15, y - r * 0.3);
+  c.quadraticCurveTo(x - r * 0.1, y + r * 0.05, x - r * 0.25, y + r * 0.45); c.quadraticCurveTo(x - r * 0.6, y + r * 0.2, x - r * 0.5, y - r * 0.5); c.fill();
+  c.beginPath(); c.moveTo(x + r * 0.3, y + r * 0.1); c.quadraticCurveTo(x + r * 0.7, y + r * 0.0, x + r * 0.62, y + r * 0.5);
+  c.quadraticCurveTo(x + r * 0.4, y + r * 0.6, x + r * 0.3, y + r * 0.1); c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.40)';                    // 雲
+  c.beginPath(); c.ellipse(x + r * 0.05, y - r * 0.15, r * 0.7, r * 0.1, -0.3, 0, TAU); c.fill();
+  c.beginPath(); c.ellipse(x - r * 0.2, y + r * 0.5, r * 0.55, r * 0.09, 0.2, 0, TAU); c.fill();
+  const tg = mkR(c, x - r * 0.45, y - r * 0.25, r * 0.4, x - r * 0.45, y - r * 0.25, r * 1.7);   // 明暗境界
+  tg.addColorStop(0, 'rgba(0,0,12,0)'); tg.addColorStop(0.6, 'rgba(0,0,12,0.35)'); tg.addColorStop(1, 'rgba(0,0,12,0.85)');
+  c.fillStyle = tg; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.restore();
+  c.strokeStyle = 'rgba(170,210,255,0.45)'; c.lineWidth = 0.8;
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
+}
+const JUP_BANDS = [
+  [-0.95, 0.2, '#b79067'], [-0.75, 0.14, '#d9bd96'], [-0.58, 0.18, '#9c7350'], [-0.38, 0.12, '#dcc3a0'], [-0.22, 0.2, '#a97d58'],
+  [0.0, 0.1, '#e2c9a5'], [0.1, 0.2, '#9a6d49'], [0.32, 0.12, '#d8bb94'], [0.46, 0.18, '#b48962'], [0.66, 0.14, '#d3b48e'], [0.82, 0.2, '#9d7652'],
+];
+function paintJupiter(c, o, dimA) {
+  const { x, y, r } = o;
+  c.save();
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.clip();
+  c.fillStyle = '#c9a57c'; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.translate(x, y); c.rotate(-0.05);
+  for (let b = 0; b < JUP_BANDS.length; b++) {
+    const bd = JUP_BANDS[b];
+    c.fillStyle = bd[2];
+    c.beginPath();
+    for (let px = -r; px <= r; px += 8) { const yy = r * bd[0] + 1.6 * Math.sin(px * 0.07 + bd[0] * 9); if (px === -r) c.moveTo(px, yy); else c.lineTo(px, yy); }
+    for (let px = r; px >= -r; px -= 8) c.lineTo(px, r * (bd[0] + bd[1]) + 1.6 * Math.sin(px * 0.07 + bd[0] * 9 + 1));
+    c.closePath(); c.fill();
+  }
+  c.fillStyle = 'rgba(176,84,58,0.85)';                       // 大赤斑のヒント
+  c.beginPath(); c.ellipse(-r * 0.28, r * 0.34, r * 0.15, r * 0.085, 0, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(230,200,170,0.4)'; c.lineWidth = 0.8;
+  c.beginPath(); c.ellipse(-r * 0.28, r * 0.34, r * 0.19, r * 0.11, 0, 0, TAU); c.stroke();
+  c.restore();
+  c.save();
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.clip();
+  const lg = mkR(c, x - r * 0.25, y - r * 0.2, r * 0.3, x - r * 0.25, y - r * 0.2, r * 1.25);   // 周縁減光
+  lg.addColorStop(0, 'rgba(4,6,14,0)'); lg.addColorStop(0.55, 'rgba(4,6,14,0.2)'); lg.addColorStop(1, 'rgba(4,6,14,0.8)');
+  c.fillStyle = lg; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.fillStyle = 'rgba(4,6,14,' + dimA + ')'; c.fillRect(x - r, y - r, r * 2, r * 2);     // 全体を沈めてHUDの可読性を確保
+  c.restore();
+}
+function paintSaturn(c, o) {
+  const { x, y, r } = o;
+  c.save(); c.globalAlpha = 0.5;                              // 霞の向こう
+  const ring = (a0, a1, wd, col) => { c.strokeStyle = col; c.lineWidth = wd; c.beginPath(); c.ellipse(x, y, r * 2.3, r * 0.62, -0.32, a0, a1); c.stroke(); };
+  ring(Math.PI, TAU, 4, 'rgba(226,200,150,0.55)');
+  const g = mkR(c, x - r * 0.3, y - r * 0.3, r * 0.2, x, y, r);
+  g.addColorStop(0, '#ead2a0'); g.addColorStop(1, '#8c6a36');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  c.fillStyle = 'rgba(120,80,30,0.25)'; c.fillRect(x - r, y - r * 0.15, r * 2, r * 0.25);
+  ring(0, Math.PI, 4, 'rgba(236,212,164,0.7)'); ring(0, Math.PI, 1, 'rgba(80,50,20,0.5)');
+  c.restore();
+}
+function paintPhobos(c, o) {
+  const { x, y, r } = o;
+  c.save(); c.translate(x, y); c.rotate(-0.3);
+  const g = mkR(c, -r * 0.3, -r * 0.3, 1, 0, 0, r * 1.3);
+  g.addColorStop(0, '#9a8a7a'); g.addColorStop(1, '#4a3c34');
+  c.fillStyle = g;
+  c.beginPath();
+  const pts = [[1.2, 0.0], [0.9, 0.55], [0.2, 0.8], [-0.6, 0.65], [-1.15, 0.1], [-0.9, -0.55], [-0.1, -0.8], [0.7, -0.55]];
+  for (let i = 0; i < pts.length; i++) { const px = pts[i][0] * r, py = pts[i][1] * r * 0.85; if (i === 0) c.moveTo(px, py); else c.lineTo(px, py); }
+  c.closePath(); c.fill();
+  c.fillStyle = 'rgba(30,20,16,0.35)';
+  c.beginPath(); c.arc(r * 0.25, -r * 0.05, r * 0.28, 0, TAU); c.fill();
+  c.beginPath(); c.arc(-r * 0.4, r * 0.2, r * 0.16, 0, TAU); c.fill();
+  c.restore();
+  c.fillStyle = 'rgba(255,230,200,0.7)'; c.fillRect(x - 70, y - 38, 1.5, 1.5);   // Deimos
+}
+function paintSunGlow(c, o) {
+  const { x, y, r } = o;
+  const g = mkR(c, x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(255,236,176,0.62)'); g.addColorStop(0.25, 'rgba(255,196,110,0.34)'); g.addColorStop(1, 'rgba(255,150,60,0)');
+  c.fillStyle = g; c.fillRect(0, 0, AW, AH);
+  c.fillStyle = 'rgba(70,24,6,0.16)';                         // 雲の筋
+  for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
+}
+function paintSky(c, body) {
+  const v = body.visual;
+  const g = mkL(c, 0, 0, 0, AH * 0.82);
+  g.addColorStop(0, v.sky[0]); g.addColorStop(1, v.sky[1]);
+  c.fillStyle = g; c.fillRect(0, 0, AW, AH);
+  if (!isVacuum(body)) {                                      // 大気のある天体は地平に淡い光
+    const hg = mkR(c, AW / 2, 470, 10, AW / 2, 470, 260);
+    hg.addColorStop(0, rgba(v.accent, 0.20)); hg.addColorStop(1, rgba(v.accent, 0));
+    c.fillStyle = hg; c.fillRect(0, 200, AW, 400);
+  }
+  const o = skyObjFor(body);
+  switch (v.skyObject) {
+    case 'earth': paintEarth(c, o); break;
+    case 'jupiter': paintJupiter(c, o, body.id === 'io' ? 0.46 : 0.42); break;
+    case 'saturn': paintSaturn(c, o); break;
+    case 'phobos': paintPhobos(c, o); break;
+    case 'sun-glow': paintSunGlow(c, o); break;
+    default: break;
+  }
+}
+function drawBackdrop(ctx, body, t, stars) {
+  cachedLayer(ctx, 'sky', body.id, (c) => paintSky(c, body));
+  if (!isVacuum(body) || !stars) return;
+  const o = skyObjFor(body);
+  ctx.save();
+  ctx.fillStyle = P().hi;
+  const n = Math.min(30, stars.length);
+  for (let i = 0; i < n; i++) {
+    const s = stars[i];
+    if (o) { const dx = s.x - o.x, dy = s.y - o.y; if (dx * dx + dy * dy < (o.r + 6) * (o.r + 6)) continue; }
+    const tw = 0.62 + 0.38 * Math.sin(t * 0.5 + i * 1.7);
+    ctx.globalAlpha = (s.r > 1 ? 0.62 : 0.4) * tw;
+    const sz = s.r > 1 ? 1.5 : 1;
+    ctx.fillRect(s.x, s.y, sz, sz);
+  }
+  ctx.restore();
+}
+
+// ================================================================ 地形（3層のシルエット + リムライト）
+function ridge(c, y0, amp1, amp2, ph1, ph2, fillStyle, rim, rimA) {
+  c.beginPath();
+  c.moveTo(0, AH);
+  for (let x = 0; x <= AW; x += 12) c.lineTo(x, y0 + amp1 * Math.sin(x * 0.021 + ph1) + amp2 * Math.sin(x * 0.057 + ph2));
+  c.lineTo(AW, AH); c.closePath();
+  c.fillStyle = fillStyle; c.fill();
+  c.beginPath();
+  for (let x = 0; x <= AW; x += 12) { const y = y0 + amp1 * Math.sin(x * 0.021 + ph1) + amp2 * Math.sin(x * 0.057 + ph2); if (x === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+  c.strokeStyle = rgba(rim, rimA); c.lineWidth = 0.8; c.stroke();
+}
+function paintTerrain(c, body, pts) {
+  const v = body.visual;
+  const R = artRnd(Math.floor(pts[3].y * 97 + pts[8].y * 31 + pts[12].y * 7));
+  const ph1 = R() * 6, ph2 = R() * 6, ph3 = R() * 6, ph4 = R() * 6;
+  const sky1 = v.sky[1];
+  // 奥の層（空気遠近: 空色に寄せる）
+  ridge(c, 408, 20, 9, ph1, ph2, mixHex(v.ground, sky1, 0.74), v.rim, 0.20);
+  ridge(c, 448, 16, 8, ph3, ph4, mixHex(v.ground, sky1, 0.42), v.rim, 0.32);
+  // 手前（実際の地形ポリライン）
+  const gTop = shade(v.ground, 0.10), gBot = shade(v.ground, -0.55);
+  const fg = mkL(c, 0, 430, 0, AH);
+  fg.addColorStop(0, gTop); fg.addColorStop(1, gBot);
+  c.beginPath(); c.moveTo(0, AH);
+  for (let i = 0; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  c.lineTo(AW, AH); c.closePath();
+  c.fillStyle = fg; c.fill();
+  // 質感（天体ごと）
+  c.save();
+  c.beginPath(); c.moveTo(0, AH); for (let i = 0; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y); c.lineTo(AW, AH); c.closePath(); c.clip();
+  const T = artRnd(Math.floor(pts[5].y * 13 + 5));
+  if (body.id === 'europa') {                                   // ひび割れ
+    c.strokeStyle = 'rgba(40,70,92,0.45)'; c.lineWidth = 0.8;
+    for (let k = 0; k < 7; k++) {
+      let x = T() * AW, y = 470 + T() * 140; c.beginPath(); c.moveTo(x, y);
+      for (let s = 0; s < 6; s++) { x += (T() - 0.3) * 38; y += (T() - 0.5) * 20; c.lineTo(x, y); }
+      c.stroke();
+    }
+    c.strokeStyle = 'rgba(255,255,255,0.28)';
+    for (let k = 0; k < 4; k++) { let x = T() * AW, y = 480 + T() * 120; c.beginPath(); c.moveTo(x, y); c.lineTo(x + 20 + T() * 30, y + (T() - 0.5) * 10); c.stroke(); }
+  } else if (body.id === 'io') {                                 // 溶岩の筋
+    c.strokeStyle = 'rgba(255,106,26,0.45)'; c.lineWidth = 0.9;
+    for (let k = 0; k < 5; k++) {
+      let x = T() * AW, y = 490 + T() * 110; c.beginPath(); c.moveTo(x, y);
+      for (let s = 0; s < 5; s++) { x += (T() - 0.4) * 30; y += (T() - 0.5) * 14; c.lineTo(x, y); }
+      c.stroke();
+    }
+  } else if (body.id === 'venus') {                              // 灼熱の亀裂
+    c.strokeStyle = 'rgba(255,120,30,0.38)'; c.lineWidth = 0.9;
+    for (let k = 0; k < 6; k++) {
+      let x = T() * AW, y = 480 + T() * 120; c.beginPath(); c.moveTo(x, y);
+      for (let s = 0; s < 4; s++) { x += (T() - 0.5) * 34; y += (T() - 0.3) * 16; c.lineTo(x, y); }
+      c.stroke();
+    }
+  } else if (body.id === 'moon') {                               // クレーター
+    for (let k = 0; k < 9; k++) {
+      const x = T() * AW, y = 470 + T() * 130, rx = 7 + T() * 18;
+      c.fillStyle = 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
+    }
+  } else {                                                       // 火星・タイタン: 緩い地層
+    c.strokeStyle = 'rgba(0,0,0,0.20)'; c.lineWidth = 1;
+    for (let k = 0; k < 5; k++) { const y = 480 + k * 26 + T() * 8; c.beginPath(); c.moveTo(0, y); for (let x = 0; x <= AW; x += 30) c.lineTo(x, y + Math.sin(x * 0.03 + k) * 4); c.stroke(); }
+  }
+  c.fillStyle = 'rgba(0,0,0,0.16)';                              // 小石
+  for (let k = 0; k < 16; k++) { const x = T() * AW, y = 465 + T() * 160; c.beginPath(); c.ellipse(x, y, 1.5 + T() * 2.5, 0.8 + T(), 0, 0, TAU); c.fill(); }
+  c.restore();
+  // リムライト（稜線）
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  c.beginPath();
+  for (let i = 0; i < pts.length; i++) { if (i === 0) c.moveTo(pts[i].x, pts[i].y); else c.lineTo(pts[i].x, pts[i].y); }
+  c.strokeStyle = rgba(v.rim, 0.14); c.lineWidth = 4; c.stroke();
+  c.strokeStyle = rgba(v.rim, 0.6); c.lineWidth = 1.1; c.stroke();
+}
+function drawTerrain(ctx, body, pts, pad, t) {
+  if (!pts || pts.length < 2) return;
+  cachedLayer(ctx, 'terrain', pts, (c) => paintTerrain(c, body, pts));
+  if (body.id === 'io') {                                        // 火山の噴出口（ゆっくり脈動）
+    const idxs = [2, 14];
+    for (let k = 0; k < idxs.length; k++) {
+      let i = idxs[k]; const p0 = pts[i];
+      if (pad && Math.abs(p0.x - (pad.x + pad.w / 2)) < 50) i = (i + 6) % (pts.length - 2) + 1;
+      const q = pts[i]; if (!q) continue;
+      const a = 0.55 + 0.45 * Math.sin(t * 0.9 + k * 2);
+      ctx.save();
+      const g = mkR(ctx, q.x, q.y - 2, 0, q.x, q.y - 2, 16);
+      g.addColorStop(0, 'rgba(255,140,40,' + (0.5 * a).toFixed(2) + ')'); g.addColorStop(1, 'rgba(255,100,20,0)');
+      ctx.fillStyle = g; ctx.fillRect(q.x - 16, q.y - 18, 32, 32);
+      ctx.fillStyle = 'rgba(255,200,120,' + (0.7 * a).toFixed(2) + ')'; ctx.beginPath(); ctx.ellipse(q.x, q.y - 1, 3.5, 1.2, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+// ---------------------------------------------------------------- 着陸パッド
+function drawPad(ctx, pad, t) {
+  if (!pad) return;
+  const p = P();
+  const cx = pad.w / 2;
+  ctx.save();
+  ctx.translate(pad.x, pad.y);
+  // 支柱
+  ctx.fillStyle = '#6f6a5f';
+  ctx.beginPath(); ctx.moveTo(3, 3); ctx.lineTo(7, 3); ctx.lineTo(6, 8); ctx.lineTo(2.5, 8); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(pad.w - 7, 3); ctx.lineTo(pad.w - 3, 3); ctx.lineTo(pad.w - 2.5, 8); ctx.lineTo(pad.w - 6, 8); ctx.closePath(); ctx.fill();
+  // 天板
+  rr(ctx, 0, -1.6, pad.w, 5, 2.4);
+  ctx.fillStyle = gLin(ctx, 'pad', 0, -1.6, 0, 3.4, [[0, '#F6F1E4'], [1, '#B9B2A0']]); ctx.fill();
+  ctx.lineWidth = 0.7; ctx.strokeStyle = 'rgba(20,24,34,0.45)'; ctx.stroke();
+  // 中央の着陸マーク
+  ctx.fillStyle = rgba(p.mid, 0.55); ctx.fillRect(cx - 4, -0.6, 8, 1);
+  // 誘導灯（交互に点滅）
+  const ph = Math.floor(t * 1.6) % 2;
+  for (let k = 0; k < 2; k++) {
+    const lx = k === 0 ? 3.6 : pad.w - 3.6, on = ph === k;
+    if (on) {
+      ctx.fillStyle = gRad(ctx, 'padGlow', 0, 0, 0, 0, 0, 8, [[0, 'rgba(99,216,201,0.55)'], [1, 'rgba(99,216,201,0)']]);
+      ctx.save(); ctx.translate(lx, -2); ctx.fillRect(-8, -8, 16, 16); ctx.restore();
+    }
+    ctx.fillStyle = on ? p.mid : rgba(p.mid, 0.28);
+    ctx.beginPath(); ctx.arc(lx, -2.4, 1.5, 0, TAU); ctx.fill();
+  }
+  // マスト
+  ctx.strokeStyle = rgba(p.fg, 0.7); ctx.lineWidth = 1; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx, -1.6); ctx.lineTo(cx, -13); ctx.stroke();
+  ctx.restore();
+}
+// 霧の上に重ねるビーコン（琥珀・ゆっくり脈動）
+function drawBeacon(ctx, pad, t) {
+  if (!pad) return;
+  const bx = pad.x + pad.w / 2, by = pad.y - 14.5;
+  const a = 0.5 + 0.5 * Math.sin(t * 2.6);
+  ctx.save();
+  ctx.fillStyle = gRad(ctx, 'beacon', 0, 0, 0, 0, 0, 14, [[0, 'rgba(255,181,71,0.55)'], [1, 'rgba(255,181,71,0)']]);
+  ctx.globalAlpha = 0.35 + 0.65 * a;
+  ctx.translate(bx, by); ctx.fillRect(-14, -14, 28, 28); ctx.translate(-bx, -by);
+  ctx.globalAlpha = 0.65 + 0.35 * a;
+  ctx.fillStyle = P().warn;
+  ctx.beginPath(); ctx.arc(bx, by, 2.1, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- 誘導線 / オンコース表示
+const DASH_OFF = [2, 7], DASH_ON = [5, 5], DASH_NONE = [];
+function drawGuide(ctx, pts, onCourse, pulse) {
+  if (!pts || pts.length < 2) return;
+  const p = P();
+  ctx.save();
+  ctx.lineCap = 'round';
+  if (onCourse) { ctx.globalAlpha = Math.max(0, Math.min(1, 0.55 * pulse)); ctx.strokeStyle = p.fg; ctx.lineWidth = 1.4; ctx.setLineDash(DASH_ON); }
+  else { ctx.globalAlpha = 0.28; ctx.strokeStyle = p.mid; ctx.lineWidth = 1; ctx.setLineDash(DASH_OFF); }
+  ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.stroke();
+  ctx.setLineDash(DASH_NONE);
+  const last = pts[pts.length - 1];       // 目標のひし形（ヘアライン）
+  ctx.globalAlpha = onCourse ? 0.8 : 0.45; ctx.strokeStyle = onCourse ? p.fg : p.mid; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(last.x, last.y - 7); ctx.lineTo(last.x + 5, last.y - 2.5); ctx.lineTo(last.x, last.y + 2); ctx.lineTo(last.x - 5, last.y - 2.5); ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
+function drawOnCourse(ctx, x, y, ringPhase, pulse) {
+  const p = P();
+  const ringR = 23 + 2.5 * Math.sin(ringPhase * Math.PI * 2 * 1.5);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, 0.32 * pulse));
+  ctx.strokeStyle = p.mid; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(x, y, ringR, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+function drawOnCourseLabel(ctx, pulse) {
+  txt(ctx, 'ON COURSE', AW - 12, 90, 8, P().mid, 'right', { sp: 2.5, w: 500, a: Math.max(0, Math.min(1, pulse)) * 0.9 });
+}
+
+// ---------------------------------------------------------------- 大気（霧・砂塵）
+function drawHaze(ctx, color, alpha) {
+  const g = gLin(ctx, 'haze' + color, 0, 0, 0, ART_BTN_Y, [[0, rgba(color, 0.04)], [0.6, rgba(color, 0.5)], [1, rgba(color, 1)]]);
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, alpha * 1.25)); ctx.fillStyle = g; ctx.fillRect(0, 0, AW, ART_BTN_Y); ctx.restore();
+}
+function drawFog(ctx, fogHex, x, y, r) {
+  const g = mkR(ctx, x, y, r * 0.5, x, y, r);
+  // ease-out の多段ストップで帯が出ないようにする
+  for (let i = 0; i <= 8; i++) { const u = i / 8, e = u * u * (3 - 2 * u); g.addColorStop(u, rgba(fogHex, 0.94 * e)); }
+  ctx.fillStyle = g; ctx.fillRect(0, 0, AW, ART_BTN_Y);
+}
+
+// ================================================================ 障害物（rock / ice / lava）
+function polyVerts(n, r, seed, rot, lo) {
+  const out = [];
+  const R = artRnd(seed);
+  for (let i = 0; i < n; i++) { const a = (i / n) * TAU + rot, rr_ = r * (lo + (1 - lo) * R()); out.push(Math.cos(a) * rr_, Math.sin(a) * rr_, a); }
+  return out;
+}
+function drawObstacles(ctx, obs, t, body) {
+  if (!obs || !obs.length) return;
+  const v = (body && body.visual) || { ground: '#4a4d58' };
+  for (let k = 0; k < obs.length; k++) {
+    const ob = obs[k];
+    const seed = Math.floor(ob.r * 131 + k * 17);
+    const dir = ob.vx >= 0 ? 1 : -1;
+    const rot = t * 0.22 * dir + seed;
+    ctx.save();
+    ctx.translate(ob.x, ob.y);
+    if (ob.style === 'ice') paintIce(ctx, ob.r, rot, seed);
+    else if (ob.style === 'lava') paintLava(ctx, ob.r, rot, seed, t);
+    else paintRock(ctx, ob.r, rot, seed, v.ground);
+    ctx.restore();
+  }
+}
+function paintRock(ctx, r, rot, seed, ground) {
+  const base = mixHex('#8a90a0', ground, 0.45);
+  const n = 8, vs = polyVerts(n, r, seed, rot, 0.8);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const am = vs[i * 3 + 2] + Math.PI / n;                         // 面の向き
+    const lit = Math.cos(am - (-2.2));                                // 左上からの光
+    ctx.fillStyle = shade(base, lit * 0.32 - 0.12);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(vs[i * 3], vs[i * 3 + 1]); ctx.lineTo(vs[j * 3], vs[j * 3 + 1]); ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(8,10,16,0.55)'; ctx.lineWidth = 0.9; ctx.lineJoin = 'round';
+  ctx.beginPath(); for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(vs[0], vs[1]); else ctx.lineTo(vs[i * 3], vs[i * 3 + 1]); } ctx.closePath(); ctx.stroke();
+}
+function paintIce(ctx, r, rot, seed) {
+  const n = 6, vs = [];
+  for (let i = 0; i < n; i++) { const a = (i / n) * TAU + rot, rr_ = i % 2 ? r * 0.72 : r; vs.push(Math.cos(a) * rr_, Math.sin(a) * rr_); }
+  ctx.fillStyle = 'rgba(140,222,255,0.20)';
+  ctx.beginPath(); for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(vs[0], vs[1]); else ctx.lineTo(vs[i * 2], vs[i * 2 + 1]); } ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(210,244,255,0.5)'; ctx.lineWidth = 0.7;
+  ctx.beginPath(); for (let i = 0; i < n; i += 2) { ctx.moveTo(0, 0); ctx.lineTo(vs[i * 2], vs[i * 2 + 1]); } ctx.stroke();
+  ctx.fillStyle = 'rgba(190,236,255,0.22)';                           // 内側の欠片
+  ctx.beginPath(); ctx.moveTo(vs[0] * 0.55, vs[1] * 0.55); ctx.lineTo(vs[2] * 0.5, vs[3] * 0.5); ctx.lineTo(vs[4] * 0.55, vs[5] * 0.55); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(190,236,255,0.9)'; ctx.lineWidth = 1; ctx.lineJoin = 'round';
+  ctx.beginPath(); for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(vs[0], vs[1]); else ctx.lineTo(vs[i * 2], vs[i * 2 + 1]); } ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(vs[10] * 0.55, vs[11] * 0.55, 1, 0, TAU); ctx.fill();
+}
+function paintLava(ctx, r, rot, seed, t) {
+  ctx.fillStyle = 'rgba(255,100,30,0.10)'; ctx.beginPath(); ctx.arc(0, 0, r * 1.3, 0, TAU); ctx.fill();
+  const n = 9, vs = polyVerts(n, r, seed, rot, 0.82);
+  ctx.fillStyle = '#25171a';
+  ctx.beginPath(); for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(vs[0], vs[1]); else ctx.lineTo(vs[i * 3], vs[i * 3 + 1]); } ctx.closePath(); ctx.fill();
+  const pulse = 0.55 + 0.35 * Math.sin(t * 2 + seed);
+  ctx.strokeStyle = 'rgba(255,128,40,' + pulse.toFixed(2) + ')'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < n; i += 2) { ctx.moveTo(vs[i * 3] * 0.18, vs[i * 3 + 1] * 0.18); ctx.lineTo(vs[i * 3] * 0.55, vs[i * 3 + 1] * 0.5); ctx.lineTo(vs[i * 3] * 0.92, vs[i * 3 + 1] * 0.92); }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,160,70,' + (pulse * 0.5).toFixed(2) + ')'; ctx.beginPath(); ctx.arc(0, 0, r * 0.2, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,120,40,0.45)'; ctx.lineWidth = 0.8; ctx.lineJoin = 'round';
+  ctx.beginPath(); for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(vs[0], vs[1]); else ctx.lineTo(vs[i * 3], vs[i * 3 + 1]); } ctx.closePath(); ctx.stroke();
+}
+
+// ================================================================ 機体（キュート）
+// 原点=当たり判定の中心。足元 y=+16。angleDeg はCW正（game.js と同じ）。
+function drawShip(ctx, x, y, angleDeg, main, rcsL, rcsR, t) {
+  const p = P();
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((angleDeg || 0) * Math.PI / 180);
+  // --- 主エンジンの炎
+  if (main) {
+    const L = 11 + Math.random() * 8;
+    ctx.fillStyle = gRad(ctx, 'flameGlow', 0, 0, 0, 0, 0, 18, [[0, 'rgba(255,181,71,0.42)'], [1, 'rgba(255,181,71,0)']]);
+    ctx.save(); ctx.translate(0, 15); ctx.fillRect(-18, -12, 36, 36); ctx.restore();
+    ctx.save(); ctx.translate(0, 12); ctx.scale(1, L);
+    ctx.fillStyle = gLin(ctx, 'flameOuter', 0, 0, 0, 1, [[0, 'rgba(255,244,214,0.95)'], [0.35, 'rgba(255,181,71,0.85)'], [1, 'rgba(255,150,40,0)']]);
+    ctx.beginPath(); ctx.moveTo(-3.6, 0); ctx.quadraticCurveTo(-3.2, 0.5, 0, 1); ctx.quadraticCurveTo(3.2, 0.5, 3.6, 0); ctx.closePath(); ctx.fill();
+    ctx.scale(1, 0.55);
+    ctx.fillStyle = gLin(ctx, 'flameCore', 0, 0, 0, 1, [[0, 'rgba(255,255,255,0.95)'], [1, 'rgba(255,255,255,0)']]);
+    ctx.beginPath(); ctx.moveTo(-1.8, 0); ctx.quadraticCurveTo(-1.5, 0.5, 0, 1); ctx.quadraticCurveTo(1.5, 0.5, 1.8, 0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // --- RCS（白い小さな噴射）。左ノズルは左へ、右ノズルは右へ
+  if (rcsL) rcsPuff(ctx, -11.8, -3.4, -1);
+  if (rcsR) rcsPuff(ctx, 11.8, -3.4, 1);
+  // --- 脚と足パッド
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#a39c8a'; ctx.lineWidth = 1.9;
+  ctx.beginPath(); ctx.moveTo(-6, 6.5); ctx.lineTo(-12.2, 14.4); ctx.moveTo(6, 6.5); ctx.lineTo(12.2, 14.4); ctx.stroke();
+  ctx.fillStyle = '#d3ccba'; ctx.strokeStyle = 'rgba(20,24,34,0.55)'; ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.ellipse(-14.4, 15.0, 3.8, 1.35, 0, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(14.4, 15.0, 3.8, 1.35, 0, 0, TAU); ctx.fill(); ctx.stroke();
+  // --- ノズル
+  ctx.fillStyle = '#585c6a';
+  ctx.beginPath(); ctx.moveTo(-2.7, 8.5); ctx.lineTo(2.7, 8.5); ctx.lineTo(3.7, 12.2); ctx.lineTo(-3.7, 12.2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = main ? p.warn : '#3a3d48'; ctx.fillRect(-2.4, 11.4, 4.8, 0.8);
+  // --- RCSノズル
+  ctx.fillStyle = '#6d7280';
+  rr(ctx, -12, -5.2, 3.2, 3.6, 1.2); ctx.fill();
+  rr(ctx, 8.8, -5.2, 3.2, 3.6, 1.2); ctx.fill();
+  // --- アンテナ（ゆっくり点滅）
+  ctx.strokeStyle = '#bdb6a4'; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(3.6, -11.6); ctx.lineTo(5.8, -17); ctx.stroke();
+  const blink = (Math.floor((t || 0) * 0.9) % 2) === 0;
+  ctx.fillStyle = blink ? p.warn : rgba(p.warn, 0.25);
+  ctx.beginPath(); ctx.arc(5.9, -17.6, 1.3, 0, TAU); ctx.fill();
+  // --- 船体（カプセル）
+  ctx.beginPath();
+  ctx.moveTo(-9, -4); ctx.arc(0, -4, 9, Math.PI, 0, false);
+  ctx.lineTo(9, 5); ctx.quadraticCurveTo(9, 9, 5, 9); ctx.lineTo(-5, 9); ctx.quadraticCurveTo(-9, 9, -9, 5); ctx.closePath();
+  ctx.fillStyle = gLin(ctx, 'hull', -9, -13, 9, 9, [[0, '#FBF7EC'], [0.55, '#E6DFCD'], [1, '#C4BCA8']]);
+  ctx.fill();
+  ctx.save(); ctx.clip();
+  ctx.fillStyle = 'rgba(90,76,50,0.10)'; ctx.fillRect(-9, 4, 18, 6);     // 下部パネル
+  ctx.strokeStyle = 'rgba(60,54,44,0.32)'; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(-9, 4); ctx.lineTo(9, 4); ctx.stroke();       // パネルライン
+  ctx.fillStyle = rgba(p.mid, 0.9); ctx.beginPath(); ctx.arc(5.4, 6.6, 0.8, 0, TAU); ctx.fill();   // 小さな表示灯
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(24,28,40,0.55)'; ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-9, -4); ctx.arc(0, -4, 9, Math.PI, 0, false);
+  ctx.lineTo(9, 5); ctx.quadraticCurveTo(9, 9, 5, 9); ctx.lineTo(-5, 9); ctx.quadraticCurveTo(-9, 9, -9, 5); ctx.closePath(); ctx.stroke();
+  // --- 大きな丸窓（目のように）
+  ctx.fillStyle = gLin(ctx, 'portRing', -6, -9, 6, 3, [[0, '#c7ccd6'], [1, '#6e7482']]);
+  ctx.beginPath(); ctx.arc(0, -3.4, 6.2, 0, TAU); ctx.fill();
+  ctx.fillStyle = gRad(ctx, 'portGlass', -1.5, -5.2, 0.5, 0, -3.4, 5.2, [[0, '#2b4262'], [0.6, '#0f1a2c'], [1, '#050810']]);
+  ctx.beginPath(); ctx.arc(0, -3.4, 5.0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(99,216,201,0.55)'; ctx.lineWidth = 0.7;                // 下側の反射リム
+  ctx.beginPath(); ctx.arc(0, -3.4, 4.3, 0.25, 1.35, false); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';                                         // ハイライト
+  ctx.beginPath(); ctx.ellipse(-1.9, -5.5, 1.9, 1.25, -0.55, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(2.0, -1.6, 0.7, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function rcsPuff(ctx, ox, oy, dir) {
+  const L = 6 + Math.random() * 5;
+  ctx.save(); ctx.translate(ox, oy);
+  const g = mkL(ctx, 0, 0, dir * L, 0);          // 長さが毎フレーム変わるので使い捨て（最大2個/フレーム）
+  g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(0.5, 'rgba(235,245,255,0.45)'); g.addColorStop(1, 'rgba(235,245,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(0, -1.5); ctx.quadraticCurveTo(dir * L * 0.5, -1.3, dir * L, 0); ctx.quadraticCurveTo(dir * L * 0.5, 1.3, 0, 1.5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// 着陸シーケンスの小物
+function drawHatch(ctx, hx, hy, open) {
+  open = Math.max(0, Math.min(1, open));
+  ctx.save();
+  rr(ctx, hx - 2.4, hy - 5, 3.8, 10, 1.6); ctx.fillStyle = '#171d2a'; ctx.fill();
+  ctx.strokeStyle = 'rgba(236,230,216,0.45)'; ctx.lineWidth = 0.7; ctx.stroke();
+  ctx.lineCap = 'round';
+  const ex = hx + 1.4 + 6 * open, ey = hy - 5 + 5 * (1 - open) - 2 * open;
+  ctx.strokeStyle = 'rgba(40,40,50,0.7)'; ctx.lineWidth = 3.2; ctx.beginPath(); ctx.moveTo(hx + 1.4, hy - 5); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.strokeStyle = '#E6DFCD'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(hx + 1.4, hy - 5); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.restore();
+}
+function drawLadder(ctx, lx, topY, gy) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(236,230,216,0.8)'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(lx - 2.2, topY); ctx.lineTo(lx - 2.2, gy); ctx.moveTo(lx + 2.2, topY); ctx.lineTo(lx + 2.2, gy); ctx.stroke();
+  ctx.globalAlpha = 0.6; ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  for (let yy = topY + 3; yy < gy; yy += 4) { ctx.moveTo(lx - 2.2, yy); ctx.lineTo(lx + 2.2, yy); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ================================================================ 宇宙飛行士（2頭身）
+// (x,y)=足元。mode: 'descend'|'walk'|'flag'|'wave'|'done'。pose: celebrationPose の戻り値
+function drawAstronaut(ctx, x, y, mode, t, pose) {
+  let armL = 0.3, armR = 0.3, bob = 0, swing = 0, climb = 0, rot = 0, ox = 0, oy = 0;
+  if (pose) {
+    armL = pose.armL; armR = pose.armR; rot = pose.rot || 0; ox = pose.dx || 0;
+    oy = Math.max(40, y - (pose.dy || 0)) - y;
+  } else if (mode === 'descend') {
+    const s = Math.sin(t * 11); climb = s; armL = 2.3 + s * 0.45; armR = 2.3 - s * 0.45;
+  } else if (mode === 'walk') {
+    const s = Math.sin(t * 15); swing = s; bob = -Math.abs(s) * 0.8; armL = 0.3 + s * 0.5; armR = 0.3 - s * 0.5;
+  } else if (mode === 'flag') {
+    armR = 2.2 + 0.25 * Math.sin(t * 9); armL = 0.5;
+  } else if (mode === 'wave') {
+    armR = 2.4 + 0.5 * Math.sin(t * 12); armL = 0.3;
+  }
+  ctx.save();
+  ctx.translate(x + ox, y + oy + bob);
+  if (rot) { ctx.translate(0, -7); ctx.rotate(rot); ctx.translate(0, 7); }
+  const SUIT = '#F3EFE4', EDGE = 'rgba(70,66,58,0.55)';
+  // バックパック
+  rr(ctx, -6.9, -9.6, 3.4, 6.6, 1.5); ctx.fillStyle = '#c7c0ae'; ctx.fill();
+  // ブーツ
+  ctx.fillStyle = '#d9d3c1'; ctx.strokeStyle = EDGE; ctx.lineWidth = 0.5;
+  rr(ctx, -4 + swing * 1.5, -4.3 - Math.max(0, climb) * 1.2, 3.6, 4.3, 1.5); ctx.fill(); ctx.stroke();
+  rr(ctx, 0.4 - swing * 1.5, -4.3 - Math.max(0, -climb) * 1.2, 3.6, 4.3, 1.5); ctx.fill(); ctx.stroke();
+  // 腕（奥→手前）
+  const arm = (sx, a, dirSign) => {
+    const L = 5.4, ex = sx + dirSign * L * Math.sin(a), ey = -8.2 + L * Math.cos(a);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(70,66,58,0.6)'; ctx.lineWidth = 3.1; ctx.beginPath(); ctx.moveTo(sx, -8.2); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.strokeStyle = SUIT; ctx.lineWidth = 2.3; ctx.beginPath(); ctx.moveTo(sx, -8.2); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.fillStyle = '#cfc9b8'; ctx.beginPath(); ctx.arc(ex, ey, 1.25, 0, TAU); ctx.fill();
+  };
+  arm(-3.4, armL, -1);
+  // 胴体
+  rr(ctx, -4.2, -10.4, 8.4, 7.4, 3); ctx.fillStyle = SUIT; ctx.fill(); ctx.strokeStyle = EDGE; ctx.lineWidth = 0.6; ctx.stroke();
+  rr(ctx, -1.9, -8.2, 3.8, 1.7, 0.8); ctx.fillStyle = 'rgba(99,216,201,0.85)'; ctx.fill();   // 胸の計器
+  arm(3.4, armR, 1);
+  // ヘルメット
+  ctx.fillStyle = '#F8F5EC'; ctx.strokeStyle = EDGE; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.arc(0, -14.6, 5.5, 0, TAU); ctx.fill(); ctx.stroke();
+  // バイザー
+  ctx.fillStyle = gLin(ctx, 'visor', 0, -18, 0, -11, [[0, '#2c5568'], [0.55, '#10222f'], [1, '#070d16']]);
+  ctx.beginPath(); ctx.ellipse(0.9, -14.7, 4.0, 3.3, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(99,216,201,0.45)'; ctx.lineWidth = 0.5; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.beginPath(); ctx.ellipse(-0.5, -16.2, 1.5, 0.85, -0.5, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(2.6, -12.9, 0.55, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+// 旗。(x,y)=地面の根元。t: 0..1 立てる進行
+function drawFlag(ctx, x, y, t, wave) {
+  t = Math.max(0, Math.min(1, t));
+  const h = 21 * t;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(236,230,216,0.9)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - h); ctx.stroke();
+  if (t > 0.6) {
+    ctx.fillStyle = '#F8F4EA'; ctx.beginPath(); ctx.arc(x, y - h - 0.6, 1.1, 0, TAU); ctx.fill();
+    const w = 11, s = (wave || 0) * 1.3;
+    ctx.fillStyle = P().warn;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.6, y - h + 0.5);
+    ctx.quadraticCurveTo(x + w * 0.5, y - h + 0.5 - s, x + w, y - h + 0.5 + s * 0.5);
+    ctx.lineTo(x + w, y - h + 7.5 + s * 0.5);
+    ctx.quadraticCurveTo(x + w * 0.5, y - h + 7.5 - s, x + 0.6, y - h + 7.5);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(x + 3.2, y - h + 4, 1, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+// 祝福エフェクト: 小さな星とハート（象牙/琥珀）
+function drawCelebFx(ctx, x, y, fx) {
+  if (!fx) return;
+  const p = P();
+  const u = Math.max(0, Math.min(1, fx.u));
+  const n = Math.max(1, fx.n | 0);
+  ctx.save();
+  ctx.globalAlpha = Math.pow(1 - u, 1.3);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + 0.4;
+    const r = 9 + 30 * u;
+    const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r - 12 * u;
+    if (i % 3 === 2) {                       // ハート
+      const s = 2.6;
+      ctx.fillStyle = p.warn;
+      ctx.beginPath();
+      ctx.moveTo(px, py + s * 0.9);
+      ctx.bezierCurveTo(px - s * 1.6, py - s * 0.2, px - s * 0.7, py - s * 1.3, px, py - s * 0.45);
+      ctx.bezierCurveTo(px + s * 0.7, py - s * 1.3, px + s * 1.6, py - s * 0.2, px, py + s * 0.9);
+      ctx.fill();
+    } else {                                 // 4点の星
+      const s = (i % 2 ? 3.4 : 2.6) * (1 - 0.3 * u);
+      ctx.fillStyle = i % 2 ? p.fg : p.hi;
+      ctx.beginPath();
+      ctx.moveTo(px, py - s); ctx.quadraticCurveTo(px, py, px + s, py);
+      ctx.quadraticCurveTo(px, py, px, py + s); ctx.quadraticCurveTo(px, py, px - s, py);
+      ctx.quadraticCurveTo(px, py, px, py - s); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+// 爆発の粒子: 象牙→琥珀→赤（危険）へ減衰
+function drawParticles(ctx, parts) {
+  if (!parts || !parts.length) return;
+  const p = P();
+  ctx.save();
+  for (let i = 0; i < parts.length; i++) {
+    const q = parts[i];
+    const u = Math.max(0, Math.min(1, q.life / (q.max || 1.7)));
+    ctx.globalAlpha = Math.min(1, u * 1.6);
+    ctx.fillStyle = u > 0.62 ? p.hi : u > 0.3 ? p.warn : p.bad;
+    ctx.beginPath(); ctx.arc(q.x, q.y, 0.8 + u * 2.6, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawShieldRing(ctx, x, y, flash, ready) {
+  const p = P();
+  ctx.save();
+  ctx.globalAlpha = flash > 0 ? Math.min(1, flash * 2) : 0.32;
+  ctx.strokeStyle = flash > 0 ? p.hi : p.mid;
+  ctx.lineWidth = flash > 0 ? 2.5 : 1;
+  ctx.beginPath(); ctx.arc(x, y, 23, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
+  const p = P();
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineWidth = 1;
+  if (hit) {
+    ctx.globalAlpha = 0.85; ctx.strokeStyle = p.fg;
+    ctx.beginPath(); ctx.moveTo(px - 5, py - 5); ctx.lineTo(px + 5, py + 5); ctx.moveTo(px + 5, py - 5); ctx.lineTo(px - 5, py + 5); ctx.stroke();
+  }
+  ctx.globalAlpha = 0.7; ctx.strokeStyle = p.warn; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + vx * 1.5, y + vy * 1.5); ctx.stroke();
+  ctx.setLineDash(DASH_NONE);
+  ctx.restore();
+}
+
+// ================================================================ HUD
+// h: { stage, bodyName, atmoTag, realG, bonus, total, high, fuel(0..1), continues, modDefs, mods, debug, play,
+//      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t }
+function sevColor(s) { const p = P(); return s === 2 ? p.bad : s === 1 ? p.warn : null; }
+function drawHUD(ctx, h) {
+  const p = P();
+  const t = h.t || 0;
+  // 行A: ステージ/天体名 と スコア
+  txt(ctx, (h.bonus ? 'BONUS  ·  ' : '') + 'STAGE ' + h.stage, 52, 8, 8, h.bonus ? p.warn : p.dim, 'left', { sp: 2.5, w: 500 });
+  txt(ctx, h.bodyName, 52, 19, 15, p.fg, 'left', { sp: 4, w: 300 });
+  num(ctx, h.total, AW - 12, 7, 20, p.fg, { w: 200 });
+  txt(ctx, 'BEST ' + (h.high || 0), AW - 12, 31, 8, p.dim, 'right', { sp: 2, w: 500 });
+  // 行B: 燃料 / 残機 / モジュール
+  const fr = Math.max(0, Math.min(1, h.fuel));
+  const fcol = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
+  const lowPulse = fr <= 0.15 && fr > 0 ? 0.65 + 0.35 * Math.sin(t * 7) : 1;
+  icoFuel(ctx, 59, 52, 5.2, fcol);
+  ctx.save();
+  rr(ctx, 72, 50.5, 100, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+  if (fr > 0) { ctx.globalAlpha = lowPulse; rr(ctx, 72, 50.5, Math.max(3, 100 * fr), 3, 1.5); ctx.fillStyle = fcol; ctx.fill(); }
+  ctx.restore();
+  const nIcons = Math.min(h.continues || 0, 3);
+  for (let i = 0; i < nIcons; i++) icoShipMini(ctx, 192 + i * 14, 52, 0.9, p.fg);
+  if ((h.continues || 0) > 3) txt(ctx, '×' + h.continues, 192 + 3 * 14 - 4, 47, 9, p.fg, 'left', { w: 500 });
+  let mk = 0;
+  for (let i = 0; i < h.modDefs.length; i++) {
+    const d = h.modDefs[i], lv = h.mods[d.id] || 0;
+    if (!lv) continue;
+    const cx = AW - 20 - 20 * mk;
+    drawModuleGlyph(ctx, d.id, cx, 52, 5.6, p.warn);
+    if (d.max > 1) for (let k = 0; k < lv; k++) { ctx.fillStyle = p.warn; ctx.fillRect(cx - 3.5 + k * 4, 60, 3, 1.4); }
+    mk++;
+  }
+  if (h.debug) txt(ctx, 'DEBUG', 178, 8, 8, p.warn, 'left', { sp: 2.5, w: 500 });
+  if (!h.play) return;
+  // 行C: 計測（ヘアライン枠）
+  ctx.save();
+  rr(ctx, 8, 64, AW - 16, 22, 11); ctx.strokeStyle = rgba(p.fg, 0.13); ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+  const cells = 4, cw = (AW - 16) / cells;
+  for (let i = 1; i < cells; i++) hair(ctx, 8 + cw * i, 69, 8 + cw * i, 81, p.fg, 0.10);
+  const cell = (i, ico, sev, value) => {
+    const x0 = 8 + cw * i, c = sevColor(sev);
+    ico(ctx, x0 + 17, 75, 5, c || p.mid);
+    num(ctx, value, x0 + cw - 20, 68, 13, c || p.fg, { w: 300 });
+  };
+  cell(0, icoDown, h.sVy, Math.round(h.vy));
+  cell(1, icoSide, h.sVx, Math.round(h.vx));
+  cell(2, (c, x, y, s, col) => icoAngle(c, x, y, s, col, h.ang), h.sAng, Math.round(h.ang) + '°');
+  cell(3, icoSpin, h.sOm, Math.round(h.om));
+  // 行D: 風
+  if (h.wind) {
+    const wa = h.windAccel || 0, dir = wa >= 0 ? 1 : -1;
+    const len = Math.min(34, 8 + Math.abs(wa) * 60);
+    txt(ctx, 'WIND', 14, 92, 8, p.dim, 'left', { sp: 2.5, w: 500 });
+    icoWind(ctx, 78, 96, len, dir, p.mid);
+  }
+}
+
+// ================================================================ 操作ボタン（下部バー）
+// 入力ゾーンは game.js の定数（x<120 / 120..240 / >240）のまま。見た目だけピルに。
+function rotArrow(ctx, cx, cy, r, cw) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (!cw) ctx.scale(-1, 1);
+  ctx.beginPath(); ctx.arc(0, 0, r, -2.5, 0.85, false); ctx.stroke();
+  const e = 0.85, ex = Math.cos(e) * r, ey = Math.sin(e) * r;
+  const tx = -Math.sin(e), ty = Math.cos(e), nx = Math.cos(e), ny = Math.sin(e);
+  ctx.beginPath();
+  ctx.moveTo(ex - tx * 4.2 + nx * 3.4, ey - ty * 4.2 + ny * 3.4); ctx.lineTo(ex + tx * 0.8, ey + ty * 0.8); ctx.lineTo(ex - tx * 4.2 - nx * 3.4, ey - ty * 4.2 - ny * 3.4);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawControls(ctx, left, mid, right) {
+  const p = P();
+  ctx.save();
+  // 下部の薄いベール（地形の上でもボタンを読めるように）
+  ctx.fillStyle = gLin(ctx, 'ctlVeil', 0, ART_BTN_Y - 20, 0, AH, [[0, 'rgba(6,8,14,0)'], [0.3, 'rgba(6,8,14,0.55)'], [1, 'rgba(6,8,14,0.9)']]);
+  ctx.fillRect(0, ART_BTN_Y - 20, AW, 100);
+  const flags = [left, mid, right];
+  for (let i = 0; i < 3; i++) {
+    const on = flags[i];
+    const bx = i * 120 + 12, by = ART_BTN_Y + 10, bw = 96, bh = 56;
+    const accent = i === 1 ? p.warn : p.fg;
+    rr(ctx, bx, by, bw, bh, 22);
+    ctx.fillStyle = on ? rgba(accent, i === 1 ? 0.20 : 0.15) : rgba(p.fg, 0.045);
+    ctx.fill();
+    ctx.lineWidth = on ? 1.4 : 1;
+    ctx.strokeStyle = on ? rgba(accent, 0.8) : rgba(p.fg, 0.2);
+    ctx.stroke();
+    const cx = bx + bw / 2, cy = by + bh / 2;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 2;
+    ctx.strokeStyle = on ? accent : rgba(p.fg, 0.62);
+    if (i === 1) {
+      ctx.beginPath(); ctx.moveTo(cx, cy + 9); ctx.lineTo(cx, cy - 9);
+      ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 7, cy - 2); ctx.stroke();
+      ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else {
+      rotArrow(ctx, cx, cy, 11, i === 0);   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)
+    }
+  }
+  ctx.restore();
+}
+
+// BACKボタン（engine から呼ぶ）: ヘアラインの円 + シェブロン
+function drawBackButton(ctx, b) {
+  const p = P();
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, 15, 0, TAU);
+  ctx.fillStyle = rgba('#06080E', 0.45); ctx.fill();
+  ctx.strokeStyle = rgba(p.fg, 0.32); ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = rgba(p.fg, 0.85); ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(cx + 2.5, cy - 5.5); ctx.lineTo(cx - 2.5, cy); ctx.lineTo(cx + 2.5, cy + 5.5); ctx.stroke();
+  ctx.restore();
+}
+
+// ================================================================ バナー
+function drawIntro(ctx, name, line1, line2, alpha) {
+  const p = P();
+  const a = Math.max(0, Math.min(1, alpha));
+  txt(ctx, name, AW / 2, 112, 26, p.hi, 'center', { sp: 10, w: 200, a, sh: 1 });
+  txt(ctx, line1, AW / 2, 148, 9, p.fg, 'center', { sp: 3, w: 400, a: a * 0.85, sh: 1 });
+  if (line2) txt(ctx, line2, AW / 2, 163, 9, p.warn, 'center', { sp: 3, w: 500, a: a * 0.85, sh: 1 });
+}
+function drawBonusBanner(ctx, kind, alpha) {
+  const p = P();
+  const a = Math.max(0, Math.min(1, alpha));
+  txt(ctx, 'BONUS MISSION', AW / 2, 122, 9, p.warn, 'center', { sp: 5, w: 500, a, sh: 1 });
+  txt(ctx, kind, AW / 2, 138, 20, p.hi, 'center', { sp: 6, w: 200, a, sh: 1 });
+}
+function drawTouchdown(ctx) {
+  txt(ctx, 'TOUCHDOWN', AW / 2, 100, 12, P().fg, 'center', { sp: 6, w: 300, sh: 1 });
+}
+
+// ================================================================ オーバーレイ
+function veil(ctx, a) { ctx.save(); ctx.fillStyle = rgba('#06080E', a); ctx.fillRect(0, 0, AW, AH); ctx.restore(); }
+
+// ステージクリア（パネル位置は game.js の _clearPanelRect: 着陸シーンと重ならない）
+function drawClearPanel(ctx, r, d) {
+  const p = P();
+  const cx = r.x + r.w / 2;
+  panel(ctx, r.x, r.y, r.w, r.h, { a: 0.88 });
+  const accent = d.bonus ? p.warn : p.mid;
+  txt(ctx, d.bonus ? 'BONUS CLEAR' : 'STAGE CLEAR', cx, r.y + 16, 10, accent, 'center', { sp: 5, w: 500 });
+  txt(ctx, d.sub, cx, r.y + 33, 10, d.perfect ? p.warn : p.dim, 'center', { sp: 2.5, w: 400 });
+  txt(ctx, d.bonus ? 'BONUS SCORE' : 'STAGE SCORE', cx, r.y + 56, 8, p.dim, 'center', { sp: 3, w: 500 });
+  txt(ctx, '+' + d.score, cx, r.y + 68, 38, p.hi, 'center', { w: 200 });
+  hair(ctx, r.x + 24, r.y + 118, r.x + r.w - 24, r.y + 118, p.fg, 0.14);
+  const cols = d.cols, cwid = (r.w - 48) / cols.length;
+  for (let i = 0; i < cols.length; i++) {
+    const x = r.x + 24 + cwid * (i + 0.5);
+    txt(ctx, cols[i][0], x, r.y + 130, 8, p.dim, 'center', { sp: 2.5, w: 500 });
+    txt(ctx, cols[i][1], x, r.y + 144, 17, cols[i][2] || p.fg, 'center', { w: 300 });
+  }
+  hair(ctx, r.x + 24, r.y + 176, r.x + r.w - 24, r.y + 176, p.fg, 0.14);
+  txt(ctx, d.next, cx, r.y + 190, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
+}
+function drawCrashPanel(ctx, d) {
+  const p = P();
+  const cx = AW / 2, cy = AH / 2;
+  panel(ctx, 20, cy - 100, AW - 40, 196, { a: 0.9, border: p.bad, ba: 0.30 });
+  txt(ctx, 'CRASHED', cx, cy - 84, 24, p.bad, 'center', { sp: 8, w: 300 });
+  txt(ctx, d.reason, cx, cy - 48, 10, p.warn, 'center', { sp: 3, w: 500 });
+  txt(ctx, 'SCORE', cx, cy - 26, 8, p.dim, 'center', { sp: 3, w: 500 });
+  num(ctx, d.score, cx + numWidth(d.score, 18) / 2, cy - 14, 18, p.fg, { w: 300 });
+  pill(ctx, cx - 112, cy + 14, 224, 32, rgba(p.fg, 0.10), rgba(p.fg, 0.28));
+  txt(ctx, 'TAP TO CONTINUE  ·  ' + d.left + ' LEFT', cx, cy + 24, 10, p.hi, 'center', { sp: 2, w: 500 });
+  const g = d.giveUp;
+  pill(ctx, g.x, g.y, g.w, g.h, null, rgba(p.fg, 0.2));
+  txt(ctx, 'GIVE UP', g.x + g.w / 2, g.y + 11, 9, p.dim, 'center', { sp: 3, w: 500 });
+}
+function drawBonusFailedPanel(ctx, d) {
+  const p = P();
+  const cx = AW / 2, cy = AH / 2;
+  panel(ctx, 20, cy - 90, AW - 40, 170, { a: 0.9, border: p.warn, ba: 0.28 });
+  txt(ctx, 'BONUS FAILED', cx, cy - 72, 20, p.warn, 'center', { sp: 6, w: 300 });
+  txt(ctx, d.reason, cx, cy - 36, 10, p.fg, 'center', { sp: 3, w: 500 });
+  txt(ctx, 'NO CONTINUE USED', cx, cy - 16, 8, p.dim, 'center', { sp: 3, w: 500 });
+  pill(ctx, cx - 100, cy + 16, 200, 32, rgba(p.fg, 0.10), rgba(p.fg, 0.28));
+  txt(ctx, 'TAP  ·  STAGE ' + d.next, cx, cy + 26, 10, p.hi, 'center', { sp: 3, w: 500 });
+}
+function drawModuleCards(ctx, d) {
+  const p = P();
+  veil(ctx, 0.8);
+  txt(ctx, 'CHOOSE A MODULE', AW / 2, 92, 16, p.hi, 'center', { sp: 6, w: 300 });
+  txt(ctx, d.sub, AW / 2, 122, 8, p.dim, 'center', { sp: 3, w: 500 });
+  for (let i = 0; i < d.cards.length; i++) {
+    const c = d.cards[i], r = c.rect;
+    panel(ctx, r.x, r.y, r.w, r.h, { a: 0.78, border: p.mid, ba: 0.22 });
+    ctx.save();
+    ctx.beginPath(); ctx.arc(r.x + 40, r.y + 38, 22, 0, TAU);
+    ctx.strokeStyle = rgba(p.warn, 0.5); ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+    drawModuleGlyph(ctx, c.id, r.x + 40, r.y + 38, 10, p.warn);
+    txt(ctx, c.name, r.x + 76, r.y + 22, 14, p.hi, 'left', { sp: 3, w: 400 });
+    txt(ctx, c.level, r.x + 76, r.y + 44, 9, p.mid, 'left', { sp: 2.5, w: 500 });
+    hair(ctx, r.x + 20, r.y + 76, r.x + r.w - 20, r.y + 76, p.fg, 0.12);
+    txt(ctx, c.desc, r.x + 20, r.y + 90, 10, p.fg, 'left', { sp: 1.2, w: 400, a: 0.85 });
+    txt(ctx, 'TAP TO TAKE', r.x + r.w / 2, r.y + r.h - 28, 8, p.dim, 'center', { sp: 4, w: 500 });
+  }
+}
+function drawGameOverFrame(ctx, d) {
+  const p = P();
+  const cx = AW / 2;
+  veil(ctx, 0.55);
+  panel(ctx, 20, 60, AW - 40, 520, { a: 0.84 });
+  txt(ctx, 'GAME OVER', cx, 76, 22, p.fg, 'center', { sp: 8, w: 300 });
+  txt(ctx, 'SCORE  ' + d.score + '   ·   STAGE ' + d.stage, cx, 108, 10, p.fg, 'center', { sp: 2.5, w: 400 });
+  if (d.debugRun) txt(ctx, 'DEBUG RUN  ·  NOT RECORDED', cx, 126, 9, p.warn, 'center', { sp: 3, w: 500 });
+  else txt(ctx, d.newRecord ? 'NEW RECORD' : 'RANKING', cx, 126, 9, d.newRecord ? p.warn : p.mid, 'center', { sp: 5, w: 500 });
+}
+function drawGameOverFooter(ctx) {
+  txt(ctx, 'TAP  ·  TITLE', AW / 2, 546, 10, P().fg, 'center', { sp: 4, w: 500, a: 0.8 });
+}
+function drawDebugPanel(ctx, title, subtitle, buttons) {
+  const p = P();
+  panel(ctx, 20, 70, AW - 40, 470, { a: 0.88, border: p.warn, ba: 0.3 });
+  txt(ctx, title, AW / 2, 80, 14, p.warn, 'center', { sp: 6, w: 500 });
+  txt(ctx, subtitle, AW / 2, 98, 9, p.mid, 'center', { sp: 2.5, w: 400 });
+  for (let i = 0; i < buttons.length; i++) {
+    const b = buttons[i];
+    pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.05), rgba(p.fg, 0.22));
+    txt(ctx, b.label, b.x + b.w / 2, b.y + 12, 10, p.fg, 'center', { sp: 1.5, w: 400 });
+  }
+}
+function drawDebugTag(ctx, b) {
+  const p = P();
+  pill(ctx, b.x, b.y, b.w, b.h, rgba('#06080E', 0.5), rgba(p.warn, 0.55));
+  txt(ctx, 'DBG', b.x + b.w / 2, b.y + 3.5, 8, p.warn, 'center', { sp: 1.5, w: 500 });
+}
+
+
+// ---- 02_src/music.js ----
+// 生成音楽 + 効果音（P2m）。WebAudioのみで合成、素材ファイル・既存旋律の引用なし。
+// 方針: 2001/ソラリス/ブレードランナー的な気配だけを狙い、控えめ（音楽バス約-18dBFS）。
+// ctx は engine.audio.ctx（最初のタップ後に生成）を遅延取得。無い間は全メソッドが no-op。
+// 全ヘルパー名は _mus 接頭辞（バンドルは同一スコープに連結されるため）。
+
+const _MUS_MUSIC_LEVEL = 0.125;   // ≒ -18 dBFS
+const _MUS_SFX_LEVEL = 0.32;      // ≒ -10 dBFS（音楽より少し大きい）
+const _MUS_MAX_MUSIC_VOICES = 14; // 一過性の音楽ボイス上限（ベル/パルス等）
+const _MUS_MAX_SFX_VOICES = 10;   // 効果音ボイス上限
+const _MUS_LOOKAHEAD = 0.6;       // 先読み秒
+const _MUS_XFADE = 2;             // 天体切替クロスフェード秒
+
+const _musS = {
+  audio: null, ctx: null, muted: false,
+  master: null, musicBus: null, sfxBus: null, noise: null,
+  voices: [],   // 一過性ボイス {nodes, end, kind}
+  scenes: [],   // 稼働中/フェードアウト中のシーン
+  cur: null, curId: null,
+};
+
+const _musHas = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(_musSCENES, id);
+const _musRand = (a, b) => a + Math.random() * (b - a);
+const _musPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const _musHz = (root, semis) => root * Math.pow(2, semis / 12);
+
+function _musEnsure() {
+  const a = _musS.audio;
+  const ctx = a && a.ctx;
+  if (!ctx) return false;
+  if (_musS.ctx === ctx) return true;
+  // 新しいctx（または初回）: グラフを作り直す
+  _musS.ctx = ctx; _musS.voices = []; _musS.scenes = []; _musS.cur = null; _musS.curId = null;
+  const master = ctx.createGain();
+  master.gain.value = _musS.muted ? 0 : 1;
+  master.connect(ctx.destination);
+  const mb = ctx.createGain(); mb.gain.value = _MUS_MUSIC_LEVEL; mb.connect(master);
+  const sb = ctx.createGain(); sb.gain.value = _MUS_SFX_LEVEL; sb.connect(master);
+  _musS.master = master; _musS.musicBus = mb; _musS.sfxBus = sb;
+  // ノイズバッファは1本を全員で共有（2秒、ループ再生）
+  const len = Math.max(1, Math.floor(ctx.sampleRate * 2));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  _musS.noise = buf;
+  return true;
+}
+
+function _musDisconnect(nodes) {
+  for (const n of nodes) {
+    try { if (n.stop && n._musStarted) n.stop(); } catch (e) { /* 停止済み */ }
+    try { n.disconnect(); } catch (e) { /* 切断済み */ }
+  }
+}
+
+// 一過性ボイスを登録。上限超過なら false（呼び出し側は生成済みノードを捨てる）
+function _musCanVoice(kind) {
+  const cap = kind === 's' ? _MUS_MAX_SFX_VOICES : _MUS_MAX_MUSIC_VOICES;
+  let n = 0;
+  for (const v of _musS.voices) if (v.kind === kind) n++;
+  return n < cap;
+}
+function _musReg(kind, nodes, end) { _musS.voices.push({ kind, nodes, end }); }
+
+function _musOsc(type, freq, t0, t1, detune) {
+  const o = _musS.ctx.createOscillator();
+  o.type = type; o.frequency.value = freq;
+  if (detune) o.detune.value = detune;
+  o.start(t0); o._musStarted = true;
+  if (t1 != null) o.stop(t1);
+  return o;
+}
+
+function _musNoiseSrc(t0, t1) {
+  const s = _musS.ctx.createBufferSource();
+  s.buffer = _musS.noise; s.loop = true;
+  s.start(t0); s._musStarted = true;
+  if (t1 != null) s.stop(t1);
+  return s;
+}
+
+// 掃除: 終了時刻を過ぎたボイスを切断し、フェード済みシーンを破棄
+function _musSweep() {
+  const ctx = _musS.ctx; if (!ctx) return;
+  const now = ctx.currentTime;
+  if (_musS.voices.length) {
+    const keep = [];
+    for (const v of _musS.voices) { if (v.end <= now) _musDisconnect(v.nodes); else keep.push(v); }
+    _musS.voices = keep;
+  }
+  if (_musS.scenes.length) {
+    const keep = [];
+    for (const sc of _musS.scenes) {
+      if (sc.killAt != null && sc.killAt <= now) _musDisconnect(sc.nodes); else keep.push(sc);
+    }
+    _musS.scenes = keep;
+  }
+}
+
+// ---- 音色部品 ----
+
+// ベル: 基音 + 非整数倍音。env は指数減衰。dest（シーン入力）とdelay送りへ接続
+function _musBell(sc, t, f, dur, vel, ratio, tri) {
+  if (!_musCanVoice('m')) return;
+  const ctx = _musS.ctx;
+  const end = t + dur + 0.1;
+  const o1 = _musOsc(tri ? 'triangle' : 'sine', f, t, end);
+  const o2 = _musOsc('sine', f * ratio, t, end);
+  const g2 = ctx.createGain(); g2.gain.value = 0.3;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(vel, t + 0.012);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o1.connect(env); o2.connect(g2); g2.connect(env);
+  env.connect(sc.bus);
+  if (sc.send) env.connect(sc.send);
+  _musReg('m', [o1, o2, g2, env], end);
+}
+
+// ゆっくり動くLFO → AudioParam
+function _musLfo(sc, rate, depth, param) {
+  const ctx = _musS.ctx;
+  const l = _musOsc('sine', rate, ctx.currentTime);
+  const g = ctx.createGain(); g.gain.value = depth;
+  l.connect(g); g.connect(param);
+  sc.nodes.push(l, g);
+  return l;
+}
+
+// 持続ドローン: 複数オシレータ → ローパス → 出力
+function _musDrone(sc, spec) {
+  const ctx = _musS.ctx; const now = ctx.currentTime;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = spec.lp; lp.Q.value = spec.q || 0.7;
+  const g = ctx.createGain(); g.gain.value = spec.gain;
+  lp.connect(g);
+  let tail = g;
+  if (spec.drive) { // ウェーブシェイパで歪ませる（金星）
+    const ws = ctx.createWaveShaper();
+    const n = 256, c = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * spec.drive); }
+    ws.curve = c;
+    g.connect(ws); tail = ws;
+    sc.nodes.push(ws);
+  }
+  tail.connect(sc.bus);
+  sc.nodes.push(lp, g);
+  spec.osc.forEach((o) => {
+    const osc = _musOsc(o.type, o.f, now, null, o.det || 0);
+    osc.connect(lp); sc.nodes.push(osc);
+  });
+  if (spec.lfoRate) _musLfo(sc, spec.lfoRate, spec.lfoDepth, lp.frequency);
+  if (spec.swellRate) _musLfo(sc, spec.swellRate, spec.swellDepth, g.gain);
+  return { lp, g };
+}
+
+// 帯域フィルタ付きノイズ（風・空気）
+function _musAir(sc, type, freq, q, gain, gustRate, gustDepth, gainGust) {
+  const ctx = _musS.ctx; const now = ctx.currentTime;
+  const src = _musNoiseSrc(now, null);
+  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = ctx.createGain(); g.gain.value = gain;
+  src.connect(f); f.connect(g); g.connect(sc.bus);
+  sc.nodes.push(src, f, g);
+  if (gustRate) _musLfo(sc, gustRate, gustDepth, f.frequency);
+  if (gainGust) _musLfo(sc, gustRate || 0.05, gainGust, g.gain);
+  return { f, g };
+}
+
+// フィードバックディレイ（空間感）
+function _musDelay(sc, time, fb, wet) {
+  const ctx = _musS.ctx;
+  const send = ctx.createGain(); send.gain.value = 1;
+  const d = ctx.createDelay(2); d.delayTime.value = time;
+  const f = ctx.createGain(); f.gain.value = fb;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  const w = ctx.createGain(); w.gain.value = wet;
+  send.connect(d); d.connect(lp); lp.connect(f); f.connect(d); lp.connect(w); w.connect(sc.bus);
+  sc.send = send;
+  sc.nodes.push(send, d, f, lp, w);
+}
+
+// ---- シーン定義 ----
+// 各シーン: build(sc) で持続ノードを作り、step(t, sc) で一過性ノートを予約し次までの秒数を返す。
+const _musPENT = [0, 2, 4, 7, 9];      // 長調ペンタ
+const _musMINP = [0, 3, 5, 7, 10];     // 短調ペンタ
+
+const _musSCENES = {
+  title: {
+    build(sc) {
+      _musDelay(sc, 0.52, 0.5, 0.55);
+      _musDrone(sc, { osc: [{ type: 'sawtooth', f: 55, det: -6 }, { type: 'sawtooth', f: 55, det: 7 }, { type: 'triangle', f: 110 }],
+        lp: 420, gain: 0.5, lfoRate: 0.045, lfoDepth: 260 });
+    },
+    step(t, sc) {
+      const deg = _musPick(_musPENT) + _musPick([12, 24, 24, 36]);
+      _musBell(sc, t, _musHz(110, deg), 3.2, 0.2, 2.76);
+      if (Math.random() < 0.25) _musBell(sc, t + 0.35, _musHz(110, _musPick(_musPENT) + 24), 3, 0.12, 2.76);
+      return _musRand(2.6, 5.5);
+    },
+  },
+  moon: {
+    build(sc) {
+      _musDelay(sc, 0.7, 0.45, 0.4);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 73.4 }, { type: 'sine', f: 73.4, det: 5 }], lp: 300, gain: 0.12 });
+      _musAir(sc, 'bandpass', 900, 0.5, 0.012, 0.03, 300);
+    },
+    step(t, sc) {
+      _musBell(sc, t, _musHz(293.7, _musPick(_musPENT) + _musPick([0, 12])), 4, 0.1, 2.76);
+      return _musRand(8, 16);
+    },
+  },
+  europa: {
+    build(sc) {
+      _musDelay(sc, 0.38, 0.55, 0.6);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 92.5 }, { type: 'sine', f: 138.6, det: 4 }], lp: 600, gain: 0.1 });
+      _musAir(sc, 'highpass', 6000, 0.7, 0.008);
+    },
+    step(t, sc) {
+      const f = _musHz(739.99, _musPick([0, 3, 5, 7, 10]) + _musPick([0, 12]));
+      _musBell(sc, t, f, 2.4, 0.13, 3.5);
+      if (Math.random() < 0.4) _musBell(sc, t + 0.18, f * 1.5, 2, 0.07, 3.5);
+      return _musRand(1.8, 4.5);
+    },
+  },
+  io: {
+    build(sc) {
+      sc.beat = 0;
+      _musDrone(sc, { osc: [{ type: 'sine', f: 41.2 }, { type: 'triangle', f: 41.2, det: 8 }], lp: 160, gain: 0.25 });
+      sc.rumbleAt = -1;
+    },
+    step(t, sc) {
+      // 低いサブパルス（16分刻みの間引きパターン）
+      const pat = [1, 0, 0, 1, 0, 1, 0, 0];
+      const hit = pat[sc.beat % pat.length]; sc.beat++;
+      if (hit && _musCanVoice('m')) {
+        const ctx = _musS.ctx; const end = t + 0.45;
+        const o = _musOsc('sine', 62, t, end);
+        o.frequency.setValueAtTime(62, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.25);
+        const env = ctx.createGain();
+        env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(0.6, t + 0.015);
+        env.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+        o.connect(env); env.connect(sc.bus);
+        _musReg('m', [o, env], end);
+      }
+      if (sc.rumbleAt < 0) sc.rumbleAt = t + _musRand(8, 20);
+      if (t >= sc.rumbleAt && _musCanVoice('m')) {
+        const ctx = _musS.ctx; const dur = 2.6; const end = t + dur + 0.1;
+        const src = _musNoiseSrc(t, end);
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 130;
+        const env = ctx.createGain();
+        env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(0.5, t + 0.8);
+        env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        src.connect(lp); lp.connect(env); env.connect(sc.bus);
+        _musReg('m', [src, lp, env], end);
+        sc.rumbleAt = t + _musRand(10, 24);
+      }
+      return 0.5;
+    },
+  },
+  mars: {
+    build(sc) {
+      _musAir(sc, 'bandpass', 420, 0.9, 0.35, 0.07, 220, 0.2);
+      _musDrone(sc, { osc: [{ type: 'sawtooth', f: 49, det: -5 }, { type: 'sawtooth', f: 49.5, det: 6 }], lp: 180, gain: 0.3, lfoRate: 0.05, lfoDepth: 60 });
+    },
+    step() { return 5; }, // 持続音のみ
+  },
+  titan: {
+    build(sc) {
+      _musDrone(sc, { osc: [{ type: 'sawtooth', f: 32.7, det: -9 }, { type: 'sawtooth', f: 32.7, det: 8 }, { type: 'square', f: 49, det: 3 }],
+        lp: 130, q: 1.2, gain: 0.55, lfoRate: 0.03, lfoDepth: 60 });
+      _musAir(sc, 'lowpass', 220, 0.6, 0.18, 0.02, 60);
+    },
+    step(t, sc) {
+      if (Math.random() < 0.5) _musBell(sc, t, _musHz(65.4, _musPick([0, 3, 7, 10])), 5, 0.22, 2, true);
+      return _musRand(7, 13);
+    },
+  },
+  venus: {
+    build(sc) {
+      // 歪みの度合いを、ゲインのゆっくりしたうねりで変える（スウェル）
+      _musDrone(sc, { osc: [{ type: 'sawtooth', f: 43.65, det: -10 }, { type: 'sawtooth', f: 43.65, det: 9 }, { type: 'square', f: 21.8 }],
+        lp: 240, q: 1.5, gain: 0.7, drive: 3.5, swellRate: 0.06, swellDepth: 0.35, lfoRate: 0.04, lfoDepth: 90 });
+    },
+    step() { return 5; },
+  },
+};
+
+function _musStartScene(id, fade) {
+  const ctx = _musS.ctx; const now = ctx.currentTime;
+  const def = _musSCENES[id];
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(1, now + fade);
+  gain.connect(_musS.musicBus);
+  const sc = { id, bus: gain, send: null, nodes: [gain], next: now + 0.2, killAt: null };
+  def.build(sc);
+  _musS.scenes.push(sc);
+  return sc;
+}
+
+function _musFadeOut(sc, fade) {
+  const ctx = _musS.ctx; const now = ctx.currentTime;
+  sc.bus.gain.cancelScheduledValues(now);
+  sc.bus.gain.setValueAtTime(sc.bus.gain.value, now);
+  sc.bus.gain.linearRampToValueAtTime(0, now + fade);
+  sc.killAt = now + fade + 0.2;
+  sc.next = Infinity;
+  for (const n of sc.nodes) { try { if (n.stop && n._musStarted) n.stop(sc.killAt); } catch (e) { /* 既に予約済み */ } }
+}
+
+function _musSwitch(id, fade) {
+  if (!_musEnsure()) return;
+  _musSweep();
+  if (!_musHas(id)) id = 'moon';
+  if (_musS.cur && _musS.curId === id && _musS.cur.killAt == null) return;
+  if (_musS.cur) _musFadeOut(_musS.cur, fade);
+  _musS.cur = _musStartScene(id, fade);
+  _musS.curId = id;
+}
+
+const Music = {
+  attach(engineAudio) { _musS.audio = engineAudio || null; },
+
+  setMuted(m) {
+    _musS.muted = !!m;
+    if (!_musEnsure()) return;
+    const ctx = _musS.ctx; const p = _musS.master.gain; const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    p.setTargetAtTime(_musS.muted ? 0 : 1, now, 0.04);
+  },
+  isMuted() { return _musS.muted; },
+
+  playTitle() { _musSwitch('title', _MUS_XFADE); },
+  playBody(bodyId) { _musSwitch(_musHas(bodyId) && bodyId !== 'title' ? bodyId : 'moon', _MUS_XFADE); },
+
+  stopAll(fadeSec = 1) {
+    if (!_musS.ctx || !_musEnsure()) return;
+    const f = Math.max(0.05, +fadeSec || 0);
+    for (const sc of _musS.scenes) if (sc.killAt == null) _musFadeOut(sc, f);
+    _musS.cur = null; _musS.curId = null;
+  },
+
+  tick(dt) {
+    if (!_musEnsure()) return;
+    _musSweep();
+    const now = _musS.ctx.currentTime;
+    const sc = _musS.cur;
+    if (!sc || sc.killAt != null) return;
+    if (sc.next < now) sc.next = now; // タブ休止後などの遅れは詰め直す
+    let guard = 8;
+    while (sc.next < now + _MUS_LOOKAHEAD && guard-- > 0) {
+      const iv = _musSCENES[sc.id].step(sc.next, sc);
+      sc.next += Math.max(0.05, iv);
+    }
+  },
+
+  // テスト用: 現在の稼働数
+  _debug() {
+    let persistent = 0;
+    for (const sc of _musS.scenes) persistent += sc.nodes.length;
+    return { voices: _musS.voices.length, scenes: _musS.scenes.length, persistentNodes: persistent, cur: _musS.curId };
+  },
+
+  sfx: {
+    landing() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.01;
+      [0, 4, 7].forEach((s, i) => _musSfxTone('sine', _musHz(523.25, s), t + i * 0.16, 0.9, 0.5, 2.0));
+    },
+    crash() {
+      if (!_musSfxReady()) return;
+      const ctx = _musS.ctx; const t = ctx.currentTime + 0.005; const end = t + 1.0;
+      const o = _musOsc('sine', 110, t, end);
+      o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.5);
+      const e1 = ctx.createGain();
+      e1.gain.setValueAtTime(0.0001, t); e1.gain.linearRampToValueAtTime(1, t + 0.008);
+      e1.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+      o.connect(e1); e1.connect(_musS.sfxBus);
+      const src = _musNoiseSrc(t, end);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(3000, t); lp.frequency.exponentialRampToValueAtTime(200, t + 0.6);
+      const e2 = ctx.createGain();
+      e2.gain.setValueAtTime(0.0001, t); e2.gain.linearRampToValueAtTime(0.7, t + 0.005);
+      e2.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      src.connect(lp); lp.connect(e2); e2.connect(_musS.sfxBus);
+      _musReg('s', [o, e1, src, lp, e2], end + 0.1);
+    },
+    module() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.01;
+      [0, 4, 7, 12, 16].forEach((s, i) => _musSfxTone('triangle', _musHz(659.25, s), t + i * 0.065, 0.35, 0.4, 2.0));
+    },
+    launch() {
+      if (!_musSfxReady()) return;
+      const ctx = _musS.ctx; const t = ctx.currentTime + 0.01; const dur = 3; const end = t + dur + 0.2;
+      const src = _musNoiseSrc(t, end);
+      const bp = ctx.createBiquadFilter(); bp.type = 'lowpass'; bp.Q.value = 1.2;
+      bp.frequency.setValueAtTime(120, t); bp.frequency.exponentialRampToValueAtTime(2500, t + dur);
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(0.9, t + 1.8);
+      env.gain.linearRampToValueAtTime(0.0001, t + dur + 0.15);
+      src.connect(bp); bp.connect(env); env.connect(_musS.sfxBus);
+      const o = _musOsc('sine', 40, t, end);
+      o.frequency.exponentialRampToValueAtTime(95, t + dur);
+      const e2 = ctx.createGain();
+      e2.gain.setValueAtTime(0.0001, t); e2.gain.linearRampToValueAtTime(0.6, t + 1.2);
+      e2.gain.linearRampToValueAtTime(0.0001, t + dur + 0.15);
+      o.connect(e2); e2.connect(_musS.sfxBus);
+      _musReg('s', [src, bp, env, o, e2], end + 0.1);
+    },
+    uiTap() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.001;
+      _musSfxTone('sine', 1800, t, 0.035, 0.25, 0);
+    },
+  },
+};
+
+function _musSfxReady() {
+  if (!_musEnsure()) return false;
+  if (_musS.audio && _musS.audio.enabled === false) return false;
+  _musSweep();
+  return _musCanVoice('s');
+}
+
+// 効果音の単音（サイン/三角 + 任意の倍音）
+function _musSfxTone(type, f, t, dur, vel, ratio) {
+  if (!_musCanVoice('s')) return;
+  const ctx = _musS.ctx; const end = t + dur + 0.05;
+  const o = _musOsc(type, f, t, end);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(vel, t + 0.006);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(env); env.connect(_musS.sfxBus);
+  const nodes = [o, env];
+  if (ratio) {
+    const o2 = _musOsc('sine', f * ratio, t, end);
+    const g2 = ctx.createGain(); g2.gain.value = 0.25;
+    o2.connect(g2); g2.connect(env); nodes.push(o2, g2);
+  }
+  _musReg('s', nodes, end);
 }
 
 
@@ -1929,29 +3532,15 @@ class Game extends Scene {
   }
 
   _drawDebugPanel(ctx) {
-    const p = P();
-    ctx.save(); ctx.globalAlpha = 0.93;
-    this.engine.rect(20, 70, W - 40, 470, p.dark);
-    ctx.restore();
-    this.engine.stroke(20, 70, W - 40, 470, p.warn, 2);
-    this.engine.text('DEBUG', W / 2, 78, 18, p.warn, 'center');
-    this.engine.text('ST.' + this.stage + ' ' + (this._body ? this._body.name : '') + (this.bonus ? ' BONUS' : ''), W / 2, 98, 11, p.mid, 'center');
-    for (const b of this._dbgButtons()) {
-      this.engine.stroke(b.x, b.y, b.w, b.h, p.mid, 1.5);
-      this.engine.text(b.label, b.x + b.w / 2, b.y + 10, 13, p.fg, 'center');
-    }
+    drawDebugPanel(ctx, 'DEBUG', 'ST.' + this.stage + '  ' + (this._body ? this._body.name : '') + (this.bonus ? '  BONUS' : ''), this._dbgButtons());
   }
 
+  // ---- シーン描画（見た目は art.js。ここは「何をどの順で描くか」だけ）----
   _renderScene(ctx) {
-    const p = P();
+    const t = this._clock || 0;
+    const body = this._body;
 
-    // Stars
-    if (this.stars) {
-      for (const s of this.stars) {
-        ctx.fillStyle = s.r > 1 ? p.dim : p.dark;
-        ctx.fillRect(s.x, s.y, s.r, s.r);
-      }
-    }
+    if (body) drawBackdrop(ctx, body, t, this.stars);
 
     // Descent trajectory guide (常に描画)
     this._drawGuide(ctx);
@@ -1959,52 +3548,12 @@ class Game extends Scene {
     // Floating obstacles (stages 2+)
     this._drawObstacles(ctx);
 
-    // Terrain
-    if (this.terrainPts && this.terrainPts.length > 0) {
-      ctx.fillStyle = p.dark;
-      ctx.beginPath();
-      ctx.moveTo(0, H);
-      for (const pt of this.terrainPts) ctx.lineTo(pt.x, pt.y);
-      ctx.lineTo(W, H);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = p.dim;
-      ctx.lineWidth   = 2;
-      ctx.beginPath();
-      for (let i = 0; i < this.terrainPts.length; i++) {
-        const pt = this.terrainPts[i];
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else         ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
-    }
-
-    // Landing pad
-    if (this.pad) {
-      const pd = this.pad;
-      ctx.fillStyle = p.fg;
-      ctx.fillRect(pd.x, pd.y, pd.w, 4);
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(pd.x,            pd.y, 4, 10);
-      ctx.fillRect(pd.x + pd.w - 4, pd.y, 4, 10);
-      // Flag pole
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(pd.x + pd.w / 2 - 1, pd.y - 22, 2, 22);
-      ctx.fillStyle = p.warn;
-      ctx.fillRect(pd.x + pd.w / 2 + 1, pd.y - 20, 12, 9);
-      this.engine.text('PAD', pd.x + pd.w / 2, pd.y - 38, 10, p.mid, 'center');
-    }
+    // Terrain + landing pad
+    if (body && this.terrainPts && this.terrainPts.length > 0) drawTerrain(ctx, body, this.terrainPts, this.pad, t);
+    if (this.pad) drawPad(ctx, this.pad, t);
 
     // Explosion particles
-    if (this.particles) {
-      for (const pt of this.particles) {
-        const t = Math.max(0, Math.min(1, pt.life / (pt.max || 1.7)));
-        ctx.fillStyle = t > 0.5 ? p.warn : p.bad;
-        const r = Math.max(1, Math.round(t * 4));
-        ctx.fillRect(pt.x - r / 2, pt.y - r / 2, r, r);
-      }
-    }
+    drawParticles(ctx, this.particles);
 
     // RADAR: 予測着地点と速度ベクトル
     if (this.state === 'play' && this._lvl('radar') > 0) this._drawRadar(ctx);
@@ -2016,12 +3565,7 @@ class Game extends Scene {
 
     // SHIELD: 準備完了のリング / 吸収時のフラッシュ
     if (this.state === 'play' && this._lvl('shield') > 0 && (this._shieldReady || this._shieldFlash > 0)) {
-      ctx.save();
-      ctx.globalAlpha = this._shieldFlash > 0 ? Math.min(1, this._shieldFlash * 2) : 0.35;
-      ctx.strokeStyle = this._shieldFlash > 0 ? p.hi : p.mid;
-      ctx.lineWidth = this._shieldFlash > 0 ? 4 : 1.5;
-      ctx.beginPath(); ctx.arc(this.x, this.y, 22, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
+      drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady);
     }
 
     // Landing sequence (astronaut scene)。クリア画面中も祝福を続けるため、シーンは cleared でも描く（パネルは重ならない位置）
@@ -2037,22 +3581,13 @@ class Game extends Scene {
     this._drawHUD(ctx);
 
     // 天体の紹介バナー（天体の最初のステージ）
-    if (this.state === 'play' && this._introT > 0 && this._body) {
-      const parts = introText(this._body).split(' \u00b7 ');
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(1, this._introT * 2));
-      this.engine.text(parts.slice(0, 2).join(' \u00b7 '), W / 2, 118, 15, p.hi, 'center');
-      if (parts.length > 2) this.engine.text(parts.slice(2).join(' \u00b7 '), W / 2, 138, 11, p.warn, 'center');
-      ctx.restore();
+    if (this.state === 'play' && this._introT > 0 && body) {
+      const parts = introText(body).split(' · ');
+      drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
 
     // Bonus mission banner
-    if (this.state === 'play' && this.bonus && this._bannerT > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(1, this._bannerT));
-      this.engine.text('BONUS MISSION: ' + this.bonus.type.replace('_', ' '), W / 2, 150, 16, p.warn, 'center');
-      ctx.restore();
-    }
+    if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, this.bonus.type.replace('_', ' '), this._bannerT);
 
     // Bottom button controls
     this._drawButtons(ctx);
@@ -2071,43 +3606,20 @@ class Game extends Scene {
     }
 
     // デバッグ: DBGボタン
-    if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) {
-      const b = this._dbgBtnRect();
-      this.engine.rect(b.x, b.y, b.w, b.h, p.dark);
-      this.engine.stroke(b.x, b.y, b.w, b.h, p.warn, 1);
-      this.engine.text('DBG', b.x + b.w / 2, b.y + 3, 10, p.warn, 'center');
-    }
+    if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
   }
 
   // ---- 大気: 砂塵 / 霧 ----
   _drawAtmosphere(ctx) {
     const b = this._body; if (!b) return;
     const v = b.visual || {};
-    if (v.haze) {
-      ctx.save(); ctx.globalAlpha = v.haze.alpha; ctx.fillStyle = v.haze.color; ctx.fillRect(0, 0, W, BTN_Y); ctx.restore();
-    }
-    if (b.visibility) {
-      const r = b.visibility;
-      const fog = v.fog || '#000000';
-      const grad = ctx.createRadialGradient(this.x, this.y, r * 0.55, this.x, this.y, r);
-      grad.addColorStop(0, hexA(fog, 0));
-      grad.addColorStop(1, hexA(fog, 0.94));
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, BTN_Y);
-    }
+    if (v.haze) drawHaze(ctx, v.haze.color, v.haze.alpha);
+    if (b.visibility) drawFog(ctx, v.fog || '#000000', this.x, this.y, b.visibility);
   }
 
   _drawBeacon(ctx) {
     if (!this.pad || this.state === 'module') return;
-    const p = P();
-    const on = Math.floor((this._clock || 0) * 2.5) % 2 === 0;
-    const bx = this.pad.x + this.pad.w / 2, by = this.pad.y - 5;
-    ctx.save();
-    ctx.globalAlpha = on ? 1 : 0.35;
-    ctx.fillStyle = p.bad;
-    ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2); ctx.fill();
-    if (on) { ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill(); }
-    ctx.restore();
+    drawBeacon(ctx, this.pad, this._clock || 0);
   }
 
   // ---- RADAR ----
@@ -2131,45 +3643,23 @@ class Game extends Scene {
   }
 
   _drawRadar(ctx) {
-    const p = P();
     const pr = this.predictLanding();
-    ctx.save();
-    ctx.strokeStyle = p.hi; ctx.fillStyle = p.hi; ctx.lineWidth = 1.5;
-    if (pr.hit) {   // 予測着地点: ×マーカー
-      ctx.globalAlpha = 0.9;
-      ctx.beginPath();
-      ctx.moveTo(pr.x - 6, pr.y - 6); ctx.lineTo(pr.x + 6, pr.y + 6);
-      ctx.moveTo(pr.x + 6, pr.y - 6); ctx.lineTo(pr.x - 6, pr.y + 6);
-      ctx.stroke();
-    }
-    // 速度ベクトル
-    const k = 1.5, ex = this.x + this.vx * k, ey = this.y + this.vy * k;
-    ctx.globalAlpha = 0.8; ctx.strokeStyle = p.warn;
-    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(ex, ey); ctx.stroke();
-    ctx.restore();
+    drawRadar(ctx, pr.hit, pr.x, pr.y, this.x, this.y, this.vx, this.vy);
   }
 
   // ---- モジュール選択 ----
   _drawModuleSelect(ctx) {
-    const p = P();
-    ctx.save(); ctx.globalAlpha = 0.9; this.engine.rect(0, 70, W, 440, p.bg); ctx.restore();
-    this.engine.text('CHOOSE A MODULE', W / 2, 96, 20, p.hi, 'center');
-    this.engine.text('ST.' + this.stage + ' COMPLETE', W / 2, 124, 11, p.dim, 'center');
+    const cards = [];
     for (let i = 0; i < this.offers.length; i++) {
       const d = moduleDef(this.offers[i]);
-      const r = this._moduleCardRect(i);
       const lv = this._lvl(d.id);
-      this.engine.rect(r.x, r.y, r.w, r.h, p.dark);
-      this.engine.stroke(r.x, r.y, r.w, r.h, p.mid, 2);
-      this.engine.text('[' + d.icon + ']', r.x + 30, r.y + 18, 28, p.warn, 'center');
-      this.engine.text(d.name, r.x + 60, r.y + 14, 18, p.hi, 'left');
-      this.engine.text(d.desc, r.x + 16, r.y + 62, 11, p.fg, 'left');
-      this.engine.text(d.max > 1 ? 'LV ' + lv + ' \u2192 ' + (lv + 1) + ' / ' + d.max : 'NEW', r.x + 16, r.y + 90, 13, p.mid, 'left');
-      this.engine.text('TAP TO TAKE', r.x + r.w / 2, r.y + r.h - 24, 12, p.dim, 'center');
+      cards.push({ id: d.id, name: d.name, desc: d.desc, rect: this._moduleCardRect(i),
+        level: d.max > 1 ? 'LV ' + lv + ' → ' + (lv + 1) + ' / ' + d.max : 'NEW' });
     }
+    drawModuleCards(ctx, { sub: 'STAGE ' + this.stage + ' COMPLETE', cards });
   }
 
-  // ---- Landing sequence (placeholder art; P2 replaces _drawAstronaut / _drawLandingFlag) ----
+  // ---- Landing sequence ----
   // 機体は upright(角度は update で0へ)・足元 y+16 が地面。ハッチは機体右側、ハシゴは機体右脚の内側。
   _landingGeometry() {
     const t  = this.landingSeq ? this.landingSeq.t : 0;
@@ -2190,26 +3680,11 @@ class Game extends Scene {
   }
 
   _drawLandingScene(ctx) {
-    const p = P();
     const g = this._landingGeometry();
     const { ph } = g;
-    // ハッチ（開閉）
-    const open = ph.name === 'hatch' ? ph.p : 1;
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(g.hatchX - 1, g.hatchY - 5, 3, 10);
-    ctx.strokeStyle = p.hi; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(g.hatchX + 2, g.hatchY - 5);
-    ctx.lineTo(g.hatchX + 2 + 6 * open, g.hatchY - 5 + 5 * (1 - open) - 2 * open);
-    ctx.stroke();
-    // ハシゴ（ハッチ開放後）
-    if (ph.name !== 'hatch') {
-      const gy = g.groundAt(g.ladderX);
-      ctx.strokeStyle = p.mid; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(g.ladderX - 2, g.hatchY + 6); ctx.lineTo(g.ladderX - 2, gy);
-      ctx.moveTo(g.ladderX + 2, g.hatchY + 6); ctx.lineTo(g.ladderX + 2, gy); ctx.stroke();
-      for (let y = g.hatchY + 9; y < gy; y += 4) { ctx.beginPath(); ctx.moveTo(g.ladderX - 2, y); ctx.lineTo(g.ladderX + 2, y); ctx.stroke(); }
-    }
+    // ハッチ（開閉）とハシゴ（ハッチ開放後）
+    drawHatch(ctx, g.hatchX, g.hatchY, ph.name === 'hatch' ? ph.p : 1);
+    if (ph.name !== 'hatch') drawLadder(ctx, g.ladderX, g.hatchY + 6, g.groundAt(g.ladderX));
     // 旗（planting 中〜）
     if (ph.name === 'flag' || ph.name === 'wave' || ph.name === 'done') {
       const ft = ph.name === 'flag' ? ph.p : 1;
@@ -2222,446 +3697,75 @@ class Game extends Scene {
       this._drawAstronaut(ctx, g.ax, g.ay, ph.name, g.t, pose);
       if (pose && pose.fx) this._drawCelebFx(ctx, g.ax + pose.dx, g.ay - pose.dy - 8, pose.fx);
     }
-    if (this.state === 'landing') this.engine.text('TOUCHDOWN!', W / 2, 100, 16, p.hi, 'center');
+    if (this.state === 'landing') drawTouchdown(ctx);
   }
 
-  // 宇宙飛行士（仮の簡易図形）。(x,y)=足元。phase: 'descend'|'walk'|'flag'|'wave'|'done'
-  // pose（任意）: { dy, dx, rot, armL, armR } — 祝福ループ用。P2はこのポーズ値で描き直す
-  _drawAstronaut(ctx, x, y, phase, t, pose) {
-    const p = P();
-    if (pose) {
-      const py = Math.max(40, y - pose.dy);   // 画面外に出ない
-      ctx.save();
-      ctx.translate(x + pose.dx, py - 6);
-      ctx.rotate(pose.rot);
-      ctx.translate(0, 6);
-      ctx.fillStyle = p.fg;
-      ctx.fillRect(-3, -8, 6, 6);
-      ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2);
-      ctx.beginPath(); ctx.arc(0, -11, 3.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = p.mid; ctx.fillRect(-1.5, -12, 3, 2);
-      ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5;
-      const L = 5;
-      ctx.beginPath();
-      ctx.moveTo(3, -7);  ctx.lineTo(3 + L * Math.sin(pose.armR), -7 + L * Math.cos(pose.armR));
-      ctx.moveTo(-3, -7); ctx.lineTo(-3 - L * Math.sin(pose.armL), -7 + L * Math.cos(pose.armL));
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
-    const bob = phase === 'walk' ? Math.sin(t * 24) * 1 : 0;
-    ctx.save();
-    ctx.translate(x, y + bob);
-    ctx.fillStyle = p.fg;
-    ctx.fillRect(-3, -8, 6, 6);            // 胴
-    ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2); // 脚
-    ctx.beginPath(); ctx.arc(0, -11, 3.5, 0, Math.PI * 2); ctx.fill(); // ヘルメット
-    ctx.fillStyle = p.mid; ctx.fillRect(-1.5, -12, 3, 2);               // バイザー
-    ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    if (phase === 'wave') {
-      const s = Math.sin(t * 12);
-      ctx.moveTo(3, -7); ctx.lineTo(6, -13 + s * 2);   // 手を振る
-    } else {
-      ctx.moveTo(3, -7); ctx.lineTo(5, -4);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // 旗（仮）。(x,y)=地面の根元。t: 0..1 立てる進行
-  // PERFECT着陸の祝福エフェクト（仮: 放射状の星）
-  _drawCelebFx(ctx, x, y, fx) {
-    const p = P();
-    ctx.save();
-    ctx.fillStyle = p.warn;
-    ctx.globalAlpha = Math.max(0, 1 - fx.u);
-    for (let i = 0; i < fx.n; i++) {
-      const a = (i / fx.n) * Math.PI * 2, r = 8 + 34 * fx.u;
-      ctx.fillRect(x + Math.cos(a) * r - 1.5, y + Math.sin(a) * r - 1.5, 3, 3);
-    }
-    ctx.restore();
-  }
-
-  _drawLandingFlag(ctx, x, y, t, wave) {
-    const p = P();
-    const h = 20 * Math.max(0, Math.min(1, t));
-    ctx.fillStyle = p.fg;
-    ctx.fillRect(x - 0.5, y - h, 1.5, h);
-    if (t > 0.6) {
-      ctx.fillStyle = p.warn;
-      ctx.fillRect(x + 1, y - h, 10 + (wave || 0) * 2, 7);
-    }
-  }
+  // 宇宙飛行士。(x,y)=足元。phase: 'descend'|'walk'|'flag'|'wave'|'done'。pose: celebrationPose の戻り値（任意）
+  _drawAstronaut(ctx, x, y, phase, t, pose) { drawAstronaut(ctx, x, y, phase, t, pose); }
+  // PERFECT着陸の祝福エフェクト（星とハート）
+  _drawCelebFx(ctx, x, y, fx) { drawCelebFx(ctx, x, y, fx); }
+  _drawLandingFlag(ctx, x, y, t, wave) { drawFlag(ctx, x, y, t, wave); }
 
   // ---- Floating obstacles ----
   _drawObstacles(ctx) {
     if (!this.obstacles || this.obstacles.length === 0) return;
-    const p = P();
-    for (const ob of this.obstacles) {
-      // Draw as a jagged rock/asteroid (octagon-ish)
-      ctx.save();
-      ctx.translate(ob.x, ob.y);
-      ctx.fillStyle   = p.dark;
-      ctx.strokeStyle = p.bad;
-      ctx.lineWidth   = 2;
-      ctx.beginPath();
-      const sides = 7;
-      for (let i = 0; i < sides; i++) {
-        // Slightly irregular radius for rock feel
-        const jitter = 0.75 + (((i * 37 + 13) % 7) / 7) * 0.5;
-        const angle  = (i / sides) * Math.PI * 2;
-        const rx     = Math.cos(angle) * ob.r * jitter;
-        const ry     = Math.sin(angle) * ob.r * jitter;
-        if (i === 0) ctx.moveTo(rx, ry);
-        else         ctx.lineTo(rx, ry);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      // Small warning highlight
-      ctx.fillStyle   = p.warn;
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
-      ctx.fillRect(-2, -2, 4, 4);
-      ctx.globalAlpha = 1;
-      ctx.restore();
-    }
+    drawObstacles(ctx, this.obstacles, this._clock || 0, this._body);
   }
 
   // ---- Descent trajectory guide ----
-  // 常に描画: 誘導線は常にはっきり見えるようにする。
-  // ON COURSE時: 明るく太く、機体周辺に円形マーカー＋上部テキスト表示＋パルス点滅。
-  // OFF COURSE時: dim色で細いが消えない（0.55 alpha）。
+  // 常に描画（OFF COURSE は薄く、ON COURSE は明るく脈動）。
   _drawGuide(ctx) {
-    const p   = P();
     const pts = this.guidePts;
     if (!pts || pts.length < 2) return;
-
-    const dist     = (this.state === 'play')
-      ? this._distToGuide(this.x, this.y)
-      : Infinity;
+    const dist     = (this.state === 'play') ? this._distToGuide(this.x, this.y) : Infinity;
     const onCourse = (dist <= GUIDE_THRESHOLD);
-
-    // ON COURSEパルス: sin波で輝度を変調（1Hzで点滅）
-    // _onCoursePulseはupdateで加算され、sin計算で[0..1]の輝度係数に変換
-    const pulse = onCourse
-      ? (0.7 + 0.3 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5))
-      : 1.0;
-
-    // ガイドライン描画（常に表示）
-    ctx.save();
-    if (onCourse) {
-      // ON COURSE: 明るく太い実線
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.85 * pulse));
-      ctx.strokeStyle = p.hi;
-      ctx.lineWidth   = 2.5;
-      ctx.setLineDash([6, 4]);
-    } else {
-      // OFF COURSE: 常に見える薄い点線（消えない）
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
-      ctx.strokeStyle = p.warn;
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([4, 8]);
-    }
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Diamond marker at target
-    const last = pts[pts.length - 1];
-    ctx.fillStyle   = onCourse ? p.hi : p.warn;
-    ctx.globalAlpha = Math.max(0, Math.min(1, onCourse ? 0.9 * pulse : 0.5));
-    ctx.beginPath();
-    ctx.moveTo(last.x,     last.y - 8);
-    ctx.lineTo(last.x + 7, last.y);
-    ctx.lineTo(last.x,     last.y + 8);
-    ctx.lineTo(last.x - 7, last.y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // ON COURSEポップインジケーター（機体周辺＋テキスト）
-    if (onCourse && this.state === 'play') {
-      this._drawOnCourseIndicator(ctx, pulse);
-    }
+    const pulse = onCourse ? (0.7 + 0.3 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5)) : 1.0;
+    drawGuide(ctx, pts, onCourse, pulse);
+    this._ocPulse = (onCourse && this.state === 'play') ? pulse : 0;   // ラベルはHUD層（霧の上）で描く
+    if (onCourse && this.state === 'play') this._drawOnCourseIndicator(ctx, pulse);
   }
 
-  // ---- ON COURSE pop indicator ----
-  // 機体周辺の明るいリング＋上部のテキストバナー。
-  // パルス点滅で「今乗っている」ことを明確に伝える。
   _drawOnCourseIndicator(ctx, pulse) {
     if (typeof pulse !== 'number') pulse = 1;
-    const p = P();
-
-    // 機体周囲のハローリング（スケールパルス）
-    const ringR = 22 + 4 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5);
-    ctx.save();
-    ctx.globalAlpha  = Math.max(0, Math.min(1, 0.6 * pulse));
-    ctx.strokeStyle  = p.hi;
-    ctx.lineWidth    = 2.5;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, ringR, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // 内側の小さなドット（中心確認マーカー）
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.8 * pulse));
-    ctx.fillStyle   = p.hi;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // 上部テキストバナー（HUDエリアの直下）
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, pulse));
-    this.engine.text('ON COURSE', W / 2, 72, 13, p.hi, 'center');
-    ctx.restore();
+    drawOnCourse(ctx, this.x, this.y, this._onCoursePulse || 0, pulse);
   }
 
-  // ---- Lander craft with 4 RCS nozzles ----
-  // Rotation math (ctx.rotate convention):
-  //   ctx.rotate(+rad) = clockwise (CW) on screen
-  //   ctx.rotate(-rad) = counter-clockwise (CCW) on screen
-  //
-  //   omega > 0 -> angle increases -> ctx.rotate(+rad) -> CW on screen (nose tilts RIGHT)
-  //   omega < 0 -> angle decreases -> ctx.rotate(-rad) -> CCW on screen (nose tilts LEFT)
-  //
-  //   LEFT  button -> omega += -> CW  (nose tilts right)   LEFT nozzle fires left -> reaction right
-  //   RIGHT button -> omega -= -> CCW (nose tilts left)   RIGHT nozzle fires right -> reaction left
-  //
-  // The FLAME is drawn on the FIRING nozzle side, consistent with actual exhaust direction.
+  // ---- Lander craft ----
+  // Rotation math (ctx.rotate convention): +rad = CW on screen. omega>0 -> angle増 -> 機首が右へ。
+  // 炎は発射側ノズルに描く（LEFTボタン=左ノズルが左へ噴射、RIGHTボタン=右ノズルが右へ噴射）。
   _drawLander(ctx, x, y, angleDeg) {
-    const p   = P();
     if (typeof x !== 'number' || typeof y !== 'number') return;
-    const rad = ((angleDeg || 0) * Math.PI / 180);
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rad);  // positive rad = CW on canvas; negative = CCW
-
-    // Main engine flame (bottom nozzle, fires downward in body space)
-    if (this._thrustMain && this.fuel > 0) {
-      const fl = 10 + Math.random() * 10;
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(-6, 9);
-      ctx.lineTo(0,  9 + fl);
-      ctx.lineTo(6,  9);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = p.hi;
-      ctx.beginPath();
-      ctx.moveTo(-3, 9);
-      ctx.lineTo(0,  9 + fl * 0.5);
-      ctx.lineTo(3,  9);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // Body
-    ctx.fillStyle   = p.mid;
-    ctx.fillRect(-8, -10, 16, 18);
-    ctx.strokeStyle = p.fg;
-    ctx.lineWidth   = 1.5;
-    ctx.strokeRect(-8, -10, 16, 18);
-
-    // Cabin window
-    ctx.fillStyle = p.hi;
-    ctx.fillRect(-4, -8, 8, 7);
-
-    // Left landing leg
-    ctx.strokeStyle = p.mid;
-    ctx.lineWidth   = 2;
-    ctx.beginPath(); ctx.moveTo(-7, 8);   ctx.lineTo(-14, 16); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-14, 16); ctx.lineTo(-18, 16); ctx.stroke();
-
-    // Right landing leg
-    ctx.beginPath(); ctx.moveTo(7, 8);    ctx.lineTo(14, 16);  ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(14, 16);  ctx.lineTo(18, 16);  ctx.stroke();
-
-    // Main engine nozzle (bottom center)
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(-5, 9, 10, 5);
-    ctx.strokeStyle = (this._thrustMain && this.fuel > 0) ? p.warn : p.dim;
-    ctx.lineWidth   = 1;
-    ctx.strokeRect(-5, 9, 10, 5);
-
-    // LEFT RCS nozzle (body left side, upper area)
-    // LEFT button fires LEFT nozzle to the LEFT. Reaction: nose goes RIGHT = CW = omega +.
-    // Flame jets LEFT from left nozzle.
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(-12, -6, 4, 4);
-    if (this._thrustRcsL && this.fuel > 0) {
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(-12, -4);
-      ctx.lineTo(-12 - (5 + Math.random() * 5), -2);
-      ctx.lineTo(-12, -6 + 1);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.strokeStyle = (this._thrustRcsL && this.fuel > 0) ? p.warn : p.dim;
-    ctx.lineWidth   = 0.8;
-    ctx.strokeRect(-12, -6, 4, 4);
-
-    // RIGHT RCS nozzle (body right side, upper area)
-    // RIGHT button fires RIGHT nozzle to the RIGHT. Reaction: nose goes LEFT = CCW = omega -.
-    // Flame jets RIGHT from right nozzle.
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(8, -6, 4, 4);
-    if (this._thrustRcsR && this.fuel > 0) {
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(12, -4);
-      ctx.lineTo(12 + (5 + Math.random() * 5), -2);
-      ctx.lineTo(12, -6 + 1);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.strokeStyle = (this._thrustRcsR && this.fuel > 0) ? p.warn : p.dim;
-    ctx.lineWidth   = 0.8;
-    ctx.strokeRect(8, -6, 4, 4);
-
-    // Top attitude nozzle (visual reference)
-    ctx.fillStyle   = p.dark;
-    ctx.fillRect(-3, -14, 6, 4);
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 0.8;
-    ctx.strokeRect(-3, -14, 6, 4);
-
-    ctx.restore();
+    const fuelOk = this.fuel > 0;
+    drawShip(ctx, x, y, angleDeg, !!(this._thrustMain && fuelOk), !!(this._thrustRcsL && fuelOk), !!(this._thrustRcsR && fuelOk), this._clock || 0);
   }
 
-  // ---- HUD (top area, x >= 52 to clear the BACK button) ----
+  // ---- HUD（データを集めて art.drawHUD に渡す。x>=52 は BACK ボタンを避ける）----
   _drawHUD(ctx) {
-    const p = P();
-
-    this.engine.text('LANDER', 52, 8, 16, p.fg, 'left');
-    this.engine.text('ST.' + this.stage + ' ' + (this._body ? this._body.name : '') + (this.bonus ? ' BONUS' : ''), 52, 26, 12, this.bonus ? p.warn : p.mid, 'left');
-    // 残り Continue（小さな機体アイコン）
-    const nIcons = Math.min(this.continues || 0, 3);
-    if ((this.continues || 0) > 3) this.engine.text('x' + this.continues, 206 + 3 * 14, 44, 10, p.mid, 'left');
-    for (let i = 0; i < nIcons; i++) {
-      const ix = 206 + i * 14;
-      this.engine.rect(ix, 45, 8, 9, p.mid);
-      this.engine.rect(ix + 2, 47, 4, 3, p.hi);
-      this.engine.rect(ix - 1, 54, 2, 2, p.mid); this.engine.rect(ix + 7, 54, 2, 2, p.mid);
-    }
-    this.engine.text('HI ' + (this.high || 0),      W - 8, 8,  12, p.dim, 'right');
-    this.engine.text('TOT ' + this.totalScore,       W - 8, 22, 12, p.mid, 'right');
-
-    // Fuel bar
-    const bx = 52, by = 44, bw = 110, bh = 10;
-    this.engine.rect(bx, by, bw, bh, p.dark);
-    const fr   = Math.max(0, Math.min(1, (this.fuel || 0) / this._fuelMax()));
-    const fclr = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
-    if (fr > 0) this.engine.rect(bx, by, Math.round(bw * fr), bh, fclr);
-    this.engine.stroke(bx, by, bw, bh, p.dim, 1);
-    this.engine.text('FUEL', bx + bw + 4, by, 10, p.dim, 'left');
-
-    // 天体情報（実重力・大気タグ）、モジュール、デバッグタグ
-    if (this._body) {
-      this.engine.text('g ' + this._body.realG.toFixed(2) + ' m/s\u00b2', 52, 70, 10, p.mid, 'left');
-      this.engine.text(this._body.atmoTag, 52, 82, 10, p.dim, 'left');
-    }
-    let mk = 0;
-    for (const d of MODULE_DEFS) {
-      const lv = this._lvl(d.id);
-      if (!lv) continue;
-      const mx = W - 8 - 22 * (mk + 1);
-      this.engine.rect(mx, 80, 20, 14, p.dark);
-      this.engine.stroke(mx, 80, 20, 14, p.mid, 1);
-      this.engine.text(d.icon + (d.max > 1 ? lv : ''), mx + 10, 82, 10, p.warn, 'center');
-      mk++;
-    }
-    if (isDebug()) this.engine.text('DEBUG', 52, 94, 10, p.warn, 'left');
-
-    if (this.state !== 'play') return;
-
-    // 風の矢印（風のある天体のみ）
-    if (this._windSpec) {
-      const wa = this._windAccel || 0;
-      const dir = wa >= 0 ? 1 : -1;
-      const len = Math.min(48, 6 + Math.abs(wa) * 60);
-      const ax = W / 2, ay = 100;
-      ctx.save();
-      ctx.strokeStyle = p.mid; ctx.fillStyle = p.mid; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(ax - dir * len / 2, ay); ctx.lineTo(ax + dir * len / 2, ay); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(ax + dir * len / 2, ay); ctx.lineTo(ax + dir * (len / 2 - 6), ay - 4); ctx.lineTo(ax + dir * (len / 2 - 6), ay + 4);
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-      this.engine.text('WIND', ax, ay + 6, 9, p.dim, 'center');
-    }
-
-    // Vertical speed
-    const vy    = this.vy || 0;
-    const vyclr = Math.abs(vy) <= this._safeVy() ? p.mid : Math.abs(vy) <= this._safeVy() * 1.6 ? p.warn : p.bad;
-    this.engine.text('VY ' + Math.round(vy), W - 8, 38, 11, vyclr, 'right');
-
-    // Horizontal speed
-    const vx    = this.vx || 0;
-    const vxclr = Math.abs(vx) <= SAFE_VX ? p.mid : Math.abs(vx) <= SAFE_VX * 2 ? p.warn : p.bad;
-    this.engine.text('VX ' + Math.round(vx), W - 8, 52, 11, vxclr, 'right');
-
-    // Angle
-    const ang    = this.angle || 0;
+    const h = this._hud || (this._hud = {});
+    const b = this._body;
+    h.stage = this.stage; h.bodyName = b ? b.name : ''; h.bonus = !!this.bonus;
+    h.total = this.totalScore; h.high = this.high || 0;
+    h.fuel = (this.fuel || 0) / this._fuelMax();
+    h.continues = this.continues || 0;
+    h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
+    h.debug = isDebug(); h.play = this.state === 'play';
+    h.t = this._clock || 0;
+    h.wind = !!this._windSpec; h.windAccel = this._windAccel || 0;
+    const vy = this.vy || 0, vx = this.vx || 0, ang = this.angle || 0, om = this.omega || 0;
     const absAng = Math.abs(((ang + 180) % 360 + 360) % 360 - 180);
-    const aclr   = absAng <= SAFE_ANGLE ? p.mid : absAng <= SAFE_ANGLE * 2 ? p.warn : p.bad;
-    this.engine.text('A ' + Math.round(ang) + '°', 52, 58, 11, aclr, 'left');
-
-    // Angular velocity
-    const om    = this.omega || 0;
-    const omclr = Math.abs(om) <= SAFE_OMEGA ? p.mid : Math.abs(om) <= SAFE_OMEGA * 2 ? p.warn : p.bad;
-    this.engine.text('ω ' + Math.round(om), W - 8, 66, 11, omclr, 'right');
+    h.vy = vy; h.vx = vx; h.ang = ang; h.om = om;
+    h.sVy  = Math.abs(vy) <= this._safeVy() ? 0 : Math.abs(vy) <= this._safeVy() * 1.6 ? 1 : 2;
+    h.sVx  = Math.abs(vx) <= SAFE_VX ? 0 : Math.abs(vx) <= SAFE_VX * 2 ? 1 : 2;
+    h.sAng = absAng <= SAFE_ANGLE ? 0 : absAng <= SAFE_ANGLE * 2 ? 1 : 2;
+    h.sOm  = Math.abs(om) <= SAFE_OMEGA ? 0 : Math.abs(om) <= SAFE_OMEGA * 2 ? 1 : 2;
+    drawHUD(ctx, h);
+    if (this._ocPulse > 0 && this.state === 'play') drawOnCourseLabel(ctx, this._ocPulse);
   }
 
-  // ---- Bottom button bar ----
-  // Label convention (reaction-thruster):
-  //   LEFT  button -> fires left nozzle -> nose tilts RIGHT (CW)
-  //   RIGHT button -> fires right nozzle -> nose tilts LEFT (CCW)
-  // Labels reflect the NOSE direction for clarity to the player.
+  // ---- Bottom button bar（入力ゾーンは update 側の ZONE_* のまま）----
+  // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)。見た目は機首の回転方向を示す。
   _drawButtons(ctx) {
-    const p = P();
-
-    const BW = 120;
-    const bY = BTN_Y;
-    const bH = BTN_H;
-
-    const drawBtn = (bx, label, sublabel, active) => {
-      ctx.fillStyle = active ? p.dim : p.dark;
-      ctx.fillRect(bx, bY, BW, bH);
-
-      ctx.strokeStyle = active ? p.hi : p.dim;
-      ctx.lineWidth   = active ? 2.5 : 1.5;
-      ctx.strokeRect(bx + 1, bY + 1, BW - 2, bH - 2);
-
-      if (active) {
-        ctx.fillStyle = p.hi;
-        ctx.globalAlpha = Math.max(0, Math.min(1, 0.25));
-        ctx.fillRect(bx + 2, bY + 2, BW - 4, 6);
-        ctx.globalAlpha = 1;
-      }
-
-      const labelColor = active ? p.hi : p.fg;
-      this.engine.text(label,    bx + BW / 2, bY + bH / 2 - 14, 13, labelColor, 'center');
-      if (sublabel) {
-        this.engine.text(sublabel, bx + BW / 2, bY + bH / 2 + 2,  10, active ? p.warn : p.dim, 'center');
-      }
-    };
-
-    // LEFT button: nose tilts right (CW)    RIGHT button: nose tilts left (CCW)
-    drawBtn(0,   '◄ TILT R',  'NOSE RIGHT', this._thrustRcsL);
-    drawBtn(120, 'THRUST',    null,          this._thrustMain);
-    drawBtn(240, 'TILT L ►', 'NOSE LEFT',  this._thrustRcsR);
-
-    // Dividers
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(120, bY); ctx.lineTo(120, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(240, bY); ctx.lineTo(240, H); ctx.stroke();
+    drawControls(ctx, this._thrustRcsL, this._thrustMain, this._thrustRcsR);
   }
 
   // ---- Stage Clear overlay ----
@@ -2669,98 +3773,36 @@ class Game extends Scene {
   _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 }; }
 
   _drawClearScreen(ctx) {
-    const p  = P();
-    const cx = W / 2;
-    const r  = this._clearPanelRect();
-    const y0 = r.y;
-    const b  = this.bonus;
-
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(r.x, r.y, r.w, r.h, p.dark);
-    this.engine.stroke(r.x, r.y, r.w, r.h, p.mid, 2);
-    ctx.restore();
-
-    if (b) {
-      this.engine.text('BONUS CLEAR!',                cx, y0 + 6, 22, p.warn, 'center');
-      this.engine.text(b.type.replace('_', ' '),      cx, y0 + 34, 12, p.mid, 'center');
-      this.engine.text('BONUS SCORE',                 cx, y0 + 54, 11, p.dim,  'center');
-      this.engine.text('+' + (this._bonusScore || 0), cx, y0 + 68, 20, p.fg,   'center');
-      if (this._bonusGrant) this.engine.text('+1 CONTINUE!', cx, y0 + 94, 12, p.hi, 'center');
-    } else {
-      this.engine.text('STAGE CLEAR!',                cx, y0 + 6, 22, p.hi,   'center');
-      this.engine.text('ST.' + this.stage + ' COMPLETE' + (this._perfect ? '  PERFECT!' : ''), cx, y0 + 34, 12, p.mid, 'center');
-      this.engine.text('STAGE SCORE',                 cx, y0 + 54, 11, p.dim,  'center');
-      this.engine.text('+' + (this._stageScore || 0), cx, y0 + 68, 20, p.fg,   'center');
-      this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, y0 + 94, 11, p.warn, 'center');
-    }
-
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(40, y0 + 112); ctx.lineTo(W - 40, y0 + 112); ctx.stroke();
-
-    this.engine.text('TOTAL ' + this.totalScore,    cx, y0 + 120, 20, p.hi,   'center');
-    this.engine.text('BEST ' + (this.high || 0),    cx, y0 + 148, 12, p.mid,  'center');
-
+    const b = this.bonus;
     let next;
-    if (b) next = 'TAP \u2192 STAGE ' + (this.stage + 1);
-    else if (this.stage % BONUS_EVERY === 0) next = 'TAP \u2192 BONUS MISSION';
-    else next = 'TAP \u2192 STAGE ' + (this.stage + 1);
-    this.engine.text(next, cx, y0 + 172, 14, p.fg,  'center');
-    this.engine.text('BACK \u2192 MENU', cx, y0 + 194, 10, p.dim, 'center');
+    if (b) next = 'TAP  ·  STAGE ' + (this.stage + 1);
+    else if (this.stage % BONUS_EVERY === 0) next = 'TAP  ·  BONUS MISSION';
+    else next = 'TAP  ·  STAGE ' + (this.stage + 1);
+    const cols = b
+      ? [['CONTINUE', this._bonusGrant ? '+1' : '–', this._bonusGrant ? P().mid : P().dim], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]]
+      : [['GUIDE BONUS', '+' + (this._guideBonus || 0)], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]];
+    drawClearPanel(ctx, this._clearPanelRect(), {
+      bonus: !!b, perfect: !!this._perfect,
+      sub: b ? b.type.replace('_', ' ') : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
+      score: (b ? this._bonusScore : this._stageScore) || 0, cols, next, t: this._clock || 0,
+    });
   }
 
   // ---- Crashed (continue available) ----
   _drawCrashed(ctx) {
-    const p  = P();
-    const cx = W / 2;
-    const cy = H / 2;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(20, cy - 100, W - 40, 190, p.dark);
-    this.engine.stroke(20, cy - 100, W - 40, 190, p.bad, 2);
-    ctx.restore();
-    this.engine.text('CRASHED',                       cx, cy - 86, 28, p.bad,  'center');
-    this.engine.text(this._crashReason || '',         cx, cy - 50, 13, p.warn, 'center');
-    this.engine.text('SCORE ' + this.totalScore,      cx, cy - 26, 14, p.fg,   'center');
-    this.engine.text('TAP: CONTINUE (' + this.continues + ' left)', cx, cy + 8, 15, p.hi, 'center');
-    const g = this._giveUpRect();
-    this.engine.stroke(g.x, g.y, g.w, g.h, p.dim, 1.5);
-    this.engine.text('GIVE UP', cx, g.y + 8, 13, p.dim, 'center');
+    drawCrashPanel(ctx, { reason: this._crashReason || '', score: this.totalScore, left: this.continues, giveUp: this._giveUpRect() });
   }
 
   // ---- Bonus failed (no continue consumed) ----
   _drawBonusFailed(ctx) {
-    const p  = P();
-    const cx = W / 2;
-    const cy = H / 2;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(20, cy - 90, W - 40, 170, p.dark);
-    this.engine.stroke(20, cy - 90, W - 40, 170, p.warn, 2);
-    ctx.restore();
-    this.engine.text('BONUS FAILED',                  cx, cy - 76, 26, p.warn, 'center');
-    this.engine.text(this._crashReason || '',         cx, cy - 42, 13, p.fg,   'center');
-    this.engine.text('NO CONTINUE USED',              cx, cy - 18, 12, p.dim,  'center');
-    this.engine.text('TAP → STAGE ' + (this.stage + 1), cx, cy + 20, 15, p.hi, 'center');
+    drawBonusFailedPanel(ctx, { reason: this._crashReason || '', next: this.stage + 1 });
   }
 
   // ---- Game Over: ranking（名前はプレイ前に入力済み）----
   _drawGameOver(ctx) {
-    const p  = P();
-    const cx = W / 2;
-
-    ctx.save();
-    ctx.globalAlpha = 0.95;
-    this.engine.rect(20, 60, W - 40, 520, p.dark);
-    this.engine.stroke(20, 60, W - 40, 520, p.mid, 2);
-    ctx.restore();
-    this.engine.text('GAME OVER',  cx, 70, 24, p.bad, 'center');
-    this.engine.text('SCORE ' + this.totalScore + '  ST.' + this.stage, cx, 102, 14, p.fg, 'center');
-    if (this._isDebugRun()) this.engine.text('DEBUG RUN - NOT RECORDED', cx, 122, 11, p.warn, 'center');
-    else this.engine.text(this.newIdx >= 0 ? 'NEW RECORD!' : 'RANKING', cx, 122, 14, this.newIdx >= 0 ? p.warn : p.hi, 'center');
+    drawGameOverFrame(ctx, { score: this.totalScore, stage: this.stage, debugRun: this._isDebugRun(), newRecord: this.newIdx >= 0 });
     drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
-    this.engine.text('TAP \u2192 TITLE', cx, 540, 14, p.fg, 'center');
+    drawGameOverFooter(ctx);
   }
 }
 

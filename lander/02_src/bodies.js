@@ -11,30 +11,30 @@ export const STAGES_PER_BODY = 2;
 export const BODIES = [
   { id: 'moon', celebTier: 0, name: 'MOON', atmoTag: 'NONE', realG: 1.62, atmoLabel: 'NONE', atmoType: 'none',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'rock',
-    visual: { sky: ['#05060d', '#0a0e1c'], ground: '#2a2d3a', rim: '#8a90a8', accent: '#c9ecff', fog: null, haze: null,
+    visual: { sky: ['#04050a', '#0b0f1a'], ground: '#4a4d58', rim: '#b4bac8', accent: '#c9ecff', fog: null, haze: null,
       skyObject: 'earth', mood: 'grey regolith, Earthrise' } },
   { id: 'europa', celebTier: 0, name: 'EUROPA', atmoTag: 'NONE', realG: 1.31, atmoLabel: 'NONE (TRACE)', atmoType: 'none',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'ice',
-    visual: { sky: ['#04060f', '#0c1428'], ground: '#cfe6f2', rim: '#ffffff', accent: '#7fd8ff', fog: null, haze: null,
+    visual: { sky: ['#04060e', '#0b1426'], ground: '#a9c2d2', rim: '#f2fbff', accent: '#7fd8ff', fog: null, haze: null,
       skyObject: 'jupiter', mood: 'cracked white ice, giant Jupiter overhead' } },
   { id: 'io', celebTier: 1, name: 'IO', atmoTag: 'TRACE', realG: 1.80, atmoLabel: 'TRACE SO₂', atmoType: 'trace',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'lava',
-    visual: { sky: ['#0a0508', '#241005'], ground: '#b58a1e', rim: '#ffd23f', accent: '#ff6a1a', fog: null, haze: null,
+    visual: { sky: ['#0a0507', '#2a1208'], ground: '#a98424', rim: '#ffd96a', accent: '#ff6a1a', fog: null, haze: null,
       skyObject: 'jupiter', mood: 'sulfur yellow plains, lava vents' } },
   { id: 'mars', celebTier: 1, name: 'MARS', atmoTag: 'THIN CO\u2082', realG: 3.71, atmoLabel: 'THIN CO₂', atmoType: 'thin',
     wind: { base: 0.08, gust: 0.3 }, drag: 0.05,   // P1.5調整: 仕様値 0.8/1.2 は 0/50 着陸（04_tests/p15.mjs・LOG参照）
        visibility: null, heat: null, obstacleStyle: 'rock',
-    visual: { sky: ['#3a1a10', '#c2703d'], ground: '#8a3b1e', rim: '#e08a55', accent: '#ffb27a',
+    visual: { sky: ['#43211a', '#d08a52'], ground: '#8a3b1e', rim: '#eaa070', accent: '#ffb27a',
       fog: null, haze: { color: '#c2703d', alpha: 0.22 }, skyObject: 'phobos', mood: 'rust dust, butterscotch sky, dust haze' } },
   { id: 'titan', celebTier: 2, name: 'TITAN', atmoTag: 'THICK N\u2082', realG: 1.35, atmoLabel: 'THICK N₂ 1.5 BAR', atmoType: 'thick',
     wind: { base: 0.06, gust: 0.12 }, drag: 0.35, dragY: 0.03,   // 調整: 仕様 風0.6/0.6・縦抗力0.35（終端降下速度 g/drag = 0.65px/s で降下に600秒）
        visibility: 150, heat: null, obstacleStyle: 'ice',
-    visual: { sky: ['#2b1a05', '#8a5a1a'], ground: '#3b2a14', rim: '#c98a2e', accent: '#ffc04a',
+    visual: { sky: ['#6a4514', '#946620'], ground: '#4a3519', rim: '#dca048', accent: '#ffc04a',
       fog: '#6b4510', haze: null, skyObject: 'saturn', mood: 'orange methane murk, thick haze' } },
   { id: 'venus', celebTier: 2, name: 'VENUS', atmoTag: 'EXTREME 460\u00b0C', realG: 8.87, atmoLabel: 'EXTREMELY THICK · 460°C', atmoType: 'extreme',
     wind: { base: 0.05, gust: 0.12 }, drag: 0.2, dragY: 0.045,   // 調整: 仕様 風0.4/0.5・抗力0.5（終端降下速度 1.2px/s）
        visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
-    visual: { sky: ['#3a1204', '#b8601a'], ground: '#2a1408', rim: '#ff7a1a', accent: '#ff9a3c',
+    visual: { sky: ['#7a3410', '#c26a1c'], ground: '#33180a', rim: '#ff8a2a', accent: '#ff9a3c',
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
 ];
 

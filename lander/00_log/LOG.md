@@ -2,6 +2,15 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 P2a — ビジュアル再設計（Sonnet 5.5）
+- **実施**: `art.js` に全描画プリミティブを実装（背景/天体/地形/パッド/誘導線/障害物/機体/宇宙飛行士/旗/祝福FX/粒子/HUD/操作バー/オーバーレイ/BACK）。game.js は描画部のみ置換（`_renderScene` 以降の `_draw*` を art 呼び出しに。物理・状態機械・タイミング・判定は無変更、`_drawAstronaut/_drawLander/_drawCelebFx/_drawLandingFlag` は薄いラッパとして残置）。palette.js を新ベースライン（#06080E / 象牙#ECE6D8 / ティール#63D8C9 / 琥珀#FFB547 / 赤#FF4A3D=危険のみ、キー名は互換維持）に。bodies.js は見た目トークンのみ調整（sky/ground/rim。ゲーム数値は不変）。engine.js は text()/_drawBack()/imageSmoothing のみ（フォントスタック `-apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani"`）。ranking.js は行/タブの描画のみ（ヘアライン区切り、行高 22→30）。style.css/index.html は色とフォントと名前入力DOM（!important上書き）。
+- **デザイン判断**: 静かな余白・2アクセントまで・スキャンライン/重いグローなし。グローは機体の炎とパッドのビーコン/誘導灯のみ。HUDはヘアライン枠＋ベクトルのピクトグラム（しずく/下矢印/左右矢印/実角度で傾くバー/円弧矢印/風=矢印+流線/残機=小さな船/モジュール=5種のグリフ）、数値は固定幅スロット（`num()`）でジッター無し、速度・角度は既存しきい値で象牙→琥珀→赤。機体=象牙のカプセル＋目のような大きな丸窓（ハイライト付き）＋ゆっくり点滅するアンテナ＋丸い足パッド、炎は白→琥珀のグラデ。宇宙飛行士=2頭身（バイザー反射・バックパック・胸の計器）、celebrationPose(dy,dx,rot,armL,armR,flagWave,fx)と着陸フェーズ(descend=ハシゴ/walk/flag/wave)を全て描画、FXは星とハート。地形=3層（奥2層は空色に寄せる空気遠近）＋稜線のリムライト、天体別の質感（月=クレーター/エウロパ=ひび/イオ=溶岩筋+脈動する噴出口/金星=亀裂）。空=月の地球（薄い大気縁）、木星（縞+大赤斑ヒント+周縁減光、HUD可読性のため減光）、土星（霞越し・環）、フォボス、金星の拡散太陽光。星は真空天体のみ・ゆっくり瞬く。霧(radial gradient 9段ストップ)・火星の霞は帯が出ない。障害物=rock(面ごと陰影)/ice(半透明シアン)/lava(暗い地殻+脈動する亀裂)、半径は当たり判定以内。静的な空と地形は画面外キャンバス(2x)に1回だけ描いてキャッシュ（`cachedLayer`）、グラデもキーでキャッシュ。
+- **操作バーの向き（要確認）**: 入力ゾーンは不変。左ボタン=機首が右(時計回り)・右ボタン=機首が左(反時計回り)という既存の表記に合わせ、ピクトグラムは「機首の回転方向」を示す（左ボタンに時計回り矢印）。「左ボタン=左回転の絵」にしたい場合は art.js `drawControls` の `rotArrow(…, i === 0)` を反転するだけ。
+- **テスト変更（理由付き）**: p15 の2か所（霧のradial gradient検出）を「最初のradial gradient」→「半径=visibility(150/110)のradial gradient」に変更。空/船のグラデもradialになり、旧検出法は実装詳細に依存していたため。意図（霧の半径・火星に霧なし・ビーコンが霧の後）は同じ。新規 `04_tests/p2a.mjs`（30件）: 全天体x全状態x周回x全ボーナス種のgame描画、全関数直接呼び、全celebrationPose/全着陸フェーズ、save/restore釣り合い、NaN/Infinity非混入、SAFE/BOUNCE値・重力・パッド式・LANDING_SEQ_S・各判定矩形（クリアパネル/GIVE UP/モジュールカード/DBG/デバッグボタン）・操作3ゾーン・パレットのスポットチェック。
+- **検証**: `node build.js`＋`node --check` OK。smoke 2/2、p1 104/104、p15 387/387、p2a 30/30（p2m 47/47 は別担当、通過を確認）。ブラウザ(390x700, ?debug)で目視: 月/エウロパ/イオ/火星/タイタン/金星の各プレイ画面、着陸シーケンス＋祝福＋クリアパネル(金星,PERFECT)、CRASHED、BONUS FAILED、モジュール2択、ゲームオーバーのランキング(10行)、HUD(通常/ボーナス/DEBUG)、主エンジン押下状態、名前入力DOM、AUTO LAND飛行。コンソールエラーなし（履歴に出る "Unexpected token 'export'" 2件は再読込後に増えず、バンドル自体は `new Function` で構文OK＝過去ロードの残り）。
+- **未確認/注意**: 実機iOS(SF Pro・ctx.letterSpacing対応差・60fps)は未確認（非対応環境は字間を手動描画するフォールバックあり、p2aで実行のみ確認）。タイトル画面(title.js)は未リデザイン（engine.textの新フォントで表示は崩れないが旧レイアウトのまま、次フェーズ）。2系統同時押しの見た目（左+推力）はスクリーンショットで未確認（単押しのみ）。RCS噴射と主炎の目視はMoon上の単押しのみ。ホットパスのメモリ/fpsは未計測。
+- **次**: P2b タイトル再設計、P3 第三者検証。push/commit は指示待ち。
+
 ## 2026-10-25 P1.5 — 天体ツアー・モジュール・世界ランキングnet・名前事前入力・デバッグ・祝福（Sonnet 5.5）
 - **実施**: (1) `bodies.js` 新規: 6天体データ（実重力・大気・見た目トークン sky/ground/rim/accent/fog/haze/skyObject/mood・obstacleStyle・celebTier）、`stageInfo`、重力=0.25*sqrt(realG/1.62)*(1+0.15*loop)、パッド幅/障害物数/速度の新式、風（2〜3正弦の突風＋符号ランダムの定常風、周回で x(1+0.3loop)）。旧ステージ毎+15%重力は撤廃。(2) game.js: 風・抗力・視界（放射グラデの霧。パッドのビーコンは霧の上に常時点滅）・金星の熱（受動-0.8/s、主エンジンx1.3）、火星の砂塵は視覚のみ(haze)。HUD: 天体名・実g・大気タグ・風矢印・モジュールアイコン。各天体の最初のステージに2秒の紹介バナー。(3) `modules.js` 新規＋game.js: FUEL TANK/STABILIZER/SHOCK ABSORBER/RADAR/SHIELD。ボーナス終了（成功/失敗とも）後・次ステージ前に 'module' 状態で2択（上限到達は除外、候補が1つなら1択、0なら省略）。永続（Continueで維持、新規ランでリセット）。blocksBack=true。(4) PRECISION x3 → x2。(5) `net.js` 新規: RELAY_URL='' で完全オフ、`__setRelayUrl`（テスト用）、submitScore/fetchWorldTop（5秒、AbortController＋競合タイマー、例外なし）。ranking.js に LOCAL/WORLD タブ（RELAY_URL設定時のみ。LOADING…/OFFLINE）、title.js のTOP10にも同タブ。build.js の FILES に bodies/modules/net/debug/autopilot を追加。
 - **追加スコープ A 名前事前入力**: タイトルで名前未設定なら START でHTML名前入力→確定後に開始。設定済みなら `PILOT: NAME` ＋ CHANGE。ゲームオーバーは名前入力なし（保存名、無ければ PILOT で自動記録→ランキングで強調）。世界送信も同名。DOMは document 無しでガード、テストフックは `TitleScene._submitName`。ゲーム側の名前DOM（_showNameDom/_submitName）は削除。
@@ -30,3 +39,10 @@
 - **判明した問題（コード根拠）**: B1 ポインタ解除漏れ（canvas外のmouseup・touchcancel未処理）で噴射が固着＝「浮遊して動かない」の主因。B1' パッド上での低速バウンス無限ループ。B2 パッドY(545-595)がボタン帯(560-640)と重なる。D1 難易度は重力・パッド幅も上がるがステージ8で頭打ち。詳細は `01_docs/PLAN.md` §2。
 - **判断**: MICRO ARCADE版は触らない（保持要件）。ランキングは静的配信の制約でローカル保存（PLAN §3）。オプションと難易度軸は提案に留めユーザー判断待ち（PLAN §6）。
 - **次**: P1（Sonnet）ゲームプレイ修正・機能 → P2（Sonnet）ビジュアル/音 → P3（Opus）第三者検証。push は指示待ち。
+
+## 2026-10-25 P2m — 生成音楽＋効果音（Sonnet 5.5）
+- **実施**: `02_src/music.js` を実装（API不変: attach/setMuted/isMuted/playTitle/playBody/stopAll/tick/sfx.*）。WebAudioのみ。音楽バス≒-18dBFS(0.125)、SFXバス0.32。ctxは`engineAudio.ctx`を遅延取得、無い間は全no-op（ミュートは先に保存し、ctx生成時に反映）。スケジューラはAudioContext時計＋0.6秒先読み（tick駆動、setInterval無し）。ノイズバッファは1本共有。
+- **天体別**: title=A基音の鋸歯3本ドローン(LPF+0.045Hz LFO)＋長調ペンタのベル＋フィードバックディレイ／moon=ほぼ無音（極小サイン＋微かな空気＋8〜16秒に1つの柔らかいベル）／europa=高音の硝子質ベル（倍音3.5）＋高域ノイズ、冷たく短いディレイ／io=低域サブパルス（間引き8拍）＋10〜24秒毎の低域ランブル／mars=帯域ノイズの風（ゆっくりした突風）＋低い鋸歯ドローン／titan=厚いローパス鋸歯ドローン＋ごく稀な低い三角波／venus=重低音＋ウェーブシェイパ歪み、0.06Hzのうねりで歪み量が増減。切替は2秒クロスフェード。未知ID・`__proto__`等はmoonへフォールバック。
+- **SFX**: landing=C-E-Gの上昇3音チャイム／crash=サイン低音(110→32Hz)＋ノイズバースト／module=三角波5音の速いアルペジオ／launch=ローパスノイズ120→2500Hz＋サブ上昇、約3秒／uiTap=1.8kHz 35msクリック。`engine.audio.enabled===false`ならSFXは無音。
+- **ボイス上限**: 一過性は音楽14＋SFX10＝最大24。持続ノードはシーン毎に約10〜14（クロスフェード中は2シーン分）。終了ノードはtick内のsweepでstop/disconnect。
+- **検証**: `node 04_tests/p2m.mjs` 47/47（偽AudioContext、120秒×7シーン、SFX連打、クロスフェード破棄、mute/unmute、ctx差し替え）、`node --check`、`node build.js`、smoke 2/2。**実際の音は未試聴**（音量バランス・音色の良否は実機/ブラウザで要確認）。フック（タイトル/ゲーム側の呼び出し・ミュートUI・永続化）はリーダー側。

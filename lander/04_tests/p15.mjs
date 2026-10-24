@@ -134,10 +134,10 @@ const MOONLIKE = [0, 1, 2];
   const spyCtx = new Proxy({}, { get: (t, k) => (k === 'createRadialGradient') ? (...a) => { calls.push(['grad', a]); return { addColorStop: noop }; }
     : (k === 'arc') ? (...a) => calls.push(['arc', a]) : (k === 'measureText' ? () => ({ width: 10 }) : noop), set: () => true });
   const { g: gt } = newGame(); gt.stage = 9; gt._initStage(); gt.render(spyCtx);
-  const gi = calls.findIndex(c => c[0] === 'grad');
+  const gi = calls.findIndex(c => c[0] === 'grad' && c[1][5] === 150);   // P2a: 空/船のグラデも radial なので、霧(半径=visibility)を半径で特定
   ok(gi >= 0 && calls[gi][1][5] === 150, 'titan fog radial gradient radius 150');
   ok(calls.slice(gi).some(c => c[0] === 'arc' && Math.abs(c[1][0] - (gt.pad.x + gt.pad.w / 2)) < 0.01), 'beacon drawn after fog on the pad');
-  const calls2 = []; const spy2 = new Proxy({}, { get: (t, k) => (k === 'createRadialGradient') ? () => { calls2.push(1); return { addColorStop: noop }; } : noop, set: () => true });
+  const calls2 = []; const spy2 = new Proxy({}, { get: (t, k) => (k === 'createRadialGradient') ? (...a) => { if (a[5] === 150 || a[5] === 110) calls2.push(1); return { addColorStop: noop }; } : noop, set: () => true });
   const { g: gm } = newGame(); gm.stage = 7; gm._initStage(); gm.render(spy2);
   ok(calls2.length === 0, 'mars has no fog gradient');
   // heat (venus)

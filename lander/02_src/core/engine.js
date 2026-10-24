@@ -3,6 +3,7 @@
 import { Audio } from './audio.js';
 import { Storage } from './storage.js';
 import { P } from './palette.js';
+import { txt, drawBackButton } from '../art.js';
 
 // 論理解像度（全ゲーム共通の座標系）。実際の表示はこれを拡大縮小する。
 export const W = 360;
@@ -57,7 +58,7 @@ export class Engine {
     this.canvas.width = Math.floor(W * this.scale * dpr);
     this.canvas.height = Math.floor(H * this.scale * dpr);
     this.ctx.setTransform(this.scale * dpr, 0, 0, this.scale * dpr, 0, 0);
-    this.ctx.imageSmoothingEnabled = false; // ドット絵をクッキリ
+    this.ctx.imageSmoothingEnabled = true; // P2a: 滑らかな描画（キャッシュ層の縮小に必要）
     this.offsetX = (vw - cssW) / 2;
     this.offsetY = (vh - cssH) / 2;
   }
@@ -218,23 +219,14 @@ export class Engine {
 
   // BACKボタン描画（左上・全ゲーム共通）
   _drawBack() {
-    const p = P();
-    const b = this.backBtn;
-    this.rect(b.x, b.y, b.w, b.h, p.dark);
-    this.stroke(b.x, b.y, b.w, b.h, p.dim, 2);
-    this.text('‹', b.x + b.w / 2, b.y + 4, 26, p.fg, 'center');
+    drawBackButton(this.ctx, this.backBtn);   // ヘアラインの円 + シェブロン（art.js）
   }
 
   // ---- 描画ヘルパー（各ゲームから利用）----
 
-  // ビットマップ風テキスト。align: 'left'|'center'|'right'
+  // テキスト（P2a: SF Pro / Helvetica Neue / Rajdhani のスタック、軽めのウェイト）。align: 'left'|'center'|'right'
   text(str, x, y, size = 16, color = null, align = 'left') {
-    const ctx = this.ctx;
-    ctx.fillStyle = color || P().mid;
-    ctx.font = `${size}px "Rajdhani", sans-serif`;
-    ctx.textAlign = align;
-    ctx.textBaseline = 'top';
-    ctx.fillText(str, x, y);
+    txt(this.ctx, str, x, y, size, color || P().mid, align);
   }
 
   // 角丸なしの矩形（塗り）

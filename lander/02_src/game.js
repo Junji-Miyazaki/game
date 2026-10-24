@@ -12,6 +12,7 @@ import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose } from './bodies.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
 import { relayEnabled, submitScore } from './net.js';
+import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -978,29 +979,15 @@ export class Game extends Scene {
   }
 
   _drawDebugPanel(ctx) {
-    const p = P();
-    ctx.save(); ctx.globalAlpha = 0.93;
-    this.engine.rect(20, 70, W - 40, 470, p.dark);
-    ctx.restore();
-    this.engine.stroke(20, 70, W - 40, 470, p.warn, 2);
-    this.engine.text('DEBUG', W / 2, 78, 18, p.warn, 'center');
-    this.engine.text('ST.' + this.stage + ' ' + (this._body ? this._body.name : '') + (this.bonus ? ' BONUS' : ''), W / 2, 98, 11, p.mid, 'center');
-    for (const b of this._dbgButtons()) {
-      this.engine.stroke(b.x, b.y, b.w, b.h, p.mid, 1.5);
-      this.engine.text(b.label, b.x + b.w / 2, b.y + 10, 13, p.fg, 'center');
-    }
+    drawDebugPanel(ctx, 'DEBUG', 'ST.' + this.stage + '  ' + (this._body ? this._body.name : '') + (this.bonus ? '  BONUS' : ''), this._dbgButtons());
   }
 
+  // ---- シーン描画（見た目は art.js。ここは「何をどの順で描くか」だけ）----
   _renderScene(ctx) {
-    const p = P();
+    const t = this._clock || 0;
+    const body = this._body;
 
-    // Stars
-    if (this.stars) {
-      for (const s of this.stars) {
-        ctx.fillStyle = s.r > 1 ? p.dim : p.dark;
-        ctx.fillRect(s.x, s.y, s.r, s.r);
-      }
-    }
+    if (body) drawBackdrop(ctx, body, t, this.stars);
 
     // Descent trajectory guide (常に描画)
     this._drawGuide(ctx);
@@ -1008,52 +995,12 @@ export class Game extends Scene {
     // Floating obstacles (stages 2+)
     this._drawObstacles(ctx);
 
-    // Terrain
-    if (this.terrainPts && this.terrainPts.length > 0) {
-      ctx.fillStyle = p.dark;
-      ctx.beginPath();
-      ctx.moveTo(0, H);
-      for (const pt of this.terrainPts) ctx.lineTo(pt.x, pt.y);
-      ctx.lineTo(W, H);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = p.dim;
-      ctx.lineWidth   = 2;
-      ctx.beginPath();
-      for (let i = 0; i < this.terrainPts.length; i++) {
-        const pt = this.terrainPts[i];
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else         ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
-    }
-
-    // Landing pad
-    if (this.pad) {
-      const pd = this.pad;
-      ctx.fillStyle = p.fg;
-      ctx.fillRect(pd.x, pd.y, pd.w, 4);
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(pd.x,            pd.y, 4, 10);
-      ctx.fillRect(pd.x + pd.w - 4, pd.y, 4, 10);
-      // Flag pole
-      ctx.fillStyle = p.mid;
-      ctx.fillRect(pd.x + pd.w / 2 - 1, pd.y - 22, 2, 22);
-      ctx.fillStyle = p.warn;
-      ctx.fillRect(pd.x + pd.w / 2 + 1, pd.y - 20, 12, 9);
-      this.engine.text('PAD', pd.x + pd.w / 2, pd.y - 38, 10, p.mid, 'center');
-    }
+    // Terrain + landing pad
+    if (body && this.terrainPts && this.terrainPts.length > 0) drawTerrain(ctx, body, this.terrainPts, this.pad, t);
+    if (this.pad) drawPad(ctx, this.pad, t);
 
     // Explosion particles
-    if (this.particles) {
-      for (const pt of this.particles) {
-        const t = Math.max(0, Math.min(1, pt.life / (pt.max || 1.7)));
-        ctx.fillStyle = t > 0.5 ? p.warn : p.bad;
-        const r = Math.max(1, Math.round(t * 4));
-        ctx.fillRect(pt.x - r / 2, pt.y - r / 2, r, r);
-      }
-    }
+    drawParticles(ctx, this.particles);
 
     // RADAR: 予測着地点と速度ベクトル
     if (this.state === 'play' && this._lvl('radar') > 0) this._drawRadar(ctx);
@@ -1065,12 +1012,7 @@ export class Game extends Scene {
 
     // SHIELD: 準備完了のリング / 吸収時のフラッシュ
     if (this.state === 'play' && this._lvl('shield') > 0 && (this._shieldReady || this._shieldFlash > 0)) {
-      ctx.save();
-      ctx.globalAlpha = this._shieldFlash > 0 ? Math.min(1, this._shieldFlash * 2) : 0.35;
-      ctx.strokeStyle = this._shieldFlash > 0 ? p.hi : p.mid;
-      ctx.lineWidth = this._shieldFlash > 0 ? 4 : 1.5;
-      ctx.beginPath(); ctx.arc(this.x, this.y, 22, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
+      drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady);
     }
 
     // Landing sequence (astronaut scene)。クリア画面中も祝福を続けるため、シーンは cleared でも描く（パネルは重ならない位置）
@@ -1086,22 +1028,13 @@ export class Game extends Scene {
     this._drawHUD(ctx);
 
     // 天体の紹介バナー（天体の最初のステージ）
-    if (this.state === 'play' && this._introT > 0 && this._body) {
-      const parts = introText(this._body).split(' \u00b7 ');
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(1, this._introT * 2));
-      this.engine.text(parts.slice(0, 2).join(' \u00b7 '), W / 2, 118, 15, p.hi, 'center');
-      if (parts.length > 2) this.engine.text(parts.slice(2).join(' \u00b7 '), W / 2, 138, 11, p.warn, 'center');
-      ctx.restore();
+    if (this.state === 'play' && this._introT > 0 && body) {
+      const parts = introText(body).split(' · ');
+      drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
 
     // Bonus mission banner
-    if (this.state === 'play' && this.bonus && this._bannerT > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(1, this._bannerT));
-      this.engine.text('BONUS MISSION: ' + this.bonus.type.replace('_', ' '), W / 2, 150, 16, p.warn, 'center');
-      ctx.restore();
-    }
+    if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, this.bonus.type.replace('_', ' '), this._bannerT);
 
     // Bottom button controls
     this._drawButtons(ctx);
@@ -1120,43 +1053,20 @@ export class Game extends Scene {
     }
 
     // デバッグ: DBGボタン
-    if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) {
-      const b = this._dbgBtnRect();
-      this.engine.rect(b.x, b.y, b.w, b.h, p.dark);
-      this.engine.stroke(b.x, b.y, b.w, b.h, p.warn, 1);
-      this.engine.text('DBG', b.x + b.w / 2, b.y + 3, 10, p.warn, 'center');
-    }
+    if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
   }
 
   // ---- 大気: 砂塵 / 霧 ----
   _drawAtmosphere(ctx) {
     const b = this._body; if (!b) return;
     const v = b.visual || {};
-    if (v.haze) {
-      ctx.save(); ctx.globalAlpha = v.haze.alpha; ctx.fillStyle = v.haze.color; ctx.fillRect(0, 0, W, BTN_Y); ctx.restore();
-    }
-    if (b.visibility) {
-      const r = b.visibility;
-      const fog = v.fog || '#000000';
-      const grad = ctx.createRadialGradient(this.x, this.y, r * 0.55, this.x, this.y, r);
-      grad.addColorStop(0, hexA(fog, 0));
-      grad.addColorStop(1, hexA(fog, 0.94));
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, BTN_Y);
-    }
+    if (v.haze) drawHaze(ctx, v.haze.color, v.haze.alpha);
+    if (b.visibility) drawFog(ctx, v.fog || '#000000', this.x, this.y, b.visibility);
   }
 
   _drawBeacon(ctx) {
     if (!this.pad || this.state === 'module') return;
-    const p = P();
-    const on = Math.floor((this._clock || 0) * 2.5) % 2 === 0;
-    const bx = this.pad.x + this.pad.w / 2, by = this.pad.y - 5;
-    ctx.save();
-    ctx.globalAlpha = on ? 1 : 0.35;
-    ctx.fillStyle = p.bad;
-    ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2); ctx.fill();
-    if (on) { ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill(); }
-    ctx.restore();
+    drawBeacon(ctx, this.pad, this._clock || 0);
   }
 
   // ---- RADAR ----
@@ -1180,45 +1090,23 @@ export class Game extends Scene {
   }
 
   _drawRadar(ctx) {
-    const p = P();
     const pr = this.predictLanding();
-    ctx.save();
-    ctx.strokeStyle = p.hi; ctx.fillStyle = p.hi; ctx.lineWidth = 1.5;
-    if (pr.hit) {   // 予測着地点: ×マーカー
-      ctx.globalAlpha = 0.9;
-      ctx.beginPath();
-      ctx.moveTo(pr.x - 6, pr.y - 6); ctx.lineTo(pr.x + 6, pr.y + 6);
-      ctx.moveTo(pr.x + 6, pr.y - 6); ctx.lineTo(pr.x - 6, pr.y + 6);
-      ctx.stroke();
-    }
-    // 速度ベクトル
-    const k = 1.5, ex = this.x + this.vx * k, ey = this.y + this.vy * k;
-    ctx.globalAlpha = 0.8; ctx.strokeStyle = p.warn;
-    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(ex, ey); ctx.stroke();
-    ctx.restore();
+    drawRadar(ctx, pr.hit, pr.x, pr.y, this.x, this.y, this.vx, this.vy);
   }
 
   // ---- モジュール選択 ----
   _drawModuleSelect(ctx) {
-    const p = P();
-    ctx.save(); ctx.globalAlpha = 0.9; this.engine.rect(0, 70, W, 440, p.bg); ctx.restore();
-    this.engine.text('CHOOSE A MODULE', W / 2, 96, 20, p.hi, 'center');
-    this.engine.text('ST.' + this.stage + ' COMPLETE', W / 2, 124, 11, p.dim, 'center');
+    const cards = [];
     for (let i = 0; i < this.offers.length; i++) {
       const d = moduleDef(this.offers[i]);
-      const r = this._moduleCardRect(i);
       const lv = this._lvl(d.id);
-      this.engine.rect(r.x, r.y, r.w, r.h, p.dark);
-      this.engine.stroke(r.x, r.y, r.w, r.h, p.mid, 2);
-      this.engine.text('[' + d.icon + ']', r.x + 30, r.y + 18, 28, p.warn, 'center');
-      this.engine.text(d.name, r.x + 60, r.y + 14, 18, p.hi, 'left');
-      this.engine.text(d.desc, r.x + 16, r.y + 62, 11, p.fg, 'left');
-      this.engine.text(d.max > 1 ? 'LV ' + lv + ' \u2192 ' + (lv + 1) + ' / ' + d.max : 'NEW', r.x + 16, r.y + 90, 13, p.mid, 'left');
-      this.engine.text('TAP TO TAKE', r.x + r.w / 2, r.y + r.h - 24, 12, p.dim, 'center');
+      cards.push({ id: d.id, name: d.name, desc: d.desc, rect: this._moduleCardRect(i),
+        level: d.max > 1 ? 'LV ' + lv + ' → ' + (lv + 1) + ' / ' + d.max : 'NEW' });
     }
+    drawModuleCards(ctx, { sub: 'STAGE ' + this.stage + ' COMPLETE', cards });
   }
 
-  // ---- Landing sequence (placeholder art; P2 replaces _drawAstronaut / _drawLandingFlag) ----
+  // ---- Landing sequence ----
   // 機体は upright(角度は update で0へ)・足元 y+16 が地面。ハッチは機体右側、ハシゴは機体右脚の内側。
   _landingGeometry() {
     const t  = this.landingSeq ? this.landingSeq.t : 0;
@@ -1239,26 +1127,11 @@ export class Game extends Scene {
   }
 
   _drawLandingScene(ctx) {
-    const p = P();
     const g = this._landingGeometry();
     const { ph } = g;
-    // ハッチ（開閉）
-    const open = ph.name === 'hatch' ? ph.p : 1;
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(g.hatchX - 1, g.hatchY - 5, 3, 10);
-    ctx.strokeStyle = p.hi; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(g.hatchX + 2, g.hatchY - 5);
-    ctx.lineTo(g.hatchX + 2 + 6 * open, g.hatchY - 5 + 5 * (1 - open) - 2 * open);
-    ctx.stroke();
-    // ハシゴ（ハッチ開放後）
-    if (ph.name !== 'hatch') {
-      const gy = g.groundAt(g.ladderX);
-      ctx.strokeStyle = p.mid; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(g.ladderX - 2, g.hatchY + 6); ctx.lineTo(g.ladderX - 2, gy);
-      ctx.moveTo(g.ladderX + 2, g.hatchY + 6); ctx.lineTo(g.ladderX + 2, gy); ctx.stroke();
-      for (let y = g.hatchY + 9; y < gy; y += 4) { ctx.beginPath(); ctx.moveTo(g.ladderX - 2, y); ctx.lineTo(g.ladderX + 2, y); ctx.stroke(); }
-    }
+    // ハッチ（開閉）とハシゴ（ハッチ開放後）
+    drawHatch(ctx, g.hatchX, g.hatchY, ph.name === 'hatch' ? ph.p : 1);
+    if (ph.name !== 'hatch') drawLadder(ctx, g.ladderX, g.hatchY + 6, g.groundAt(g.ladderX));
     // 旗（planting 中〜）
     if (ph.name === 'flag' || ph.name === 'wave' || ph.name === 'done') {
       const ft = ph.name === 'flag' ? ph.p : 1;
@@ -1271,446 +1144,75 @@ export class Game extends Scene {
       this._drawAstronaut(ctx, g.ax, g.ay, ph.name, g.t, pose);
       if (pose && pose.fx) this._drawCelebFx(ctx, g.ax + pose.dx, g.ay - pose.dy - 8, pose.fx);
     }
-    if (this.state === 'landing') this.engine.text('TOUCHDOWN!', W / 2, 100, 16, p.hi, 'center');
+    if (this.state === 'landing') drawTouchdown(ctx);
   }
 
-  // 宇宙飛行士（仮の簡易図形）。(x,y)=足元。phase: 'descend'|'walk'|'flag'|'wave'|'done'
-  // pose（任意）: { dy, dx, rot, armL, armR } — 祝福ループ用。P2はこのポーズ値で描き直す
-  _drawAstronaut(ctx, x, y, phase, t, pose) {
-    const p = P();
-    if (pose) {
-      const py = Math.max(40, y - pose.dy);   // 画面外に出ない
-      ctx.save();
-      ctx.translate(x + pose.dx, py - 6);
-      ctx.rotate(pose.rot);
-      ctx.translate(0, 6);
-      ctx.fillStyle = p.fg;
-      ctx.fillRect(-3, -8, 6, 6);
-      ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2);
-      ctx.beginPath(); ctx.arc(0, -11, 3.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = p.mid; ctx.fillRect(-1.5, -12, 3, 2);
-      ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5;
-      const L = 5;
-      ctx.beginPath();
-      ctx.moveTo(3, -7);  ctx.lineTo(3 + L * Math.sin(pose.armR), -7 + L * Math.cos(pose.armR));
-      ctx.moveTo(-3, -7); ctx.lineTo(-3 - L * Math.sin(pose.armL), -7 + L * Math.cos(pose.armL));
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
-    const bob = phase === 'walk' ? Math.sin(t * 24) * 1 : 0;
-    ctx.save();
-    ctx.translate(x, y + bob);
-    ctx.fillStyle = p.fg;
-    ctx.fillRect(-3, -8, 6, 6);            // 胴
-    ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2); // 脚
-    ctx.beginPath(); ctx.arc(0, -11, 3.5, 0, Math.PI * 2); ctx.fill(); // ヘルメット
-    ctx.fillStyle = p.mid; ctx.fillRect(-1.5, -12, 3, 2);               // バイザー
-    ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    if (phase === 'wave') {
-      const s = Math.sin(t * 12);
-      ctx.moveTo(3, -7); ctx.lineTo(6, -13 + s * 2);   // 手を振る
-    } else {
-      ctx.moveTo(3, -7); ctx.lineTo(5, -4);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // 旗（仮）。(x,y)=地面の根元。t: 0..1 立てる進行
-  // PERFECT着陸の祝福エフェクト（仮: 放射状の星）
-  _drawCelebFx(ctx, x, y, fx) {
-    const p = P();
-    ctx.save();
-    ctx.fillStyle = p.warn;
-    ctx.globalAlpha = Math.max(0, 1 - fx.u);
-    for (let i = 0; i < fx.n; i++) {
-      const a = (i / fx.n) * Math.PI * 2, r = 8 + 34 * fx.u;
-      ctx.fillRect(x + Math.cos(a) * r - 1.5, y + Math.sin(a) * r - 1.5, 3, 3);
-    }
-    ctx.restore();
-  }
-
-  _drawLandingFlag(ctx, x, y, t, wave) {
-    const p = P();
-    const h = 20 * Math.max(0, Math.min(1, t));
-    ctx.fillStyle = p.fg;
-    ctx.fillRect(x - 0.5, y - h, 1.5, h);
-    if (t > 0.6) {
-      ctx.fillStyle = p.warn;
-      ctx.fillRect(x + 1, y - h, 10 + (wave || 0) * 2, 7);
-    }
-  }
+  // 宇宙飛行士。(x,y)=足元。phase: 'descend'|'walk'|'flag'|'wave'|'done'。pose: celebrationPose の戻り値（任意）
+  _drawAstronaut(ctx, x, y, phase, t, pose) { drawAstronaut(ctx, x, y, phase, t, pose); }
+  // PERFECT着陸の祝福エフェクト（星とハート）
+  _drawCelebFx(ctx, x, y, fx) { drawCelebFx(ctx, x, y, fx); }
+  _drawLandingFlag(ctx, x, y, t, wave) { drawFlag(ctx, x, y, t, wave); }
 
   // ---- Floating obstacles ----
   _drawObstacles(ctx) {
     if (!this.obstacles || this.obstacles.length === 0) return;
-    const p = P();
-    for (const ob of this.obstacles) {
-      // Draw as a jagged rock/asteroid (octagon-ish)
-      ctx.save();
-      ctx.translate(ob.x, ob.y);
-      ctx.fillStyle   = p.dark;
-      ctx.strokeStyle = p.bad;
-      ctx.lineWidth   = 2;
-      ctx.beginPath();
-      const sides = 7;
-      for (let i = 0; i < sides; i++) {
-        // Slightly irregular radius for rock feel
-        const jitter = 0.75 + (((i * 37 + 13) % 7) / 7) * 0.5;
-        const angle  = (i / sides) * Math.PI * 2;
-        const rx     = Math.cos(angle) * ob.r * jitter;
-        const ry     = Math.sin(angle) * ob.r * jitter;
-        if (i === 0) ctx.moveTo(rx, ry);
-        else         ctx.lineTo(rx, ry);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      // Small warning highlight
-      ctx.fillStyle   = p.warn;
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
-      ctx.fillRect(-2, -2, 4, 4);
-      ctx.globalAlpha = 1;
-      ctx.restore();
-    }
+    drawObstacles(ctx, this.obstacles, this._clock || 0, this._body);
   }
 
   // ---- Descent trajectory guide ----
-  // 常に描画: 誘導線は常にはっきり見えるようにする。
-  // ON COURSE時: 明るく太く、機体周辺に円形マーカー＋上部テキスト表示＋パルス点滅。
-  // OFF COURSE時: dim色で細いが消えない（0.55 alpha）。
+  // 常に描画（OFF COURSE は薄く、ON COURSE は明るく脈動）。
   _drawGuide(ctx) {
-    const p   = P();
     const pts = this.guidePts;
     if (!pts || pts.length < 2) return;
-
-    const dist     = (this.state === 'play')
-      ? this._distToGuide(this.x, this.y)
-      : Infinity;
+    const dist     = (this.state === 'play') ? this._distToGuide(this.x, this.y) : Infinity;
     const onCourse = (dist <= GUIDE_THRESHOLD);
-
-    // ON COURSEパルス: sin波で輝度を変調（1Hzで点滅）
-    // _onCoursePulseはupdateで加算され、sin計算で[0..1]の輝度係数に変換
-    const pulse = onCourse
-      ? (0.7 + 0.3 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5))
-      : 1.0;
-
-    // ガイドライン描画（常に表示）
-    ctx.save();
-    if (onCourse) {
-      // ON COURSE: 明るく太い実線
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.85 * pulse));
-      ctx.strokeStyle = p.hi;
-      ctx.lineWidth   = 2.5;
-      ctx.setLineDash([6, 4]);
-    } else {
-      // OFF COURSE: 常に見える薄い点線（消えない）
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.55));
-      ctx.strokeStyle = p.warn;
-      ctx.lineWidth   = 1;
-      ctx.setLineDash([4, 8]);
-    }
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Diamond marker at target
-    const last = pts[pts.length - 1];
-    ctx.fillStyle   = onCourse ? p.hi : p.warn;
-    ctx.globalAlpha = Math.max(0, Math.min(1, onCourse ? 0.9 * pulse : 0.5));
-    ctx.beginPath();
-    ctx.moveTo(last.x,     last.y - 8);
-    ctx.lineTo(last.x + 7, last.y);
-    ctx.lineTo(last.x,     last.y + 8);
-    ctx.lineTo(last.x - 7, last.y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // ON COURSEポップインジケーター（機体周辺＋テキスト）
-    if (onCourse && this.state === 'play') {
-      this._drawOnCourseIndicator(ctx, pulse);
-    }
+    const pulse = onCourse ? (0.7 + 0.3 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5)) : 1.0;
+    drawGuide(ctx, pts, onCourse, pulse);
+    this._ocPulse = (onCourse && this.state === 'play') ? pulse : 0;   // ラベルはHUD層（霧の上）で描く
+    if (onCourse && this.state === 'play') this._drawOnCourseIndicator(ctx, pulse);
   }
 
-  // ---- ON COURSE pop indicator ----
-  // 機体周辺の明るいリング＋上部のテキストバナー。
-  // パルス点滅で「今乗っている」ことを明確に伝える。
   _drawOnCourseIndicator(ctx, pulse) {
     if (typeof pulse !== 'number') pulse = 1;
-    const p = P();
-
-    // 機体周囲のハローリング（スケールパルス）
-    const ringR = 22 + 4 * Math.sin(((this._onCoursePulse || 0) * Math.PI * 2) * 1.5);
-    ctx.save();
-    ctx.globalAlpha  = Math.max(0, Math.min(1, 0.6 * pulse));
-    ctx.strokeStyle  = p.hi;
-    ctx.lineWidth    = 2.5;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, ringR, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // 内側の小さなドット（中心確認マーカー）
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.8 * pulse));
-    ctx.fillStyle   = p.hi;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // 上部テキストバナー（HUDエリアの直下）
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, pulse));
-    this.engine.text('ON COURSE', W / 2, 72, 13, p.hi, 'center');
-    ctx.restore();
+    drawOnCourse(ctx, this.x, this.y, this._onCoursePulse || 0, pulse);
   }
 
-  // ---- Lander craft with 4 RCS nozzles ----
-  // Rotation math (ctx.rotate convention):
-  //   ctx.rotate(+rad) = clockwise (CW) on screen
-  //   ctx.rotate(-rad) = counter-clockwise (CCW) on screen
-  //
-  //   omega > 0 -> angle increases -> ctx.rotate(+rad) -> CW on screen (nose tilts RIGHT)
-  //   omega < 0 -> angle decreases -> ctx.rotate(-rad) -> CCW on screen (nose tilts LEFT)
-  //
-  //   LEFT  button -> omega += -> CW  (nose tilts right)   LEFT nozzle fires left -> reaction right
-  //   RIGHT button -> omega -= -> CCW (nose tilts left)   RIGHT nozzle fires right -> reaction left
-  //
-  // The FLAME is drawn on the FIRING nozzle side, consistent with actual exhaust direction.
+  // ---- Lander craft ----
+  // Rotation math (ctx.rotate convention): +rad = CW on screen. omega>0 -> angle増 -> 機首が右へ。
+  // 炎は発射側ノズルに描く（LEFTボタン=左ノズルが左へ噴射、RIGHTボタン=右ノズルが右へ噴射）。
   _drawLander(ctx, x, y, angleDeg) {
-    const p   = P();
     if (typeof x !== 'number' || typeof y !== 'number') return;
-    const rad = ((angleDeg || 0) * Math.PI / 180);
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rad);  // positive rad = CW on canvas; negative = CCW
-
-    // Main engine flame (bottom nozzle, fires downward in body space)
-    if (this._thrustMain && this.fuel > 0) {
-      const fl = 10 + Math.random() * 10;
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(-6, 9);
-      ctx.lineTo(0,  9 + fl);
-      ctx.lineTo(6,  9);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = p.hi;
-      ctx.beginPath();
-      ctx.moveTo(-3, 9);
-      ctx.lineTo(0,  9 + fl * 0.5);
-      ctx.lineTo(3,  9);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // Body
-    ctx.fillStyle   = p.mid;
-    ctx.fillRect(-8, -10, 16, 18);
-    ctx.strokeStyle = p.fg;
-    ctx.lineWidth   = 1.5;
-    ctx.strokeRect(-8, -10, 16, 18);
-
-    // Cabin window
-    ctx.fillStyle = p.hi;
-    ctx.fillRect(-4, -8, 8, 7);
-
-    // Left landing leg
-    ctx.strokeStyle = p.mid;
-    ctx.lineWidth   = 2;
-    ctx.beginPath(); ctx.moveTo(-7, 8);   ctx.lineTo(-14, 16); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-14, 16); ctx.lineTo(-18, 16); ctx.stroke();
-
-    // Right landing leg
-    ctx.beginPath(); ctx.moveTo(7, 8);    ctx.lineTo(14, 16);  ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(14, 16);  ctx.lineTo(18, 16);  ctx.stroke();
-
-    // Main engine nozzle (bottom center)
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(-5, 9, 10, 5);
-    ctx.strokeStyle = (this._thrustMain && this.fuel > 0) ? p.warn : p.dim;
-    ctx.lineWidth   = 1;
-    ctx.strokeRect(-5, 9, 10, 5);
-
-    // LEFT RCS nozzle (body left side, upper area)
-    // LEFT button fires LEFT nozzle to the LEFT. Reaction: nose goes RIGHT = CW = omega +.
-    // Flame jets LEFT from left nozzle.
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(-12, -6, 4, 4);
-    if (this._thrustRcsL && this.fuel > 0) {
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(-12, -4);
-      ctx.lineTo(-12 - (5 + Math.random() * 5), -2);
-      ctx.lineTo(-12, -6 + 1);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.strokeStyle = (this._thrustRcsL && this.fuel > 0) ? p.warn : p.dim;
-    ctx.lineWidth   = 0.8;
-    ctx.strokeRect(-12, -6, 4, 4);
-
-    // RIGHT RCS nozzle (body right side, upper area)
-    // RIGHT button fires RIGHT nozzle to the RIGHT. Reaction: nose goes LEFT = CCW = omega -.
-    // Flame jets RIGHT from right nozzle.
-    ctx.fillStyle = p.dark;
-    ctx.fillRect(8, -6, 4, 4);
-    if (this._thrustRcsR && this.fuel > 0) {
-      ctx.fillStyle = p.warn;
-      ctx.beginPath();
-      ctx.moveTo(12, -4);
-      ctx.lineTo(12 + (5 + Math.random() * 5), -2);
-      ctx.lineTo(12, -6 + 1);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.strokeStyle = (this._thrustRcsR && this.fuel > 0) ? p.warn : p.dim;
-    ctx.lineWidth   = 0.8;
-    ctx.strokeRect(8, -6, 4, 4);
-
-    // Top attitude nozzle (visual reference)
-    ctx.fillStyle   = p.dark;
-    ctx.fillRect(-3, -14, 6, 4);
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 0.8;
-    ctx.strokeRect(-3, -14, 6, 4);
-
-    ctx.restore();
+    const fuelOk = this.fuel > 0;
+    drawShip(ctx, x, y, angleDeg, !!(this._thrustMain && fuelOk), !!(this._thrustRcsL && fuelOk), !!(this._thrustRcsR && fuelOk), this._clock || 0);
   }
 
-  // ---- HUD (top area, x >= 52 to clear the BACK button) ----
+  // ---- HUD（データを集めて art.drawHUD に渡す。x>=52 は BACK ボタンを避ける）----
   _drawHUD(ctx) {
-    const p = P();
-
-    this.engine.text('LANDER', 52, 8, 16, p.fg, 'left');
-    this.engine.text('ST.' + this.stage + ' ' + (this._body ? this._body.name : '') + (this.bonus ? ' BONUS' : ''), 52, 26, 12, this.bonus ? p.warn : p.mid, 'left');
-    // 残り Continue（小さな機体アイコン）
-    const nIcons = Math.min(this.continues || 0, 3);
-    if ((this.continues || 0) > 3) this.engine.text('x' + this.continues, 206 + 3 * 14, 44, 10, p.mid, 'left');
-    for (let i = 0; i < nIcons; i++) {
-      const ix = 206 + i * 14;
-      this.engine.rect(ix, 45, 8, 9, p.mid);
-      this.engine.rect(ix + 2, 47, 4, 3, p.hi);
-      this.engine.rect(ix - 1, 54, 2, 2, p.mid); this.engine.rect(ix + 7, 54, 2, 2, p.mid);
-    }
-    this.engine.text('HI ' + (this.high || 0),      W - 8, 8,  12, p.dim, 'right');
-    this.engine.text('TOT ' + this.totalScore,       W - 8, 22, 12, p.mid, 'right');
-
-    // Fuel bar
-    const bx = 52, by = 44, bw = 110, bh = 10;
-    this.engine.rect(bx, by, bw, bh, p.dark);
-    const fr   = Math.max(0, Math.min(1, (this.fuel || 0) / this._fuelMax()));
-    const fclr = fr > 0.4 ? p.mid : fr > 0.15 ? p.warn : p.bad;
-    if (fr > 0) this.engine.rect(bx, by, Math.round(bw * fr), bh, fclr);
-    this.engine.stroke(bx, by, bw, bh, p.dim, 1);
-    this.engine.text('FUEL', bx + bw + 4, by, 10, p.dim, 'left');
-
-    // 天体情報（実重力・大気タグ）、モジュール、デバッグタグ
-    if (this._body) {
-      this.engine.text('g ' + this._body.realG.toFixed(2) + ' m/s\u00b2', 52, 70, 10, p.mid, 'left');
-      this.engine.text(this._body.atmoTag, 52, 82, 10, p.dim, 'left');
-    }
-    let mk = 0;
-    for (const d of MODULE_DEFS) {
-      const lv = this._lvl(d.id);
-      if (!lv) continue;
-      const mx = W - 8 - 22 * (mk + 1);
-      this.engine.rect(mx, 80, 20, 14, p.dark);
-      this.engine.stroke(mx, 80, 20, 14, p.mid, 1);
-      this.engine.text(d.icon + (d.max > 1 ? lv : ''), mx + 10, 82, 10, p.warn, 'center');
-      mk++;
-    }
-    if (isDebug()) this.engine.text('DEBUG', 52, 94, 10, p.warn, 'left');
-
-    if (this.state !== 'play') return;
-
-    // 風の矢印（風のある天体のみ）
-    if (this._windSpec) {
-      const wa = this._windAccel || 0;
-      const dir = wa >= 0 ? 1 : -1;
-      const len = Math.min(48, 6 + Math.abs(wa) * 60);
-      const ax = W / 2, ay = 100;
-      ctx.save();
-      ctx.strokeStyle = p.mid; ctx.fillStyle = p.mid; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(ax - dir * len / 2, ay); ctx.lineTo(ax + dir * len / 2, ay); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(ax + dir * len / 2, ay); ctx.lineTo(ax + dir * (len / 2 - 6), ay - 4); ctx.lineTo(ax + dir * (len / 2 - 6), ay + 4);
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-      this.engine.text('WIND', ax, ay + 6, 9, p.dim, 'center');
-    }
-
-    // Vertical speed
-    const vy    = this.vy || 0;
-    const vyclr = Math.abs(vy) <= this._safeVy() ? p.mid : Math.abs(vy) <= this._safeVy() * 1.6 ? p.warn : p.bad;
-    this.engine.text('VY ' + Math.round(vy), W - 8, 38, 11, vyclr, 'right');
-
-    // Horizontal speed
-    const vx    = this.vx || 0;
-    const vxclr = Math.abs(vx) <= SAFE_VX ? p.mid : Math.abs(vx) <= SAFE_VX * 2 ? p.warn : p.bad;
-    this.engine.text('VX ' + Math.round(vx), W - 8, 52, 11, vxclr, 'right');
-
-    // Angle
-    const ang    = this.angle || 0;
+    const h = this._hud || (this._hud = {});
+    const b = this._body;
+    h.stage = this.stage; h.bodyName = b ? b.name : ''; h.bonus = !!this.bonus;
+    h.total = this.totalScore; h.high = this.high || 0;
+    h.fuel = (this.fuel || 0) / this._fuelMax();
+    h.continues = this.continues || 0;
+    h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
+    h.debug = isDebug(); h.play = this.state === 'play';
+    h.t = this._clock || 0;
+    h.wind = !!this._windSpec; h.windAccel = this._windAccel || 0;
+    const vy = this.vy || 0, vx = this.vx || 0, ang = this.angle || 0, om = this.omega || 0;
     const absAng = Math.abs(((ang + 180) % 360 + 360) % 360 - 180);
-    const aclr   = absAng <= SAFE_ANGLE ? p.mid : absAng <= SAFE_ANGLE * 2 ? p.warn : p.bad;
-    this.engine.text('A ' + Math.round(ang) + '°', 52, 58, 11, aclr, 'left');
-
-    // Angular velocity
-    const om    = this.omega || 0;
-    const omclr = Math.abs(om) <= SAFE_OMEGA ? p.mid : Math.abs(om) <= SAFE_OMEGA * 2 ? p.warn : p.bad;
-    this.engine.text('ω ' + Math.round(om), W - 8, 66, 11, omclr, 'right');
+    h.vy = vy; h.vx = vx; h.ang = ang; h.om = om;
+    h.sVy  = Math.abs(vy) <= this._safeVy() ? 0 : Math.abs(vy) <= this._safeVy() * 1.6 ? 1 : 2;
+    h.sVx  = Math.abs(vx) <= SAFE_VX ? 0 : Math.abs(vx) <= SAFE_VX * 2 ? 1 : 2;
+    h.sAng = absAng <= SAFE_ANGLE ? 0 : absAng <= SAFE_ANGLE * 2 ? 1 : 2;
+    h.sOm  = Math.abs(om) <= SAFE_OMEGA ? 0 : Math.abs(om) <= SAFE_OMEGA * 2 ? 1 : 2;
+    drawHUD(ctx, h);
+    if (this._ocPulse > 0 && this.state === 'play') drawOnCourseLabel(ctx, this._ocPulse);
   }
 
-  // ---- Bottom button bar ----
-  // Label convention (reaction-thruster):
-  //   LEFT  button -> fires left nozzle -> nose tilts RIGHT (CW)
-  //   RIGHT button -> fires right nozzle -> nose tilts LEFT (CCW)
-  // Labels reflect the NOSE direction for clarity to the player.
+  // ---- Bottom button bar（入力ゾーンは update 側の ZONE_* のまま）----
+  // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)。見た目は機首の回転方向を示す。
   _drawButtons(ctx) {
-    const p = P();
-
-    const BW = 120;
-    const bY = BTN_Y;
-    const bH = BTN_H;
-
-    const drawBtn = (bx, label, sublabel, active) => {
-      ctx.fillStyle = active ? p.dim : p.dark;
-      ctx.fillRect(bx, bY, BW, bH);
-
-      ctx.strokeStyle = active ? p.hi : p.dim;
-      ctx.lineWidth   = active ? 2.5 : 1.5;
-      ctx.strokeRect(bx + 1, bY + 1, BW - 2, bH - 2);
-
-      if (active) {
-        ctx.fillStyle = p.hi;
-        ctx.globalAlpha = Math.max(0, Math.min(1, 0.25));
-        ctx.fillRect(bx + 2, bY + 2, BW - 4, 6);
-        ctx.globalAlpha = 1;
-      }
-
-      const labelColor = active ? p.hi : p.fg;
-      this.engine.text(label,    bx + BW / 2, bY + bH / 2 - 14, 13, labelColor, 'center');
-      if (sublabel) {
-        this.engine.text(sublabel, bx + BW / 2, bY + bH / 2 + 2,  10, active ? p.warn : p.dim, 'center');
-      }
-    };
-
-    // LEFT button: nose tilts right (CW)    RIGHT button: nose tilts left (CCW)
-    drawBtn(0,   '◄ TILT R',  'NOSE RIGHT', this._thrustRcsL);
-    drawBtn(120, 'THRUST',    null,          this._thrustMain);
-    drawBtn(240, 'TILT L ►', 'NOSE LEFT',  this._thrustRcsR);
-
-    // Dividers
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(120, bY); ctx.lineTo(120, H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(240, bY); ctx.lineTo(240, H); ctx.stroke();
+    drawControls(ctx, this._thrustRcsL, this._thrustMain, this._thrustRcsR);
   }
 
   // ---- Stage Clear overlay ----
@@ -1718,97 +1220,35 @@ export class Game extends Scene {
   _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 }; }
 
   _drawClearScreen(ctx) {
-    const p  = P();
-    const cx = W / 2;
-    const r  = this._clearPanelRect();
-    const y0 = r.y;
-    const b  = this.bonus;
-
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(r.x, r.y, r.w, r.h, p.dark);
-    this.engine.stroke(r.x, r.y, r.w, r.h, p.mid, 2);
-    ctx.restore();
-
-    if (b) {
-      this.engine.text('BONUS CLEAR!',                cx, y0 + 6, 22, p.warn, 'center');
-      this.engine.text(b.type.replace('_', ' '),      cx, y0 + 34, 12, p.mid, 'center');
-      this.engine.text('BONUS SCORE',                 cx, y0 + 54, 11, p.dim,  'center');
-      this.engine.text('+' + (this._bonusScore || 0), cx, y0 + 68, 20, p.fg,   'center');
-      if (this._bonusGrant) this.engine.text('+1 CONTINUE!', cx, y0 + 94, 12, p.hi, 'center');
-    } else {
-      this.engine.text('STAGE CLEAR!',                cx, y0 + 6, 22, p.hi,   'center');
-      this.engine.text('ST.' + this.stage + ' COMPLETE' + (this._perfect ? '  PERFECT!' : ''), cx, y0 + 34, 12, p.mid, 'center');
-      this.engine.text('STAGE SCORE',                 cx, y0 + 54, 11, p.dim,  'center');
-      this.engine.text('+' + (this._stageScore || 0), cx, y0 + 68, 20, p.fg,   'center');
-      this.engine.text('GUIDE BONUS +' + (this._guideBonus || 0), cx, y0 + 94, 11, p.warn, 'center');
-    }
-
-    ctx.strokeStyle = p.dim;
-    ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(40, y0 + 112); ctx.lineTo(W - 40, y0 + 112); ctx.stroke();
-
-    this.engine.text('TOTAL ' + this.totalScore,    cx, y0 + 120, 20, p.hi,   'center');
-    this.engine.text('BEST ' + (this.high || 0),    cx, y0 + 148, 12, p.mid,  'center');
-
+    const b = this.bonus;
     let next;
-    if (b) next = 'TAP \u2192 STAGE ' + (this.stage + 1);
-    else if (this.stage % BONUS_EVERY === 0) next = 'TAP \u2192 BONUS MISSION';
-    else next = 'TAP \u2192 STAGE ' + (this.stage + 1);
-    this.engine.text(next, cx, y0 + 172, 14, p.fg,  'center');
-    this.engine.text('BACK \u2192 MENU', cx, y0 + 194, 10, p.dim, 'center');
+    if (b) next = 'TAP  ·  STAGE ' + (this.stage + 1);
+    else if (this.stage % BONUS_EVERY === 0) next = 'TAP  ·  BONUS MISSION';
+    else next = 'TAP  ·  STAGE ' + (this.stage + 1);
+    const cols = b
+      ? [['CONTINUE', this._bonusGrant ? '+1' : '–', this._bonusGrant ? P().mid : P().dim], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]]
+      : [['GUIDE BONUS', '+' + (this._guideBonus || 0)], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]];
+    drawClearPanel(ctx, this._clearPanelRect(), {
+      bonus: !!b, perfect: !!this._perfect,
+      sub: b ? b.type.replace('_', ' ') : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
+      score: (b ? this._bonusScore : this._stageScore) || 0, cols, next, t: this._clock || 0,
+    });
   }
 
   // ---- Crashed (continue available) ----
   _drawCrashed(ctx) {
-    const p  = P();
-    const cx = W / 2;
-    const cy = H / 2;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(20, cy - 100, W - 40, 190, p.dark);
-    this.engine.stroke(20, cy - 100, W - 40, 190, p.bad, 2);
-    ctx.restore();
-    this.engine.text('CRASHED',                       cx, cy - 86, 28, p.bad,  'center');
-    this.engine.text(this._crashReason || '',         cx, cy - 50, 13, p.warn, 'center');
-    this.engine.text('SCORE ' + this.totalScore,      cx, cy - 26, 14, p.fg,   'center');
-    this.engine.text('TAP: CONTINUE (' + this.continues + ' left)', cx, cy + 8, 15, p.hi, 'center');
-    const g = this._giveUpRect();
-    this.engine.stroke(g.x, g.y, g.w, g.h, p.dim, 1.5);
-    this.engine.text('GIVE UP', cx, g.y + 8, 13, p.dim, 'center');
+    drawCrashPanel(ctx, { reason: this._crashReason || '', score: this.totalScore, left: this.continues, giveUp: this._giveUpRect() });
   }
 
   // ---- Bonus failed (no continue consumed) ----
   _drawBonusFailed(ctx) {
-    const p  = P();
-    const cx = W / 2;
-    const cy = H / 2;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, 0.92));
-    this.engine.rect(20, cy - 90, W - 40, 170, p.dark);
-    this.engine.stroke(20, cy - 90, W - 40, 170, p.warn, 2);
-    ctx.restore();
-    this.engine.text('BONUS FAILED',                  cx, cy - 76, 26, p.warn, 'center');
-    this.engine.text(this._crashReason || '',         cx, cy - 42, 13, p.fg,   'center');
-    this.engine.text('NO CONTINUE USED',              cx, cy - 18, 12, p.dim,  'center');
-    this.engine.text('TAP → STAGE ' + (this.stage + 1), cx, cy + 20, 15, p.hi, 'center');
+    drawBonusFailedPanel(ctx, { reason: this._crashReason || '', next: this.stage + 1 });
   }
 
   // ---- Game Over: ranking（名前はプレイ前に入力済み）----
   _drawGameOver(ctx) {
-    const p  = P();
-    const cx = W / 2;
-
-    ctx.save();
-    ctx.globalAlpha = 0.95;
-    this.engine.rect(20, 60, W - 40, 520, p.dark);
-    this.engine.stroke(20, 60, W - 40, 520, p.mid, 2);
-    ctx.restore();
-    this.engine.text('GAME OVER',  cx, 70, 24, p.bad, 'center');
-    this.engine.text('SCORE ' + this.totalScore + '  ST.' + this.stage, cx, 102, 14, p.fg, 'center');
-    if (this._isDebugRun()) this.engine.text('DEBUG RUN - NOT RECORDED', cx, 122, 11, p.warn, 'center');
-    else this.engine.text(this.newIdx >= 0 ? 'NEW RECORD!' : 'RANKING', cx, 122, 14, this.newIdx >= 0 ? p.warn : p.hi, 'center');
+    drawGameOverFrame(ctx, { score: this.totalScore, stage: this.stage, debugRun: this._isDebugRun(), newRecord: this.newIdx >= 0 });
     drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
-    this.engine.text('TAP \u2192 TITLE', cx, 540, 14, p.fg, 'center');
+    drawGameOverFooter(ctx);
   }
 }

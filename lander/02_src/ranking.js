@@ -2,6 +2,7 @@
 // Entry = { name, score, stage, date(ISO) }。上位10件を score降順 → stage降順 → 日付が早い順 で保持する。
 import { P } from './core/palette.js';
 import { relayEnabled, fetchWorldTop } from './net.js';
+import { txt, rgba, hair, pill } from './art.js';
 
 export const RANK_MAX = 10;
 const RANK_KEY = 'ranking';
@@ -44,21 +45,22 @@ export function qualifies(list, score) {
   return score > sorted[RANK_MAX - 1].score;
 }
 
-// ランキング行の描画（タイトル/ゲームオーバー共通・仮デザイン）。highlight = 強調する行index
+// ランキング行の描画（タイトル/ゲームオーバー共通）。P2a: ヘアライン区切り + 控えめな強調。highlight = 強調する行index
 export function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
   const p = P();
-  const rowH = 22;
-  if (!list.length) { engine.text('NO RECORDS YET', x + w / 2, y + 8, 13, p.dim, 'center'); return; }
+  const rowH = 30;
+  if (!list.length) { txt(ctx, 'NO RECORDS YET', x + w / 2, y + 12, 10, p.dim, 'center', { sp: 3, w: 500 }); return; }
   for (let i = 0; i < list.length; i++) {
     const e = list[i];
     const ry = y + i * rowH;
     const hl = i === highlight;
-    if (hl) { ctx.fillStyle = p.dim; ctx.fillRect(x, ry - 2, w, rowH); }
-    const c = hl ? p.hi : p.fg;
-    engine.text(String(i + 1), x + 6, ry, 13, c, 'left');
-    engine.text(e.name, x + 30, ry, 13, c, 'left');
-    engine.text(String(e.score), x + w - 46, ry, 13, c, 'right');
-    engine.text('ST.' + e.stage, x + w - 6, ry, 11, hl ? p.hi : p.mid, 'right');
+    if (hl) { pill(ctx, x - 4, ry, w + 8, rowH - 4, rgba(p.warn, 0.10), rgba(p.warn, 0.4)); }
+    else if (i > 0) hair(ctx, x + 4, ry - 2, x + w - 4, ry - 2, p.fg, 0.08);
+    const c = hl ? p.warn : p.fg;
+    txt(ctx, String(i + 1).padStart(2, '0'), x + 10, ry + 5, 11, p.dim, 'left', { w: 300, sp: 1 });
+    txt(ctx, e.name, x + 38, ry + 4, 13, c, 'left', { w: 400, sp: 1 });
+    txt(ctx, String(e.score), x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
+    txt(ctx, 'ST.' + e.stage, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
   }
 }
 
@@ -102,13 +104,12 @@ export function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) 
   const r = rankTabRects(x, y, w);
   for (const k of ['local', 'world']) {
     const on = tabs.mode === k;
-    if (on) { ctx.fillStyle = p.dim; ctx.fillRect(r[k].x, r[k].y, r[k].w, r[k].h); }
-    engine.stroke(r[k].x, r[k].y, r[k].w, r[k].h, on ? p.hi : p.dim, 1.5);
-    engine.text(k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 2, 12, on ? p.hi : p.mid, 'center');
+    pill(ctx, r[k].x, r[k].y, r[k].w, r[k].h, on ? rgba(p.fg, 0.10) : null, rgba(p.fg, on ? 0.4 : 0.16));
+    txt(ctx, k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 5, 9, on ? p.hi : p.dim, 'center', { sp: 3, w: 500 });
   }
   if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
-  else if (tabs.status === 'loading' || tabs.status === 'idle') engine.text('LOADING\u2026', x + w / 2, y + 40, 14, p.mid, 'center');
-  else if (tabs.status === 'offline') engine.text('OFFLINE', x + w / 2, y + 40, 14, p.bad, 'center');
+  else if (tabs.status === 'loading' || tabs.status === 'idle') txt(ctx, 'LOADING\u2026', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
+  else if (tabs.status === 'offline') txt(ctx, 'OFFLINE', x + w / 2, y + 40, 11, p.bad, 'center', { sp: 3 });
   else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
 }
 
