@@ -22,4 +22,8 @@ const sMove=()=>beep(340,.06), sCap=()=>{beep(180,.12,"sawtooth",.06); setTimeou
       sLose=()=>{[300,220,150,90].forEach((f,i)=>setTimeout(()=>beep(f,.2,"sawtooth",.05),i*140));},
       sDdos=()=>beep(60,.3,"sawtooth",.08),
       sRank=()=>{beep(880,.08,"triangle",.06); setTimeout(()=>beep(1320,.12,"triangle",.06),90);},
-      sDown=()=>{beep(45,.4,"sawtooth",.09); setTimeout(()=>beep(30,.5,"sawtooth",.07),120);};
+      sDown=()=>{beep(45,.4,"sawtooth",.09); setTimeout(()=>beep(30,.5,"sawtooth",.07),120);},
+      sConnect=()=>{beep(659,.06,"square",.035); setTimeout(()=>beep(988,.09,"square",.035),70);},
+      sDisc=()=>{beep(494,.07,"sawtooth",.045); setTimeout(()=>beep(220,.13,"sawtooth",.045),70);},
+      sPromote=()=>{[659,784,988,1319].forEach((f,i)=>setTimeout(()=>beep(f,.1,"triangle",.05),i*55));},
+      sDeploy=()=>{beep(165,.06,"square",.06); setTimeout(()=>beep(880,.05,"square",.03),50);};

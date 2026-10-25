@@ -175,7 +175,80 @@ function checkRankUp(i){
   if(!pc||pc.t==="K"||!rk(pc)||pc.rkLogged) return;
   pc.rkLogged=true; sRank();
   log(`<span class="y">★RANK UP</span>: ${pc.s===0?"自":"敵"}${PDEF[pc.t].g} — 能力強化`);
+  setTimeout(()=>fxSpawn(i,"#ffd23e","star"),60);
   if(pc.s===0) showHint("rank");
+}
+
+/* ---------- 演出(FX) ---------- */
+let fxCtx=null, fxP=[], fxLoop=false;
+let ghostCell=-1, ghostUntil=0;                 // 移動アニメ中の実駒隠し
+let fxNet={on:new Set(), off:new Set(), until:0}; // 回線変化の発光
+let promoCell=-1, promoUntil=0;
+let prevNet=null;                                // 前回renderのオンライン状態
+
+function fxSpawn(i,color,kind){
+  const cv=fxCtx.canvas;
+  const x=(i%N+0.5)/N*cv.width, y=(((i/N)|0)+0.5)/N*cv.height;
+  if(kind==="burst")for(let k=0;k<16;k++){
+    const a=Math.random()*6.283, v=(1.5+Math.random()*3)*cv.width/360;
+    fxP.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,dec:.045,color,w:1.6,kind:"p"});
+  }
+  if(kind==="ring") fxP.push({x,y,r:4,vr:cv.width/180,life:1,dec:.05,color,kind:"r"});
+  if(kind==="star"){
+    fxP.push({x,y,r:4,vr:cv.width/150,life:1,dec:.04,color,kind:"r"});
+    for(let k=0;k<10;k++){
+      const a=k/10*6.283, v=(2+Math.random()*2)*cv.width/360;
+      fxP.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,dec:.03,color,w:2.2,kind:"p"});
+    }
+  }
+  if(!fxLoop){fxLoop=true; requestAnimationFrame(fxFrame);}
+}
+function fxFrame(){
+  const cv=fxCtx.canvas, W=cv.clientWidth, H=cv.clientHeight;
+  if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
+  fxCtx.clearRect(0,0,W,H);
+  fxP=fxP.filter(p=>p.life>0);
+  for(const p of fxP){
+    p.life-=p.dec;
+    fxCtx.globalAlpha=Math.max(p.life,0);
+    if(p.kind==="p"){
+      p.x+=p.vx; p.y+=p.vy; p.vx*=.96; p.vy*=.96;
+      fxCtx.fillStyle=p.color;
+      fxCtx.fillRect(p.x-p.w/2,p.y-p.w/2,p.w,p.w);
+    }else{
+      p.r+=p.vr;
+      fxCtx.strokeStyle=p.color; fxCtx.lineWidth=1.5;
+      fxCtx.beginPath(); fxCtx.arc(p.x,p.y,p.r,0,6.283); fxCtx.stroke();
+    }
+  }
+  fxCtx.globalAlpha=1;
+  if(fxP.length){requestAnimationFrame(fxFrame);} else fxLoop=false;
+}
+// 駒クローンを飛ばす移動アニメ(状態は確定済み、見た目だけ)
+function animateMove(from,to){
+  const bd=$("#board"), c2=bd.children[to];
+  const pcEl=c2&&c2.querySelector(".pc");
+  if(!pcEl) return;
+  const rb=bd.getBoundingClientRect(), rp=pcEl.getBoundingClientRect();
+  const r1=bd.children[from].getBoundingClientRect();
+  const r2=bd.children[to].getBoundingClientRect();
+  const wrap=document.createElement("div");
+  wrap.className="movewrap";
+  wrap.style.left=(rp.left-rb.left)+"px"; wrap.style.top=(rp.top-rb.top)+"px";
+  wrap.style.width=rp.width+"px"; wrap.style.height=rp.height+"px";
+  wrap.style.transform=`translate(${r1.left-r2.left}px,${r1.top-r2.top}px)`;
+  wrap.appendChild(pcEl.cloneNode(true));
+  bd.appendChild(wrap);
+  ghostCell=to; ghostUntil=performance.now()+170;
+  render();
+  requestAnimationFrame(()=>{wrap.style.transform="translate(0,0)";});
+  setTimeout(()=>{wrap.remove(); ghostCell=-1; if(bt&&!bt.over) render();},180);
+}
+function fxPromote(i){
+  promoCell=i; promoUntil=performance.now()+750;
+  fxSpawn(i,"#ffd23e","ring"); fxSpawn(i,"#ffd23e","burst");
+  sPromote();
+  setTimeout(()=>{promoCell=-1; if(bt&&!bt.over) render();},780);
 }
 
 /* ---------- render ---------- */
@@ -191,6 +264,10 @@ function buildBoard(){
   svg.id="netsvg"; svg.setAttribute("viewBox","0 0 100 100");
   svg.setAttribute("preserveAspectRatio","none");
   bd.appendChild(svg);
+  const cv=document.createElement("canvas");
+  cv.id="fxcv";
+  bd.appendChild(cv);
+  fxCtx=cv.getContext("2d");
 }
 function drawNet(nets){
   const svg=$("#netsvg");
@@ -225,18 +302,52 @@ function drawNet(nets){
 }
 function render(){
   const nets=computeNets(bt.board);
+  // 回線 接続/切断の検出(同一対局内の前回renderと比較)
+  const curNet=new Map();
+  for(let i=0;i<N*N;i++){
+    const p=bt.board[i];
+    if(p&&p.t!=="K") curNet.set(i+","+p.s, nets.on[p.s].has(i)||(p.t==="R"&&rk(p)));
+  }
+  if(prevNet&&prevNet.bt===bt){
+    const on=new Set(), off=new Set();
+    for(const [k,v] of curNet){
+      const old=prevNet.map.get(k);
+      if(old===undefined||old===v) continue;
+      const i=+k.split(",")[0];
+      (v?on:off).add(i);
+    }
+    if(on.size||off.size){
+      fxNet={on,off,until:performance.now()+650};
+      const svg=$("#netsvg");
+      svg.classList.remove("flash"); void svg.getBoundingClientRect(); svg.classList.add("flash");
+      setTimeout(()=>svg.classList.remove("flash"),600);
+      if(off.size) sDisc(); else sConnect();
+    }
+  }
+  prevNet={bt,map:curNet};
   const inChk=!bt.over&&inCheck(bt.board,bt.hands,0);
   for(let i=0;i<N*N;i++){
     const cell=$("#board").children[i], pc=bt.board[i];
     cell.className="cell";
-    if(bt.down.has(i)){ cell.classList.add("down"); cell.innerHTML=""; continue; }
+    if(bt.down.has(i)){
+      cell.classList.add("down"); cell.innerHTML="";
+      const co=document.createElement("span"); co.className="coord"; co.textContent=cellName(i);
+      cell.appendChild(co);
+      continue;
+    }
     if(sel&&sel.type==="board"&&sel.i===i) cell.classList.add("selc");
     if(bt.lastMove&&bt.lastMove.to===i) cell.classList.add("lastmv");
     if(bt.fx&&bt.fx.i===i&&performance.now()-bt.fx.t<950) cell.classList.add("hacked");
     const tg=targets.find(m=>m.to===i);
     if(tg){cell.classList.add("movable"); if(pc)cell.classList.add("cap");}
     if(pc&&pc.t==="K"&&pc.s===0&&inChk) cell.classList.add("checkk");
+    if(ghostCell===i&&performance.now()<ghostUntil) cell.classList.add("ghosted");
+    if(promoCell===i&&performance.now()<promoUntil) cell.classList.add("promoflash");
     cell.innerHTML="";
+    {
+      const co=document.createElement("span"); co.className="coord"; co.textContent=cellName(i);
+      cell.appendChild(co);
+    }
     if(bt.pending.has(i)){
       const b=document.createElement("span");
       b.className="cd"; b.textContent=bt.pending.get(i);
@@ -244,8 +355,9 @@ function render(){
     }
     if(pc){
       const offline=pc.t!=="K"&&!nets.on[pc.s].has(i)&&!(pc.t==="R"&&rk(pc));
+      const netfx=fxNet.until>performance.now()?(fxNet.on.has(i)?" fx-on":fxNet.off.has(i)?" fx-off":""):"";
       const d=document.createElement("div");
-      d.className=`pc s${pc.s}${pc.p?" promo":""}${pc.frozen>0?" frozen":""}${offline?" offline":""}`;
+      d.className=`pc s${pc.s}${pc.p?" promo":""}${pc.frozen>0?" frozen":""}${offline?" offline":""}${netfx}`;
       let sub=`<span class="g2">${pc.p?PDEF[pc.t].pg:PDEF[pc.t].g}</span>`;
       if(pc.frozen>0) sub=`<span class="lv">STUN ${pc.frozen}</span>`;
       else if(offline) sub=`<span class="lv">OFFLINE</span>`;
@@ -324,8 +436,12 @@ function doPlayerMove(m){
     sCap(); flashHack(m.to);
     log(`<span class="g">UNIT HACKED</span>: 敵${PDEF[captured.t].g} → 乗っ取り完了`);
     checkRankUp(m.to);
-  } else sMove();
+  } else if(m.drop){ sDeploy(); } else sMove();
   render();
+  if(m.drop){ fxSpawn(m.to,"#19e3ff","ring"); }
+  else animateMove(m.from,m.to);
+  if(captured) fxSpawn(m.to,FCOLOR[bt.faction]||"#ff2d95","burst");
+  if(m.promo) fxPromote(m.to);
   if(captured&&captured.t==="K"){ stageWin(); return; }
   if(tickBlackout()) return;
   render();
@@ -377,6 +493,10 @@ function enemyTurn(){
   }
   bt.turn=0; busy=false;
   render();
+  if(m.drop){ fxSpawn(m.to,FCOLOR[bt.faction]||"#ff2d95","ring"); sDeploy(); }
+  else animateMove(m.from,m.to);
+  if(captured) fxSpawn(m.to,"#19e3ff","burst");
+  if(m.promo) fxPromote(m.to);
   if(captured&&captured.t==="K"){ runOver(false); return; }
   if(tickBlackout()) return;
   render();
@@ -533,4 +653,7 @@ function renderRouteCard(){
     `<div class="rc-t">TODAY'S ROUTE — DAILY#${seed}</div>`+
     `<div class="rc-route">${route}</div>`+
     `<div class="rc-best">${best?`本日ベスト: ${best.score} [${best.rank}]${best.win?" 全制圧":""}`:"未侵入 — 全員同条件のスコアアタック"}</div>`;
+  // マーキー(流れるシステムテキスト)
+  const mq=`INTRUSION PROTOCOL v4 ░ SEED #${seed} ░ ROUTE: ${lineup.map(f=>FACTIONS[f].nm).join(" > ")} ░ CAPTURE = HACK ░ 回線ヲ切断セヨ ░ OFFLINE UNITS CANNOT RUN ░ BLACKOUT IN PROGRESS ░ `;
+  $("#marquee .mq").textContent=mq+mq;
 }

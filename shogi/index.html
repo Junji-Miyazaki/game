@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>CYBER_SHOGI — 電脳将棋</title>
-<link rel="stylesheet" href="03_assets/style.css?v=c122e4f25d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%2305080f'/%3E%3Cpath d='M4.5 17V9l4.5 3.5L12 5.5 15 12.5 19.5 9v8z' fill='none' stroke='%2319e3ff' stroke-width='1.7'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="03_assets/style.css?v=62eed12feb">
 </head>
 <body>
 <div id="app">
 
   <div id="boot" class="screen on">
-    <h1 class="logo">CYBER<span>_</span>SHOGI</h1>
+    <h1 class="logo" data-txt="CYBER_SHOGI">CYBER<span>_</span>SHOGI</h1>
     <div class="sub">電脳将棋 :: INTRUSION PROTOCOL</div>
     <div id="boot-tap">▸ TAP TO CONNECT ◂</div>
   </div>
@@ -18,8 +19,9 @@
   <div id="title" class="screen">
     <canvas id="net-bg"></canvas>
     <div id="title-inner">
-      <h1 class="logo">CYBER<span>_</span>SHOGI</h1>
+      <h1 class="logo" data-txt="CYBER_SHOGI">CYBER<span>_</span>SHOGI</h1>
       <div class="sub">電脳将棋 :: FACTION WARS</div>
+      <div id="marquee"><span class="mq"></span></div>
       <button class="menu-btn" id="bt-free">FREE RUN — 侵入開始</button>
       <button class="menu-btn mg" id="bt-daily">DAILY RUN — 本日のシード</button>
       <button class="menu-btn sm" id="bt-howto">HOW TO PLAY — 遊び方</button>
@@ -90,6 +92,6 @@
   <div class="bn-sub" id="banner-sub"></div>
 </div>
 
-<script src="shogi.bundle.js?v=0ba8636a14"></script>
+<script src="shogi.bundle.js?v=a2c0f8d368"></script>
 </body>
 </html>
