@@ -998,7 +998,7 @@ function drawNet(nets){
   let out="";
   const ctr=i=>[(i%N+0.5)*20,(((i/N)|0)+0.5)*20];
   for(const s of [0,1]){
-    const col=s===0?"#19e3ff":(FCOLOR[bt.faction]||"#ff2d95"), op=s===0?0.45:0.28;
+    const col=s===0?"#e9e7e2":(FCOLOR[bt.faction]||"#ff2d95"), op=s===0?0.45:0.28;
     const list=[...nets.on[s]];
     for(let a=0;a<list.length;a++)for(let b=a+1;b<list.length;b++){
       const i=list[a], j=list[b];

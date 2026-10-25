@@ -376,3 +376,93 @@ body:has(#title.on), body:has(#boot.on){background:var(--g-bg);}
   .g-menu button{grid-template-columns:34px 1fr auto;}
 }
 #title h1.g-logo, #boot h1.g-logo{font-size:clamp(64px,15vw,184px); line-height:.84;}
+
+/* ========== v4d: 対局画面・モーダルをギャラリー調に統一 ==========
+   自軍=生成り / 敵=陣営色(--efg) / シアンは選択・移動可能・回線発光のみ。常時グローなし。 */
+body:has(#game.on)::before{display:none;}
+body:has(#game.on){background:var(--g-bg);}
+body{background:var(--g-bg); color:var(--g-fg); font-family:var(--g-mono); --efg-glow:transparent;}
+#app{overflow-x:hidden;}
+#game{color:var(--g-fg); font-family:var(--g-mono); padding:0 2px;}
+#hud{padding:10px 2px 8px; font-size:12px; border-bottom:1px solid var(--g-line); margin-bottom:8px; gap:8px;}
+#hud .stg{font-family:var(--g-sans); font-weight:500; font-size:14px; letter-spacing:0; color:var(--efg);}
+#hud .scr{color:var(--g-fg);}
+#hud .seed{color:var(--g-mute); font-size:10px;}
+.hand{font-size:11px; flex-wrap:wrap;}
+.hand .lbl{color:var(--g-mute); font-size:10px;}
+.chip{border:1px solid var(--g-line); border-radius:0; background:transparent; color:var(--g-fg);
+  font-family:var(--g-mono);}
+.chip.enemy{color:var(--efg); background:transparent;}
+.chip.sel{border-color:var(--g-acc); color:var(--g-acc); box-shadow:none;}
+.chip .n{color:var(--g-mute);}
+
+#board{background:var(--g-line); border:1px solid var(--g-line); border-radius:0; gap:1px; box-shadow:none;}
+.cell{background:var(--g-bg);}
+.cell .coord{color:#3a3935;}
+.cell.movable::after{background:var(--g-acc); box-shadow:none; opacity:.8; width:14%; height:14%;}
+.cell.movable.cap::after{width:80%; height:80%; border-radius:0; background:transparent;
+  border:1px solid var(--g-acc); box-shadow:none; opacity:1;}
+.cell.selc{background:#10282c; outline:1px solid var(--g-acc); outline-offset:-1px;}
+.cell.lastmv{background:#161614;}
+.cell.checkk{background:#2a1010;}
+.cell.down{background:#080807;}
+.cell.down::before{color:#4a2a28; font-weight:400;}
+.cell .cd{text-shadow:none; color:#d86060; font-family:var(--g-mono);}
+.pc{border-radius:1px; border-width:1px; font-family:var(--g-sans); font-weight:500;}
+.pc.s0{color:var(--g-fg); border-color:var(--g-fg); background:rgba(233,231,226,.03); box-shadow:none;}
+.pc.s1{color:var(--efg); border-color:var(--efg); background:transparent; box-shadow:none;}
+.pc.promo{color:var(--gold); border-color:var(--gold); text-shadow:none; border-width:1px;}
+.pc .rk{text-shadow:none;}
+.pc.offline .lv{color:#d86060;}
+.cell.hacked::before{text-shadow:none; color:var(--g-fg); font-family:var(--g-mono);}
+.pc.frozen::after{color:#d86060;}
+
+#ctrl{gap:0; margin-top:10px; border-top:1px solid var(--g-line); flex-wrap:nowrap;}
+.cbtn{border:0; border-bottom:1px solid var(--g-line); border-radius:0; background:transparent;
+  color:var(--g-fg); font-family:var(--g-mono); font-size:11px; letter-spacing:.02em; min-width:0; padding:12px 2px;}
+.cbtn:not(:disabled):hover{color:var(--g-acc); border-color:var(--g-line);}
+.cbtn.warn{color:#d86060; border-color:var(--g-line);}
+.cbtn.armed{background:rgba(216,96,96,.12); box-shadow:none;}
+#term{border:0; border-top:0; border-radius:0; background:transparent; color:var(--g-mute);
+  font-family:var(--g-mono); font-size:11px; padding:8px 2px;}
+#term .g,#term .c{color:var(--g-fg);} #term .m{color:var(--efg);} #term .y{color:var(--gold);}
+
+/* モーダル */
+.modal{background:rgba(12,12,11,.94); font-family:var(--g-sans); color:var(--g-fg);}
+.modal h2{font-family:var(--g-sans); font-weight:500; color:var(--g-fg); letter-spacing:-.01em;
+  text-shadow:none; font-size:22px;}
+.modal .note{color:var(--g-mute); font-family:var(--g-mono);}
+.upg{border:1px solid var(--g-line); border-radius:0; background:var(--g-bg); text-align:left;}
+.upg:hover{border-color:var(--g-acc); box-shadow:none; transform:none;}
+.upg .ic{font-size:22px; color:var(--g-fg);}
+.upg .nm{color:var(--g-fg); font-family:var(--g-sans); font-weight:500; font-size:14px; letter-spacing:0;}
+.upg .ds{color:var(--g-mute); font-family:var(--g-mono);}
+#end-body{width:min(92vw,420px); text-align:left;}
+#end-body h2{font-size:18px; text-align:left;}
+#end-body .rank{font-family:var(--g-sans); font-weight:500; font-size:96px; line-height:1; color:var(--g-fg);
+  text-shadow:none; margin:14px 0; letter-spacing:-.04em;}
+#end-body .fs{font-family:var(--g-mono); color:var(--g-fg); font-size:13px;}
+#end-body .detail{font-family:var(--g-mono); color:var(--g-mute); font-size:11px;}
+.modal .menu-btn{all:unset; box-sizing:border-box; display:block; width:100%; cursor:pointer; padding:14px 2px;
+  border-top:1px solid var(--g-line); font-family:var(--g-sans); font-size:16px; font-weight:500; color:var(--g-fg);
+  letter-spacing:0; text-align:left; margin:0;}
+.modal .menu-btn:hover{color:var(--g-acc);}
+.modal .menu-btn.mg{color:var(--g-mute);} .modal .menu-btn.mg:hover{color:var(--g-fg);}
+.modal .menu-btn.sm{font-size:13px; color:var(--g-mute);}
+#kifu-wrap{width:min(92vw,460px);}
+#kifu-txt{background:var(--g-bg); color:var(--g-mute); border:1px solid var(--g-line); border-radius:0;
+  font-family:var(--g-mono);}
+#bt-kifu-close{width:min(92vw,460px);}
+#howto-card,#hint-card{border:1px solid var(--g-line); border-radius:0; background:var(--g-bg);}
+#howto-card h2,#hint-card h2{font-size:16px;}
+#howto-body,#hint-body{color:var(--g-mute); font-family:var(--g-sans);}
+#howto-body b,#hint-body b{color:var(--g-fg); font-weight:500;}
+#howto-body td{border-bottom:1px solid var(--g-line); color:var(--g-mute);}
+#howto-body td:first-child{color:var(--g-fg);}
+#howto-pos{color:var(--g-mute); font-family:var(--g-mono);}
+#howto-nav .cbtn{border:0; width:auto; flex:0 0 auto;}
+#hint-card .tapcont{color:var(--g-mute); font-family:var(--g-mono); letter-spacing:.08em;}
+.stage-banner{background:rgba(12,12,11,.88);}
+.stage-banner .bn-main{font-family:var(--g-sans); font-weight:500; letter-spacing:-.01em; text-shadow:none;
+  font-size:clamp(28px,8vw,56px);}
+.stage-banner .bn-sub{font-family:var(--g-mono); color:var(--g-mute); text-shadow:none;}
