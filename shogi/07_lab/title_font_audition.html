@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CYBER_SHOGI TYPE LAB — title font × motion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=Syne:wght@400..800&family=Unbounded:wght@200..900&family=Instrument+Serif:ital@0;1&family=Major+Mono+Display&family=Doto:wght@100..900&family=Big+Shoulders+Display:wght@100..900&family=Space+Mono:wght@400;700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0c0b;--fg:#e9e7e2;--mute:#7a7770;--line:#2b2a27;--acc:#19e3ff;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--fg);font-family:"IBM Plex Mono",monospace;}
+.wrap{max-width:1180px;margin:0 auto;padding:28px clamp(16px,4vw,48px) 80px;}
+.meta{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);
+  border-bottom:1px solid var(--line);padding-bottom:10px;}
+.ctrl{display:flex;flex-wrap:wrap;gap:6px 18px;margin:18px 0 6px;font-size:11px;color:var(--mute);align-items:center;}
+.ctrl button{all:unset;cursor:pointer;color:var(--mute);border-bottom:1px solid transparent;padding:2px 0;}
+.ctrl button.on{color:var(--fg);border-color:var(--acc);}
+.ctrl label{display:flex;gap:8px;align-items:center;}
+.ctrl input[type=range]{accent-color:#19e3ff;}
+.item{border-bottom:1px solid var(--line);padding:26px 0 22px;display:grid;grid-template-columns:40px 1fr;gap:10px;}
+.no{font-size:11px;color:var(--mute);padding-top:10px;}
+.name{font-size:11px;color:var(--mute);margin-top:12px;line-height:1.7;}
+.name b{color:var(--fg);font-weight:400;}
+.logo{font-size:clamp(40px,11vw,120px);line-height:.92;color:var(--fg);white-space:nowrap;
+  overflow:visible;display:block;user-select:none;}
+.logo.wide{font-size:clamp(30px,8.4vw,96px);}
+.logo .ch{display:inline-block;}
+.logo .us{color:var(--acc);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="meta"><span>CYBER_SHOGI / TYPE LAB</span><span>title font × motion</span></div>
+  <div class="ctrl" id="modes">
+    MOTION:
+    <button data-m="none">静止</button>
+    <button data-m="drift" class="on">A 漂流 drift</button>
+    <button data-m="breath">B 呼吸 breath(太さ)</button>
+    <button data-m="signal">C 信号 signal(走査ずれ)</button>
+    <button data-m="wave">D 波 wave</button>
+    <button data-m="decode">E 解読 decode(文字化け→収束)</button>
+  </div>
+  <div class="ctrl"><label>強さ <input type="range" id="amt" min="0" max="200" value="100"></label></div>
+  <div id="list"></div>
+</div>
+<script>
+"use strict";
+const FONTS=[
+ {f:"Space Grotesk",w:500,ls:"-.045em",note:"現行。癖の少ない現代グロテスク。端正だが個性は弱い"},
+ {f:"Syne",w:800,ls:"-.03em",note:"美術館・ギャラリーのVIで多用。太字で横に張る独特の造形"},
+ {f:"Unbounded",w:600,ls:"-.03em",note:"幅広の幾何学体。レトロフューチャー寄り、太さ可変(呼吸と相性◎)"},
+ {f:"Instrument Serif",w:400,ls:"-.02em",note:"現代的な細身セリフ。意外性とエレガンス、ゲームらしさは最も薄い"},
+ {f:"Major Mono Display",w:400,ls:"0",note:"幾何学モノスペース。数学的・図面的、70年代SFの匂い"},
+ {f:"Doto",w:700,ls:"-.02em",note:"ドットマトリクス(可変)。データ/電光表示=池田亮二系と最も親和"},
+ {f:"Big Shoulders Display",w:800,ls:"-.01em",note:"コンデンス工業系。都市工学・サイン計画的"},
+ {f:"Space Mono",w:700,ls:"-.04em",note:"モノスペース太字。端末/コード的、レトロ寄り"},
+];
+const TXT="CYBER_SHOGI";
+let mode="drift", amt=1;
+const list=document.getElementById("list"), items=[];
+FONTS.forEach((F,k)=>{
+  const it=document.createElement("div"); it.className="item";
+  it.innerHTML=`<div class="no">${String(k+1).padStart(2,"0")}</div><div>
+    <span class="logo" style="font-family:'${F.f}';font-weight:${F.w};letter-spacing:${F.ls}"></span>
+    <div class="name"><b>${F.f}</b> — ${F.note}</div></div>`;
+  const logo=it.querySelector(".logo");
+  if(["Syne","Unbounded","Major Mono Display"].includes(F.f)) logo.classList.add("wide");
+  const chs=[...TXT].map((c,i)=>{const s=document.createElement("span"); s.className="ch"+(c==="_"?" us":""); s.textContent=c; s.dataset.c=c; logo.appendChild(s);
+    if(c==="_") logo.appendChild(document.createElement("br")); return s;});
+  list.appendChild(it);
+  items.push({F,chs,seed:Math.random()*100});
+});
+document.querySelectorAll("#modes button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#modes button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); mode=b.dataset.m;
+  items.forEach(it=>it.chs.forEach(s=>{s.style.transform="";s.style.fontVariationSettings="";s.textContent=s.dataset.c;s.style.clipPath="";}));
+  decodeT=0;
+});
+document.getElementById("amt").oninput=e=>amt=e.target.value/100;
+// 低コストな滑らかノイズ(正弦の和)
+const nz=(x)=>Math.sin(x)*0.6+Math.sin(x*2.13+1.7)*0.3+Math.sin(x*4.7+0.3)*0.1;
+const GL="▚▞▙▟░▒#%&/\\01ΔΣ歩銀金角飛玉";
+let decodeT=0, sigUntil=0, sigRow=0;
+function frame(ts){
+  const t=ts/1000;
+  if(mode==="signal"&&t>sigUntil+1.4+Math.random()*2.5){sigUntil=t+0.09;sigRow=Math.random();}
+  if(mode==="decode") decodeT+=1/60;
+  for(const it of items){
+    it.chs.forEach((s,i)=>{
+      const ph=it.seed+i*1.37;
+      if(mode==="drift"){
+        const dx=nz(t*0.55+ph)*1.6*amt, dy=nz(t*0.47+ph*1.9)*2.4*amt, r=nz(t*0.3+ph*0.7)*1.2*amt;
+        s.style.transform=`translate(${dx}px,${dy}px) rotate(${r}deg)`;
+      }else if(mode==="breath"){
+        const w=Math.round(it.F.w+nz(t*0.6+i*0.35)*180*amt);
+        s.style.fontVariationSettings=`"wght" ${Math.max(100,Math.min(900,w))}`;
+        s.style.transform=`translateY(${nz(t*0.4+i*0.2)*1.2*amt}px)`;
+      }else if(mode==="signal"){
+        if(t<sigUntil){
+          const off=(Math.random()-.5)*14*amt;
+          const y0=Math.floor(sigRow*70), y1=Math.min(100,y0+12+Math.random()*18);
+          s.style.clipPath="none";
+          s.style.transform=`translateX(${(i%2?off:-off)*0.6}px) skewX(${off*0.4}deg)`;
+        }else{
+          s.style.transform=`translateX(${nz(t*3+ph)*0.35*amt}px)`;
+        }
+      }else if(mode==="wave"){
+        s.style.transform=`translateY(${Math.sin(t*1.6-i*0.55)*5*amt}px)`;
+      }else if(mode==="decode"){
+        const cycle=decodeT%7, settle=0.25+i*0.12;
+        if(cycle<settle&&s.dataset.c!=="_"){
+          if(Math.random()<0.5) s.textContent=GL[(Math.random()*GL.length)|0];
+        } else s.textContent=s.dataset.c;
+        s.style.transform=`translate(${nz(t*0.5+ph)*0.8*amt}px,${nz(t*0.45+ph*2)*1.2*amt}px)`;
+      }
+    });
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
