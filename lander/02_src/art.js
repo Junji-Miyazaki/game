@@ -107,6 +107,19 @@ function charW(ctx, font, ch) {
   if (w === undefined) { w = ctx.measureText(ch).width; if (!(w >= 0)) w = 6; _wMemo.set(k, w); }
   return w;
 }
+// 幅 maxW に収まるよう末尾を省略記号にする（書記素単位）。sp=字間。テスト用ctxでも例外を出さない
+export function ellipsize(ctx, s, size, wt, sp, maxW) {
+  s = String(s == null ? '' : s);
+  try {
+    const font = fontStr(wt || 400, size);
+    const wOf = (str) => { ctx.save(); ctx.font = font; const w = ctx.measureText(str).width; ctx.restore(); return (w >= 0 ? w : 0) + (sp || 0) * Math.max(0, Array.from(str).length - 1); };
+    if (wOf(s) <= maxW) return s;
+    const seg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s), (x) => x.segment) : Array.from(s);
+    let lo = 0, hi = seg.length;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (wOf(seg.slice(0, mid).join('') + '\u2026') <= maxW) lo = mid; else hi = mid - 1; }
+    return lo > 0 ? seg.slice(0, lo).join('') + '\u2026' : '\u2026';
+  } catch (_) { return s.slice(0, 8); }
+}
 // y は文字の上端（engine.text と同じ）。o: { w:太さ, sp:字間px, a:不透明度, sh:影 }
 export function txt(ctx, s, x, y, size, color, align, o) {
   s = String(s == null ? '' : s);
@@ -1729,4 +1742,26 @@ export function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
   txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+}
+
+// タイトルの WORLD #1 バナー。box={x,y,w,h}（2行: y+0 と y+14）。d={name,score,title}。maxW1=1行目の最大幅
+export function drawWorldBanner(ctx, box, d, a, maxW1) {
+  const p = P();
+  const cx = box.x + box.w / 2;
+  const lim = Math.min(maxW1 || box.w, box.w);
+  const SZ = 10, SP = 2;
+  const lab = 'WORLD #1', sc = String(d.score);
+  const wOf = (str, size, sp) => { ctx.save(); ctx.font = fontStr(400, size); const w = ctx.measureText(str).width; ctx.restore(); return (w >= 0 ? w : 0) + sp * Math.max(0, Array.from(str).length - 1); };
+  const gap = 10;
+  const wl = wOf(lab, 8, 3), ws = wOf(sc, SZ, 1);
+  const name = ellipsize(ctx, d.name, SZ, 400, SP, Math.max(24, lim - wl - ws - gap * 2));
+  const wn = wOf(name, SZ, SP);
+  const total = wl + gap + wn + gap + ws;
+  let x = cx - total / 2;
+  txt(ctx, lab, x, box.y + 2, 8, p.dim, 'left', { sp: 3, w: 500, a });
+  x += wl + gap;
+  txt(ctx, name, x, box.y, SZ, p.fg, 'left', { sp: SP, w: 400, a });
+  x += wn + gap;
+  txt(ctx, sc, x, box.y, SZ, p.warn, 'left', { sp: 1, w: 500, a });
+  if (d.title) txt(ctx, '\u300c' + ellipsize(ctx, d.title, 8, 400, 1, lim - 20) + '\u300d', cx, box.y + 16, 8, p.mid, 'center', { sp: 1, w: 400, a: a * 0.95 });
 }

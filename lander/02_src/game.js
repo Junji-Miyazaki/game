@@ -6,14 +6,14 @@
 // Safe landing on the pad = STAGE CLEAR. Crash = GAME OVER.
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, saveRanking, recordEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, getActiveProfile, newRunId, recordStageReached, loadCheckpoint, saveCheckpoint, clearCheckpoint } from './ranking.js';
+import { loadRanking, saveRanking, recordEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, getActiveProfile, newRunId, recordStageReached, loadCheckpoint, saveCheckpoint, clearCheckpoint, WorldNet, top1FromList, loadWorld } from './ranking.js';
 import { isDebug } from './debug.js';
 import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose, TERRA, BONUS_ALT, missionOf, bonusBody, bonusScoreFor } from './bodies.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
-import { relayEnabled, submitScore, adminList, adminDelete } from './net.js';
-import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay } from './title.js';
-import { drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote } from './art.js';
+import { relayEnabled, adminList, adminDelete } from './net.js';
+import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
+import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -226,7 +226,9 @@ function hexA(hex, a) {
 export class Game extends Scene {
 
   enter() {
-    hideNameOverlay();   // 名前入力DOMがゲーム画面に残らないように
+    if (this._champ) this._champ.close();
+    this._champTok = (this._champTok || 0) + 1; this._champ = null;
+    hideNameOverlay(); hideChampionEntry();   // 名前入力DOMがゲーム画面に残らないように
     this.high       = (this.engine.storage.getHigh(meta.id) || 0);
     this.totalScore = 0;
     this.stage      = 1;
@@ -263,7 +265,7 @@ export class Game extends Scene {
     this._maybeShowTip();
   }
 
-  exit() { this._admin = null; this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() { this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
@@ -286,7 +288,7 @@ export class Game extends Scene {
     this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
   }
-  blocksBack() { return this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
+  blocksBack() { return championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -403,6 +405,7 @@ export class Game extends Scene {
 
   // ---- Discrete input (keyboard / tap) ----
   onInput(action, data) {
+    if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（タイトルへ戻らない・下の画面に貫通しない）
     const confirm = (action === 'tap' || action === 'confirm');
     if (RESULT_STATES.indexOf(this.state) >= 0) {
       if (data && data.repeat) return;                                            // キーのオートリピートは進行に使わない
@@ -796,12 +799,30 @@ export class Game extends Scene {
       } else if (ex) this.newIdx = -1;
     }
     if (!dbgRun && relayEnabled() && this.totalScore > 0) {
+      const score = this.totalScore, tok = this._champTok = (this._champTok || 0) + 1;
       try {
-        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
+        Promise.resolve(WorldNet.submit({ name: nm, score, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
           if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
-        }, () => {});
+          if (r && r.ok === true && prof && prof.key) return this._maybeChampion(nm, prof.key, score, tok);
+        }, () => {}).catch(() => {});
       } catch (_) { /* 送信失敗はゲームに影響させない */ }
     }
+  }
+
+  // 送信成功後に WORLD を再取得。自分が #1 で、この記録のスコアなら称号入力（NEW WORLD RECORD）を出す。失敗・遅延しても何もしない
+  async _maybeChampion(nm, key, score, tok) {
+    let top = null;
+    try { top = await WorldNet.fetchTop(); } catch (_) { top = null; }
+    if (!Array.isArray(top)) return;
+    const row = top1FromList(this.engine.storage, top);
+    if (tok !== this._champTok || this.state !== 'gameover' || this._isDebugRun() || championEntryOpen(this._champ)) return;
+    if (this.rankTabs && this.rankTabs.mode === 'world' && this.rankTabs.status === 'ok') { try { loadWorld(this.rankTabs); } catch (_) { /* ignore */ } }
+    if (!row || row.name !== nm || row.score !== score) return;
+    this._champ = openChampionEntry({ name: nm, key, initial: row.title || '', heading: 'NEW WORLD RECORD!', storage: this.engine.storage,
+      onClose: () => {
+        this._champ = null;
+        if (this.state === 'gameover' && this.rankTabs && (this.rankTabs.mode === 'world') && this.rankTabs.status !== 'loading') { try { loadWorld(this.rankTabs); } catch (_) { /* ignore */ } }
+      } });
   }
 
   // ---- Control inputs: 全タッチをゾーンごとに評価（同時押し可）----
@@ -1351,6 +1372,8 @@ export class Game extends Scene {
     } else if (this.state === 'bonusselect') {
       this._drawBonusSelect(ctx);
     }
+
+    if (championEntryOpen(this._champ)) veil(ctx, 0.5);
 
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());

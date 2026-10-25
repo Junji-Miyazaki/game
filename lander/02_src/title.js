@@ -2,11 +2,11 @@
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts } from './ranking.js';
+import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts, WorldNet, sanitizeTitle, titleResultMessage, loadTop1, top1FromList, saveTop1, graphemes, TITLE_MAX } from './ranking.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag } from './art.js';
+import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner } from './art.js';
 
 import { stageInfo } from './bodies.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
@@ -139,6 +139,83 @@ export function hideNameOverlay() {
   } catch (_) { /* ignore */ }
 }
 
+// ---- チャンピオン称号の入力（WORLD #1 のみ）----
+// document が無い環境でも状態機械として動く（テスト用）。DOM は薄い皮。
+// o = { name, key, initial, heading, storage, onClose(ctrl) }。save(raw) -> Promise<result>。成功は約1.2秒後に自動で閉じる。失敗はメッセージを出して残す（SKIP で必ず抜けられる）
+export const CHAMP_ID = 'lander-champ-entry';
+export function openChampionEntry(o) {
+  hideChampionEntry();
+  const c = { open: true, busy: false, msg: '', ok: false, name: o.name, heading: o.heading || '', value: sanitizeTitle(o.initial || ''), _timer: 0, _dom: null };
+  const render = () => { if (c._dom) { c._dom.msg.textContent = c.msg; c._dom.save.disabled = c.busy; c._dom.skip.textContent = c.ok || c.msg ? 'CLOSE' : 'SKIP'; } };
+  c.close = () => {
+    if (!c.open) return;
+    c.open = false;
+    if (c._timer) { clearTimeout(c._timer); c._timer = 0; }
+    if (c._dom && c._dom.wrap.parentNode) c._dom.wrap.parentNode.removeChild(c._dom.wrap);
+    c._dom = null;
+    try { if (o.onClose) o.onClose(c); } catch (_) { /* ignore */ }
+  };
+  c.skip = () => c.close();
+  c.save = async (raw) => {
+    if (!c.open || c.busy) return null;
+    const title = sanitizeTitle(raw === undefined ? c.value : raw);
+    c.value = title; c.busy = true; c.ok = false; c.msg = 'SAVING\u2026'; render();
+    let r;
+    try { r = await WorldNet.setTitle(o.name, o.key, title); } catch (_) { r = { ok: false, error: 'unavailable' }; }
+    if (!c.open) return r;
+    c.busy = false; c.ok = !!(r && r.ok); c.msg = titleResultMessage(r); c.result = r;
+    if (c.ok) {
+      const saved = (r && typeof r.title === 'string') ? sanitizeTitle(r.title) : title;
+      if (o.storage) { const t1 = loadTop1(o.storage); if (t1 && t1.name === o.name) { t1.title = saved; saveTop1(o.storage, t1); } }
+      c._timer = setTimeout(() => c.close(), 1200);
+    }
+    render();
+    return r;
+  };
+  if (typeof document !== 'undefined' && document.body && document.createElement) {
+    try {
+      const wrap = document.createElement('div');
+      wrap.id = CHAMP_ID;
+      const head = document.createElement('div'); head.className = 'ce-head'; head.textContent = c.heading;
+      const sub = document.createElement('div'); sub.className = 'ce-name'; sub.textContent = o.name;
+      const label = document.createElement('div'); label.className = 'ce-label'; label.textContent = 'YOUR TITLE (OPTIONAL, MAX ' + TITLE_MAX + ')';
+      const input = document.createElement('input');
+      input.type = 'text'; input.maxLength = 64; input.value = c.value; input.autocomplete = 'off'; input.spellcheck = false;
+      input.setAttribute('autocapitalize', 'off'); input.placeholder = '\u300c \u300d';
+      const save = document.createElement('button'); save.type = 'button'; save.textContent = 'SAVE'; save.className = 'ce-save';
+      const skip = document.createElement('button'); skip.type = 'button'; skip.textContent = 'SKIP'; skip.className = 'ce-skip';
+      const msg = document.createElement('div'); msg.className = 'ce-msg';
+      let composing = false;
+      const clamp = () => { if (composing) return; const g = graphemes(input.value); if (g.length > TITLE_MAX) input.value = g.slice(0, TITLE_MAX).join(''); c.value = input.value; };
+      input.addEventListener('compositionstart', () => { composing = true; });
+      input.addEventListener('compositionend', () => { composing = false; clamp(); });
+      input.addEventListener('input', clamp);
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.isComposing || e.keyCode === 229) return;
+        if (e.key === 'Enter') { e.preventDefault(); c.save(input.value); }
+        else if (e.key === 'Escape') { e.preventDefault(); c.skip(); }
+      });
+      save.addEventListener('click', () => c.save(input.value));
+      skip.addEventListener('click', () => c.skip());
+      const row = document.createElement('div'); row.className = 'ce-row'; row.appendChild(save); row.appendChild(skip);
+      [head, sub, label, input, row, msg].forEach((n) => wrap.appendChild(n));
+      document.body.appendChild(wrap);
+      c._dom = { wrap, input, save, skip, msg };
+      try { input.focus(); input.select(); } catch (_) { /* ignore */ }
+    } catch (_) { c._dom = null; }
+  }
+  return c;
+}
+export function hideChampionEntry() {
+  try {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    const old = document.getElementById(CHAMP_ID);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  } catch (_) { /* ignore */ }
+}
+export function championEntryOpen(c) { return !!(c && c.open); }
+
 // ---- 起動画面「TAP TO BEGIN」----
 // ブラウザは最初のユーザー操作まで音を出せない（自動再生の制限）。ここで1回タップしてもらうことで
 // 音声が有効になり、次のタイトル画面は表示された瞬間から曲が流れる（TitleScene.enter が ctx を見て再生）。
@@ -208,6 +285,10 @@ export class TitleScene extends Scene {
     this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
     this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
     this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
+    this.worldBox = { x: 40, y: 134, w: 280, h: 28 };               // WORLD #1 バナー（1行目 y134、称号 y150。ロゴ/BETA(〜130)とロケット先端(164)の間）
+    this.titleBtn = { x: 284, y: 132, w: 68, h: 22 };               // SET TITLE（現チャンピオンのみ。バナー右端）
+    this.top1 = null;       // { name, score, title, at } 既知の WORLD #1
+    this._topTok = 0; this._champ = null;
     this.cp = null;
     this.pick = null;                                               // CHOOSE START { list, sel, page }
     this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
@@ -222,8 +303,34 @@ export class TitleScene extends Scene {
     this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
     try { const ap = getActiveProfile(this.engine.storage); if (ap) this.name = ap.name; } catch (_) { /* ignore */ }
     this.cp = loadCheckpoint(this.engine.storage);
+    this.top1 = loadTop1(this.engine.storage);      // 即表示（オフラインでも）
+    this._refreshTop1();
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
+  }
+
+  // WORLD #1 を取得してキャッシュ・表示を更新。失敗(null)ならキャッシュのまま
+  _refreshTop1() {
+    const tk = ++this._topTok;
+    let pr = null;
+    try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { return Promise.resolve(); }
+    return pr.then((list) => {
+      if (tk !== this._topTok || !Array.isArray(list)) return;
+      this.top1 = top1FromList(this.engine.storage, list);
+    }, () => {});
+  }
+  _isChampion() {
+    const t = this.top1; if (!t || !t.name) return false;
+    const ap = getActiveProfile(this.engine.storage);
+    return !!ap && ap.name === t.name;
+  }
+  _openTitleEntry() {
+    const ap = getActiveProfile(this.engine.storage);
+    if (!ap || !this._isChampion()) return;
+    musicOf(this.engine).sfx.uiTap();
+    this.showRank = false;
+    this._champ = openChampionEntry({ name: ap.name, key: ap.key, initial: (this.top1 && this.top1.title) || '', heading: 'WORLD #1', storage: this.engine.storage,
+      onClose: (c) => { this._champ = null; this.top1 = loadTop1(this.engine.storage) || this.top1; if (!c || !c.ok) this._refreshTop1(); } });   // 保存成功時は再取得しない（中継の古いキャッシュで上書きされないように）
   }
 
   _ensureMusic() {
@@ -380,13 +487,14 @@ export class TitleScene extends Scene {
     for (const r of R.rows) if (this._hit(r.rect, data)) { musicOf(this.engine).sfx.uiTap(); this._startAt(r.o.stage); return; }
     // それ以外のタップは何もしない（裏の START/CONTINUE に貫通させない）
   }
-  blocksBack() { return !!this.pick; }
+  blocksBack() { return !!this.pick || championEntryOpen(this._champ); }
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
-  exit() { hideNameOverlay(); }
+  exit() { hideNameOverlay(); this._topTok++; if (this._champ) this._champ.close(); hideChampionEntry(); }
 
   onInput(action, data) {
+    if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（下で開始しない）
     if (nameOverlayOpen()) return;           // 名前入力中はキャンバスの入力を受けない（下で発射が始まらない）
     if (data && data.repeat) return;         // キーのオートリピートでは開始・スキップしない
     if (this.launch) {            // 発射中: タップ/決定でスキップ
@@ -412,6 +520,7 @@ export class TitleScene extends Scene {
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
       if (this.showRank) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; return; }
+      if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
       if (this._hit(this.logoBox, data) || this._hit(this.betaBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
@@ -518,6 +627,15 @@ export class TitleScene extends Scene {
       txt(ctx, 'SOFT LANDING TOUR', W / 2, 98, 8, p.dim, 'center', { sp: 5, w: 400, a: logoA });
       drawBetaTag(ctx, this.betaBox, logoA);
     }
+    if (ui > 0 && this.top1) {
+      const champ = this._isChampion();
+      drawWorldBanner(ctx, this.worldBox, this.top1, ui * 0.9, champ ? 2 * (this.titleBtn.x - 8 - (this.worldBox.x + this.worldBox.w / 2)) : this.worldBox.w);   // 中央揃えのまま SET TITLE に食い込まない幅
+      if (champ) {
+        const tb = this.titleBtn;
+        pill(ctx, tb.x, tb.y + 2, tb.w, 18, rgba(p.warn, 0.06 * ui), rgba(p.warn, 0.4 * ui));
+        txt(ctx, 'SET TITLE', tb.x + tb.w / 2, tb.y + 7, 7, p.warn, 'center', { sp: 2, w: 500, a: ui });
+      }
+    }
     if (ui > 0) {
       const sp = drawSpeaker;
       sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
@@ -575,5 +693,6 @@ export class TitleScene extends Scene {
       drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg,
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
+    if (championEntryOpen(this._champ)) veil(ctx, 0.55);
   }
 }

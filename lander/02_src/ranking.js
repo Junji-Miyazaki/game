@@ -1,11 +1,78 @@
 // ローカルランキング（端末ごとの localStorage 保存）。純関数中心でヘッドレステスト可能。
 // Entry = { name, score, stage, date(ISO) }。上位10件を score降順 → stage降順 → 日付が早い順 で保持する。
 import { P } from './core/palette.js';
-import { relayEnabled, fetchWorldTop, makeNameKey } from './net.js';
-import { txt, rgba, hair, pill } from './art.js';
+import { relayEnabled, fetchWorldTop, submitScore, makeNameKey } from './net.js';
+import * as NetNS from './net.js';
+import { txt, rgba, hair, pill, ellipsize } from './art.js';
 import { stageInfo, STAGES_PER_BODY, bodyGravity } from './bodies.js';
 
 export const RANK_MAX = 10;
+
+// ---- 世界ランキングの通信窓口（テストで差し替え可能）----
+// setTitle は別担当が net.js に追加する。無い／古いワーカーなら 'unavailable' を返し、フローを止めない。
+// ESM では名前空間 NetNS、結合バンドルでは import が除去されるので同一スコープの識別子を参照する。
+const _netSetTitle = () => {
+  try {
+    if (typeof NetNS !== 'undefined' && NetNS) return typeof NetNS.setTitle === 'function' ? NetNS.setTitle : null;
+    // eslint-disable-next-line no-undef
+    return typeof setTitle === 'function' ? setTitle : null;
+  } catch (_) { return null; }
+};
+export const WorldNet = {
+  fetchTop: (...a) => fetchWorldTop(...a),
+  submit: (e) => submitScore(e),
+  setTitle: (name, key, title) => {
+    const f = _netSetTitle();
+    if (!f) return Promise.resolve({ ok: false, error: 'unavailable' });
+    try { return Promise.resolve(f(name, key, title)).then((r) => r || { ok: false, error: 'unavailable' }, () => ({ ok: false, error: 'unavailable' })); }
+    catch (_) { return Promise.resolve({ ok: false, error: 'unavailable' }); }
+  },
+};
+
+// ---- チャンピオンの称号（epithet）と WORLD #1 のキャッシュ ----
+export const TITLE_MAX = 16;
+const segmenter = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+export function graphemes(s) {
+  s = String(s == null ? '' : s);
+  if (segmenter) { try { return Array.from(segmenter.segment(s), (x) => x.segment); } catch (_) { /* fallthrough */ } }
+  return Array.from(s);
+}
+// 制御文字・双方向制御・ゼロ幅を除き、前後の空白を除いて書記素16文字まで。空文字=称号の削除
+export function sanitizeTitle(s) {
+  const clean = String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '').trim();
+  return graphemes(clean).slice(0, TITLE_MAX).join('').trim();
+}
+export function titleResultMessage(r) {
+  if (r && r.ok) return 'TITLE SAVED';
+  const e = r && r.error;
+  if (e === 'not-champion') return 'NOT THE CHAMPION ANYMORE';
+  if (e === 'unavailable' || e === 'disabled') return 'TITLE SERVICE UNAVAILABLE';
+  if (e === 'forbidden') return 'NOT ALLOWED \u2014 KEY MISMATCH';
+  if (e === 'unknown') return 'NAME NOT REGISTERED';
+  if (e === 'invalid') return 'INVALID TITLE';
+  return 'OFFLINE \u2014 TRY LATER';
+}
+const TOP1_KEY = 'worldTop1';
+const cleanTitleField = (t) => (typeof t === 'string' ? sanitizeTitle(t) : '');
+export function loadTop1(storage) {
+  try {
+    const raw = storage.get(TOP1_KEY, null);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o.name !== 'string' || !o.name || !Number.isFinite(o.score)) return null;
+    return { name: o.name, score: o.score, title: cleanTitleField(o.title), at: Number.isFinite(o.at) ? o.at : 0 };
+  } catch (_) { return null; }
+}
+export function saveTop1(storage, row) {
+  try { storage.set(TOP1_KEY, row ? JSON.stringify({ name: row.name, score: row.score, title: row.title || '', at: row.at || Date.now() }) : ''); return true; } catch (_) { return false; }
+}
+// 取得した上位から #1 を取り出してキャッシュ更新。空配列=サーバー上に記録なし→消去。返り値は新しい #1 または null
+export function top1FromList(storage, list) {
+  const r = Array.isArray(list) ? list.find((e) => validEntry(e)) : null;
+  const row = r ? { name: String(r.name), score: r.score, title: cleanTitleField(r.title), at: Date.now() } : null;
+  saveTop1(storage, row);
+  return row;
+}
 const RANK_KEY = 'ranking';
 
 const validEntry = (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage);
@@ -59,7 +126,10 @@ export function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
     else if (i > 0) hair(ctx, x + 4, ry - 2, x + w - 4, ry - 2, p.fg, 0.08);
     const c = hl ? p.warn : p.fg;
     txt(ctx, String(i + 1).padStart(2, '0'), x + 10, ry + 5, 11, p.dim, 'left', { w: 300, sp: 1 });
-    txt(ctx, e.name, x + 38, ry + 4, 13, c, 'left', { w: 400, sp: 1 });
+    const tl = (typeof e.title === 'string' && e.title) ? e.title : '';
+    const nm = ellipsize(ctx, e.name, 13, 400, 1, 140);
+    txt(ctx, nm, x + 38, ry + (tl ? 1 : 4), 13, c, 'left', { w: 400, sp: 1 });
+    if (tl) txt(ctx, ellipsize(ctx, tl, 7, 400, 0.5, 140), x + 38, ry + 16, 7, hl ? p.warn : p.dim, 'left', { w: 400, sp: 0.5 });
     txt(ctx, String(e.score), x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
     txt(ctx, 'ST.' + e.stage, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
   }
@@ -91,7 +161,7 @@ export function rankTabsTap(tabs, x, y, px, py, w) {
 export function loadWorld(tabs) {
   tabs.status = 'loading';
   const tk = ++tabs.token;
-  return fetchWorldTop().then((list) => {
+  return WorldNet.fetchTop().then((list) => {
     if (tk !== tabs.token) return;
     if (list) { tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
     else tabs.status = 'offline';

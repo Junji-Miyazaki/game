@@ -103,3 +103,27 @@ export async function adminDelete(adminKey, name, timeoutMs = NET_TIMEOUT_MS) {
       (res) => (res && res.ok) ? { ok: true } : { ok: false, error: errOf(res) });
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
+
+// 二つ名（WORLD 1位のみ）。-> { ok:true, title } | { ok:false, error }
+// error: 'forbidden'|'unknown'|'not-champion'|'invalid'|'unauthorized'|'disabled'|'unavailable'(中継が未更新で /title が無い)|'status N'|ネットワーク/timeout 文字列
+async function titleCall(path, headers, payload, timeoutMs) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    return await request(RELAY_URL + path, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify(payload) }, timeoutMs, async (res) => {
+      let j = null;
+      try { j = await res.json(); } catch (_) { /* 本文なし/不正 */ }
+      if (res && res.ok) return { ok: true, title: (j && typeof j.title === 'string') ? j.title : String(payload.title ?? '') };
+      const e = j && typeof j.error === 'string' ? j.error : '';
+      if (res && res.status === 404 && e === 'not found') return { ok: false, error: 'unavailable' };
+      if (res && res.status === 409 && e === 'not-champion') return { ok: false, error: 'not-champion' };
+      if (res && res.status === 400 && e === 'invalid') return { ok: false, error: 'invalid' };
+      return { ok: false, error: errOf(res) };
+    });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+export function setTitle(name, key, title, timeoutMs = NET_TIMEOUT_MS) {
+  return titleCall('/title', {}, { name, key, title }, timeoutMs);
+}
+export function adminSetTitle(adminKey, name, title, timeoutMs = NET_TIMEOUT_MS) {
+  return titleCall('/admin/title', { 'X-Admin-Key': String(adminKey || '') }, { name, title }, timeoutMs);
+}

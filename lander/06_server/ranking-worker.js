@@ -5,7 +5,7 @@
 //   {LOG_DIR}/YYYY-MM.jsonl   受理した全エントリを月別に追記（監査ログ。約900KBで YYYY-MM-2.jsonl, -3 ... へ繰り上げ）
 //   {TOP_FILE}                上位100件の JSON 配列（score desc, stage desc, 早い日時が先）。受理のたびに更新
 //   GET /ranking は TOP_FILE だけを読む（上位20を返す）
-//   {NAMES_FILE}              名前台帳 { normName: { name, first } }。先着順で名前の使用済みを判定する（無ければ top.json から自動作成）
+//   {NAMES_FILE}              名前台帳 { normName: { name, keyHash, first, title? } }。先着順で名前の使用済みを判定する（無ければ top.json から自動作成）
 //   WORLD ボードは「名前ごとのベストスコア」1行（normName が同じなら同一人物扱い。ログインは無い）
 //
 // 環境変数（Worker > Settings > Variables and Secrets）
@@ -22,13 +22,18 @@
 //   GET  /name?n=  → { taken: boolean }（空は 400）
 //   POST /submit   ← { name, score, stage, key }  → { ok: true } / 403 name-taken（キー不一致）
 //   POST /delete   ← { name, key }  → { ok: true }（台帳と top.json から削除。月ログは残す）
-//   GET  /admin/list, POST /admin/delete {name}  ヘッダ X-Admin-Key 必須（ADMIN_KEY 未設定なら 503）
+//   POST /title    ← { name, key, title }  → { ok:true, title } / 400 invalid / 403 forbidden / 404 unknown / 409 not-champion
+//                     二つ名（最大16文字）。現 WORLD 1位の名前の持ち主だけが設定/変更/消去できる（空文字で消去）。
+//                     二つ名は名前に付いたまま残る（1位を明け渡しても保持。/delete・/admin/delete で名前ごと消える）
+//   GET  /admin/list, POST /admin/delete {name}, POST /admin/title {name,title}  ヘッダ X-Admin-Key 必須（ADMIN_KEY 未設定なら 503）
 //
 // 限界（事実）: スコアはブラウザ側で計算されるため意図的な偽装は完全には防げない。
 // ここでは妥当性チェックと、isolate内メモリによるベストエフォートの連投制限で抑止する。
 
 const GH = 'https://api.github.com';
 const MAX_NAME = 12;
+const MAX_TITLE = 16;              // 二つ名の書記素上限
+const MAX_TITLE_CP = 64;
 const MAX_SCORE_PER_STAGE = 8000;   // 1ステージで取り得る上限より十分大きい値（P1.5で得点式が変わったら見直す）
 const RL_MS = 20_000;               // 同一IPの連続送信間隔
 const CACHE_MS = 30_000;            // ランキングGETのメモリキャッシュ
@@ -141,7 +146,7 @@ async function appendLog(env, entry) {
     const path = monthPath(env, month, n);
     const text = cur.size ? (await ghRead(env, path, true)).text : '';
     // sha は直前に読んだ値を使う（内容再取得との間に更新されたら 409 → 再試行）
-    if (await ghPut(env, path, text + line, cur.sha, `score: ${entry.name} ${entry.score} (st.${entry.stage})`)) return;
+    if (await ghPut(env, path, text + line, cur.sha, entry.kind === 'title' ? `title: ${entry.name}` : `score: ${entry.name} ${entry.score} (st.${entry.stage})`)) return;
     await backoff(attempt);
   }
   throw new Error('github log conflict');
@@ -172,11 +177,14 @@ function mergeEntry(rows, entry) {
 }
 
 // top.json を更新（名前ごとのベスト上位100）。既存の重複行は初回書き込みで自然に統合される
-async function updateTop(env, entry) {
+// title: names.json 上の現在の二つ名（無ければ ''）。該当行に反映する
+const withTitle = (r, title) => { const { title: _t, ...rest } = r; return title ? { ...rest, title } : rest; };
+async function updateTop(env, entry, title = '') {
   const path = topPath(env);
+  const k = normName(entry.name);
   for (let attempt = 0; attempt < 4; attempt++) {
     const cur = await ghRead(env, path, true);
-    const rows = mergeEntry(parseTop(cur.text), entry);
+    const rows = mergeEntry(parseTop(cur.text), entry).map((r) => (normName(r.name) === k ? withTitle(r, title) : r));
     if (await ghPut(env, path, JSON.stringify(rows) + '\n', cur.sha, `top: ${entry.name} ${entry.score}`)) return;
     await backoff(attempt);
   }
@@ -206,7 +214,7 @@ async function namesFromTop(env) {
   const { text } = await ghRead(env, topPath(env), true);
   const rows = parseTop(text).filter((r) => typeof r.name === 'string').sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const map = new Map();
-  for (const r of rows) { const k = normName(r.name); if (!map.has(k)) map.set(k, { name: r.name, first: String(r.date || '') }); }
+  for (const r of rows) { const k = normName(r.name); if (!map.has(k)) map.set(k, { name: r.name, first: String(r.date || ''), ...(typeof r.title === 'string' && r.title ? { title: r.title } : {}) }); }
   return map;
 }
 // -> { sha, map }（names.json が無ければ top.json から組み立て、sha:null）
@@ -215,6 +223,7 @@ async function readNames(env) {
   return { sha: cur.sha, map: cur.sha ? parseNames(cur.text) : await namesFromTop(env) };
 }
 // 名前の登録/所有確認。 'ok' | 'taken'（キー不一致）。既に登録済みで変更なしなら書き換えない
+// -> { status:'ok'|'taken', title }（title は台帳に保存済みの二つ名）
 async function claimName(env, entry, keyHash) {
   const path = namesPath(env);
   const key = normName(entry.name);
@@ -223,15 +232,15 @@ async function claimName(env, entry, keyHash) {
     const e = cur.map.get(key);
     let changed = cur.sha === null;
     if (e) {
-      if (e.keyHash) return teq(e.keyHash, keyHash) ? 'ok' : 'taken';
+      if (e.keyHash) return teq(e.keyHash, keyHash) ? { status: 'ok', title: e.title || '' } : { status: 'taken', title: '' };
       cur.map.set(key, { ...e, keyHash });          // 旧名（キー無し）は最初のキー付き送信で確保
       changed = true;
     } else {
       cur.map.set(key, { name: entry.name, keyHash, first: entry.date });
       changed = true;
     }
-    if (!changed) return 'ok';
-    if (await ghPut(env, path, namesText(cur.map), cur.sha, `name: ${entry.name}`)) return 'ok';
+    if (!changed) return { status: 'ok', title: '' };
+    if (await ghPut(env, path, namesText(cur.map), cur.sha, `name: ${entry.name}`)) return { status: 'ok', title: (cur.map.get(key) || {}).title || '' };
     await backoff(attempt);
   }
   throw new Error('github names conflict');
@@ -256,6 +265,33 @@ async function removeName(env, key) {
   }
   throw new Error('github top conflict');
 }
+// 二つ名を names.json と top.json に反映（title '' で消去）。-> 'ok' | 'unknown'
+async function applyTitle(env, key, title) {
+  let found = false;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await readNames(env);
+    const e = cur.map.get(key);
+    if (!e) return 'unknown';
+    cur.map.set(key, withTitle(e, title));
+    if (await ghPut(env, namesPath(env), namesText(cur.map), cur.sha, 'title: ' + e.name)) { found = true; break; }
+    await backoff(attempt);
+  }
+  if (!found) throw new Error('github names conflict');
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await ghRead(env, topPath(env), true);
+    const rows = parseTop(cur.text);
+    if (!rows.some((r) => normName(r.name) === key)) return 'ok';
+    const next = rows.map((r) => (normName(r.name) === key ? withTitle(r, title) : r));
+    if (await ghPut(env, topPath(env), JSON.stringify(next) + '\n', cur.sha, 'top: title')) return 'ok';
+    await backoff(attempt);
+  }
+  throw new Error('github top conflict');
+}
+// 現在の WORLD 1位の正規化名（無ければ null）
+async function championKey(env) {
+  const rows = dedupeBest(parseTop((await ghRead(env, topPath(env), true)).text)).sort(cmp);
+  return rows.length ? normName(rows[0].name) : null;
+}
 async function loadNames(env) {
   if (namesCache && Date.now() - namesCache.at <= CACHE_MS) return namesCache.map;
   const cur = await readNames(env);
@@ -268,7 +304,7 @@ async function loadNames(env) {
 
 const STRIP = /[\u0000-\u001f\u007f-\u009f<>\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\u061c\ufeff]/g;
 const MAX_CP = 32;   // 結合文字を大量に連ねた1書記素の暴走を防ぐ（コードポイント総数の上限）
-function cleanNameRaw(raw) {
+function cleanNameRaw(raw, maxG = MAX_NAME, maxCp = MAX_CP) {
   const s = String(raw ?? '').replace(STRIP, '').trim();
   const parts = (typeof Intl !== 'undefined' && Intl.Segmenter)
     ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s), (x) => x.segment)
@@ -276,11 +312,12 @@ function cleanNameRaw(raw) {
   let out = '', cp = 0, g = 0;
   for (const p of parts) {
     const c = Array.from(p).length;
-    if (g >= MAX_NAME || cp + c > MAX_CP) break;
+    if (g >= maxG || cp + c > maxCp) break;
     out += p; cp += c; g++;
   }
   return out.trim();
 }
+const cleanTitle = (raw) => cleanNameRaw(raw, MAX_TITLE, MAX_TITLE_CP);
 const cleanName = (raw) => cleanNameRaw(raw) || 'PILOT';
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -330,9 +367,10 @@ export default {
         const entry = sanitize(body);
         if (!entry || typeof body.key !== 'string' || !KEY_RE.test(body.key)) return json({ error: 'invalid' }, 400, h);
         rl.set(ip, Date.now());
-        if (await claimName(env, entry, await sha256hex(body.key)) === 'taken') { namesCache = null; return json({ error: 'name-taken' }, 403, h); }
+        const claim = await claimName(env, entry, await sha256hex(body.key));
+        if (claim.status === 'taken') { namesCache = null; return json({ error: 'name-taken' }, 403, h); }
         await appendLog(env, entry);
-        await updateTop(env, entry);
+        await updateTop(env, entry, claim.title);
         cached = null; namesCache = null;
         return json({ ok: true }, 200, h);
       }
@@ -349,7 +387,23 @@ export default {
         cached = null; namesCache = null;
         return json({ ok: true }, 200, h);
       }
-      if (url.pathname === '/admin/list' || url.pathname === '/admin/delete') {
+      if (req.method === 'POST' && url.pathname === '/title') {
+        if (!allowedOrigins(env).includes(origin)) return json({ error: 'origin' }, 403, h);
+        const body = await req.json().catch(() => null);
+        const n = body && typeof body === 'object' ? cleanNameRaw(body.name) : '';
+        if (!n || typeof body.key !== 'string' || !KEY_RE.test(body.key) || typeof body.title !== 'string') return json({ error: 'invalid' }, 400, h);
+        const k = normName(n);
+        const title = cleanTitle(body.title);
+        const e = (await readNames(env)).map.get(k);
+        if (!e) return json({ error: 'unknown' }, 404, h);
+        if (!e.keyHash || !teq(e.keyHash, await sha256hex(body.key))) return json({ error: 'forbidden' }, 403, h);
+        if (await championKey(env) !== k) return json({ error: 'not-champion' }, 409, h);
+        await appendLog(env, { kind: 'title', name: e.name, title, date: new Date().toISOString() });
+        if (await applyTitle(env, k, title) === 'unknown') return json({ error: 'unknown' }, 404, h);
+        cached = null; namesCache = null;
+        return json({ ok: true, title }, 200, h);
+      }
+      if (url.pathname === '/admin/list' || url.pathname === '/admin/delete' || url.pathname === '/admin/title') {
         if (!env.ADMIN_KEY) return json({ error: 'admin disabled' }, 503, h);
         if (!(await isAdmin(req, env))) { await delay(ADMIN_DELAY_MS); return json({ error: 'unauthorized' }, 401, h); }
         if (req.method === 'GET' && url.pathname === '/admin/list') {
@@ -358,7 +412,7 @@ export default {
           for (const r of dedupeBest(parseTop((await ghRead(env, topPath(env), true)).text))) best.set(normName(r.name), r);
           const names = Array.from(map, ([k, v]) => {
             const b = best.get(k);
-            return { name: v.name, first: v.first || '', best: b ? { score: b.score, stage: b.stage, date: b.date } : null };
+            return { name: v.name, first: v.first || '', ...(v.title ? { title: v.title } : {}), best: b ? { score: b.score, stage: b.stage, date: b.date } : null };
           });
           return json({ names }, 200, h);
         }
@@ -371,6 +425,19 @@ export default {
           await removeName(env, k);
           cached = null; namesCache = null;
           return json({ ok: true }, 200, h);
+        }
+        if (req.method === 'POST' && url.pathname === '/admin/title') {
+          const body = await req.json().catch(() => null);
+          const n = body && typeof body === 'object' ? cleanNameRaw(body.name) : '';
+          if (!n || typeof body.title !== 'string') return json({ error: 'invalid' }, 400, h);
+          const k = normName(n);
+          const e = (await readNames(env)).map.get(k);
+          if (!e) return json({ error: 'unknown' }, 404, h);
+          const title = cleanTitle(body.title);
+          await appendLog(env, { kind: 'title', name: e.name, title, date: new Date().toISOString() });
+          if (await applyTitle(env, k, title) === 'unknown') return json({ error: 'unknown' }, 404, h);
+          cached = null; namesCache = null;
+          return json({ ok: true, title }, 200, h);
         }
       }
       return json({ error: 'not found' }, 404, h);

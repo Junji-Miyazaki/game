@@ -58,3 +58,31 @@ html, body {
   font-family: inherit !important;
 }
 #lander-name-entry button:active { background: rgba(99, 216, 201, 0.14) !important; }
+
+/* チャンピオン称号の入力（WORLD #1 のみ）。名前入力と同じ落ち着いたトーン。祝賀のアクセントはアンバー1色 */
+#lander-champ-entry {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1000;
+  width: min(300px, 86vw); box-sizing: border-box; padding: 24px 20px 20px; text-align: center;
+  background: rgba(8, 11, 20, 0.88); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 181, 71, 0.4); border-radius: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  color: #ECE6D8; font-family: -apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", sans-serif;
+}
+#lander-champ-entry .ce-head { font-size: 15px; font-weight: 500; letter-spacing: 0.3em; color: #FFB547; margin-bottom: 6px; }
+#lander-champ-entry .ce-name { font-size: 13px; letter-spacing: 0.12em; color: #ECE6D8; margin-bottom: 18px; }
+#lander-champ-entry .ce-label { font-size: 10px; font-weight: 500; letter-spacing: 0.25em; color: #5B667C; margin-bottom: 10px; }
+#lander-champ-entry input {
+  width: 100%; box-sizing: border-box; padding: 12px; text-align: center; outline: none;
+  background: rgba(236, 230, 216, 0.05); color: #F8F4EA; border: 1px solid rgba(236, 230, 216, 0.22); border-radius: 12px;
+  font-size: 16px; font-weight: 300; letter-spacing: 0.08em; font-family: inherit;
+}
+#lander-champ-entry input:focus { border-color: rgba(255, 181, 71, 0.7); }
+#lander-champ-entry .ce-row { display: flex; gap: 10px; margin-top: 16px; }
+#lander-champ-entry button {
+  flex: 1; background: transparent; border-radius: 999px; padding: 12px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.3em; font-family: inherit;
+}
+#lander-champ-entry .ce-save { color: #FFB547; border: 1px solid rgba(255, 181, 71, 0.6); }
+#lander-champ-entry .ce-skip { color: #8C97AB; border: 1px solid rgba(236, 230, 216, 0.22); }
+#lander-champ-entry button:active { background: rgba(255, 181, 71, 0.14); }
+#lander-champ-entry button:disabled { opacity: 0.5; }
+#lander-champ-entry .ce-msg { min-height: 16px; margin-top: 14px; font-size: 11px; letter-spacing: 0.2em; color: #FFB547; }

@@ -210,3 +210,15 @@
 - **ランキング**: ソートは不変。ローカル行とチェックポイントに `startStage`（再開したランは引き継ぐ）。submitScore の引数にも startStage を渡している。**注意**: net.js の submitScore は body を {name,score,stage,key} だけで組み立てるため、startStage は現状送信されない（net.js は編集不可の指示。送るなら net.js 側で1行追加が必要）。表示はしていない。
 - **テスト**: 新規 `04_tests/p8start.mjs` 85件（解放リスト maxStage 1/2/3/6/12/13/25 とラベル、進捗更新の条件（ボーナス/デバッグ/下降）、パイロット別隔離・削除・破損JSON、オーバーレイの開閉・貫通なし・Back/CANCEL/行/キー、NEW MISSION とチェックポイント保持、CONTINUE、200件のページ送りと描画、開始ランの状態、ランキング startStage）。既存 smoke 2 / p1 107 / p15 392 / p2a 30 / p2m 85 / p2b 100 / p2j 54 / p3fix 104 / p4hold 72 / p4save 81 / p4net 132 / p5hud 1307 / p6bonus 383 / p7title 14 すべて通過。`node build.js` と全ファイルの `node --check` OK。
 - **目視**（preview 'lander'、モバイル幅、進捗 maxStage 15 を localStorage に投入）: CHOOSE START（ORBIT 2 · EUROPA ST.15 が FURTHEST、1/2 ページ）を確認、MARS 行タップで ST.7 MARS から開始（導入・HUD 正常）。コンソールエラーなし。ストレージは確認後に消去済み。
+
+## 2026-10-26 P9 — WORLD #1 バナー＋チャンピオン称号 UI（Sonnet 5.5）
+- **タイトル**: `worldBox`（x40 y134 w280 h28）に `WORLD #1  名前  スコア`（1行目 y134、size10）＋称号 `「…」`（2行目 y150、size8）。ロゴ/BETA(〜y130)とロケット先端(y164)の間。名前・称号は書記素単位で末尾 `…` に省略（art.js `ellipsize`、`drawWorldBanner`）。`enter()` でキャッシュ `worldTop1`（JSON {name,score,title,at}）を即表示 → `fetchWorldTop` で更新（null=オフラインはキャッシュ維持、空配列=消去）。何も不明なら非表示。
+- **SET TITLE**: 現 #1 ＝アクティブパイロットの時だけ `titleBtn`（x284 y132 w68 h22、バナー右端・ミュートと非重複）。バナー1行目は中央揃えのまま幅を 192px に制限して食い込まない。タップで称号入力（現称号を初期値）。
+- **称号入力**（title.js `openChampionEntry`、DOM は薄い皮・document 無しでも状態機械として動作）: 'YOUR TITLE (OPTIONAL, MAX 16)'、SAVE/SKIP、トリム・書記素16文字・制御/双方向文字除去（ranking.js `sanitizeTitle`）、空=削除。IME変換中の Enter は無視、keydown は stopPropagation。成功は 'TITLE SAVED' → 1.2秒で自動クローズ（キャッシュ称号を更新、再取得はしない=中継の古いキャッシュで戻らない）。失敗は 'NOT THE CHAMPION ANYMORE' / 'TITLE SERVICE UNAVAILABLE'(unavailable・disabled) / 'NOT ALLOWED — KEY MISMATCH' / 'NAME NOT REGISTERED' / 'INVALID TITLE' / 'OFFLINE — TRY LATER' を表示して開いたまま（SKIP→CLOSE で必ず抜けられる）。開いている間は全入力を消費・blocksBack・exit で DOM 除去・同時に1つ。CSS は style.css の `#lander-champ-entry`（アンバー1色）。
+- **ゲームオーバー**: 非デバッグ・WORLD 送信成功後に `fetchTop` を再取得→キャッシュ更新→ top[0] が自分の名前かつ今回スコアなら 'NEW WORLD RECORD!' オーバーレイ（現称号を初期値）。画面を離れた後の応答・デバッグ・取得/送信失敗では出さない。閉じた後は通常のランキング画面（WORLD タブ表示中なら再読込）。
+- **WORLD 行**: 称号があれば名前の下に小さく表示（名前/称号とも幅140pxで省略）。LOCAL は不変。
+- **net 窓口**: ranking.js `WorldNet`（fetchTop/submit/setTitle）経由に統一（テストで差し替え可）。setTitle は net.js に無い/古い中継なら 'unavailable'。game.js の submitScore 直呼びを WorldNet.submit に置換（挙動同じ）。
+- **既存テストの変更**: タイトルの enter が WORLD #1 を取得するため、p1/p2b/p7title/p3fix の冒頭で `__setRelayUrl('')`（実ネットワーク回避）を追加。
+- **検証**: build OK、`node --check` bundle/全src/全テスト OK。smoke 2/2、p1 107、p15 392、p2a 30、p2m 85、p2b 100、p2j 54、p3fix 104、p4hold 72、p4save 81、p4net 132、p5hud 1307、p6bonus 383、p7title 14、p8start 87、**p9champ 148/148**（バナー取得/キャッシュ/非表示、チャンピオン判定、SET TITLE、各エラー、NEW WORLD RECORD 出る/出ない条件、入力消費、WORLD 行、レイアウト非重複、長い日本語、偽DOM）。
+- **ブラウザ確認**（localhost:4176、mobile 375x812、fetch はページ側でスタブ）: 非チャンピオン＋称号あり／チャンピオン＋称号なし(SET TITLE 表示)／入力→SAVE で実 net.setTitle が `/title` へ {name,key,title} を POST（バンドル経由の橋渡し確認）／NEW WORLD RECORD オーバーレイ＋'TITLE SERVICE UNAVAILABLE'／WORLD タブの称号行。コンソールエラー 0。
+- **未確認/注意**: 実機 iOS の字面幅・IME。DEBUG ON のトースト(y140)はバナーに一瞬重なる（一時表示のため放置）。本番ワーカー側 /title の挙動は未検証（別担当）。

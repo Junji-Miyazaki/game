@@ -5,6 +5,7 @@ import { SITE, astronautCycle } from '../02_src/art.js';
 import { STAGES_PER_BODY } from '../02_src/bodies.js';
 import { MODULE_DEFS } from '../02_src/modules.js';
 import { setDebug } from '../02_src/debug.js';
+import { __setRelayUrl as __r0 } from '../02_src/net.js'; __r0('');   // タイトルの WORLD #1 取得で実ネットワークに触れない
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL:', m); } };

@@ -2,6 +2,7 @@
 import { Game, landingPhase, LANDING_PHASES } from '../02_src/game.js';
 import { loadRanking, saveRanking, insertEntry, qualifies } from '../02_src/ranking.js';
 import { TitleScene } from '../02_src/title.js';
+import { __setRelayUrl as __r0 } from '../02_src/net.js'; __r0('');   // タイトルの WORLD #1 取得で実ネットワークに触れない
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL:', m); } };

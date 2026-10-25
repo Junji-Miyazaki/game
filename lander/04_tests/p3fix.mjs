@@ -58,6 +58,7 @@ const title = await import(SRC + 'title.js');
 const gameM = await import(SRC + 'game.js');
 const store = await import(SRC + 'core/storage.js');
 const net = await import(SRC + 'net.js');
+net.__setRelayUrl('');   // タイトルの WORLD #1 取得で実ネットワークに触れない
 const { Engine, Scene } = eng;
 const { Game } = gameM;
 

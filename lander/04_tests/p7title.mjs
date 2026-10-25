@@ -1,6 +1,7 @@
 // p7title — タイトル画面の回帰テスト（ランキング一覧を閉じるタップが START に貫通しないこと）
 // 実行: node 04_tests/p7title.mjs（lander/ から）
 import { TitleScene, BootScene } from '../02_src/title.js';
+import { __setRelayUrl as __r0 } from '../02_src/net.js'; __r0('');   // タイトルの WORLD #1 取得で実ネットワークに触れない
 
 const noop = () => {};
 const ctx = new Proxy({}, {
