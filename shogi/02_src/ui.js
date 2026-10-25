@@ -99,6 +99,7 @@ function startBattle(){
       eDdos:fid==="hacker"?2:0, eDdosAt:fid==="hacker"?[4,12]:[]};
   setCtx({down:bt.down, pending:bt.pending, faction:fid, orbit:has("orbit")});
   applyFactionColor(fid);
+  Music.battle(fid);
   run.ddos=cnt("ddos")-run.ddosSpent;
   sel=null; targets=[]; ddosArm=false;
   banner(`STAGE ${run.stage+1} :: ${F.tgt}`, `${F.nm} — ${F.rule}`);
@@ -328,6 +329,7 @@ function doPlayerMove(m){
   if(captured&&captured.t==="K"){ stageWin(); return; }
   if(tickBlackout()) return;
   render();
+  updateMood();
   bt.turn=1; busy=true;
   log(`<span class="m">hostile AI computing…</span>`);
   render();
@@ -381,7 +383,15 @@ function enemyTurn(){
   const pl=legalMoves(bt.board,bt.hands,0);
   if(pl.length===0){ runOver(false); return; }
   if(inCheck(bt.board,bt.hands,0)) log(`<span class="m">⚠ WARNING: CEOが攻撃圏内 (王手)</span>`);
+  updateMood();
   checkStateHints();
+}
+
+function updateMood(){
+  if(!bt||bt.over) return;
+  const danger=inCheck(bt.board,bt.hands,0);
+  const alarm=[...bt.pending.values()].some(cd=>cd<=2);
+  Music.setMood(danger,alarm);
 }
 
 // render()がclassNameをリセットするため、演出は状態(bt.fx)経由でrenderに反映する
@@ -392,7 +402,9 @@ function flashHack(i){
 
 /* ---------- stage / run flow ---------- */
 function stageWin(lockout){
-  bt.over=true; sWin();
+  bt.over=true;
+  if(run.stage>=2) Music.stop(); else Music.stageClear(); // 最終面はrunOver側で凱旋スティンガー
+  sWin();
   const speedBonus=Math.max(0,300-bt.moves*10);
   const gain=500*(run.stage+1)+speedBonus;
   run.score+=gain; run.totalMoves+=bt.moves;
@@ -453,6 +465,7 @@ function runOver(win){
     run.totalMoves+=bt.moves;
     run.kifuAll.push(`# STAGE ${run.stage+1} ${curFaction().nm} (敗北)`,...bt.kifu);
   }
+  Music.result(win);
   if(win){run.score+=1000; sWin();} else sLose();
   const {best,bestDaily}=saveRunRecord(win);
   const body=$("#end-body");
@@ -475,7 +488,7 @@ function runOver(win){
   $("#bt-home").addEventListener("click",()=>{
     $("#end-modal").classList.remove("on");
     $("#game").classList.remove("on"); $("#title").classList.add("on");
-    renderRouteCard(); startNetBg();
+    renderRouteCard(); startNetBg(); Music.title();
   });
 }
 function banner(txt,sub){

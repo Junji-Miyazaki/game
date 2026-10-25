@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const ROOT = __dirname;
-const ORDER = ["engine.js", "sfx.js", "ui.js", "main.js"];
+const ORDER = ["engine.js", "sfx.js", "music.js", "ui.js", "main.js"];
 
 const bundle = ORDER.map(f => {
   const p = path.join(ROOT, "02_src", f);

@@ -7,7 +7,7 @@ $("#boot").addEventListener("click",()=>{
   $("#title").classList.add("on");
   renderRouteCard();
   startNetBg();
-  // music.js 導入後はここでタイトル曲を開始する
+  Music.title();
 });
 
 /* ---------- タイトル背景: 生成ネットワーク ---------- */
@@ -139,6 +139,7 @@ $("#bt-kifu").addEventListener("click",()=>{
 $("#bt-kifu-close").addEventListener("click",()=>$("#kifu-modal").classList.remove("on"));
 function toggleMute(){
   muted=!muted; setMuted(muted);
+  Music.applyMute(muted);
   const lbl=muted?"SOUND OFF":"SOUND ON";
   $("#bt-mute").textContent=lbl;
   $("#bt-mute-title").textContent=lbl;
@@ -148,7 +149,7 @@ $("#bt-mute-title").addEventListener("click",e=>{e.stopPropagation(); toggleMute
 $("#bt-quit").addEventListener("click",()=>{
   if(!bt.over&&!confirm("侵入を中断してタイトルへ戻る?")) return;
   $("#game").classList.remove("on"); $("#title").classList.add("on");
-  renderRouteCard(); startNetBg();
+  renderRouteCard(); startNetBg(); Music.title();
 });
 
 buildBoard();
