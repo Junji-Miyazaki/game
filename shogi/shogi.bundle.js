@@ -1570,3 +1570,39 @@ $("#bt-quit").addEventListener("click",()=>{
 });
 
 buildBoard();
+
+/* ---------- タイトルロゴ: 信号モーション(強さ0.3) ----------
+   普段は微振動、1.4〜3.9秒に一度、走査ずれのように一瞬(90ms)文字がずれる。07_lab/title_font_audition の C=signal と同式。 */
+(function logoSignal(){
+  const AMT=0.3;
+  const logos=[...document.querySelectorAll(".g-logo")];
+  const sets=logos.map(l=>{
+    const chs=[];
+    const walk=node=>{
+      for(const n of [...node.childNodes]){
+        if(n.nodeType===3){
+          const frag=document.createDocumentFragment();
+          for(const c of n.textContent){ const s=document.createElement("span"); s.className="ch"; s.textContent=c; frag.appendChild(s); chs.push(s); }
+          node.replaceChild(frag,n);
+        } else if(n.nodeType===1&&n.tagName!=="BR") walk(n);
+      }
+    };
+    walk(l);
+    return {chs,seed:Math.random()*100};
+  });
+  const nz=x=>Math.sin(x)*0.6+Math.sin(x*2.13+1.7)*0.3+Math.sin(x*4.7+0.3)*0.1;
+  let until=0, next=1.5;
+  function frame(ts){
+    const t=ts/1000;
+    if(!$("#title").classList.contains("on")&&!$("#boot").classList.contains("on")){ requestAnimationFrame(frame); return; }
+    if(t>next){ until=t+0.09; next=t+1.4+Math.random()*2.5; }
+    for(const S of sets) S.chs.forEach((s,i)=>{
+      if(t<until){
+        const off=(Math.random()-.5)*14*AMT;
+        s.style.transform=`translateX(${(i%2?off:-off)*0.6}px) skewX(${off*0.4}deg)`;
+      } else s.style.transform=`translateX(${nz(t*3+S.seed+i*1.37)*0.35*AMT}px)`;
+    });
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();

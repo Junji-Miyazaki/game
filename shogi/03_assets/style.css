@@ -466,3 +466,13 @@ body{background:var(--g-bg); color:var(--g-fg); font-family:var(--g-mono); --efg
 .stage-banner .bn-main{font-family:var(--g-sans); font-weight:500; letter-spacing:-.01em; text-shadow:none;
   font-size:clamp(28px,8vw,56px);}
 .stage-banner .bn-sub{font-family:var(--g-mono); color:var(--g-mute); text-shadow:none;}
+
+/* ========== v4e: タイトル書体 Instrument Serif + 信号モーション30%(ユーザー選定) ========== */
+#title h1.g-logo, #boot h1.g-logo{
+  font-family:"Instrument Serif",Georgia,serif; font-weight:400;
+  font-size:clamp(76px,18vw,210px); line-height:.86; letter-spacing:-.02em;
+}
+.g-logo::after{display:none;}           /* 旧スライスグリッチは信号モーションに置換 */
+.g-logo .ch{display:inline-block;}
+#title h1.g-logo span.ch, #boot h1.g-logo span.ch{color:var(--g-fg); text-shadow:none;}
+#title h1.g-logo span.us span.ch, #boot h1.g-logo span.us span.ch{color:var(--g-acc);}
