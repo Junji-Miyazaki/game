@@ -1079,13 +1079,15 @@ function clearProgress(storage, name) {
   delete o[name];
   writeProgress(storage, o);
 }
-// 解放済みの開始地点 = 到達済み天体の最初のステージ。新しい順（最遠が先頭）で返す
+// 解放済みの開始地点 = 到達済みの全ステージ（ユーザー判断で天体単位→ステージ単位に変更）。新しい順（最遠が先頭）で返す
+// 天体の2ステージ目は名前の後ろに ' 2' を付けて区別する（開始時は天体紹介を表示する：game.js の _introNext）
 function unlockedStarts(maxStage) {
   const m = Math.max(1, Math.floor(maxStage) || 1);
   const out = [];
-  for (let s = 1; s <= m; s += STAGES_PER_BODY) {
+  for (let s = 1; s <= m; s += 1) {
     const info = stageInfo(s);
-    out.push({ stage: s, loop: info.loop, name: info.body.name, label: (info.loop >= 1 ? 'ORBIT ' + (info.loop + 1) + ' \u00b7 ' : '') + info.body.name,
+    const part = ((s - 1) % STAGES_PER_BODY) + 1;
+    out.push({ stage: s, loop: info.loop, name: info.body.name, part, label: (info.loop >= 1 ? 'ORBIT ' + (info.loop + 1) + ' \u00b7 ' : '') + info.body.name + (part > 1 ? ' ' + part : ''),
       realG: info.body.realG, gravity: bodyGravity(info.body, info.loop) });
   }
   return out.reverse();
@@ -4521,6 +4523,7 @@ class Game extends Scene {
     this._duck(false);
     this.runId      = newRunId();
     this.startStage = 1;             // このランの開始ステージ（到達済み天体から開始した場合は >1）
+    this._introNext = true;          // ランの最初のステージでは（天体の途中からでも）天体紹介を出す
     this._worldNote = '';
     // タイトルの CHOOSE START: 到達済み天体の最初のステージから、スコア0・残機3・モジュールなしで開始
     const ss = this.engine.startStage; this.engine.startStage = null;
@@ -4606,7 +4609,9 @@ class Game extends Scene {
     this._shieldCharges = this._lvl('shield');          // SHIELD: レベル＝このステージで吸収できる被弾回数
     this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
-    this._introT   = (sp.info.firstOfBody && !btype) ? INTRO_S : 0;
+    // 天体の最初のステージ、またはランの開始ステージ（天体の途中から始めた場合も）で天体紹介を出す
+    this._introT   = ((sp.info.firstOfBody || this._introNext) && !btype) ? INTRO_S : 0;
+    this._introNext = false;
     this._padW     = mission ? mission.padW : sp.padW;
 
     const terrain     = buildTerrain(this._padW, mission && mission.moving ? { plateau: mission.plateauSegs, period: mission.padPeriod } : null);

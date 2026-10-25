@@ -243,6 +243,7 @@ export class Game extends Scene {
     this._duck(false);
     this.runId      = newRunId();
     this.startStage = 1;             // このランの開始ステージ（到達済み天体から開始した場合は >1）
+    this._introNext = true;          // ランの最初のステージでは（天体の途中からでも）天体紹介を出す
     this._worldNote = '';
     // タイトルの CHOOSE START: 到達済み天体の最初のステージから、スコア0・残機3・モジュールなしで開始
     const ss = this.engine.startStage; this.engine.startStage = null;
@@ -328,7 +329,9 @@ export class Game extends Scene {
     this._shieldCharges = this._lvl('shield');          // SHIELD: レベル＝このステージで吸収できる被弾回数
     this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
-    this._introT   = (sp.info.firstOfBody && !btype) ? INTRO_S : 0;
+    // 天体の最初のステージ、またはランの開始ステージ（天体の途中から始めた場合も）で天体紹介を出す
+    this._introT   = ((sp.info.firstOfBody || this._introNext) && !btype) ? INTRO_S : 0;
+    this._introNext = false;
     this._padW     = mission ? mission.padW : sp.padW;
 
     const terrain     = buildTerrain(this._padW, mission && mission.moving ? { plateau: mission.plateauSegs, period: mission.padPeriod } : null);

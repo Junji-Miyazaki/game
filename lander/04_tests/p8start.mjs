@@ -32,17 +32,18 @@ const renderOK = (s) => { try { s.render(ctx); return true; } catch (e) { consol
 // ===== 1. 解放リスト =====
 {
   const L = (m) => unlockedStarts(m).map((o) => o.stage).join(',');
-  ok(L(1) === '1' && L(2) === '1', 'maxStage 1,2 -> only stage 1');
-  ok(L(3) === '3,1', 'maxStage 3 -> 3,1 (latest first)');
-  ok(L(6) === '5,3,1', 'maxStage 6 -> 5,3,1');
-  ok(L(12) === '11,9,7,5,3,1', 'maxStage 12 -> 6 bodies');
-  ok(L(13) === '13,11,9,7,5,3,1', 'maxStage 13 -> orbit 2 Moon unlocked');
-  ok(L(25) === '25,23,21,19,17,15,13,11,9,7,5,3,1', 'maxStage 25 -> 13 entries');
+  // ステージ単位（ユーザー判断で天体単位から変更）: 到達済みの全ステージが開始地点
+  const seq = (m) => Array.from({ length: m }, (_, i) => m - i).join(',');
+  ok(L(1) === '1', 'maxStage 1 -> only stage 1');
+  ok(L(2) === '2,1', 'maxStage 2 -> 2,1 (second stage of a body is a start point)');
+  ok(L(3) === '3,2,1', 'maxStage 3 -> 3,2,1 (latest first)');
+  ok(L(6) === seq(6) && L(12) === seq(12) && L(13) === seq(13), 'every reached stage is unlocked');
+  ok(L(25) === seq(25), 'maxStage 25 -> 25 entries');
   const l = unlockedStarts(25);
   ok(l[0].label === 'ORBIT 3 · MOON' && l[0].stage === 25, 'loop 2 label');
-  ok(l[1].label === 'ORBIT 2 · VENUS', 'loop 1 label: ' + l[1].label);
-  ok(l[l.length - 1].label === 'MOON' && l[l.length - 3].label === 'IO', 'loop 0 labels have no prefix');
-  ok(unlockedStarts(12)[1].label === 'TITAN' && Math.abs(unlockedStarts(12)[1].realG - 1.35) < 1e-9, 'realG carried');
+  ok(l[1].label === 'ORBIT 2 · VENUS 2' && l[2].label === 'ORBIT 2 · VENUS', 'second stage of a body gets a " 2" suffix: ' + l[1].label);
+  ok(l[l.length - 1].label === 'MOON' && l[l.length - 2].label === 'MOON 2' && l[l.length - 5].label === 'IO', 'loop 0 labels have no prefix');
+  { const ti = unlockedStarts(12).find((o) => o.stage === 9); ok(ti && ti.label === 'TITAN' && Math.abs(ti.realG - 1.35) < 1e-9, 'realG carried'); }
   ok(unlockedStarts(NaN).length === 1 && unlockedStarts(-5).length === 1, 'bad maxStage -> 1 option');
 }
 
@@ -91,11 +92,23 @@ const renderOK = (s) => { try { s.render(ctx); return true; } catch (e) { consol
 }
 
 // ===== 4. タイトル: オーバーレイ =====
+// ===== 天体の2ステージ目から開始しても天体紹介を表示（ランの開始時のみ）=====
+{
+  const e = makeEngine(storeWith(['AAA'], { AAA: { maxStage: 4 } }));
+  e.startStage = 4;                                   // EUROPA の2ステージ目
+  const g = new Game(e); g.enter();
+  ok(g.stage === 4 && g._introT > 0, 'starting at the 2nd stage of a body shows the body intro');
+  g.continues = 3; g._introT = 0; g._initStage();     // CONTINUE で同じステージを再初期化
+  ok(g._introT === 0, 'no intro on a continue re-init of a mid-body stage');
+  g.stage = 5; g._initStage();                        // 次の天体の最初のステージは従来どおり表示
+  ok(g._introT > 0, 'first stage of the next body still shows the intro');
+}
+
 const mkTitle = (store, cb) => { const calls = cb || { n: 0 }; const e = makeEngine(store); const t = new TitleScene(e, () => { calls.n++; }, { launch: false }); t.enter(); t.update(0.016); return { e, t, calls }; };
 const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, continues: 2, modules: {}, name: 'AAA' });
 {
   // 段階1のみ: 直接開始
-  const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 2 } }));
+  const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 1 } }));
   t.onInput('tap', center(t.startBtn));
   ok(t.pick === null && calls.n === 1, 'only stage 1 unlocked: START starts directly');
   ok(e.startStage == null, 'no startStage for a plain start');
@@ -105,7 +118,7 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, c
   const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 7 } }));
   t.onInput('tap', center(t.startBtn));
   ok(!!t.pick && calls.n === 0, 'START with >1 option opens CHOOSE START');
-  ok(t.pick.list.length === 4 && t.pick.list[0].stage === 7 && t.pick.sel === 0, 'list latest first, cursor on furthest');
+  ok(t.pick.list.length === 7 && t.pick.list[0].stage === 7 && t.pick.sel === 0, 'list latest first, cursor on furthest');
   ok(t.blocksBack() === true, 'blocksBack while open');
   ok(renderOK(t), 'renders with overlay');
   // 貫通しない: START 位置や RANKING・PILOTS・ミュート位置のタップ
@@ -135,7 +148,7 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, c
   t.onInput('confirm', { repeat: true });
   ok(calls.n === 0, 'key auto-repeat does not choose');
   t.onInput('confirm', {});
-  ok(calls.n === 1 && e.startStage === 7, 'Enter chooses the cursor row (stage 7)');
+  ok(calls.n === 1 && e.startStage === 8, 'Enter chooses the cursor row (stage 8 = second row)');
 }
 {
   // NEW MISSION（チェックポイントあり）
@@ -148,7 +161,7 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, c
   t.onInput('back', {});
   ok(!t.pick && !!loadCheckpoint(e.storage) && !!t.cp, 'cancel keeps the checkpoint');
   t.onInput('tap', center(t.newBtn));
-  ok(t.pick.list.length === 7, '7 options for maxStage 13');
+  ok(t.pick.list.length === 13, '13 options for maxStage 13');
   t.onInput('confirm', {});
   ok(calls.n === 1 && e.startStage === 13 && loadCheckpoint(e.storage) === null && e.resumeCheckpoint == null, 'choosing discards the checkpoint and starts');
   // CONTINUE は startStage を持ち越さない
@@ -158,7 +171,7 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, c
 }
 {
   // ページ送り・長いリスト
-  const { t, calls } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 400 } }));
+  const { t, calls } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 200 } }));
   t.onInput('tap', center(t.startBtn));
   ok(t.pick.list.length === 200, 'long list: 200 options');
   let threw = null; try { for (let p = 0; p < 40; p++) { t.render(ctx); t.onInput('tap', center(t._pickRects().next)); } for (let i = 0; i < 250; i++) t.onInput('down', {}); t.render(ctx); } catch (x) { threw = x; }
