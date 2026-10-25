@@ -2968,7 +2968,9 @@ const _MUS_T_CYCLE = 24;                    // 一周の小節数
 const _MUS_T_IN = 3;                        // ドローンが入る小節（0始まり＝小節4）
 const _MUS_T_OUT = 17;                      // ドローンが退き始める小節（0始まり＝小節18）
 const _MUS_T_FADE_IN = 10, _MUS_T_FADE_OUT = 8;
-const _MUS_T_DRONE = 0.12;                  // ドローンのゲイン（現行タイトルの0.5より大幅に低い）
+const _MUS_T_DRONE = 0.19;                  // ドローンのゲイン（スマホで聴こえるよう 0.12→0.19 ≈ +4dB。旧タイトル0.5よりは低い）
+const _MUS_T_DLP_LO = 180, _MUS_T_DLP_HI = 650;   // ドローンのローパス（閉→開）。スマホの小型スピーカーは~150Hz未満がほぼ出ないため、倍音を通して「低いうなり」を聴こえさせる
+const _MUS_T_THER_VEL = 0.11;               // テルミン風グライドの音量（0.07→0.11 ≈ +4dB。頻度は据え置き＝時折）
 const _MUS_T_LEVEL = 1.6;                   // シーン出力ゲイン（音楽バス0.125の手前）。旧タイトル RMS -24.6/peak -14 dBFS に対し新曲 約 -26.6/-14 dBFS（オフライン実測、同一経路）
 const _MUS_T_PLAN = [0, 1, 0, 1, 0, 2];     // 4小節フレーズ型: 0=A 1=B 2=B'（終止）
 const _MUS_T_PH = [
@@ -3051,12 +3053,14 @@ function _musTitleScene() {
       sc.thBus.connect(_musTStereoDelay(sc, _MUS_T_E * 1.5, _MUS_T_E * 2, 0.35, 0.25, 2600));
       // ドローン（F1 + C2 + F2）: 無音から始め、ローパスをゆっくり開く。duck でアクセント時に約-3dB
       sc.duck = ctx.createGain(); sc.duck.gain.value = 1; sc.duck.connect(sc.out);
-      sc.dlp = ctx.createBiquadFilter(); sc.dlp.type = 'lowpass'; sc.dlp.frequency.value = 160; sc.dlp.Q.value = 0.7; sc.dlp.connect(sc.duck);
+      sc.dlp = ctx.createBiquadFilter(); sc.dlp.type = 'lowpass'; sc.dlp.frequency.value = _MUS_T_DLP_LO; sc.dlp.Q.value = 0.7; sc.dlp.connect(sc.duck);
       sc.dg = ctx.createGain(); sc.dg.gain.value = 0.0001; sc.dg.connect(sc.dlp);
       sc.nodes.push(sc.duck, sc.dlp, sc.dg);
       [['sawtooth', 43.65, -6], ['sawtooth', 43.65, 7], ['sawtooth', 65.41, 4], ['triangle', 87.31, 0]].forEach(([type, f, det]) => {
         const o = _musOsc(type, f, now, null, det); o.connect(sc.dg); sc.nodes.push(o);
       });
+      // スマホ用の倍音レイヤー（F3 三角波、控えめ）: 小型スピーカーでもドローンの存在が聴こえる帯域
+      { const g = ctx.createGain(); g.gain.value = 0.35; g.connect(sc.dg); const o = _musOsc('triangle', 174.61, now, null, 3); o.connect(g); sc.nodes.push(g, o); }
       _musLfo(sc, 0.045, 120, sc.dlp.frequency);
     },
     step(t, sc) {
@@ -3069,12 +3073,12 @@ function _musTitleScene() {
         if (want && sc.dState !== 'in') {
           sc.dState = 'in';
           sc.dg.gain.cancelScheduledValues(t); sc.dg.gain.setValueAtTime(0.0001, t); sc.dg.gain.linearRampToValueAtTime(_MUS_T_DRONE, t + _MUS_T_FADE_IN);
-          sc.dlp.frequency.setValueAtTime(160, t); sc.dlp.frequency.exponentialRampToValueAtTime(400, t + _MUS_T_FADE_IN + 2);
+          sc.dlp.frequency.setValueAtTime(_MUS_T_DLP_LO, t); sc.dlp.frequency.exponentialRampToValueAtTime(_MUS_T_DLP_HI, t + _MUS_T_FADE_IN + 2);
           sc.dlog.push({ kind: 'in', t0: t, t1: t + _MUS_T_FADE_IN, bar });
         } else if (!want && sc.dState === 'in') {
           sc.dState = 'out';
           sc.dg.gain.cancelScheduledValues(t); sc.dg.gain.setValueAtTime(_MUS_T_DRONE, t); sc.dg.gain.linearRampToValueAtTime(0.0001, t + _MUS_T_FADE_OUT);
-          sc.dlp.frequency.setValueAtTime(400, t); sc.dlp.frequency.exponentialRampToValueAtTime(160, t + _MUS_T_FADE_OUT);
+          sc.dlp.frequency.setValueAtTime(_MUS_T_DLP_HI, t); sc.dlp.frequency.exponentialRampToValueAtTime(_MUS_T_DLP_LO, t + _MUS_T_FADE_OUT);
           sc.dlog.push({ kind: 'out', t0: t, t1: t + _MUS_T_FADE_OUT, bar });
         }
       }
@@ -3120,8 +3124,8 @@ function _musTitleScene() {
         o.frequency.setValueAtTime(f1, t + 0.7); o.frequency.exponentialRampToValueAtTime(f2, t + 1.0);
         _musTVib(o, t, 1.8, 12, 5.6);
         const env = ctx.createGain();
-        env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(0.07, t + 0.2);
-        env.gain.setValueAtTime(0.07, t + 1.3); env.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+        env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(_MUS_T_THER_VEL, t + 0.2);
+        env.gain.setValueAtTime(_MUS_T_THER_VEL, t + 1.3); env.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
         o.connect(env); env.connect(sc.thBus);
         _musReg('m', [o, env], end);
         sc.log.push({ kind: 'ther', t, semi: pr[0], e, bar }, { kind: 'ther', t: t + 1.0, semi: pr[1], e, bar });
