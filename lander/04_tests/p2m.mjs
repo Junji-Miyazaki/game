@@ -131,6 +131,8 @@ ok(Music._debug().voices <= 2, 'voices drain after spam: ' + Music._debug().voic
 {
   const SCALE = [0, 2, 4, 6, 7, 9, 10];
   const E8 = 60 / 96;
+  const allOscs = []; const origOsc = FakeCtx.prototype.createOscillator;
+  FakeCtx.prototype.createOscillator = function () { const n = origOsc.call(this); allOscs.push(n); return n; };
   Music.playTitle();
   const seen = new Map(); let maxTV = 0, maxPT = 0, drone = [];
   for (let i = 0; i < 2400; i++) { // 240 s @ 10 Hz
@@ -155,10 +157,22 @@ ok(Music._debug().voices <= 2, 'voices drain after spam: ' + Music._debug().voic
   ok(Math.abs(ins[0].t0 - (t0 + 3 * 7 * E8)) < 1e-6 && Math.abs(ins[0].t1 - ins[0].t0 - 10) < 1e-9, 'drone fades in at bar 4 over 10 s (t=' + (ins[0].t0 - t0).toFixed(2) + ')');
   ok(Math.abs(outs[0].t0 - (t0 + 17 * 7 * E8)) < 1e-6 && Math.abs(outs[0].t1 - outs[0].t0 - 8) < 1e-9, 'drone recedes at bar 18 over 8 s (t=' + (outs[0].t0 - t0).toFixed(2) + ')');
   ok(Math.abs(ins[1].t0 - ins[0].t0 - 24 * 7 * E8) < 1e-6 && Math.abs(outs[1].t0 - outs[0].t0 - 24 * 7 * E8) < 1e-6, 'cycle is 24 bars (' + (24 * 7 * E8).toFixed(1) + ' s)');
-  const th = L.filter((x) => x.kind === 'ther');
-  const inDrone = (b) => { const c = b % 24; return c >= 5 && c < 17; };
-  ok(th.length > 0 && th.every((x) => x.bar % 4 === 3 && inDrone(x.bar)), 'theremin glides only while the drone is present, once per 4 bars');
-  ok(L.filter((x) => x.t < t0 + 3 * 7 * E8 && x.kind === 'ther').length === 0, 'pastoral opening has no glide');
+  // テルミン: 単発グライドは各周回の小節2・4の終わり、背景テルミンは小節6〜ドローン退場まで
+  const th = L.filter((x) => x.kind === 'ther'), bg = L.filter((x) => x.kind === 'bg'), lead = L.filter((x) => x.kind === 'lead');
+  const bcOf = (x) => x.bar % 24, cycOf = (x) => Math.floor(x.bar / 24);
+  ok(th.length >= 8 && th.every((x) => [1, 3].includes(bcOf(x)) && x.e === 5), 'single glides only at the end of bars 2 and 4 of each cycle');
+  for (const c of [0, 1]) ok([1, 3].every((k) => th.some((x) => cycOf(x) === c && bcOf(x) === k)), 'cycle ' + c + ' has glides at bars 2 and 4');
+  ok(bg.length > 30, 'background theremin notes scheduled: ' + bg.length);
+  ok(bg.every((x) => bcOf(x) >= 5 && bcOf(x) < 17), 'background theremin only from bar 6 up to the drone recede (none in bars 1-5 or after the fade)');
+  ok([0, 1, 2].every((c) => bg.some((x) => cycOf(x) === c && bcOf(x) === 5)) && [0, 1].every((c) => bg.some((x) => cycOf(x) === c && bcOf(x) >= 15)), 'background theremin spans bar 6 .. 17 in every cycle');
+  ok(L.filter((x) => x.kind === 'ther' || x.kind === 'bg').every((x) => SCALE.includes(((x.semi % 12) + 12) % 12)), 'theremin pitches stay in the scale');
+  const bgPeak = Math.max(...bg.map((x) => x.vel)), glideVel = Math.max(...th.map((x) => x.vel)), leadMin = Math.min(...lead.map((x) => x.vel));
+  ok(bgPeak < glideVel && glideVel < leadMin, 'levels: background ' + bgPeak.toFixed(3) + ' < glide ' + glideVel.toFixed(3) + ' < lead ' + leadMin.toFixed(3));
+  const accBg = bg.filter((x) => [0, 2, 4].includes(x.e));
+  ok(accBg.every((x) => !lead.some((l) => Math.abs(l.t - x.t) < 1e-6 && l.semi === x.semi)), 'background avoids the lead pitch on lead accents');
+  ok(new Set(bg.filter((x) => cycOf(x) === 0).map((x) => x.semi)).size >= 4 && new Set(bg.map((x) => x.semi + (x.semi > 12 ? 100 : 0))).size >= 5, 'background line wanders over several pitches and registers');
+  ok(bg.filter((x) => cycOf(x) === 0).map((x) => x.semi).join() !== bg.filter((x) => cycOf(x) === 1).map((x) => x.semi).join(), 'background line differs between cycles');
+  ok(th.filter((x) => x.t < t0 + 1 * 7 * E8).length === 0, 'pastoral opening has no glide');
   const ph0 = L.filter((x) => x.kind === 'lead' && x.bar < 24).map((x) => x.semi + '@' + x.e).join(), ph1 = L.filter((x) => x.kind === 'lead' && x.bar >= 24 && x.bar < 48).map((x) => x.semi + '@' + x.e).join();
   ok(ph0 !== ph1, 'phrase order varies between cycles');
   ok(maxTV <= 14, 'title voices bounded over 240 s (max ' + maxTV + ' <= 14)');
@@ -166,16 +180,23 @@ ok(Music._debug().voices <= 2, 'voices drain after spam: ' + Music._debug().voic
   // マスター・ミュートでタイトルも無音へ
   Music.setMuted(true); ok(masterOf().gain.target === 0, 'mute ramps master to 0 during title'); Music.setMuted(false);
   // playBody へクロスフェード → タイトルのノードが切断される
-  const persistTitle = Music._debug().persistentNodes, discBefore = disconnected;
+  const persistTitle = Music._debug().persistentNodes, discBefore = disconnected, nOscTitle = allOscs.length;
   Music.playBody('moon'); ctx.currentTime += 0.01; Music.tick(0.01);
   ok(Music._debug().scenes >= 2, 'crossfade from title keeps the old scene briefly');
   for (let i = 0; i < 40; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
   ok(Music._debug().scenes === 1 && Music._debug().cur === 'moon', 'title scene torn down after crossfade');
   ok(disconnected - discBefore >= persistTitle, 'title nodes disconnected after crossfade (' + (disconnected - discBefore) + ' >= ' + persistTitle + ')');
-  // stopAll でも破棄
-  Music.playTitle(); for (let i = 0; i < 50; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
-  Music.stopAll(0.5); for (let i = 0; i < 20; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
+  ok(allOscs.slice(0, nOscTitle).every((o) => o.dead), 'every title oscillator (incl. the sustained background theremin) disconnected after crossfade to playBody');
+  // stopAll でも破棄（背景テルミン稼働中: 小節7付近＝約30秒）
+  Music.stopAll(0.2); for (let i = 0; i < 30; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
+  const nBefore = allOscs.length; Music.playTitle();
+  for (let i = 0; i < 340; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
+  const bgNow = Music._debug().titleLog.filter((x) => x.kind === 'bg').length;
+  ok(bgNow > 3 && allOscs.slice(nBefore).some((o) => !o.dead), 'background theremin active ~34 s into the title (' + bgNow + ' notes)');
+  Music.stopAll(0.5); for (let i = 0; i < 25; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
   ok(Music._debug().scenes === 0 && Music._debug().voices <= 2, 'stopAll tears the title down');
+  ok(allOscs.slice(nBefore).every((o) => o.dead), 'stopAll stops and disconnects every title oscillator incl. the background theremin');
+  FakeCtx.prototype.createOscillator = origOsc;
 }
 
 // 5) SFX 反復

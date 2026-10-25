@@ -200,7 +200,7 @@ const _musMINP = [0, 3, 5, 7, 10];     // 短調ペンタ
 // F リディアン・ドミナント(F G A B C D Eb) / 7/8拍子 2+2+3 / 96 8分音符/分 / 24小節(≒105秒)で一巡。
 // 小節1-3 牧歌（三角+サインの主旋律・パルス裏メロ・三角ベース・シェイカー）→ 小節4から約10秒で低いFのドローン(F1+C2)が昇り、
 // 小節18から約8秒で退き、牧歌(小節20-24)に戻って周回。ドローン中は主旋律アクセントで約-3dBダック、裏メロを間引き、
-// テルミン風グライドが4小節に1回（ドローン中のみ）。奇数周回はフレーズ順を1つずらす。音は全てオリジナル。
+// テルミン風: 小節2・4の終わりに単発の応答グライド、小節6〜ドローン退場までは背景でさまようテルミン（持続サイン1本・ポルタメント・ビブラート）。奇数周回はフレーズ順を1つずらす。音は全てオリジナル。
 // ボイスは一過性の音楽ボイス('m')として数える（上限14。タイトルの実測最大は9）。
 const _MUS_T_ROOT = 349.23;                 // F4
 const _MUS_T_E = 60 / 96;                   // 8分音符の秒数
@@ -214,6 +214,10 @@ const _MUS_T_FADE_IN = 10, _MUS_T_FADE_OUT = 8;
 const _MUS_T_DRONE = 0.19;                  // ドローンのゲイン（スマホで聴こえるよう 0.12→0.19 ≈ +4dB。旧タイトル0.5よりは低い）
 const _MUS_T_DLP_LO = 180, _MUS_T_DLP_HI = 650;   // ドローンのローパス（閉→開）。スマホの小型スピーカーは~150Hz未満がほぼ出ないため、倍音を通して「低いうなり」を聴こえさせる
 const _MUS_T_THER_VEL = 0.11;               // テルミン風グライドの音量（0.07→0.11 ≈ +4dB。頻度は据え置き＝時折）
+const _MUS_T_BG_VEL = 0.06;                // 背景テルミンのピーク音量（単発グライド0.11・主旋律0.19〜0.24より小さく）
+const _MUS_T_BG_FADE = 7;                  // 背景テルミンの退場フェード秒（ドローンと同時に小節18から）
+const _MUS_T_SCALE = [0, 2, 4, 6, 7, 9, 10];
+const _MUS_T_BGPOOL = [0, 2, 4, 6, 7, 9, 10, 12, 14, 16, 18, 19, 21, 22];   // 背景テルミンの音域 F4〜Eb6（リディアン・ドミナントのみ）
 const _MUS_T_LEVEL = 1.6;                   // シーン出力ゲイン（音楽バス0.125の手前）。旧タイトル RMS -24.6/peak -14 dBFS に対し新曲 約 -26.6/-14 dBFS（オフライン実測、同一経路）
 const _MUS_T_PLAN = [0, 1, 0, 1, 0, 2];     // 4小節フレーズ型: 0=A 1=B 2=B'（終止）
 const _MUS_T_PH = [
@@ -278,7 +282,75 @@ function _musTTone(sc, spec) {
   for (const p of (spec.partials || [])) mk(p.type, f * p.ratio, p.gain, null);
   if (spec.vib) _musTVib(main, t, spec.dur, 6, 5.2);
   _musReg('m', nodes, end);
-  sc.log.push({ kind: spec.kind, t, semi: spec.semi, e: spec.e, bar: spec.bar }); if (sc.log.length > 600) sc.log.shift();
+  sc.log.push({ kind: spec.kind, t, semi: spec.semi, e: spec.e, bar: spec.bar, vel: spec.vel }); if (sc.log.length > 600) sc.log.shift();
+}
+
+// 小節 bar の主旋律の行（step と背景テルミンの衝突回避で共用）
+function _musTRow(bar) {
+  const b = bar % 4, cyc = Math.floor(bar / _MUS_T_CYCLE), bc = bar % _MUS_T_CYCLE;
+  const typ = _MUS_T_PLAN[(Math.floor(bc / 4) + (cyc % 2)) % _MUS_T_PLAN.length];
+  return typ === 0 ? _MUS_T_PH[0][b] : (typ === 2 && b === 3) ? _MUS_T_PH[0][3] : _MUS_T_PH[1][b];
+}
+
+// 背景テルミン: 小節6〜ドローン退場まで、サイン1本を持続させ周波数だけをポルタメントで動かす（新ボイスを毎音作らない）。
+// 状態ベース: tick が遅れても取りこぼさず、周回ごとに別の線を生成。主旋律のアクセントと同じ音高は避ける。
+function _musTBg(sc, t, n, bc, cyc) {
+  const E = _MUS_T_E; const ctx = _musS.ctx;
+  let bg = sc.bg;
+  if (bg && bg.fading && t > bg.endT) { sc.bg = bg = null; }
+  if (!bg && bc >= 5 && bc < _MUS_T_OUT && sc.bgCyc !== cyc && _musCanVoice('m')) {
+    const idx = 4 + Math.floor(Math.random() * 5);
+    const o = _musOsc('sine', _musHz(_MUS_T_ROOT, _MUS_T_BGPOOL[idx]), t, null);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(_MUS_T_BG_VEL * 0.7, t + 2);   // 約2秒でフェードイン
+    o.connect(env); env.connect(sc.thBus);
+    _musReg('m', [o, env], Infinity);
+    const v = _musS.voices[_musS.voices.length - 1]; v.sc = sc;
+    sc.bg = bg = { o, env, idx, next: t, lvl: _MUS_T_BG_VEL * 0.7, rest: false, first: true, fading: false, endT: 0, voice: v };
+    sc.bgCyc = cyc;
+  }
+  if (!bg) return;
+  if (!bg.fading && bc >= _MUS_T_OUT) {   // ドローンと一緒に退場
+    bg.fading = true;
+    bg.env.gain.cancelScheduledValues(t); bg.env.gain.setValueAtTime(Math.max(0.0001, bg.lvl), t); bg.env.gain.linearRampToValueAtTime(0.0001, t + _MUS_T_BG_FADE);
+    bg.endT = t + _MUS_T_BG_FADE + 0.3;
+    try { bg.o.stop(bg.endT); } catch (e) { /* ok */ }
+    bg.voice.end = bg.endT;
+    return;
+  }
+  if (bg.fading) return;
+  while (bg.next <= t + E) {
+    const tn = bg.next; const m = n + Math.round((tn - t) / E);
+    const barM = Math.floor(m / _MUS_T_BAR), eM = m % _MUS_T_BAR;
+    if (!bg.first && !bg.rest && Math.random() < 0.25) {   // 息継ぎ: 音量だけ沈める（ピッチは保持）
+      const len = _musPick([2, 3]);
+      bg.env.gain.setValueAtTime(bg.lvl, tn); bg.lvl = _MUS_T_BG_VEL * 0.12; bg.env.gain.linearRampToValueAtTime(bg.lvl, tn + 0.3);
+      bg.rest = true; bg.next = tn + len * E; continue;
+    }
+    bg.rest = false;
+    const pool = _MUS_T_BGPOOL; let idx = bg.idx; let glide = _musRand(0.15, 0.3);
+    if (!bg.first) {
+      const r = Math.random();
+      const up12 = pool.indexOf(pool[idx] + 12), dn12 = pool.indexOf(pool[idx] - 12);
+      if (r < 0.12 && (up12 >= 0 || dn12 >= 0)) { idx = up12 >= 0 && (dn12 < 0 || Math.random() < 0.5) ? up12 : dn12; glide = 0.4; }   // オクターブ・スウープ
+      else { idx += _musPick([-2, -1, -1, 1, 1, 2]); if (idx < 0 || idx >= pool.length) idx = bg.idx + (idx < 0 ? 1 : -1); }
+    }
+    const acc = _MUS_T_ACC.indexOf(eM) >= 0;
+    const lead = acc ? _musTRow(barM)[eM] : null;
+    if (lead != null && pool[idx] === lead) {   // 主旋律と同音は避ける: 1オクターブ離すか隣の音へ
+      const alt = pool.indexOf(lead - 12) >= 0 ? pool.indexOf(lead - 12) : pool.indexOf(lead + 12);
+      idx = alt >= 0 ? alt : (idx > 0 ? idx - 1 : idx + 1);
+    }
+    const semi = pool[idx]; const f = _musHz(_MUS_T_ROOT, semi); const prevF = _musHz(_MUS_T_ROOT, pool[bg.idx]);
+    if (!bg.first && idx !== bg.idx) { bg.o.frequency.setValueAtTime(prevF, tn); bg.o.frequency.exponentialRampToValueAtTime(f, tn + glide); }
+    bg.first = false; bg.idx = idx;
+    const dur = _musPick([2, 2, 3, 3, 3, 4, 4]);
+    const lvl = _MUS_T_BG_VEL * _musRand(0.6, 1);   // やわらかいスウェル
+    bg.env.gain.setValueAtTime(bg.lvl, tn); bg.env.gain.linearRampToValueAtTime(lvl, tn + Math.min(0.5, dur * E * 0.6)); bg.lvl = lvl;
+    _musTVib(bg.o, tn, dur * E, _musRand(6, 20), _musRand(4.6, 6.6));
+    sc.log.push({ kind: 'bg', t: tn, semi, e: eM, bar: barM, vel: lvl }); if (sc.log.length > 600) sc.log.shift();
+    bg.next = tn + dur * E;
+  }
 }
 
 function _musTitleScene() {
@@ -327,8 +399,7 @@ function _musTitleScene() {
       }
       const droneOn = bc >= _MUS_T_IN && bc < _MUS_T_OUT + 2;
       const ph = Math.floor(bc / 4);
-      const typ = _MUS_T_PLAN[(ph + (cyc % 2)) % _MUS_T_PLAN.length];
-      const row = typ === 0 ? _MUS_T_PH[0][b] : (typ === 2 && b === 3) ? _MUS_T_PH[0][3] : _MUS_T_PH[1][b];
+      const row = _musTRow(bar);
       const semi = row[e];
       const acc = _MUS_T_ACC.indexOf(e);
       if (semi != null) {
@@ -357,8 +428,8 @@ function _musTitleScene() {
           _musReg('m', [src, bp, env], end);
         }
       }
-      // テルミン風グライド: ドローン中のみ、4小節に1回（各4小節組の最後の小節の e=5）
-      if (bc >= _MUS_T_IN + 2 && bc < _MUS_T_OUT && b === 3 && e === 5 && _musCanVoice('m')) {
+      // 単発グライド（リードに応える）: 各周回の小節2と小節4の終わり（e=5）
+      if ((bc === 1 || bc === 3) && e === 5 && _musCanVoice('m')) {
         const pr = _musPick(_MUS_T_THER);
         const f1 = _musHz(_MUS_T_ROOT, pr[0]), f2 = _musHz(_MUS_T_ROOT, pr[1]);
         const ctx = _musS.ctx; const end = t + 1.85;
@@ -371,8 +442,9 @@ function _musTitleScene() {
         env.gain.setValueAtTime(_MUS_T_THER_VEL, t + 1.3); env.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
         o.connect(env); env.connect(sc.thBus);
         _musReg('m', [o, env], end);
-        sc.log.push({ kind: 'ther', t, semi: pr[0], e, bar }, { kind: 'ther', t: t + 1.0, semi: pr[1], e, bar });
+        sc.log.push({ kind: 'ther', t, semi: pr[0], e, bar, vel: _MUS_T_THER_VEL }, { kind: 'ther', t: t + 1.0, semi: pr[1], e, bar, vel: _MUS_T_THER_VEL });
       }
+      _musTBg(sc, t, n, bc, cyc);
       return E;
     },
   };
@@ -500,6 +572,11 @@ function _musFadeOut(sc, fade) {
   sc.killAt = now + fade + 0.2;
   sc.next = Infinity;
   for (const n of sc.nodes) { try { if (n.stop && n._musStarted) n.stop(sc.killAt); } catch (e) { /* 既に予約済み */ } }
+  for (const v of _musS.voices) { // シーン所有の持続ボイス（背景テルミン）も同時に止める
+    if (v.sc !== sc) continue;
+    v.end = Math.min(v.end, sc.killAt);
+    for (const n of v.nodes) { try { if (n.stop && n._musStarted) n.stop(sc.killAt); } catch (e) { /* ok */ } }
+  }
 }
 
 function _musSwitch(id, fade) {
