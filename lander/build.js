@@ -39,3 +39,14 @@ out += '})();\n';
 const dest = '02_src/lander.bundle.js';
 fs.writeFileSync(path.join(ROOT, dest), out, 'utf8');
 console.log('built ' + dest + ' (' + out.length + ' bytes)');
+
+// キャッシュ対策: GitHub Pages は max-age=600 で配信するため、同じURLだと古い版が使われ続けることがある。
+// 中身のハッシュを ?v= として index.html の参照に刻み、中身が変わればURLも変わるようにする。
+const crypto = require('crypto');
+const hashOf = (rel) => crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, rel))).digest('hex').slice(0, 10);
+const indexPath = path.join(ROOT, 'index.html');
+let html = fs.readFileSync(indexPath, 'utf8');
+const stamp = (h, rel) => h.replace(new RegExp(rel.replace(/[.]/g, '\\.') + '(\\?v=[0-9a-f]+)?', 'g'), rel + '?v=' + hashOf(rel));
+const stamped = stamp(stamp(html, '02_src/lander.bundle.js'), '03_assets/style.css');
+if (stamped !== html) fs.writeFileSync(indexPath, stamped, 'utf8');
+console.log('stamped index.html (bundle ?v=' + hashOf(dest) + ', css ?v=' + hashOf('03_assets/style.css') + ')');
