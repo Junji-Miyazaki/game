@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>CYBER SHOGI — 電脳将棋 prototype v3 FACTION WARS</title>
+<style>
+:root{
+  --bg:#05080f; --panel:#0a1120; --grid:#12305a;
+  --cyan:#19e3ff; --magenta:#ff2d95; --gold:#ffd23e; --dim:#3b5a86;
+  --danger:#ff4444; --green:#4dff9a;
+}
+*{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  background:var(--bg); color:#cfe8ff;
+  font-family:"Courier New", ui-monospace, Menlo, monospace;
+  display:flex; align-items:safe center; justify-content:center;
+  overflow-y:auto; overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+}
+#app{width:min(96vw,520px); padding:6px 0;}
+
+.screen{display:none;}
+.screen.on{display:block;}
+
+#title{ text-align:center; padding:24px 8px;}
+#title h1{
+  font-size:clamp(30px,8vw,46px); letter-spacing:.12em; color:var(--cyan);
+  text-shadow:0 0 14px rgba(25,227,255,.65), 0 0 40px rgba(25,227,255,.25);
+}
+#title h1 span{color:var(--magenta); text-shadow:0 0 14px rgba(255,45,149,.7);}
+#title .sub{margin:6px 0 26px; color:var(--dim); letter-spacing:.3em; font-size:12px;}
+.menu-btn{
+  display:block; width:min(320px,86%); margin:12px auto; padding:14px 10px;
+  background:transparent; color:var(--cyan); border:1px solid var(--cyan);
+  font:inherit; font-size:16px; letter-spacing:.2em; cursor:pointer;
+  text-shadow:0 0 8px rgba(25,227,255,.6); border-radius:3px;
+  transition:background .15s;
+}
+.menu-btn:hover{background:rgba(25,227,255,.12);}
+.menu-btn.mg{color:var(--magenta); border-color:var(--magenta); text-shadow:0 0 8px rgba(255,45,149,.6);}
+.menu-btn.mg:hover{background:rgba(255,45,149,.12);}
+#title .howto{
+  margin:26px auto 0; max-width:440px; text-align:left; font-size:12px;
+  color:#7fa8d8; line-height:1.8; border-top:1px dashed var(--grid); padding-top:14px;
+}
+#title .howto b{color:var(--gold);}
+
+#hud{display:flex; justify-content:space-between; align-items:baseline; padding:4px 2px; font-size:13px;}
+#hud .stg{color:var(--magenta); letter-spacing:.1em;}
+#hud .scr{color:var(--gold);}
+#hud .seed{color:var(--dim); font-size:11px;}
+
+.hand{
+  min-height:38px; display:flex; gap:6px; align-items:center; padding:4px 2px;
+  font-size:12px;
+}
+.hand .lbl{color:var(--dim); font-size:10px; margin-right:2px;}
+.chip{
+  border:1px solid var(--dim); border-radius:3px; padding:4px 8px; cursor:pointer;
+  color:var(--cyan); background:rgba(25,227,255,.05); user-select:none;
+}
+.chip.enemy{color:var(--magenta); background:rgba(255,45,149,.05); cursor:default;}
+.chip.sel{border-color:var(--gold); color:var(--gold); box-shadow:0 0 8px rgba(255,210,62,.4);}
+.chip .n{color:#fff; margin-left:3px;}
+
+#board{
+  display:grid; grid-template-columns:repeat(5,1fr); gap:2px;
+  background:var(--grid); border:2px solid var(--grid); border-radius:4px;
+  box-shadow:0 0 30px rgba(18,48,90,.8), inset 0 0 24px rgba(25,227,255,.05);
+  position:relative;
+}
+#netsvg{
+  position:absolute; inset:0; width:100%; height:100%;
+  pointer-events:none; z-index:3;
+}
+.cell{
+  aspect-ratio:1; background:var(--panel); position:relative; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
+.cell.movable::after{
+  content:""; position:absolute; width:22%; height:22%; border-radius:50%;
+  background:rgba(77,255,154,.35); box-shadow:0 0 10px rgba(77,255,154,.6);
+}
+.cell.movable.cap::after{ width:82%; height:82%; border-radius:6px; background:transparent;
+  border:2px solid rgba(255,68,68,.75); box-shadow:0 0 12px rgba(255,68,68,.5);}
+.cell.selc{background:#123a2c;}
+.cell.lastmv{background:#101c36;}
+.cell.checkk{background:#3a0f16;}
+.cell.down{background:#1a0508; cursor:default;}
+.cell.down::before{
+  content:"✕"; color:#5a1520; font-size:26px; font-weight:bold;
+}
+.cell .cd{
+  position:absolute; top:2px; right:3px; z-index:4; font-size:11px; font-weight:bold;
+  color:var(--danger); text-shadow:0 0 6px var(--danger);
+  animation:pulse 1s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.pc{
+  width:84%; height:84%; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; border-radius:5px; font-weight:bold; line-height:1;
+  border:1px solid; position:relative; z-index:2;
+}
+.pc .g{font-size:clamp(13px,3.4vw,19px); letter-spacing:.02em;}
+.pc .lv{font-size:8px; opacity:.85; margin-top:2px; letter-spacing:.1em;}
+.pc .rk{
+  position:absolute; top:-7px; left:-6px; font-size:11px; color:var(--gold);
+  text-shadow:0 0 7px rgba(255,210,62,.9); z-index:6;
+}
+.pc.s0{color:var(--cyan); border-color:rgba(25,227,255,.7); background:linear-gradient(180deg,rgba(25,227,255,.10),rgba(25,227,255,.02));
+  box-shadow:0 0 8px rgba(25,227,255,.25);}
+.pc.s1{color:var(--magenta); border-color:rgba(255,45,149,.7); background:linear-gradient(0deg,rgba(255,45,149,.10),rgba(255,45,149,.02));
+  transform:rotate(180deg); box-shadow:0 0 8px rgba(255,45,149,.25);}
+.pc.promo{color:var(--gold); border-color:rgba(255,210,62,.8); text-shadow:0 0 8px rgba(255,210,62,.6);}
+.pc.frozen{opacity:.45; filter:grayscale(.6);}
+.pc.frozen::after{content:"⏻"; position:absolute; top:-4px; right:-4px; font-size:10px; color:var(--danger);}
+.pc.offline{
+  opacity:.5; border-style:dashed; box-shadow:none; filter:saturate(.4);
+}
+.pc.offline .lv{color:var(--danger);}
+@keyframes glitch{
+  0%{transform:translate(0)} 20%{transform:translate(-2px,1px)} 40%{transform:translate(2px,-1px)}
+  60%{transform:translate(-1px,-2px)} 80%{transform:translate(1px,2px)} 100%{transform:translate(0)}
+}
+.pc.s1.offline,.pc.s1.frozen{transform:rotate(180deg);}
+.cell.hacked .pc{animation:glitch .35s linear 2;}
+.cell.hacked::before{
+  content:"HACKED"; position:absolute; z-index:5; font-size:9px; color:var(--green);
+  top:2px; left:3px; text-shadow:0 0 6px var(--green); animation:glitch .3s linear 3;
+}
+
+#ctrl{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+.cbtn{
+  flex:1; min-width:84px; padding:9px 4px; font:inherit; font-size:12px; letter-spacing:.1em;
+  background:transparent; border:1px solid var(--dim); color:#9dc3ee; cursor:pointer; border-radius:3px;
+}
+.cbtn:not(:disabled):hover{border-color:var(--cyan); color:var(--cyan);}
+.cbtn:disabled{opacity:.35; cursor:default;}
+.cbtn.warn{border-color:var(--danger); color:var(--danger);}
+.cbtn.armed{background:rgba(255,68,68,.18); box-shadow:0 0 10px rgba(255,68,68,.4);}
+
+#term{
+  margin-top:8px; height:92px; overflow:hidden; border:1px solid var(--grid); border-radius:3px;
+  padding:5px 8px; font-size:11px; line-height:1.55; color:#5f89bd; background:rgba(4,10,20,.8);
+}
+#term .g{color:var(--green);} #term .m{color:var(--magenta);} #term .c{color:var(--cyan);} #term .y{color:var(--gold);}
+
+.modal{
+  position:fixed; inset:0; z-index:60; display:none;
+  background:rgba(3,6,12,.88); align-items:center; justify-content:center; flex-direction:column;
+}
+.modal.on{display:flex;}
+.modal h2{color:var(--cyan); letter-spacing:.2em; margin-bottom:6px; text-shadow:0 0 12px rgba(25,227,255,.6); text-align:center;}
+.modal .note{color:var(--dim); font-size:12px; margin-bottom:18px; text-align:center;}
+#upg-cards{display:flex; gap:12px; width:min(94vw,560px); justify-content:center; flex-wrap:wrap;}
+.upg{
+  width:158px; border:1px solid var(--dim); border-radius:5px; padding:14px 10px; cursor:pointer;
+  background:var(--panel); text-align:center; transition:all .15s;
+}
+.upg:hover{border-color:var(--gold); box-shadow:0 0 16px rgba(255,210,62,.35); transform:translateY(-3px);}
+.upg .ic{font-size:26px; margin-bottom:8px;}
+.upg .nm{color:var(--gold); font-size:13px; margin-bottom:8px; letter-spacing:.05em;}
+.upg .ds{color:#8fb4e0; font-size:11px; line-height:1.6;}
+#end-body{text-align:center;}
+#end-body .rank{font-size:64px; color:var(--gold); text-shadow:0 0 24px rgba(255,210,62,.7); margin:10px 0;}
+#end-body .fs{font-size:15px; color:#cfe8ff; margin:4px 0;}
+#end-body .detail{color:var(--dim); font-size:12px; margin:12px 0; line-height:1.8;}
+#kifu-wrap{width:min(92vw,460px);}
+#kifu-txt{width:100%; height:200px; background:var(--panel); color:#9dc3ee; border:1px solid var(--grid);
+  font:inherit; font-size:11px; padding:8px; resize:none;}
+.stage-banner{
+  position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+  background:rgba(3,6,12,.78); pointer-events:none; flex-direction:column; gap:10px;
+}
+.stage-banner.on{display:flex;}
+.stage-banner .bn-main{
+  font-size:clamp(20px,6vw,34px); color:var(--magenta); letter-spacing:.25em;
+  text-shadow:0 0 20px rgba(255,45,149,.8); animation:glitch .4s linear 3;
+}
+.stage-banner .bn-sub{
+  font-size:clamp(12px,3vw,15px); color:var(--gold); letter-spacing:.1em;
+  text-shadow:0 0 10px rgba(255,210,62,.6);
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="title" class="screen on">
+    <h1>CYBER<span>_</span>SHOGI</h1>
+    <div class="sub">電脳将棋 :: FACTION WARS v3</div>
+    <button class="menu-btn" id="bt-free">FREE RUN — 侵入開始</button>
+    <button class="menu-btn mg" id="bt-daily">DAILY RUN — 本日のシード</button>
+    <div class="howto">
+      <b>目的:</b> シードが決めた3陣営に連続侵入し、敵<b>CEO</b>を詰ませろ。奪った駒は乗っ取り=持ち駒。<br>
+      <b>回線:</b> 自CEOと味方の隣接チェーンで繋がる駒だけオンライン。
+      切断=<b>OFFLINE</b>: 走れない・成れない。持ち駒は自回線の隣接マスのみ投入可。<br>
+      <b>機能:</b> SAT=同行同列を無線中継 / HCK=隣接敵をタップしオフライン化 / F/W=自身と隣接味方を防護。<br>
+      <b>昇格★:</b> 敵を2体乗っ取った駒はランクアップ。
+      AI=切断無効 / SAT=斜め中継 / HCK=タップ範囲2 / F/W=防護範囲2 / bot=斜め前にも進める。<br>
+      <b>敵陣営:</b> ボットネット(bot増殖)・メガコーポ(広域防護)・国家中枢(常時監視網)・ライバルハッカー(DDoS反撃)。
+      陣営ごとに正解の戦略が変わる。<br>
+      <b>BLACKOUT:</b> 赤カウント0でマスが永久ダウン。上の駒は消滅。<br>
+      <b>DAILY:</b> 日替わりシードが侵入経路・強化・ブラックアウトを固定。全員同条件。
+    </div>
+  </div>
+
+  <div id="game" class="screen">
+    <div id="hud">
+      <span class="stg" id="hud-stage">STAGE 1</span>
+      <span class="scr" id="hud-score">SCORE 0</span>
+      <span class="seed" id="hud-seed"></span>
+    </div>
+    <div class="hand" id="hand-e"><span class="lbl">敵捕獲:</span></div>
+    <div id="board"></div>
+    <div class="hand" id="hand-p"><span class="lbl">乗っ取り済:</span></div>
+    <div id="ctrl">
+      <button class="cbtn warn" id="bt-ddos">DDoS ×0</button>
+      <button class="cbtn" id="bt-kifu">棋譜LOG</button>
+      <button class="cbtn" id="bt-mute">SOUND ON</button>
+      <button class="cbtn" id="bt-quit">切断</button>
+    </div>
+    <div id="term"></div>
+  </div>
+
+</div>
+
+<div class="modal" id="upg-modal">
+  <h2>SYSTEM BREACHED</h2>
+  <div class="note">侵入成功 — サイバー強化を1つ選択せよ</div>
+  <div id="upg-cards"></div>
+</div>
+
+<div class="modal" id="end-modal">
+  <div id="end-body"></div>
+</div>
+
+<div class="modal" id="kifu-modal">
+  <h2>KIFU LOG</h2>
+  <div id="kifu-wrap"><textarea id="kifu-txt" readonly></textarea></div>
+  <button class="menu-btn" id="bt-kifu-close" style="margin-top:14px;">CLOSE</button>
+</div>
+
+<div class="stage-banner" id="banner">
+  <div class="bn-main" id="banner-txt"></div>
+  <div class="bn-sub" id="banner-sub"></div>
+</div>
+
+<script>
+"use strict";
+/* ============ CYBER SHOGI prototype v3 — FACTION WARS ============
+   v2(回線/タップ/防護/中継/ブラックアウト)に対する v3 の追加:
+   - 敵ファクション4種: 編成+固有ルール1つ。シードが3連戦の並びを決定。
+     botnet: bot群・大駒なし。敵botが成ると敵手駒bot+1(増殖)
+     corp:   F/W2枚。敵F/Wの防護範囲2マス
+     state:  AGI起動済+手駒bot。敵SATは切断されていても中継可(常時監視網)
+     hacker: HCK2枚。敵もDDoSを使用(2回、4手目/12手目にこちらの最高価値駒を2手停止)
+   - 捕獲昇格: 敵を2体取った駒は★ランク(1段階のみ)。
+     AI=オフライン無効 / SAT=斜めにも中継 / HCK=タップ範囲2 /
+     F/W=防護範囲2 / bot=斜め前にも1歩。成りとは独立。取られたらリセット。
+   - シード分離: 侵入経路(lineup)/強化ドラフト/ブラックアウト台本/AIノイズを
+     独立ストリーム化。DAILYは同じ手順なら同じ展開を完全再現
+     (ブラックアウトは局ごとの固定台本。K在駒マスのみスキップ)。
+   簡略化(継承): 自動昇格(オンライン時のみ)/打ち歩詰めなし/探索中は
+   ブラックアウト静的近似/タップはチェーン導通を維持
+================================================================== */
+
+const N=5, KINGVAL=100000;
+const $=s=>document.querySelector(s);
+
+/* ---------- pieces ---------- */
+const PDEF={
+  K:{g:"CEO", pg:"CEO", v:0,    jp:"玉"},
+  R:{g:"AI",  pg:"AGI", v:600,  jp:"飛", pv:150},
+  B:{g:"SAT", pg:"SAT+",v:500,  jp:"角", pv:150},
+  G:{g:"F/W", pg:"F/W", v:400,  jp:"金"},
+  S:{g:"HCK", pg:"APT", v:350,  jp:"銀", pv:60},
+  P:{g:"bot", pg:"BOT+",v:100,  jp:"歩", pv:280},
+};
+const CANPROMO={R:1,B:1,S:1,P:1};
+const HANDORDER=["R","B","G","S","P"];
+
+const STEPS={
+  K:[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]],
+  G:[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,0]],
+  S:[[-1,-1],[-1,0],[-1,1],[1,-1],[1,1]],
+  P:[[-1,0]],
+  PSTAR:[[-1,0],[-1,-1],[-1,1]],          // bot★: 斜め前にも
+};
+const SLIDES={R:[[-1,0],[1,0],[0,-1],[0,1]], B:[[-1,-1],[-1,1],[1,-1],[1,1]]};
+const RD=[[-1,-1],[-1,1],[1,-1],[1,1]], BD=[[-1,0],[1,0],[0,-1],[0,1]];
+const ADJ8=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const rk=pc=>(pc.caps||0)>=2;              // 捕獲昇格(★)
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+
+/* ---------- factions ---------- */
+// setup: [r,c,t,promoted] の列。handP: 敵の初期手駒bot数。
+const FACTIONS={
+  botnet:{nm:"ボットネット", tgt:"対一般ユーザー",
+    rule:"敵botは成ると増殖(敵手駒bot+1)",
+    setup:[[0,2,"S"],[0,3,"G"],[0,4,"K"],[1,0,"P"],[1,1,"P"],[1,2,"P"],[1,3,"P"]],
+    handP:1},
+  corp:{nm:"メガコーポ", tgt:"対企業",
+    rule:"敵F/Wの防護範囲が2マス",
+    setup:[[0,0,"R"],[0,1,"B"],[0,2,"G"],[0,3,"G"],[0,4,"K"],[1,0,"P"]],
+    handP:0},
+  state:{nm:"国家中枢", tgt:"対国家",
+    rule:"敵の監視網: SATは切断中も中継可+AGI起動済",
+    setup:[[0,0,"R",1],[0,1,"B"],[0,2,"S"],[0,3,"G"],[0,4,"K"],[1,0,"P"]],
+    handP:1},
+  hacker:{nm:"ライバルハッカー", tgt:"対ハッカー",
+    rule:"敵もDDoSを放つ(計2回)",
+    setup:[[0,0,"R"],[0,1,"S"],[0,2,"S"],[0,3,"G"],[0,4,"K"],[1,0,"P"]],
+    handP:0},
+};
+const SLOTS=[{depth:2,noise:130},{depth:2,noise:45},{depth:3,noise:0}];
+
+/* ---------- run state ---------- */
+let run=null, bt=null, busy=false, muted=false;
+const UPGRADES=[
+  {id:"bot",    ic:"▣", nm:"増援BOT",       ds:"各局の開始時、手駒にbot+1(重複可)", stack:true},
+  {id:"awaken", ic:"◈", nm:"AI覚醒",        ds:"AIコア(飛)がAGI(竜)状態で開始", stack:false},
+  {id:"orbit",  ic:"◍", nm:"衛星軌道リンク", ds:"衛星(角)が盤の左右端をワープして周回移動", stack:false},
+  {id:"ddos",   ic:"⚡", nm:"DDoS攻撃 +1",   ds:"敵1体を2手停止。手番を消費しない(重複可)", stack:true},
+  {id:"backup", ic:"⟲", nm:"バックアップ復元", ds:"各局1回、自駒が奪われた時に自分の手駒へ復元", stack:false},
+  {id:"zeroday",ic:"☠", nm:"ゼロデイ",      ds:"敵botを1体、侵入済み状態で消去して開始(敵回線が痩せる)", stack:false},
+];
+
+/* ---------- audio ---------- */
+let AC=null;
+function beep(f,d,type="square",g=.05){
+  if(muted) return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(), gn=AC.createGain();
+    o.type=type; o.frequency.value=f; gn.gain.value=g;
+    gn.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);
+    o.connect(gn).connect(AC.destination); o.start(); o.stop(AC.currentTime+d);
+  }catch(e){}
+}
+const sMove=()=>beep(340,.06), sCap=()=>{beep(180,.12,"sawtooth",.06); setTimeout(()=>beep(90,.15,"sawtooth",.05),60);},
+      sWin=()=>{[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.16,"triangle",.06),i*110));},
+      sLose=()=>{[300,220,150,90].forEach((f,i)=>setTimeout(()=>beep(f,.2,"sawtooth",.05),i*140));},
+      sDdos=()=>beep(60,.3,"sawtooth",.08),
+      sRank=()=>{beep(880,.08,"triangle",.06); setTimeout(()=>beep(1320,.12,"triangle",.06),90);},
+      sDown=()=>{beep(45,.4,"sawtooth",.09); setTimeout(()=>beep(30,.5,"sawtooth",.07),120);};
+
+/* ---------- terminal log ---------- */
+const termLines=[];
+function log(html){
+  termLines.push("&gt; "+html);
+  while(termLines.length>6) termLines.shift();
+  $("#term").innerHTML=termLines.join("<br>");
+}
+const colName=c=>String(5-c), rowName=r=>"一二三四五"[r];
+const cellName=i=>colName(i%N)+rowName((i/N)|0);
+
+/* ---------- battle setup ---------- */
+function has(id){return run.upgrades.includes(id);}
+function cnt(id){return run.upgrades.filter(u=>u===id).length;}
+const curFaction=()=>FACTIONS[run.lineup[run.stage]];
+
+function startBattle(){
+  const F=curFaction(), slot=SLOTS[run.stage], fid=run.lineup[run.stage];
+  const board=new Array(N*N).fill(null);
+  const put=(r,c,t,s,p)=>board[r*N+c]={t,s,p:!!p,frozen:0,caps:0};
+  put(4,0,"K",0); put(4,1,"G",0); put(4,2,"S",0); put(4,3,"B",0); put(4,4,"R",0,has("awaken"));
+  put(3,4,"P",0);
+  for(const [r,c,t,p] of F.setup) put(r,c,t,1,p);
+  if(has("zeroday")){
+    const i=board.findIndex(q=>q&&q.s===1&&q.t==="P");
+    if(i>=0) board[i]=null;
+  }
+  const hands={0:{R:0,B:0,G:0,S:0,P:cnt("bot")},1:{R:0,B:0,G:0,S:0,P:F.handP}};
+  // ブラックアウト台本: 局ごとの固定シーケンス(シード決定論)
+  const rngBo=mulberry32((run.seed^0xB1AC0)+run.stage*7919);
+  const boScript=[...Array(N*N).keys()];
+  for(let i=boScript.length-1;i>0;i--){const j=(rngBo()*(i+1))|0;[boScript[i],boScript[j]]=[boScript[j],boScript[i]];}
+  bt={board,hands,turn:0,moves:0,ply:0,kifu:[],backupUsed:false,lastMove:null,over:false,
+      down:new Set(), pending:new Map(), faction:fid,
+      boScript, boPtr:0,
+      eDdos:fid==="hacker"?2:0, eDdosAt:fid==="hacker"?[4,12]:[]};
+  run.ddos=cnt("ddos")-run.ddosSpent;
+  sel=null; targets=[]; ddosArm=false;
+  banner(`STAGE ${run.stage+1} :: ${F.tgt}`, `${F.nm} — ${F.rule}`);
+  log(`<span class="m">BREACHING</span> STAGE ${run.stage+1} — ${F.nm} <span class="y">[${F.rule}]</span>`);
+  if(has("zeroday")) log(`<span class="y">ゼロデイ発動</span>: 敵bot消去済み`);
+  render();
+}
+
+/* ---------- network (回線) ---------- */
+// v2仕様+v3拡張:
+//  - state陣営: 敵SATは切断中もBFSシード(常時監視網)
+//  - SAT★: 同行同列に加え同対角線も中継
+//  - HCK★: タップ範囲2(チェビシェフ距離)
+//  - F/W★ or corp陣営の敵F/W: 防護範囲2
+function computeNets(board){
+  const on=[new Set(),new Set()], tapped=[new Set(),new Set()];
+  for(const s of [0,1]){
+    const k=kingSq(board,s);
+    if(k<0) continue;
+    const q=[k]; on[s].add(k);
+    if(s===1&&bt&&bt.faction==="state"){
+      for(let i=0;i<N*N;i++){
+        const p=board[i];
+        if(p&&p.s===1&&p.t==="B"&&!on[1].has(i)){on[1].add(i); q.push(i);}
+      }
+    }
+    while(q.length){
+      const i=q.pop(), r=(i/N)|0, c=i%N;
+      for(const [dr,dc] of ADJ8){
+        const nr=r+dr, nc=c+dc;
+        if(nr<0||nr>=N||nc<0||nc>=N) continue;
+        const j=nr*N+nc, p=board[j];
+        if(p&&p.s===s&&!on[s].has(j)){on[s].add(j); q.push(j);}
+      }
+      const self=board[i];
+      if(self&&self.t==="B"){
+        const star=rk(self);
+        for(let j=0;j<N*N;j++){
+          if(on[s].has(j)) continue;
+          const p=board[j];
+          if(!p||p.s!==s) continue;
+          const jr=(j/N)|0, jc=j%N;
+          const line=jr===r||jc===c;
+          const diag=star&&Math.abs(jr-r)===Math.abs(jc-c);
+          if(line||diag){on[s].add(j); q.push(j);}
+        }
+      }
+    }
+  }
+  for(const s of [0,1]){
+    const e=1-s;
+    for(const i of on[e]){
+      if(!board[i]||board[i].t!=="S") continue;
+      const rad=rk(board[i])?2:1;
+      const r=(i/N)|0, c=i%N;
+      for(let j=0;j<N*N;j++){
+        const p=board[j];
+        if(!p||p.s!==s||p.t==="K") continue;
+        const d=Math.max(Math.abs(((j/N)|0)-r),Math.abs(j%N-c));
+        if(d<1||d>rad) continue;
+        if(!on[s].has(j)) continue;
+        if(fwProtected(board,on[s],j,s)) continue;
+        tapped[s].add(j);
+      }
+    }
+  }
+  for(const s of [0,1]) for(const j of tapped[s]) on[s].delete(j);
+  return {on,tapped};
+}
+function fwProtected(board,ownOn,j,s){
+  if(board[j].t==="G") return true;
+  const jr=(j/N)|0, jc=j%N;
+  for(let i=0;i<N*N;i++){
+    const q=board[i];
+    if(!q||q.s!==s||q.t!=="G") continue;
+    if(!ownOn.has(i)) continue;
+    const rad=(s===1&&bt&&bt.faction==="corp")||rk(q)?2:1;
+    const d=Math.max(Math.abs(((i/N)|0)-jr),Math.abs(i%N-jc));
+    if(d<=rad) return true;
+  }
+  return false;
+}
+function netAdjacent(i,own){
+  const r=(i/N)|0, c=i%N;
+  for(const [dr,dc] of ADJ8){
+    const nr=r+dr, nc=c+dc;
+    if(nr<0||nr>=N||nc<0||nc>=N) continue;
+    if(own.has(nr*N+nc)) return true;
+  }
+  return false;
+}
+const isDown=i=>bt&&bt.down.has(i);
+
+/* ---------- move generation ---------- */
+const lastRank=s=>s===0?0:4;
+const inB=(r,c)=>r>=0&&r<N&&c>=0&&c<N;
+
+function pieceDirs(pc){
+  const t=pc.t,p=pc.p;
+  let steps=[],slides=[];
+  if(t==="K") steps=STEPS.K;
+  else if(t==="G") steps=STEPS.G;
+  else if(t==="S") steps=p?STEPS.G:STEPS.S;
+  else if(t==="P") steps=p?STEPS.G:(rk(pc)?STEPS.PSTAR:STEPS.P);
+  else if(t==="R"){slides=SLIDES.R; if(p)steps=RD;}
+  else if(t==="B"){slides=SLIDES.B; if(p)steps=BD;}
+  return {steps,slides};
+}
+
+function genMoves(board,hands,side){
+  const mv=[], dir=side===0?1:-1;
+  const orbit=side===0&&run&&has("orbit");
+  const own=computeNets(board).on[side];
+  for(let i=0;i<N*N;i++){
+    const pc=board[i];
+    if(!pc||pc.s!==side) continue;
+    if(pc.frozen>0) continue;
+    // AI★はスタンドアロン演算: 切断の影響を受けない
+    const online=pc.t==="K"||own.has(i)||(pc.t==="R"&&rk(pc));
+    const r=(i/N)|0, c=i%N, {steps,slides}=pieceDirs(pc);
+    for(const [dr,dc] of steps){
+      const nr=r+dr*dir, nc=c+dc;
+      if(!inB(nr,nc)) continue;
+      // オフライン歩は成れないため最奥段への前進は不可(死に駒防止)
+      if(pc.t==="P"&&!pc.p&&!online&&nr===lastRank(side)) continue;
+      const j=nr*N+nc;
+      if(isDown(j)) continue;
+      const tg=board[j];
+      if(tg&&tg.s===side) continue;
+      mv.push(mkMove(i,j,pc,side,online));
+    }
+    for(const [dr,dc] of slides){
+      let nr=r+dr*dir, nc=c+dc;
+      let range=online?N:1;
+      while(range-->0){
+        if(nr<0||nr>=N) break;
+        if(nc<0||nc>=N){
+          if(orbit&&pc.t==="B"){nc=(nc+N)%N;} else break;
+        }
+        const j=nr*N+nc;
+        if(isDown(j)) break;
+        const tg=board[j];
+        if(tg&&tg.s===side) break;
+        mv.push(mkMove(i,j,pc,side,online));
+        if(tg) break;
+        nr+=dr*dir; nc+=dc;
+      }
+    }
+  }
+  for(const t of HANDORDER){
+    if(hands[side][t]<=0) continue;
+    for(let i=0;i<N*N;i++){
+      if(board[i]||isDown(i)) continue;
+      if(!netAdjacent(i,own)) continue;
+      const r=(i/N)|0, c=i%N;
+      if(t==="P"){
+        if(r===lastRank(side)) continue;
+        let nifu=false;
+        for(let rr=0;rr<N;rr++){
+          const q=board[rr*N+c];
+          if(q&&q.s===side&&q.t==="P"&&!q.p){nifu=true;break;}
+        }
+        if(nifu) continue;
+      }
+      mv.push({from:-1,to:i,drop:t,promo:false});
+    }
+  }
+  return mv;
+}
+function mkMove(from,to,pc,side,online){
+  const toR=(to/N)|0, fromR=(from/N)|0, lz=lastRank(side);
+  const promo=online&&!pc.p&&CANPROMO[pc.t]&&(toR===lz||fromR===lz);
+  return {from,to,drop:null,promo};
+}
+
+function applyMove(board,hands,side,m){
+  const b=board.map(p=>p?{...p}:null);
+  const h={0:{...hands[0]},1:{...hands[1]}};
+  let captured=null;
+  if(m.drop){
+    b[m.to]={t:m.drop,s:side,p:false,frozen:0,caps:0};
+    h[side][m.drop]--;
+  }else{
+    const pc={...b[m.from]};
+    captured=b[m.to];
+    if(captured&&captured.t!=="K"){
+      h[side][captured.t]++;
+      pc.caps=(pc.caps||0)+1;              // 捕獲昇格カウント
+    }
+    if(m.promo){
+      pc.p=true;
+      // botnet: 敵botの成りで増殖(探索中も一貫して適用)
+      if(pc.t==="P"&&side===1&&bt&&bt.faction==="botnet") h[1].P++;
+    }
+    b[m.to]=pc; b[m.from]=null;
+  }
+  return {b,h,captured};
+}
+
+function kingSq(board,side){
+  for(let i=0;i<N*N;i++){const p=board[i]; if(p&&p.t==="K"&&p.s===side) return i;}
+  return -1;
+}
+function canCaptureKing(board,hands,side){
+  const k=kingSq(board,1-side);
+  if(k<0) return true;
+  return genMoves(board,hands,side).some(m=>m.to===k&&!m.drop);
+}
+function legalMoves(board,hands,side){
+  return genMoves(board,hands,side).filter(m=>{
+    const {b,h}=applyMove(board,hands,side,m);
+    return !canCaptureKing(b,h,1-side);
+  });
+}
+function inCheck(board,hands,side){ return canCaptureKing(board,hands,1-side); }
+
+/* ---------- eval & search ---------- */
+function evalBoard(board,hands,side){
+  const {on}=computeNets(board);
+  let sc=0;
+  for(let i=0;i<N*N;i++){
+    const p=board[i]; if(!p) continue;
+    let v=p.t==="K"?KINGVAL:PDEF[p.t].v+(p.p?(PDEF[p.t].pv||0):0);
+    if(p.t!=="K"&&rk(p)) v+=60;
+    if(p.t!=="K"&&!on[p.s].has(i)&&!(p.t==="R"&&rk(p))) v*=0.6;
+    const r=(i/N)|0,c=i%N; v+=(2-Math.abs(2-r))*4+(2-Math.abs(2-c))*4;
+    sc+=p.s===side?v:-v;
+  }
+  if(bt) for(const [cell,cd] of bt.pending){
+    if(cd<=3){
+      const p=board[cell];
+      if(p&&p.t!=="K"){
+        const v=PDEF[p.t].v*0.8;
+        sc+=p.s===side?-v:v;
+      } else if(p&&p.t==="K"){
+        sc+=p.s===side?-KINGVAL/4:KINGVAL/4;
+      }
+    }
+  }
+  for(const t of HANDORDER){
+    sc+=hands[side][t]*PDEF[t].v*1.05;
+    sc-=hands[1-side][t]*PDEF[t].v*1.05;
+  }
+  return sc;
+}
+function orderMoves(board,mv){
+  return mv.map(m=>{
+    let s=0;
+    if(!m.drop){
+      const tg=board[m.to];
+      if(tg) s=1000+(tg.t==="K"?KINGVAL:PDEF[tg.t].v);
+      if(m.promo) s+=120;
+    } else s=-50;
+    return {m,s};
+  }).sort((a,b)=>b.s-a.s).map(x=>x.m);
+}
+function negamax(board,hands,side,depth,alpha,beta){
+  if(kingSq(board,side)<0) return -KINGVAL-depth;
+  if(depth===0) return evalBoard(board,hands,side);
+  const mv=orderMoves(board,genMoves(board,hands,side));
+  if(mv.length===0) return -KINGVAL/2;
+  let best=-Infinity;
+  for(const m of mv){
+    let sc;
+    if(!m.drop&&board[m.to]&&board[m.to].t==="K"){ sc=KINGVAL+depth; }
+    else{
+      const {b,h}=applyMove(board,hands,side,m);
+      sc=-negamax(b,h,1-side,depth-1,-beta,-alpha);
+    }
+    if(sc>best) best=sc;
+    if(best>alpha) alpha=best;
+    if(alpha>=beta) break;
+  }
+  return best;
+}
+function aiPickMove(){
+  const slot=SLOTS[run.stage];
+  const mv=legalMoves(bt.board,bt.hands,1);
+  if(mv.length===0) return null;
+  let best=null, bestSc=-Infinity;
+  for(const m of orderMoves(bt.board,mv)){
+    const {b,h}=applyMove(bt.board,bt.hands,1,m);
+    let sc=-negamax(b,h,0,slot.depth-1,-Infinity,Infinity);
+    sc+=(run.rngAI()*2-1)*slot.noise;
+    if(sc>bestSc){bestSc=sc; best=m;}
+  }
+  return best;
+}
+
+/* ---------- kifu ---------- */
+function recKifu(side,m,pc,captured){
+  const mark=side===0?"☗":"☖";
+  let s;
+  if(m.drop) s=`${mark}${PDEF[m.drop].jp}打 ${cellName(m.to)}`;
+  else s=`${mark}${PDEF[pc.t].jp}${cellName(m.from)}→${cellName(m.to)}${m.promo?"成":""}${captured?"(取)":""}`;
+  bt.kifu.push(`${bt.kifu.length+1}. ${s}`);
+}
+
+/* ---------- blackout ---------- */
+function tickBlackout(){
+  bt.ply++;
+  for(const [cell,cd] of [...bt.pending]){
+    if(cd-1<=0){
+      bt.pending.delete(cell);
+      bt.down.add(cell);
+      sDown();
+      const p=bt.board[cell];
+      if(p){
+        bt.board[cell]=null;
+        log(`<span class="m">SERVER DOWN</span> ${cellName(cell)} — ${p.s===0?"自":"敵"}${PDEF[p.t].g}消滅`);
+        if(p.t==="K"){
+          render();
+          if(p.s===1){ stageWin(); } else { runOver(false); }
+          return true;
+        }
+      } else {
+        log(`<span class="m">SERVER DOWN</span> ${cellName(cell)} — 封鎖`);
+      }
+    } else bt.pending.set(cell,cd-1);
+  }
+  if(bt.ply>=6&&(bt.ply-6)%8===0&&bt.down.size+bt.pending.size<5){
+    // 台本から次の有効マスを取る(K在駒マスのみスキップ=決定論をほぼ維持)
+    while(bt.boPtr<bt.boScript.length){
+      const cell=bt.boScript[bt.boPtr++];
+      if(bt.down.has(cell)||bt.pending.has(cell)) continue;
+      const p=bt.board[cell];
+      if(p&&p.t==="K") continue;
+      bt.pending.set(cell,4);
+      log(`<span class="y">⚠ BLACKOUT予告</span> ${cellName(cell)}: 4手後にサーバーダウン`);
+      break;
+    }
+  }
+  return false;
+}
+
+/* ---------- rank-up ---------- */
+function checkRankUp(i){
+  const pc=bt.board[i];
+  if(!pc||pc.t==="K"||!rk(pc)||pc.rkLogged) return;
+  pc.rkLogged=true; sRank();
+  log(`<span class="y">★RANK UP</span>: ${pc.s===0?"自":"敵"}${PDEF[pc.t].g} — 能力強化`);
+}
+
+/* ---------- UI ---------- */
+let sel=null, targets=[], ddosArm=false;
+
+function buildBoard(){
+  const bd=$("#board"); bd.innerHTML="";
+  for(let i=0;i<N*N;i++){
+    const d=document.createElement("div");
+    d.className="cell"; d.dataset.i=i;
+    d.addEventListener("click",()=>onCell(i));
+    bd.appendChild(d);
+  }
+  const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.id="netsvg"; svg.setAttribute("viewBox","0 0 100 100");
+  svg.setAttribute("preserveAspectRatio","none");
+  bd.appendChild(svg);
+}
+function drawNet(nets){
+  const svg=$("#netsvg");
+  let out="";
+  const ctr=i=>[(i%N+0.5)*20,(((i/N)|0)+0.5)*20];
+  for(const s of [0,1]){
+    const col=s===0?"#19e3ff":"#ff2d95", op=s===0?0.45:0.28;
+    const list=[...nets.on[s]];
+    for(let a=0;a<list.length;a++)for(let b=a+1;b<list.length;b++){
+      const i=list[a], j=list[b];
+      const dr=Math.abs(((i/N)|0)-((j/N)|0)), dc=Math.abs(i%N-j%N);
+      if(dr<=1&&dc<=1){
+        const [x1,y1]=ctr(i),[x2,y2]=ctr(j);
+        out+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="0.7" opacity="${op}"/>`;
+      }
+    }
+    for(const i of list){
+      const p=bt.board[i];
+      if(!p||p.t!=="B") continue;
+      for(const j of list){
+        if(j===i) continue;
+        const dr=Math.abs(((i/N)|0)-((j/N)|0)), dc=Math.abs(i%N-j%N);
+        const sameLine=((i/N)|0)===((j/N)|0)||i%N===j%N||(rk(p)&&dr===dc);
+        if(sameLine&&(dr>1||dc>1)){
+          const [x1,y1]=ctr(i),[x2,y2]=ctr(j);
+          out+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="0.5" opacity="${op*0.8}" stroke-dasharray="2 2"/>`;
+        }
+      }
+    }
+  }
+  svg.innerHTML=out;
+}
+function render(){
+  const nets=computeNets(bt.board);
+  const inChk=!bt.over&&inCheck(bt.board,bt.hands,0);
+  for(let i=0;i<N*N;i++){
+    const cell=$("#board").children[i], pc=bt.board[i];
+    cell.className="cell";
+    if(bt.down.has(i)){ cell.classList.add("down"); cell.innerHTML=""; continue; }
+    if(sel&&sel.type==="board"&&sel.i===i) cell.classList.add("selc");
+    if(bt.lastMove&&bt.lastMove.to===i) cell.classList.add("lastmv");
+    if(bt.fx&&bt.fx.i===i&&performance.now()-bt.fx.t<950) cell.classList.add("hacked");
+    const tg=targets.find(m=>m.to===i);
+    if(tg){cell.classList.add("movable"); if(pc)cell.classList.add("cap");}
+    if(pc&&pc.t==="K"&&pc.s===0&&inChk) cell.classList.add("checkk");
+    cell.innerHTML="";
+    if(bt.pending.has(i)){
+      const b=document.createElement("span");
+      b.className="cd"; b.textContent=bt.pending.get(i);
+      cell.appendChild(b);
+    }
+    if(pc){
+      const offline=pc.t!=="K"&&!nets.on[pc.s].has(i)&&!(pc.t==="R"&&rk(pc));
+      const d=document.createElement("div");
+      d.className=`pc s${pc.s}${pc.p?" promo":""}${pc.frozen>0?" frozen":""}${offline?" offline":""}`;
+      let sub="";
+      if(pc.frozen>0) sub=`<span class="lv">STUN ${pc.frozen}</span>`;
+      else if(offline) sub=`<span class="lv">OFFLINE</span>`;
+      d.innerHTML=(rk(pc)&&pc.t!=="K"?`<span class="rk">★</span>`:"")+
+        `<span class="g">${pc.p?PDEF[pc.t].pg:PDEF[pc.t].g}</span>`+sub;
+      cell.appendChild(d);
+    }
+  }
+  drawNet(nets);
+  renderHand(0); renderHand(1);
+  $("#hud-stage").textContent=`STAGE ${run.stage+1}/3 :: ${curFaction().nm}`;
+  $("#hud-score").textContent=`SCORE ${run.score}`;
+  const db=$("#bt-ddos");
+  db.textContent=`DDoS ×${run.ddos}`;
+  db.disabled=run.ddos<=0||bt.turn!==0||bt.over;
+  db.classList.toggle("armed",ddosArm);
+}
+function renderHand(side){
+  const el=side===0?$("#hand-p"):$("#hand-e");
+  el.querySelectorAll(".chip").forEach(c=>c.remove());
+  for(const t of HANDORDER){
+    const n=bt.hands[side][t];
+    if(n<=0) continue;
+    const c=document.createElement("div");
+    c.className="chip"+(side===1?" enemy":"");
+    if(side===0&&sel&&sel.type==="hand"&&sel.t===t) c.classList.add("sel");
+    c.innerHTML=`${PDEF[t].g}<span class="n">×${n}</span>`;
+    if(side===0) c.addEventListener("click",()=>onHand(t));
+    el.appendChild(c);
+  }
+}
+
+function onHand(t){
+  if(busy||bt.over||bt.turn!==0) return;
+  ddosArm=false;
+  if(sel&&sel.type==="hand"&&sel.t===t){sel=null;targets=[];}
+  else{
+    sel={type:"hand",t};
+    targets=legalMoves(bt.board,bt.hands,0).filter(m=>m.drop===t);
+  }
+  render();
+}
+function onCell(i){
+  if(busy||bt.over||bt.turn!==0) return;
+  if(bt.down.has(i)) return;
+  const pc=bt.board[i];
+  if(ddosArm){
+    if(pc&&pc.s===1&&pc.t!=="K"){
+      pc.frozen=2; run.ddos--; run.ddosSpent++;
+      ddosArm=false; sDdos();
+      log(`<span class="y">⚡DDoS</span>: 敵${PDEF[pc.t].g}を2手停止 <span class="m">[SERVICE DENIED]</span>`);
+      render();
+    }
+    return;
+  }
+  const tg=targets.find(m=>m.to===i);
+  if(sel&&tg){ doPlayerMove(tg); return; }
+  if(pc&&pc.s===0){
+    sel={type:"board",i};
+    targets=legalMoves(bt.board,bt.hands,0).filter(m=>m.from===i);
+  }else{ sel=null; targets=[]; }
+  render();
+}
+
+function doPlayerMove(m){
+  const pc=m.drop?null:bt.board[m.from];
+  const {b,h,captured}=applyMove(bt.board,bt.hands,0,m);
+  bt.board=b; bt.hands=h; bt.lastMove=m; bt.moves++;
+  recKifu(0,m,pc,captured);
+  for(const q of bt.board) if(q&&q.s===0&&q.frozen>0) q.frozen--;
+  sel=null; targets=[];
+  if(captured){
+    run.score+=Math.round((PDEF[captured.t].v+(captured.p?PDEF[captured.t].pv||0:0))/10);
+    sCap(); flashHack(m.to);
+    log(`<span class="g">UNIT HACKED</span>: 敵${PDEF[captured.t].g} → 乗っ取り完了`);
+    checkRankUp(m.to);
+  } else sMove();
+  render();
+  if(captured&&captured.t==="K"){ stageWin(); return; }
+  if(tickBlackout()) return;
+  render();
+  bt.turn=1; busy=true;
+  log(`<span class="m">hostile AI computing…</span>`);
+  render();
+  setTimeout(enemyTurn,420);
+}
+
+function enemyTurn(){
+  // hacker陣営: 所定の手数でこちらの最高価値駒へDDoS(手番消費なし)
+  if(bt.eDdos>0&&bt.eDdosAt.length&&bt.ply>=bt.eDdosAt[0]){
+    bt.eDdosAt.shift();
+    let tgt=-1, tv=-1;
+    for(let i=0;i<N*N;i++){
+      const p=bt.board[i];
+      if(!p||p.s!==0||p.t==="K"||p.frozen>0) continue;
+      const v=PDEF[p.t].v+(p.p?PDEF[p.t].pv||0:0);
+      if(v>tv){tv=v; tgt=i;}
+    }
+    if(tgt>=0){
+      bt.board[tgt].frozen=2; bt.eDdos--; sDdos();
+      log(`<span class="m">⚡敵DDoS</span>: 自${PDEF[bt.board[tgt].t].g}が2手停止 [COUNTER ATTACK]`);
+    }
+  }
+  const mv=legalMoves(bt.board,bt.hands,1);
+  if(mv.length===0){ busy=false; stageWin(true); return; }
+  const m=aiPickMove()||mv[0];
+  const pc=m.drop?null:bt.board[m.from];
+  const {b,h,captured}=applyMove(bt.board,bt.hands,1,m);
+  let backup=false;
+  if(captured&&captured.t!=="K"&&has("backup")&&!bt.backupUsed){
+    bt.backupUsed=true; backup=true;
+    h[1][captured.t]--; h[0][captured.t]++;
+  }
+  bt.board=b; bt.hands=h; bt.lastMove=m; bt.moves++;
+  recKifu(1,m,pc,captured);
+  for(const q of bt.board) if(q&&q.s===1&&q.frozen>0) q.frozen--;
+  if(captured){
+    sCap(); flashHack(m.to);
+    if(backup) log(`<span class="y">⟲バックアップ復元</span>: ${PDEF[captured.t].g}を自軍手駒へ回収`);
+    else log(`<span class="m">UNIT LOST</span>: ${PDEF[captured.t].g}が敵に奪取された`);
+    checkRankUp(m.to);
+  }
+  if(m.promo&&pc&&pc.t==="P"&&bt.faction==="botnet"){
+    log(`<span class="m">増殖</span>: 敵botが複製を生成 [BOTNET SPREADING]`);
+  }
+  bt.turn=0; busy=false;
+  render();
+  if(captured&&captured.t==="K"){ runOver(false); return; }
+  if(tickBlackout()) return;
+  render();
+  const pl=legalMoves(bt.board,bt.hands,0);
+  if(pl.length===0){ runOver(false); return; }
+  if(inCheck(bt.board,bt.hands,0)) log(`<span class="m">⚠ WARNING: CEOが攻撃圏内 (王手)</span>`);
+}
+
+// render()がclassNameをリセットするため、演出は状態(bt.fx)経由でrenderに反映する
+function flashHack(i){
+  bt.fx={i,t:performance.now()};
+  setTimeout(()=>{ if(bt&&bt.fx&&bt.fx.i===i){ bt.fx=null; if(!bt.over) render(); } },950);
+}
+
+/* ---------- stage / run flow ---------- */
+function stageWin(lockout){
+  bt.over=true; sWin();
+  const speedBonus=Math.max(0,300-bt.moves*10);
+  const gain=500*(run.stage+1)+speedBonus;
+  run.score+=gain; run.totalMoves+=bt.moves;
+  log(`<span class="g">ACCESS GRANTED</span> — ${curFaction().nm} 制圧 (+${gain}${lockout?" / SYSTEM LOCKDOWN勝ち":""})`);
+  setTimeout(()=>{
+    if(run.stage>=2){ runOver(true); }
+    else offerUpgrades();
+  },900);
+}
+function offerUpgrades(){
+  const pool=UPGRADES.filter(u=>u.stack||!has(u.id));
+  const arr=[...pool];
+  for(let i=arr.length-1;i>0;i--){const j=(run.rngDraft()*(i+1))|0;[arr[i],arr[j]]=[arr[j],arr[i]];}
+  const offer=arr.slice(0,3);
+  const box=$("#upg-cards"); box.innerHTML="";
+  for(const u of offer){
+    const d=document.createElement("div");
+    d.className="upg";
+    d.innerHTML=`<div class="ic">${u.ic}</div><div class="nm">${u.nm}</div><div class="ds">${u.ds}</div>`;
+    d.addEventListener("click",()=>{
+      run.upgrades.push(u.id);
+      $("#upg-modal").classList.remove("on");
+      log(`<span class="y">強化取得</span>: ${u.nm}`);
+      run.stage++;
+      startBattle();
+    });
+    box.appendChild(d);
+  }
+  $("#upg-modal").classList.add("on");
+}
+function rankOf(sc){ return sc>=3200?"S":sc>=2400?"A":sc>=1600?"B":sc>=800?"C":"D"; }
+function runOver(win){
+  bt.over=true;
+  if(!win) run.totalMoves+=bt.moves;
+  if(win){run.score+=1000; sWin();} else sLose();
+  const body=$("#end-body");
+  const route=run.lineup.map(f=>FACTIONS[f].nm).join(" → ");
+  body.innerHTML=`
+    <h2>${win?"FULL CONTROL — 全システム掌握":"CONNECTION LOST — 侵入失敗"}</h2>
+    <div class="rank">${rankOf(run.score)}</div>
+    <div class="fs">FINAL SCORE: ${run.score}</div>
+    <div class="detail">MODE: ${run.mode==="daily"?"DAILY (seed "+run.seed+")":"FREE"}<br>
+      侵入経路: ${route}<br>
+      到達: STAGE ${run.stage+1}/3 ・ 総手数: ${run.totalMoves}<br>
+      強化: ${run.upgrades.length?run.upgrades.map(id=>UPGRADES.find(u=>u.id===id).nm).join(" / "):"なし"}</div>
+    <button class="menu-btn" id="bt-retry">RETRY — 再侵入</button>
+    <button class="menu-btn mg" id="bt-home">TITLE</button>`;
+  $("#end-modal").classList.add("on");
+  $("#bt-retry").addEventListener("click",()=>{ $("#end-modal").classList.remove("on"); newRun(run.mode); });
+  $("#bt-home").addEventListener("click",()=>{
+    $("#end-modal").classList.remove("on");
+    $("#game").classList.remove("on"); $("#title").classList.add("on");
+  });
+}
+function banner(txt,sub){
+  $("#banner-txt").textContent=txt;
+  $("#banner-sub").textContent=sub||"";
+  $("#banner").classList.add("on");
+  setTimeout(()=>$("#banner").classList.remove("on"),1800);
+}
+
+function newRun(mode){
+  let seed;
+  if(mode==="daily"){
+    const d=new Date();
+    seed=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
+  } else seed=(Math.random()*1e9)|0;
+  // シード分離: 経路/ドラフト/AIノイズを独立ストリーム化(ブラックアウトは局ごと)
+  const rngLineup=mulberry32(seed^0x51ED);
+  const names=Object.keys(FACTIONS);
+  for(let i=names.length-1;i>0;i--){const j=(rngLineup()*(i+1))|0;[names[i],names[j]]=[names[j],names[i]];}
+  run={mode,seed,stage:0,score:0,upgrades:[],ddos:0,ddosSpent:0,totalMoves:0,
+       lineup:names.slice(0,3),
+       rngDraft:mulberry32(seed^0xD4AF7),
+       rngAI:mulberry32(seed^0xA11CE)};
+  termLines.length=0;
+  $("#hud-seed").textContent=mode==="daily"?"DAILY#"+seed:"FREE";
+  $("#title").classList.remove("on"); $("#game").classList.add("on");
+  log(`<span class="c">CYBER SHOGI v3 :: FACTION WARS</span> [${mode.toUpperCase()}]`);
+  log(`侵入経路: <span class="y">${run.lineup.map(f=>FACTIONS[f].nm).join(" → ")}</span>`);
+  startBattle();
+}
+
+/* ---------- controls ---------- */
+$("#bt-free").addEventListener("click",()=>newRun("free"));
+$("#bt-daily").addEventListener("click",()=>newRun("daily"));
+$("#bt-ddos").addEventListener("click",()=>{
+  if(run.ddos<=0||bt.turn!==0||bt.over) return;
+  ddosArm=!ddosArm; sel=null; targets=[];
+  if(ddosArm) log(`<span class="y">⚡DDoS準備</span>: 停止させる敵ユニットを選択`);
+  render();
+});
+$("#bt-kifu").addEventListener("click",()=>{
+  $("#kifu-txt").value=bt.kifu.join("\n")||"(no moves)";
+  $("#kifu-modal").classList.add("on");
+});
+$("#bt-kifu-close").addEventListener("click",()=>$("#kifu-modal").classList.remove("on"));
+$("#bt-mute").addEventListener("click",e=>{
+  muted=!muted; e.target.textContent=muted?"SOUND OFF":"SOUND ON";
+});
+$("#bt-quit").addEventListener("click",()=>{
+  if(!bt.over&&!confirm("侵入を中断してタイトルへ戻る?")) return;
+  $("#game").classList.remove("on"); $("#title").classList.add("on");
+});
+
+buildBoard();
+</script>
+</body>
+</html>
