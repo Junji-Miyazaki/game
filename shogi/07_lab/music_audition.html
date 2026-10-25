@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CYBER_SHOGI SOUND LAB — title music audition</title>
+<style>
+:root{--bg:#05080f;--panel:#0a1120;--grid:#12305a;--cyan:#19e3ff;--magenta:#ff2d95;--gold:#ffd23e;--dim:#3b5a86;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:#cfe8ff;font-family:"Courier New",ui-monospace,monospace;
+  display:flex;justify-content:center;overflow-y:auto;}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);}
+#app{width:min(96vw,640px);padding:24px 0 60px;}
+h1{font-size:clamp(20px,5vw,30px);letter-spacing:.12em;color:var(--cyan);
+  text-shadow:0 0 14px rgba(25,227,255,.6);text-align:center;}
+h1 span{color:var(--magenta);}
+.sub{color:var(--dim);letter-spacing:.25em;font-size:11px;text-align:center;margin:6px 0 24px;}
+.card{border:1px solid var(--grid);border-radius:6px;background:var(--panel);
+  padding:16px 18px;margin:14px 0;}
+.card h2{color:var(--gold);font-size:16px;letter-spacing:.08em;margin-bottom:4px;}
+.card .meta{color:var(--cyan);font-size:11px;letter-spacing:.06em;margin-bottom:8px;}
+.card .ds{color:#8fb4e0;font-size:12px;line-height:1.7;margin-bottom:12px;}
+.row{display:flex;gap:10px;align-items:center;}
+button{font:inherit;font-size:13px;letter-spacing:.15em;padding:9px 22px;cursor:pointer;
+  background:transparent;color:var(--cyan);border:1px solid var(--cyan);border-radius:3px;}
+button:hover{background:rgba(25,227,255,.12);}
+button.playing{background:rgba(255,45,149,.15);color:var(--magenta);border-color:var(--magenta);}
+.phase{font-size:11px;color:var(--dim);min-width:120px;}
+#vol-row{display:flex;gap:12px;align-items:center;margin:18px 2px;color:var(--dim);font-size:12px;}
+#vol{flex:1;accent-color:#19e3ff;}
+.note{border-top:1px dashed var(--grid);margin-top:24px;padding-top:14px;
+  color:#7fa8d8;font-size:12px;line-height:1.8;}
+.note b{color:var(--gold);}
+#meter{font-size:11px;color:var(--dim);text-align:right;margin-top:4px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>CYBER<span>_</span>SHOGI SOUND LAB</h1>
+  <div class="sub">TITLE MUSIC AUDITION :: 3 CANDIDATES</div>
+
+  <div class="card" id="card-A">
+    <h2>A — SPY CLAV</h2>
+    <div class="meta">5/4 (3+2) ・ 104 BPM ・ Eドリアン+♭5 ・ クラビネット主体</div>
+    <div class="ds">スパイ映画の系譜。5拍子のファンク・クラビリフ+ゴーストノート入りベース。
+      後半でローズ系エレピのスタブが重なる。8小節ループ(約23秒)。</div>
+    <div class="row"><button data-id="A">▶ PLAY</button><span class="phase" id="ph-A"></span></div>
+  </div>
+
+  <div class="card" id="card-B">
+    <h2>B — INTERLOCK</h2>
+    <div class="meta">7/8 × 5/8 × 5/4 ポリメーター ・ 108 BPM ・ 撥弦(Karplus-Strong)主体</div>
+    <div class="ds">フリップ的インターロック。7拍の撥弦オスティナートと5拍の対旋律が
+      ズレ続け、70拍ごとに一致——その瞬間エレピの和音が鳴る。ミニマル・ヒプノティック。1周期 約19秒。</div>
+    <div class="row"><button data-id="B">▶ PLAY</button><span class="phase" id="ph-B"></span></div>
+  </div>
+
+  <div class="card" id="card-C">
+    <h2>C — ELECTRO</h2>
+    <div class="meta">4/4+7/8ブリッジ ・ 114 BPM ・ シンセベース+エレクトロビート</div>
+    <div class="ds">Rockit系エレクトロファンク。クラップとタイトなハット、スタッカートの
+      シンセベース。4小節目で1拍落ちる(7/8)。ノイズスイープのFX。8小節ループ(約16秒)。</div>
+    <div class="row"><button data-id="C">▶ PLAY</button><span class="phase" id="ph-C"></span></div>
+  </div>
+
+  <div id="vol-row">VOL <input type="range" id="vol" min="0" max="100" value="70"></div>
+  <div id="meter"></div>
+
+  <div class="note">
+    <b>聴き方:</b> PLAYで再生、もう一度押すと停止(同時再生はしない)。ループは自動で回り続ける。<br>
+    <b>選定:</b> A/B/Cのどれか、または「Aのリフ+Bのインターロック」のような組み合わせ指定も可。<br>
+    3候補の平均音量はオフライン描画(RMS)で±1.5dB以内に整合済み。対局中はこの素材を
+    ミニマル化(ベース+ハット)し、王手・ブラックアウト・陣営でレイヤーが変わる設計。
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============ CYBER_SHOGI SOUND LAB ============
+   全部WebAudio合成(アセットなし)。楽器・パターンはライブ再生と
+   OfflineAudioContext描画で同一経路(scheduleStepを共有)。
+   音量整合は window.renderCandidate(id,sec) のRMSで検証する。
+================================================= */
+
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+/* Eドリアン: E F# G A B C# D / スパイス ♭5=Bb */
+const E1=28,E2=40,FS2=42,G2=43,A2=45,BB2=46,B2=47,CS3=49,D3=50,E3=52,G3=55,A3=57,B3=59,
+      D4=62,CS4=61,E4=64,FS4=66,G4=67,BB4=70,B4=71,D5=74;
+
+let AC=null, live=null;   // live={id,timer,n,next,chain}
+const GAIN={A:0.97,B:0.57,C:1.07}; // 候補別マスタ(オフラインRMS≈-27.5dBFSに整合)
+
+function makeChain(ctx){
+  const input=ctx.createGain();
+  const comp=ctx.createDynamicsCompressor();
+  comp.threshold.value=-18; comp.ratio.value=4; comp.attack.value=0.004; comp.release.value=0.18;
+  input.connect(comp);
+  return {input, out:comp};
+}
+
+/* ---------- 共有素材 ---------- */
+const noiseCache=new WeakMap();
+function noiseBuf(ctx){
+  if(noiseCache.has(ctx)) return noiseCache.get(ctx);
+  const b=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
+  const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  noiseCache.set(ctx,b);
+  return b;
+}
+const ksCache=new Map(); // key: sr|midi
+function ksBuf(ctx,m){
+  const key=ctx.sampleRate+"|"+m;
+  if(ksCache.has(key)) return ksCache.get(key);
+  const sr=ctx.sampleRate, f=mtof(m), N=Math.round(sr/f), len=Math.floor(sr*1.2);
+  const b=ctx.createBuffer(1,len,sr), d=b.getChannelData(0);
+  for(let i=0;i<N;i++) d[i]=Math.random()*2-1;
+  for(let i=N;i<len;i++){ const p2=i-N-1>=0?d[i-N-1]:d[0]; d[i]=0.996*0.5*(d[i-N]+p2); }
+  ksCache.set(key,b);
+  return b;
+}
+
+/* ---------- 楽器(ctx,dest,t,…) ---------- */
+function env(ctx,t,a,peak,d,end){
+  const g=ctx.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak,0.0001),t+a);
+  g.gain.exponentialRampToValueAtTime(Math.max(end,0.0001),t+a+d);
+  return g;
+}
+function bass(ctx,dest,t,m,dur,v){
+  const f=mtof(m);
+  const o1=ctx.createOscillator(); o1.type="sawtooth"; o1.frequency.value=f;
+  const o2=ctx.createOscillator(); o2.type="sine"; o2.frequency.value=f;
+  const o3=ctx.createOscillator(); o3.type="triangle"; o3.frequency.value=f*2; // スマホ可聴帯域レイヤー
+  const lp=ctx.createBiquadFilter(); lp.type="lowpass"; lp.Q.value=4;
+  lp.frequency.setValueAtTime(300+1300*v,t);
+  lp.frequency.exponentialRampToValueAtTime(130,t+0.16);
+  const g=env(ctx,t,0.004,0.32*v,dur,0.001);
+  const g2=ctx.createGain(); g2.gain.value=0.5;
+  const g3=ctx.createGain(); g3.gain.value=0.16;
+  o1.connect(lp); o2.connect(g2).connect(lp); o3.connect(g3).connect(lp);
+  lp.connect(g).connect(dest);
+  [o1,o2,o3].forEach(o=>{o.start(t);o.stop(t+dur+0.1);});
+}
+function clav(ctx,dest,t,m,dur,v){
+  const f=mtof(m);
+  const o1=ctx.createOscillator(); o1.type="sawtooth"; o1.frequency.value=f;
+  const o2=ctx.createOscillator(); o2.type="square"; o2.frequency.value=f*1.004;
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass";
+  bp.frequency.value=Math.min(4200,Math.max(900,f*4)); bp.Q.value=1.1;
+  const g=env(ctx,t,0.002,0.26*v,Math.min(dur,0.18),0.001);
+  const g2=ctx.createGain(); g2.gain.value=0.5;
+  o1.connect(bp); o2.connect(g2).connect(bp);
+  bp.connect(g).connect(dest);
+  [o1,o2].forEach(o=>{o.start(t);o.stop(t+0.3);});
+}
+function ep(ctx,dest,t,m,dur,v){
+  const f=mtof(m);
+  const car=ctx.createOscillator(); car.type="sine"; car.frequency.value=f;
+  const mod=ctx.createOscillator(); mod.type="sine"; mod.frequency.value=f*2;
+  const mg=ctx.createGain();
+  mg.gain.setValueAtTime(f*1.2,t);
+  mg.gain.exponentialRampToValueAtTime(f*0.06,t+dur*0.7);
+  mod.connect(mg).connect(car.frequency);
+  const tine=ctx.createOscillator(); tine.type="sine"; tine.frequency.value=f*6.02;
+  const tg=env(ctx,t,0.002,0.05*v,0.05,0.0005);
+  const g=ctx.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(0.16*v,t+0.006);
+  g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
+  car.connect(g).connect(dest); tine.connect(tg).connect(dest);
+  [car,mod,tine].forEach(o=>{o.start(t);o.stop(t+dur+0.1);});
+}
+function epChord(ctx,dest,t,arr,dur,v){ for(const m of arr) ep(ctx,dest,t,m,dur,v/Math.sqrt(arr.length)); }
+function clavChord(ctx,dest,t,arr,dur,v){ for(const m of arr) clav(ctx,dest,t,m,dur,v/Math.sqrt(arr.length)); }
+function ks(ctx,dest,t,m,v){
+  const s=ctx.createBufferSource(); s.buffer=ksBuf(ctx,m);
+  const g=ctx.createGain(); g.gain.value=0.5*v;
+  s.connect(g).connect(dest); s.start(t);
+}
+function kick(ctx,dest,t,v){
+  const o=ctx.createOscillator(); o.type="sine";
+  o.frequency.setValueAtTime(130,t);
+  o.frequency.exponentialRampToValueAtTime(42,t+0.11);
+  const g=env(ctx,t,0.002,0.5*v,0.16,0.001);
+  o.connect(g).connect(dest); o.start(t); o.stop(t+0.3);
+}
+function hat(ctx,dest,t,v,open){
+  const s=ctx.createBufferSource(); s.buffer=noiseBuf(ctx);
+  const hp=ctx.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=7500;
+  const g=env(ctx,t,0.001,0.12*v,open?0.22:0.035,0.0005);
+  s.connect(hp).connect(g).connect(dest); s.start(t); s.stop(t+0.3);
+}
+function clap(ctx,dest,t,v){
+  for(const dt of [0,0.012,0.026]){
+    const s=ctx.createBufferSource(); s.buffer=noiseBuf(ctx);
+    const bp=ctx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1500; bp.Q.value=0.9;
+    const g=env(ctx,t+dt,0.001,0.2*v*(dt?0.7:1),dt<0.02?0.03:0.14,0.0008);
+    s.connect(bp).connect(g).connect(dest); s.start(t+dt); s.stop(t+dt+0.25);
+  }
+}
+function rim(ctx,dest,t,v){
+  const s=ctx.createBufferSource(); s.buffer=noiseBuf(ctx);
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=3200; bp.Q.value=2;
+  const g=env(ctx,t,0.001,0.18*v,0.025,0.0008);
+  s.connect(bp).connect(g).connect(dest); s.start(t); s.stop(t+0.08);
+}
+function sweep(ctx,dest,t,dur,f0,f1,v){
+  const s=ctx.createBufferSource(); s.buffer=noiseBuf(ctx);
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=3;
+  bp.frequency.setValueAtTime(f0,t);
+  bp.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  const g=env(ctx,t,0.01,0.14*v,dur,0.001);
+  s.connect(bp).connect(g).connect(dest); s.start(t); s.stop(t+dur+0.1);
+}
+
+/* ============ 候補A: SPY CLAV — 5/4, 104bpm ============ */
+const A_STEP=60/104/4; // 16分
+const A_C1=[E4,G4,D5], A_C2=[D4,FS4,B4], A_SP=[E4,BB4,D5]; // Em7 / D / E♭5スパイス
+const A_BASS_A={0:[E2,2,1],3:[E2,1,.35],6:[G2,1,.8],8:[A2,2,.9],11:[A2,1,.35],12:[E2,2,1],15:[D3,1,.7],16:[BB2,2,.95],18:[A2,2,.8]};
+const A_BASS_B={0:[E2,2,1],3:[E2,1,.35],6:[G2,1,.8],8:[A2,2,.9],12:[E2,2,1],16:[BB2,1,.9],17:[B2,1,.9],18:[CS3,1,.85],19:[D3,1,.85]};
+const A_CLAV={2:[A_C1,.9],5:[A_C1,.45],7:[A_C2,.8],10:[A_C1,.6],13:[A_C1,.9],16:[A_SP,.85],18:[A_C2,.5]};
+function stepA(ctx,dest,n,t){
+  const bar=((n/20)|0)%8, i=n%20;
+  const sw=(i%2===1)?0.013:0; t+=sw;  // 軽いスウィング
+  const bl=(bar%2===0)?A_BASS_A:A_BASS_B;
+  if(bl[i]) bass(ctx,dest,t,bl[i][0],bl[i][1]*A_STEP*0.95,bl[i][2]);
+  if(A_CLAV[i]) clavChord(ctx,dest,t,A_CLAV[i][0],0.14,A_CLAV[i][1]);
+  if(i===0||i===8||i===13) kick(ctx,dest,t,i===0?1:.85);
+  if(i===4||i===12) clap(ctx,dest,t,.7);
+  if(i===9) rim(ctx,dest,t,.35);
+  if(i%2===0) hat(ctx,dest,t,[2,6,10,14,18].includes(i)?.75:.45,false);
+  if(i===18&&bar%2===1) hat(ctx,dest,t,.8,true);
+  if(bar>=4){ // 後半: EPスタブ
+    if(bar===4&&i===0) epChord(ctx,dest,t,[E3,B3,D4,FS4,B4],2.2,.8);
+    if(bar===6&&i===0) epChord(ctx,dest,t,[D3,A3,D4,FS4],2.0,.75);
+    if(bar===7&&i===16) epChord(ctx,dest,t,[BB2,E3,BB4],1.2,.8);
+  }
+}
+
+/* ============ 候補B: INTERLOCK — 7/8×5/8×5/4, 108bpm ============ */
+const B_STEP=60/108/2; // 8分
+const B_G1=[[E3,1],[G3,.65],[B3,.8],[D4,.65],[CS4,.9],[B3,.6],[G3,.75]];       // 7拍
+const B_G2=[[B4,.5],[G4,.4],[E4,.45],[D4,.4],[FS4,.5]];                        // 5拍(対旋律)
+const B_BASS={0:[E2,2,.9],3:[G2,1,.6],5:[A2,1.5,.8],8:[B2,1,.6]};              // 10拍(5/4)
+function stepB(ctx,dest,n,t){
+  const g1=B_G1[n%7];
+  ks(ctx,dest,t,g1[0],g1[1]);
+  if(n>=10){ const g2=B_G2[n%5]; ks(ctx,dest,t+0.5*B_STEP,g2[0],g2[1]*.8); }   // 裏拍に対旋律
+  const i=n%10;
+  if(B_BASS[i]) bass(ctx,dest,t,B_BASS[i][0],B_BASS[i][1]*B_STEP*0.9,B_BASS[i][2]);
+  if(i===0) kick(ctx,dest,t,.9);
+  if(i===4||i===7) rim(ctx,dest,t,.4);
+  hat(ctx,dest,t,i===0||i===5?.55:.3,false);
+  if(n%70===0){ // 一致の瞬間
+    epChord(ctx,dest,t,[E3,B3,D4,FS4,B4],2.8,.9);
+    hat(ctx,dest,t,.8,true);
+    bass(ctx,dest,t,E1,1.6,.8);
+  }
+}
+
+/* ============ 候補C: ELECTRO — 4/4+7/8, 114bpm ============ */
+const C_STEP=60/114/4; // 16分
+const C_BARS=[16,16,16,14];
+const C_BASS={0:[E2,1,1],2:[E2,1,.5],6:[G2,1,.7],8:[E2,1,.9],11:[BB2,1,.6],12:[A2,1,.8],14:[E3,1,.55]};
+const C_BASS4={0:[E2,2,1],4:[G2,2,.8],8:[A2,2,.85],12:[BB2,2,.9]};
+function stepC(ctx,dest,n,t){
+  const cyc=62, pos=n%cyc, loop=((n/cyc)|0)%2;
+  let bar,i;
+  if(pos<16){bar=0;i=pos;} else if(pos<32){bar=1;i=pos-16;} else if(pos<48){bar=2;i=pos-32;} else {bar=3;i=pos-48;}
+  if(bar<3){
+    const bl=C_BASS;
+    if(bl[i]) bass(ctx,dest,t,bl[i][0],bl[i][1]*C_STEP*0.9,bl[i][2]);
+    if(i===0||i===7||i===10) kick(ctx,dest,t,i===0?1:.8);
+    if(i===4||i===12) clap(ctx,dest,t,.8);
+    if(i%2===0) hat(ctx,dest,t,i%4===2?.7:.4,false);
+    if(i===14) hat(ctx,dest,t,.7,true);
+    if(bar===1&&(i===4||i===12)) clavChord(ctx,dest,t,A_C1,0.12,.7);
+    if(bar===2&&i===0&&loop===1) epChord(ctx,dest,t,[E3,B3,D4,FS4],1.6,.75);
+  }else{ // 7/8ブリッジ
+    if(C_BASS4[i]) bass(ctx,dest,t,C_BASS4[i][0],C_BASS4[i][1]*C_STEP*0.9,C_BASS4[i][2]);
+    if(i===0||i===8) kick(ctx,dest,t,.95);
+    if(i===4) clap(ctx,dest,t,.8);
+    if(i%2===0) hat(ctx,dest,t,.45,false);
+    if(i===10) sweep(ctx,dest,t,0.45,400,5200,.9);
+  }
+}
+
+const CANDS={
+  A:{step:stepA, dur:A_STEP, name:"SPY CLAV"},
+  B:{step:stepB, dur:B_STEP, name:"INTERLOCK"},
+  C:{step:stepC, dur:C_STEP, name:"ELECTRO"},
+};
+
+/* ---------- ライブ再生 ---------- */
+let masterGain=null, analyser=null;
+function ensureAC(){
+  if(AC) return;
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  masterGain=AC.createGain();
+  masterGain.gain.value=(document.getElementById("vol").value/100)*0.9;
+  analyser=AC.createAnalyser(); analyser.fftSize=2048;
+  masterGain.connect(analyser).connect(AC.destination);
+  meterLoop();
+}
+function stopLive(){
+  if(!live) return;
+  clearInterval(live.timer);
+  try{live.chain.input.gain.setTargetAtTime(0.0001,AC.currentTime,0.06);}catch(e){}
+  setTimeout(((ch)=>()=>{try{ch.out.disconnect();}catch(e){}})(live.chain),400);
+  document.querySelectorAll("button[data-id]").forEach(b=>{b.classList.remove("playing");b.textContent="▶ PLAY";});
+  document.querySelectorAll(".phase").forEach(p=>p.textContent="");
+  live=null;
+}
+function play(id){
+  ensureAC();
+  AC.resume();
+  if(live&&live.id===id){stopLive();return;}
+  stopLive();
+  const cand=CANDS[id];
+  const chain=makeChain(AC);
+  chain.input.gain.value=GAIN[id];
+  chain.out.connect(masterGain);
+  const st={id,chain,n:0,next:AC.currentTime+0.12};
+  st.timer=setInterval(()=>{
+    while(st.next<AC.currentTime+0.45){
+      cand.step(AC,chain.input,st.n,st.next);
+      st.n++; st.next+=cand.dur;
+    }
+    document.getElementById("ph-"+id).textContent="step "+st.n+(id==="B"?" / sync in "+(70-st.n%70):"");
+  },100);
+  live=st;
+  const btn=document.querySelector(`button[data-id="${id}"]`);
+  btn.classList.add("playing"); btn.textContent="■ STOP";
+}
+document.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click",()=>play(b.dataset.id)));
+document.getElementById("vol").addEventListener("input",e=>{
+  if(masterGain) masterGain.gain.value=(e.target.value/100)*0.9;
+});
+function meterLoop(){
+  const buf=new Float32Array(analyser.fftSize);
+  (function tick(){
+    analyser.getFloatTimeDomainData(buf);
+    let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i];
+    const rms=Math.sqrt(s/buf.length);
+    document.getElementById("meter").textContent=live?("RMS "+(20*Math.log10(rms+1e-9)).toFixed(1)+" dBFS"):"";
+    requestAnimationFrame(tick);
+  })();
+}
+
+/* ---------- オフライン描画(検証用: 音量整合・無音検知) ---------- */
+window.renderCandidate=async function(id,seconds=10){
+  const sr=44100;
+  const octx=new OfflineAudioContext(1,sr*seconds,sr);
+  const chain=makeChain(octx);
+  chain.input.gain.value=GAIN[id];
+  const mg=octx.createGain(); mg.gain.value=0.63; // vol70%相当
+  chain.out.connect(mg).connect(octx.destination);
+  const cand=CANDS[id];
+  let n=0,t=0.05;
+  while(t<seconds){ cand.step(octx,chain.input,n,t); n++; t+=cand.dur; }
+  const buf=await octx.startRendering();
+  const d=buf.getChannelData(0);
+  let s=0,peak=0;
+  for(let i=0;i<d.length;i++){s+=d[i]*d[i]; peak=Math.max(peak,Math.abs(d[i]));}
+  const rms=Math.sqrt(s/d.length);
+  return {id,steps:n,rmsDb:+(20*Math.log10(rms+1e-12)).toFixed(2),peakDb:+(20*Math.log10(peak+1e-12)).toFixed(2)};
+};
+</script>
+</body>
+</html>

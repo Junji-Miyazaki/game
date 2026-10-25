@@ -2,6 +2,21 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 タイトル曲試聴ページ(07_lab)3候補(Fable リーダー、直接実装)
+- **実施**: `07_lab/music_audition.html`(自己完結・バンドル非依存)。全WebAudio合成、
+  楽器(bass/clav/FMエレピ/Karplus-Strong撥弦/kick/hat/clap/rim/sweep)とscheduleStepを
+  ライブ再生とOfflineAudioContext描画で共有(LANDER方式=試聴と検証が同一経路)。
+  A: SPY CLAV(5/4, 104bpm, クラビ+ゴーストベース+後半EPスタブ、8小節) /
+  B: INTERLOCK(7拍撥弦×5拍対旋律×5/4リズム、108bpm、70拍ごとに一致→EP和音) /
+  C: ELECTRO(4/4+7/8ブリッジ, 114bpm, シンセベース+クラップ+スイープ)。
+  いずれもEドリアン+♭5。ベースにf×2三角波レイヤー(スマホ150Hz問題対策、LANDERの教訓)。
+- **不具合と修正**: Karplus-Strong生成で d[-1] 参照→バッファ全体NaN=B無音。境界ガードで修正。
+- **検証**: オフライン描画RMS = A -27.2 / B -26.2 / C -27.6 dBFS(±0.7dB整合、GAIN={A:.97,B:.57,C:1.07})、
+  ピーク-5〜-6dBFS。ライブ再生のスケジューラ進行・停止・音量スライダ動作確認、コンソールエラー0。
+  **聴感は未確認(誰も聴いていない)→ユーザーの実機試聴待ち。**
+- **次アクション**: ユーザーが A/B/C(または組み合わせ)を選定 → 採用案を 02_src/music.js として
+  本実装(タイトル曲+対局中サウンドスケープ+陣営レイヤー)。並行でタイトル画面・駒SVG・HOW TO PLAY。
+
 ## 2026-10-25 LANDER式再編+テスト恒久化+ランキング準備(Fable リーダー、直接実装)
 - **実施**: 単一HTML(05_legacy/cyber-shogi-prototype-v3.html)を分割。
   `02_src/engine.js`(ルール・探索。DOM非依存、`globalThis.Engine`、盤外状態は `setCtx({down,pending,faction,orbit})` で注入=nodeテスト可能)
