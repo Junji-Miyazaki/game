@@ -2,6 +2,20 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 運用方針の再確認(Opus 5.5 リーダーに交代)
+- **ユーザー指示(再確認)**: Opus中心のリーダー制。タスクごとに 誤りコスト/検証しやすさ/判断の曖昧さ/量と単価 で
+  Fable(高度な推論・計画)/Opus(シンプルな推論・第三者チェック)/Sonnet(機械的に検証できる作業)を采配。
+  第三者チェックは結論が変わる・外部公開物のみ1回。忖度なし・事実ベース・根拠のない経験則は使わない。端的な出力。
+  Git管理、番号フォルダ(00_log〜07_lab、LANDERと同一命名)、LOG申し送りを常時。
+- **自己点検(率直に)**: v3〜v4b は Fable が単独で実装し、サブエージェント委譲ゼロだった。
+  音楽・演出・UIのように「テスト/実機で正誤が分かる」実装は Sonnet 向きで、コスト面で非効率だった。
+  第三者レビューは v1・v2 のみ(Opus)、v3以降はテストで代替(CLAUDE.md の基準上は妥当)。
+- **フォルダ現状**: 00_log 01_docs 02_src 03_assets 04_tests 05_legacy 07_lab(06_serverはランキングWorker導入時に作成)。
+  ルート直下は index.html / build.js / server.js / shogi.bundle.js のみ(Pages・ツール都合)。
+- **push**: ユーザー指示によりコミット後は確認なしでpush(認証はosxkeychain、token.txtはgitignore)。
+- **以後の采配案**: 演出・音量の微調整/HOW TO文言/テスト追加=Sonnet、バランス設計(state戦の長期化、
+  ★条件)・ランキングのリプレイ検証設計=Opus(必要ならFable)、公開前の第三者チェック=作成者と別モデルで1回。
+
 ## 2026-10-25 タイトル曲試聴ページ(07_lab)3候補(Fable リーダー、直接実装)
 - **実施**: `07_lab/music_audition.html`(自己完結・バンドル非依存)。全WebAudio合成、
   楽器(bass/clav/FMエレピ/Karplus-Strong撥弦/kick/hat/clap/rim/sweep)とscheduleStepを
