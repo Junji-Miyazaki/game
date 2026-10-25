@@ -157,22 +157,26 @@ ok(Music._debug().voices <= 2, 'voices drain after spam: ' + Music._debug().voic
   ok(Math.abs(ins[0].t0 - (t0 + 3 * 7 * E8)) < 1e-6 && Math.abs(ins[0].t1 - ins[0].t0 - 10) < 1e-9, 'drone fades in at bar 4 over 10 s (t=' + (ins[0].t0 - t0).toFixed(2) + ')');
   ok(Math.abs(outs[0].t0 - (t0 + 17 * 7 * E8)) < 1e-6 && Math.abs(outs[0].t1 - outs[0].t0 - 8) < 1e-9, 'drone recedes at bar 18 over 8 s (t=' + (outs[0].t0 - t0).toFixed(2) + ')');
   ok(Math.abs(ins[1].t0 - ins[0].t0 - 24 * 7 * E8) < 1e-6 && Math.abs(outs[1].t0 - outs[0].t0 - 24 * 7 * E8) < 1e-6, 'cycle is 24 bars (' + (24 * 7 * E8).toFixed(1) + ' s)');
-  // テルミン: 単発グライドは各周回の小節2・4の終わり、背景テルミンは小節6〜ドローン退場まで
+  // テルミン: 単発グライドは各周回の小節2・4の終わり、背景は「約3拍鳴いて1拍休む」間欠ジェスチャー（小節6〜ドローン退場）
   const th = L.filter((x) => x.kind === 'ther'), bg = L.filter((x) => x.kind === 'bg'), lead = L.filter((x) => x.kind === 'lead');
+  const gest = L.filter((x) => x.kind === 'gest').sort((a, b) => a.t - b.t);
   const bcOf = (x) => x.bar % 24, cycOf = (x) => Math.floor(x.bar / 24);
   ok(th.length >= 8 && th.every((x) => [1, 3].includes(bcOf(x)) && x.e === 5), 'single glides only at the end of bars 2 and 4 of each cycle');
   for (const c of [0, 1]) ok([1, 3].every((k) => th.some((x) => cycOf(x) === c && bcOf(x) === k)), 'cycle ' + c + ' has glides at bars 2 and 4');
-  ok(bg.length > 30, 'background theremin notes scheduled: ' + bg.length);
-  ok(bg.every((x) => bcOf(x) >= 5 && bcOf(x) < 17), 'background theremin only from bar 6 up to the drone recede (none in bars 1-5 or after the fade)');
-  ok([0, 1, 2].every((c) => bg.some((x) => cycOf(x) === c && bcOf(x) === 5)) && [0, 1].every((c) => bg.some((x) => cycOf(x) === c && bcOf(x) >= 15)), 'background theremin spans bar 6 .. 17 in every cycle');
-  ok(L.filter((x) => x.kind === 'ther' || x.kind === 'bg').every((x) => SCALE.includes(((x.semi % 12) + 12) % 12)), 'theremin pitches stay in the scale');
-  const bgPeak = Math.max(...bg.map((x) => x.vel)), glideVel = Math.max(...th.map((x) => x.vel)), leadMin = Math.min(...lead.map((x) => x.vel));
-  ok(bgPeak < glideVel && glideVel < leadMin, 'levels: background ' + bgPeak.toFixed(3) + ' < glide ' + glideVel.toFixed(3) + ' < lead ' + leadMin.toFixed(3));
-  const accBg = bg.filter((x) => [0, 2, 4].includes(x.e));
-  ok(accBg.every((x) => !lead.some((l) => Math.abs(l.t - x.t) < 1e-6 && l.semi === x.semi)), 'background avoids the lead pitch on lead accents');
-  ok(new Set(bg.filter((x) => cycOf(x) === 0).map((x) => x.semi)).size >= 4 && new Set(bg.map((x) => x.semi + (x.semi > 12 ? 100 : 0))).size >= 5, 'background line wanders over several pitches and registers');
-  ok(bg.filter((x) => cycOf(x) === 0).map((x) => x.semi).join() !== bg.filter((x) => cycOf(x) === 1).map((x) => x.semi).join(), 'background line differs between cycles');
-  ok(th.filter((x) => x.t < t0 + 1 * 7 * E8).length === 0, 'pastoral opening has no glide');
+  ok(gest.length > 30, 'background gestures scheduled: ' + gest.length);
+  ok(gest.every((g) => bcOf(g) >= 5 && bcOf(g) < 17), 'gestures start only from bar 6 up to the drone recede (none in bars 1-5, none after bar 18)');
+  ok([0, 1].every((c) => gest.some((g) => cycOf(g) === c && bcOf(g) === 5) && gest.some((g) => cycOf(g) === c && bcOf(g) >= 15)), 'gestures span bar 6 .. 17 in every cycle');
+  ok(gest.every((g) => g.dur / E8 >= 2.5 - 1e-9 && g.dur / E8 <= 3.5 + 1e-9), 'each gesture lasts 2.5-3.5 eighths');
+  ok(gest.every((g, i) => i === 0 || cycOf(g) !== cycOf(gest[i - 1]) || g.t - (gest[i - 1].t + gest[i - 1].dur) >= E8 - 1e-9), 'gaps of at least 1 eighth between gestures (one at a time)');
+  ok(new Set(gest.map((g) => g.type)).size === 3, 'all three gesture types occur: ' + [...new Set(gest.map((g) => g.type))].join());
+  ok(gest.every((g, i) => i < 2 || !(g.type === gest[i - 1].type && g.type === gest[i - 2].type)), 'no gesture type three times in a row');
+  ok(L.filter((x) => x.kind === 'ther' || x.kind === 'bg').every((x) => SCALE.includes(((x.semi % 12) + 12) % 12)) && gest.every((g) => SCALE.includes(((g.semi1 % 12) + 12) % 12)), 'theremin endpoints stay in the scale');
+  const gestPeak = Math.max(...gest.map((x) => x.vel)), glideVel = Math.max(...th.map((x) => x.vel)), leadMin = Math.min(...lead.map((x) => x.vel));
+  ok(gest.every((g) => g.vel === glideVel) && glideVel < leadMin, 'levels: gesture ' + gestPeak.toFixed(3) + ' == glide ' + glideVel.toFixed(3) + ' < lead ' + leadMin.toFixed(3));
+  const leadAtT = (time) => { const k = Math.floor((time - t0) / E8 + 1e-6); const tt = t0 + k * E8; return lead.find((l) => Math.abs(l.t - tt) < 1e-6); };
+  ok(bg.every((x) => { const l = leadAtT(x.t); return !l || l.semi !== x.semi; }), 'gesture endpoints never unison with the lead note on that eighth');
+  ok(new Set(bg.map((x) => x.semi)).size >= 6, 'gestures cover several pitches');
+  ok(th.filter((x) => x.t < t0 + 1 * 7 * E8).length === 0 && bg.filter((x) => x.t < t0 + 5 * 7 * E8).length === 0, 'pastoral opening (bars 1-5) has no background theremin');
   const ph0 = L.filter((x) => x.kind === 'lead' && x.bar < 24).map((x) => x.semi + '@' + x.e).join(), ph1 = L.filter((x) => x.kind === 'lead' && x.bar >= 24 && x.bar < 48).map((x) => x.semi + '@' + x.e).join();
   ok(ph0 !== ph1, 'phrase order varies between cycles');
   ok(maxTV <= 14, 'title voices bounded over 240 s (max ' + maxTV + ' <= 14)');
@@ -192,10 +196,10 @@ ok(Music._debug().voices <= 2, 'voices drain after spam: ' + Music._debug().voic
   const nBefore = allOscs.length; Music.playTitle();
   for (let i = 0; i < 340; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
   const bgNow = Music._debug().titleLog.filter((x) => x.kind === 'bg').length;
-  ok(bgNow > 3 && allOscs.slice(nBefore).some((o) => !o.dead), 'background theremin active ~34 s into the title (' + bgNow + ' notes)');
+  ok(bgNow > 3 && allOscs.slice(nBefore).some((o) => !o.dead), 'background gestures active ~34 s into the title (' + bgNow + ' endpoints)');
   Music.stopAll(0.5); for (let i = 0; i < 25; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
   ok(Music._debug().scenes === 0 && Music._debug().voices <= 2, 'stopAll tears the title down');
-  ok(allOscs.slice(nBefore).every((o) => o.dead), 'stopAll stops and disconnects every title oscillator incl. the background theremin');
+  ok(allOscs.slice(nBefore).every((o) => o.dead), 'stopAll stops and disconnects every title oscillator incl. the background gesture voices');
   FakeCtx.prototype.createOscillator = origOsc;
 }
 

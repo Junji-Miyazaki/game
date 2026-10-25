@@ -2957,7 +2957,7 @@ const _musMINP = [0, 3, 5, 7, 10];     // 短調ペンタ
 // F リディアン・ドミナント(F G A B C D Eb) / 7/8拍子 2+2+3 / 96 8分音符/分 / 24小節(≒105秒)で一巡。
 // 小節1-3 牧歌（三角+サインの主旋律・パルス裏メロ・三角ベース・シェイカー）→ 小節4から約10秒で低いFのドローン(F1+C2)が昇り、
 // 小節18から約8秒で退き、牧歌(小節20-24)に戻って周回。ドローン中は主旋律アクセントで約-3dBダック、裏メロを間引き、
-// テルミン風: 小節2・4の終わりに単発の応答グライド、小節6〜ドローン退場までは背景でさまようテルミン（持続サイン1本・ポルタメント・ビブラート）。奇数周回はフレーズ順を1つずらす。音は全てオリジナル。
+// テルミン風: 小節2・4の終わりに単発の応答グライド、小節6〜ドローン退場までは背景の間欠テルミン・ジェスチャー（約3拍鳴いて1拍休みを繰り返す。にゅわーん/びーよよよよ/みよよよよーん）。奇数周回はフレーズ順を1つずらす。音は全てオリジナル。
 // ボイスは一過性の音楽ボイス('m')として数える（上限14。タイトルの実測最大は9）。
 const _MUS_T_ROOT = 349.23;                 // F4
 const _MUS_T_E = 60 / 96;                   // 8分音符の秒数
@@ -2971,8 +2971,7 @@ const _MUS_T_FADE_IN = 10, _MUS_T_FADE_OUT = 8;
 const _MUS_T_DRONE = 0.19;                  // ドローンのゲイン（スマホで聴こえるよう 0.12→0.19 ≈ +4dB。旧タイトル0.5よりは低い）
 const _MUS_T_DLP_LO = 180, _MUS_T_DLP_HI = 650;   // ドローンのローパス（閉→開）。スマホの小型スピーカーは~150Hz未満がほぼ出ないため、倍音を通して「低いうなり」を聴こえさせる
 const _MUS_T_THER_VEL = 0.11;               // テルミン風グライドの音量（0.07→0.11 ≈ +4dB。頻度は据え置き＝時折）
-const _MUS_T_BG_VEL = 0.06;                // 背景テルミンのピーク音量（単発グライド0.11・主旋律0.19〜0.24より小さく）
-const _MUS_T_BG_FADE = 7;                  // 背景テルミンの退場フェード秒（ドローンと同時に小節18から）
+const _MUS_T_GEST_VEL = _MUS_T_THER_VEL;   // 背景テルミン・ジェスチャーのピーク音量（単発グライドと同じ。個別に調整するならここ）
 const _MUS_T_SCALE = [0, 2, 4, 6, 7, 9, 10];
 const _MUS_T_BGPOOL = [0, 2, 4, 6, 7, 9, 10, 12, 14, 16, 18, 19, 21, 22];   // 背景テルミンの音域 F4〜Eb6（リディアン・ドミナントのみ）
 const _MUS_T_LEVEL = 1.6;                   // シーン出力ゲイン（音楽バス0.125の手前）。旧タイトル RMS -24.6/peak -14 dBFS に対し新曲 約 -26.6/-14 dBFS（オフライン実測、同一経路）
@@ -3049,64 +3048,79 @@ function _musTRow(bar) {
   return typ === 0 ? _MUS_T_PH[0][b] : (typ === 2 && b === 3) ? _MUS_T_PH[0][3] : _MUS_T_PH[1][b];
 }
 
-// 背景テルミン: 小節6〜ドローン退場まで、サイン1本を持続させ周波数だけをポルタメントで動かす（新ボイスを毎音作らない）。
-// 状態ベース: tick が遅れても取りこぼさず、周回ごとに別の線を生成。主旋律のアクセントと同じ音高は避ける。
+// 背景テルミン: 小節6〜ドローン退場までの「間欠ジェスチャー」。約3拍の鳴き(にゅわーん / びーよよよよ / みよよよよーん)→1拍休み、を繰り返す。
+// 1ジェスチャー=サイン1本+エンベロープ1つ（同時に鳴るのは1つだけ）。端点はF リディアン・ドミナントの音のみ。
+// 状態ベース: tick が遅れても取りこぼさず、周回ごとに別の並びを生成。主旋律と同じ音高にはならないよう逃がす。
+function _musTWob(o, t0, t1, rate, c0, c1) {   // 速い/深いワブル（深さが c0→c1 セントへ広がる）
+  if (!o.detune) return;
+  const half = 0.5 / rate; let sign = 1;
+  o.detune.setValueAtTime(0, t0);
+  for (let x = t0 + half; x < t1; x += half) { o.detune.linearRampToValueAtTime(sign * (c0 + (c1 - c0) * (x - t0) / Math.max(0.001, t1 - t0)), x); sign = -sign; }
+}
+
+function _musTTarget(pool, idx, lo, hi, up) {   // idx から lo..hi 半音離れた pool の音（上/下）。無ければ -1
+  const c = [];
+  for (let i = 0; i < pool.length; i++) { const d = (pool[i] - pool[idx]) * (up ? 1 : -1); if (d >= lo && d <= hi) c.push(i); }
+  return c.length ? _musPick(c) : -1;
+}
+
 function _musTBg(sc, t, n, bc, cyc) {
-  const E = _MUS_T_E; const ctx = _musS.ctx;
-  let bg = sc.bg;
-  if (bg && bg.fading && t > bg.endT) { sc.bg = bg = null; }
-  if (!bg && bc >= 5 && bc < _MUS_T_OUT && sc.bgCyc !== cyc && _musCanVoice('m')) {
-    const idx = 4 + Math.floor(Math.random() * 5);
-    const o = _musOsc('sine', _musHz(_MUS_T_ROOT, _MUS_T_BGPOOL[idx]), t, null);
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(_MUS_T_BG_VEL * 0.7, t + 2);   // 約2秒でフェードイン
+  const E = _MUS_T_E; const ctx = _musS.ctx; const pool = _MUS_T_BGPOOL;
+  if (sc.bgCyc !== cyc && bc >= 5 && bc < _MUS_T_OUT) { sc.bgCyc = cyc; sc.gNext = t; }
+  if (sc.gNext == null) return;
+  if (sc.gNext < t) sc.gNext = t;
+  const leadAt = (time) => { const m = n + Math.floor((time - t) / E + 1e-6); return _musTRow(Math.floor(m / _MUS_T_BAR))[m % _MUS_T_BAR]; };
+  const dodge = (idx, time) => {   // 主旋律と同音なら1オクターブ離すか隣の音へ
+    const lead = leadAt(time);
+    if (lead == null || pool[idx] !== lead) return idx;
+    const alt = pool.indexOf(lead - 12) >= 0 ? pool.indexOf(lead - 12) : pool.indexOf(lead + 12);
+    return alt >= 0 ? alt : (idx > 0 ? idx - 1 : idx + 1);
+  };
+  while (sc.gNext <= t + E) {
+    const tg = sc.gNext;
+    const mG = n + Math.floor((tg - t) / E + 1e-6); const barG = Math.floor(mG / _MUS_T_BAR); const bcG = barG % _MUS_T_CYCLE;
+    if (Math.floor(barG / _MUS_T_CYCLE) !== sc.bgCyc || bcG < 5 || bcG >= _MUS_T_OUT) { sc.gNext = null; return; }   // ドローンと一緒に打ち切り
+    const dur = E * _musRand(2.5, 3.5), rest = E * _musRand(1, 1.5);
+    sc.gNext = tg + dur + rest;
+    if (!_musCanVoice('m')) continue;
+    // 種類: 同じ種類が3回続かないように
+    const hist = sc.gHist || (sc.gHist = []);
+    let ty = _musPick(['nyu', 'bii', 'miyo']);
+    if (hist.length >= 2 && hist[hist.length - 1] === ty && hist[hist.length - 2] === ty) ty = _musPick(['nyu', 'bii', 'miyo'].filter((x) => x !== ty));
+    hist.push(ty); if (hist.length > 8) hist.shift();
+    let i0 = dodge(2 + Math.floor(Math.random() * 8), tg), i1 = i0;
+    const f = (i) => _musHz(_MUS_T_ROOT, pool[i]);
+    const o = _musOsc('sine', f(i0), tg, tg + dur + 0.05);
+    const env = ctx.createGain(); const L = _MUS_T_GEST_VEL;
+    const fr = o.frequency; fr.setValueAtTime(f(i0), tg);
+    if (ty === 'nyu') {   // にゅわーん: 膨らんで、全体の約60%で滑らかに上下へ5〜12半音、終わりにビブラートが広がり消える
+      const up = Math.random() < 0.5;
+      i1 = _musTTarget(pool, i0, 5, 12, up); if (i1 < 0) i1 = _musTTarget(pool, i0, 5, 12, !up); if (i1 < 0) i1 = i0 > 0 ? i0 - 1 : i0 + 1;
+      i1 = dodge(i1, tg + dur);
+      fr.setValueAtTime(f(i0), tg + dur * 0.12); fr.exponentialRampToValueAtTime(f(i1), tg + dur * 0.72);
+      _musTWob(o, tg + dur * 0.1, tg + dur, 5.5, 8, 35);
+      env.gain.setValueAtTime(0.0001, tg); env.gain.linearRampToValueAtTime(L, tg + dur * 0.3); env.gain.setValueAtTime(L, tg + dur * 0.62); env.gain.exponentialRampToValueAtTime(0.0001, tg + dur);
+    } else if (ty === 'bii') {   // びーよよよよ: 同じ高さで速く深いワブル(7〜9Hz, 20→60セント)、最後に1〜2半音さがる
+      if (i0 < 1) i0 = i1 = 3;
+      i1 = Math.max(0, dodge(i0 - 1, tg + dur));   // プール内の隣接音は1〜2半音差
+      fr.setValueAtTime(f(i0), tg + dur * 0.65); fr.exponentialRampToValueAtTime(f(i1), tg + dur * 0.95);
+      _musTWob(o, tg + 0.05, tg + dur, _musRand(7, 9), 20, 60);
+      env.gain.setValueAtTime(0.0001, tg); env.gain.linearRampToValueAtTime(L, tg + 0.12); env.gain.setValueAtTime(L, tg + dur * 0.7); env.gain.exponentialRampToValueAtTime(0.0001, tg + dur);
+    } else {   // みよよよよーん: 前半40%は速いワブル(約40セント)、その後5度〜1オクターブ滑って尾(ーん)が消える
+      const up = Math.random() < 0.5;
+      i1 = _musTTarget(pool, i0, 7, 12, up); if (i1 < 0) i1 = _musTTarget(pool, i0, 7, 12, !up); if (i1 < 0) i1 = i0 > 0 ? i0 - 1 : i0 + 1;
+      i1 = dodge(i1, tg + dur);
+      fr.setValueAtTime(f(i0), tg + dur * 0.4); fr.exponentialRampToValueAtTime(f(i1), tg + dur * 0.8);
+      _musTWob(o, tg + 0.05, tg + dur * 0.4, 8, 40, 40); _musTWob(o, tg + dur * 0.8, tg + dur, 5.5, 6, 12);
+      env.gain.setValueAtTime(0.0001, tg); env.gain.linearRampToValueAtTime(L, tg + 0.1); env.gain.setValueAtTime(L, tg + dur * 0.75); env.gain.exponentialRampToValueAtTime(0.0001, tg + dur);
+    }
     o.connect(env); env.connect(sc.thBus);
-    _musReg('m', [o, env], Infinity);
-    const v = _musS.voices[_musS.voices.length - 1]; v.sc = sc;
-    sc.bg = bg = { o, env, idx, next: t, lvl: _MUS_T_BG_VEL * 0.7, rest: false, first: true, fading: false, endT: 0, voice: v };
-    sc.bgCyc = cyc;
-  }
-  if (!bg) return;
-  if (!bg.fading && bc >= _MUS_T_OUT) {   // ドローンと一緒に退場
-    bg.fading = true;
-    bg.env.gain.cancelScheduledValues(t); bg.env.gain.setValueAtTime(Math.max(0.0001, bg.lvl), t); bg.env.gain.linearRampToValueAtTime(0.0001, t + _MUS_T_BG_FADE);
-    bg.endT = t + _MUS_T_BG_FADE + 0.3;
-    try { bg.o.stop(bg.endT); } catch (e) { /* ok */ }
-    bg.voice.end = bg.endT;
-    return;
-  }
-  if (bg.fading) return;
-  while (bg.next <= t + E) {
-    const tn = bg.next; const m = n + Math.round((tn - t) / E);
-    const barM = Math.floor(m / _MUS_T_BAR), eM = m % _MUS_T_BAR;
-    if (!bg.first && !bg.rest && Math.random() < 0.25) {   // 息継ぎ: 音量だけ沈める（ピッチは保持）
-      const len = _musPick([2, 3]);
-      bg.env.gain.setValueAtTime(bg.lvl, tn); bg.lvl = _MUS_T_BG_VEL * 0.12; bg.env.gain.linearRampToValueAtTime(bg.lvl, tn + 0.3);
-      bg.rest = true; bg.next = tn + len * E; continue;
-    }
-    bg.rest = false;
-    const pool = _MUS_T_BGPOOL; let idx = bg.idx; let glide = _musRand(0.15, 0.3);
-    if (!bg.first) {
-      const r = Math.random();
-      const up12 = pool.indexOf(pool[idx] + 12), dn12 = pool.indexOf(pool[idx] - 12);
-      if (r < 0.12 && (up12 >= 0 || dn12 >= 0)) { idx = up12 >= 0 && (dn12 < 0 || Math.random() < 0.5) ? up12 : dn12; glide = 0.4; }   // オクターブ・スウープ
-      else { idx += _musPick([-2, -1, -1, 1, 1, 2]); if (idx < 0 || idx >= pool.length) idx = bg.idx + (idx < 0 ? 1 : -1); }
-    }
-    const acc = _MUS_T_ACC.indexOf(eM) >= 0;
-    const lead = acc ? _musTRow(barM)[eM] : null;
-    if (lead != null && pool[idx] === lead) {   // 主旋律と同音は避ける: 1オクターブ離すか隣の音へ
-      const alt = pool.indexOf(lead - 12) >= 0 ? pool.indexOf(lead - 12) : pool.indexOf(lead + 12);
-      idx = alt >= 0 ? alt : (idx > 0 ? idx - 1 : idx + 1);
-    }
-    const semi = pool[idx]; const f = _musHz(_MUS_T_ROOT, semi); const prevF = _musHz(_MUS_T_ROOT, pool[bg.idx]);
-    if (!bg.first && idx !== bg.idx) { bg.o.frequency.setValueAtTime(prevF, tn); bg.o.frequency.exponentialRampToValueAtTime(f, tn + glide); }
-    bg.first = false; bg.idx = idx;
-    const dur = _musPick([2, 2, 3, 3, 3, 4, 4]);
-    const lvl = _MUS_T_BG_VEL * _musRand(0.6, 1);   // やわらかいスウェル
-    bg.env.gain.setValueAtTime(bg.lvl, tn); bg.env.gain.linearRampToValueAtTime(lvl, tn + Math.min(0.5, dur * E * 0.6)); bg.lvl = lvl;
-    _musTVib(bg.o, tn, dur * E, _musRand(6, 20), _musRand(4.6, 6.6));
-    sc.log.push({ kind: 'bg', t: tn, semi, e: eM, bar: barM, vel: lvl }); if (sc.log.length > 600) sc.log.shift();
-    bg.next = tn + dur * E;
+    _musReg('m', [o, env], tg + dur + 0.05);
+    _musS.voices[_musS.voices.length - 1].sc = sc;
+    const eG = mG % _MUS_T_BAR;
+    sc.log.push({ kind: 'bg', t: tg, semi: pool[i0], e: eG, bar: barG, vel: L }, { kind: 'bg', t: tg + dur, semi: pool[i1], e: eG, bar: barG, vel: L, end: true },
+      { kind: 'gest', t: tg, dur, type: ty, semi: pool[i0], semi1: pool[i1], e: eG, bar: barG, vel: L });
+    while (sc.log.length > 600) sc.log.shift();
   }
 }
 
