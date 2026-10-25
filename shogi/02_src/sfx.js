@@ -1,0 +1,19 @@
+/* ---------- SFX (WebAudio 合成。v4aで music.js に統合予定) ---------- */
+let AC=null, muted=false;
+function setMuted(v){muted=v;}
+function beep(f,d,type="square",g=.05){
+  if(muted) return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(), gn=AC.createGain();
+    o.type=type; o.frequency.value=f; gn.gain.value=g;
+    gn.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);
+    o.connect(gn).connect(AC.destination); o.start(); o.stop(AC.currentTime+d);
+  }catch(e){}
+}
+const sMove=()=>beep(340,.06), sCap=()=>{beep(180,.12,"sawtooth",.06); setTimeout(()=>beep(90,.15,"sawtooth",.05),60);},
+      sWin=()=>{[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.16,"triangle",.06),i*110));},
+      sLose=()=>{[300,220,150,90].forEach((f,i)=>setTimeout(()=>beep(f,.2,"sawtooth",.05),i*140));},
+      sDdos=()=>beep(60,.3,"sawtooth",.08),
+      sRank=()=>{beep(880,.08,"triangle",.06); setTimeout(()=>beep(1320,.12,"triangle",.06),90);},
+      sDown=()=>{beep(45,.4,"sawtooth",.09); setTimeout(()=>beep(30,.5,"sawtooth",.07),120);};

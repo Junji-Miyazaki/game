@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>CYBER SHOGI — 電脳将棋</title>
+<link rel="stylesheet" href="03_assets/style.css?v=be79174fde">
+</head>
+<body>
+<div id="app">
+
+  <div id="title" class="screen on">
+    <h1>CYBER<span>_</span>SHOGI</h1>
+    <div class="sub">電脳将棋 :: FACTION WARS v3</div>
+    <button class="menu-btn" id="bt-free">FREE RUN — 侵入開始</button>
+    <button class="menu-btn mg" id="bt-daily">DAILY RUN — 本日のシード</button>
+    <div class="howto">
+      <b>目的:</b> シードが決めた3陣営に連続侵入し、敵<b>CEO</b>を詰ませろ。奪った駒は乗っ取り=持ち駒。<br>
+      <b>回線:</b> 自CEOと味方の隣接チェーンで繋がる駒だけオンライン。
+      切断=<b>OFFLINE</b>: 走れない・成れない。持ち駒は自回線の隣接マスのみ投入可。<br>
+      <b>機能:</b> SAT=同行同列を無線中継 / HCK=隣接敵をタップしオフライン化 / F/W=自身と隣接味方を防護。<br>
+      <b>昇格★:</b> 敵を2体乗っ取った駒はランクアップ。
+      AI=切断無効 / SAT=斜め中継 / HCK=タップ範囲2 / F/W=防護範囲2 / bot=斜め前にも進める。<br>
+      <b>敵陣営:</b> ボットネット(bot増殖)・メガコーポ(広域防護)・国家中枢(常時監視網)・ライバルハッカー(DDoS反撃)。
+      陣営ごとに正解の戦略が変わる。<br>
+      <b>BLACKOUT:</b> 赤カウント0でマスが永久ダウン。上の駒は消滅。<br>
+      <b>DAILY:</b> 日替わりシードが侵入経路・強化・ブラックアウトを固定。全員同条件。
+    </div>
+  </div>
+
+  <div id="game" class="screen">
+    <div id="hud">
+      <span class="stg" id="hud-stage">STAGE 1</span>
+      <span class="scr" id="hud-score">SCORE 0</span>
+      <span class="seed" id="hud-seed"></span>
+    </div>
+    <div class="hand" id="hand-e"><span class="lbl">敵捕獲:</span></div>
+    <div id="board"></div>
+    <div class="hand" id="hand-p"><span class="lbl">乗っ取り済:</span></div>
+    <div id="ctrl">
+      <button class="cbtn warn" id="bt-ddos">DDoS ×0</button>
+      <button class="cbtn" id="bt-kifu">棋譜LOG</button>
+      <button class="cbtn" id="bt-mute">SOUND ON</button>
+      <button class="cbtn" id="bt-quit">切断</button>
+    </div>
+    <div id="term"></div>
+  </div>
+
+</div>
+
+<div class="modal" id="upg-modal">
+  <h2>SYSTEM BREACHED</h2>
+  <div class="note">侵入成功 — サイバー強化を1つ選択せよ</div>
+  <div id="upg-cards"></div>
+</div>
+
+<div class="modal" id="end-modal">
+  <div id="end-body"></div>
+</div>
+
+<div class="modal" id="kifu-modal">
+  <h2>KIFU LOG</h2>
+  <div id="kifu-wrap"><textarea id="kifu-txt" readonly></textarea></div>
+  <button class="menu-btn" id="bt-kifu-close" style="margin-top:14px;">CLOSE</button>
+</div>
+
+<div class="stage-banner" id="banner">
+  <div class="bn-main" id="banner-txt"></div>
+  <div class="bn-sub" id="banner-sub"></div>
+</div>
+
+<script src="shogi.bundle.js?v=37aaae57b6"></script>
+</body>
+</html>
