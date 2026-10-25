@@ -359,6 +359,84 @@ function makeD(ctx, dest, opts) {
   return E.api();
 }
 
+// ---------------- 案E 牧歌から深宇宙へ（B×D）----------------
+// 32小節(約140秒)の呼吸: 小節1-8 牧歌(Bのみ) / 小節9から約10秒でドローンが昇る / 小節24から約8秒で退く / 小節25-32 牧歌 → 周回
+const E_PERIOD = 32, E_IN = 8, E_OUT = 23, E_FADE_IN = 10, E_FADE_OUT = 8, E_DRONE = 0.12;
+function makeE(ctx, dest, opts) {
+  const o = Object.assign({ tempo: 96, level: 0.35, caps: { lead: 4, cnt: 4, bass: 4, shk: 3, ther: 2 } }, opts);
+  const E = new Engine(ctx, dest, o);
+  E.droneEvents = [];
+  const vib = E.hold('sine', 5.2); E.vibGain = E.gain(6); vib.connect(E.vibGain);
+  E.vib2 = E.gain(12); E.hold('sine', 5.6).connect(E.vib2);
+  E.leadBus = E.filter('lowpass', 2600, 0.5, E.out);
+  E.leadBus.connect(E.stereoDelay(E.E, E.E * 1.5, 0.3, 0.22, 2400));
+  E.cntBus = E.filter('lowpass', 1800, 0.5, E.out);
+  E.bassBus = E.filter('lowpass', 700, 0.5, E.out);
+  E.thBus = E.gain(1, E.out);
+  E.thBus.connect(E.stereoDelay(E.E * 1.5, E.E * 2, 0.35, 0.25, 2600));
+  // ドローン(F1+C2+F2)。無音から始め、ローパスをゆっくり開く
+  E.duck = E.gain(1, E.out);
+  E.dlp = E.filter('lowpass', 160, 0.7, E.duck);
+  E.dg = E.gain(0.0001, E.dlp);
+  [['sawtooth', hz(-36), -6], ['sawtooth', hz(-36), 7], ['sawtooth', hz(-29), 4], ['triangle', hz(-24), 0]].forEach(([ty, f, d]) => { E.hold(ty, f, d).connect(E.dg); });
+  E.lfo(0.045, 120, E.dlp.frequency);
+  E.step = function (n, t) {
+    const e = n % BAR, bar = Math.floor(n / BAR), b = bar % 4, p = Math.floor(bar / 4) % 4;
+    const cyc = Math.floor(bar / E_PERIOD), bc = bar % E_PERIOD;
+    if (e === 0 && bc === E_IN) {
+      this.dg.gain.setValueAtTime(0.0001, t); this.dg.gain.linearRampToValueAtTime(E_DRONE, t + E_FADE_IN);
+      this.dlp.frequency.setValueAtTime(160, t); this.dlp.frequency.exponentialRampToValueAtTime(400, t + E_FADE_IN + 2);
+      this.droneEvents.push({ kind: 'in', t0: t, t1: t + E_FADE_IN, bar });
+    }
+    if (e === 0 && bc === E_OUT) {
+      this.dg.gain.setValueAtTime(E_DRONE, t); this.dg.gain.linearRampToValueAtTime(0.0001, t + E_FADE_OUT);
+      this.dlp.frequency.setValueAtTime(400, t); this.dlp.frequency.exponentialRampToValueAtTime(160, t + E_FADE_OUT);
+      this.droneEvents.push({ kind: 'out', t0: t, t1: t + E_FADE_OUT, bar });
+    }
+    const droneOn = bc >= E_IN && bc < E_OUT + 2;
+    const q = (cyc % 2 === 1) ? (p + 1) % 4 : p;           // 奇数周回はフレーズ順を入れ替え（A-B-A-B′ → B-A-B′-A）
+    const row = (q === 0 || q === 2) ? B_PH[0][b] : (q === 3 && b === 3) ? B_PH[0][3] : B_PH[1][b];
+    const semi = row[e];
+    if (semi != null) {
+      let j = e + 1; while (j < BAR && row[j] == null) j++;
+      const dur = Math.min(3 * this.E, j < BAR ? (j - e) * this.E * 0.97 : (BAR - e) * this.E * 1.2);
+      const acc = ACCENTS.indexOf(e) >= 0;
+      this.tone('lead', { t, hz: hz(semi), dur, vel: acc ? 0.24 : 0.19, dest: this.leadBus, type: 'triangle', atk: 0.03, holdFrac: 0.6, vib: true,
+        partials: [{ type: 'sine', ratio: 1, gain: 0.6 }] });
+      this.note('lead', t, semi, e, bar);
+      if (acc && droneOn) { const d = this.duck.gain; d.setValueAtTime(1, t); d.linearRampToValueAtTime(0.7, t + 0.03); d.linearRampToValueAtTime(1, t + 0.5); }
+    }
+    if (p >= 1) {
+      const c = B_COUNTER[b][e];
+      if (c != null && !(droneOn && (e === 3 || e === 6))) {   // ドローン中は裏メロを少し間引く
+        this.tone('cnt', { t, hz: hz(c), dur: this.E * 0.7, vel: droneOn ? 0.06 : 0.08, dest: this.cntBus, wave: 0.25, atk: 0.004, holdFrac: 0.3 }); this.note('cnt', t, c, e, bar);
+      }
+    }
+    const gi = ACCENTS.indexOf(e);
+    if (gi >= 0) {
+      const grp = GROUPS[gi]; const bs = B_BASS[b][gi];
+      this.tone('bass', { t, hz: hz(bs), dur: this.E * grp * 0.85, vel: 0.3, dest: this.bassBus, type: 'triangle', atk: 0.01, holdFrac: 0.5 });
+      this.note('bass', t, bs, e, bar);
+      this.hit('shk', t, gi === 0 ? 0.05 : 0.032, { type: 'bandpass', f: 6000, q: 1, dur: 0.07, dest: this.out, e });
+    }
+    if (bc >= E_IN + 2 && bc < E_OUT && b === 3 && e === 5 && this.canVoice('ther')) {   // 4小節に1回、リードに応えるグライド
+      const pr = D_THER[Math.floor(this.rng() * D_THER.length)];
+      const f1 = hz(pr[0]), f2 = hz(pr[1]); const c = this.ctx; const end = t + 1.85;
+      const os = c.createOscillator(); os.type = 'sine'; os.frequency.setValueAtTime(f1 * 0.94, t);
+      os.frequency.exponentialRampToValueAtTime(f1, t + 0.18); os.frequency.setValueAtTime(f1, t + 0.7);
+      os.frequency.exponentialRampToValueAtTime(f2, t + 1.0);
+      os.start(t); os._started = true; os.stop(end);
+      const env = c.createGain(); env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(0.07, t + 0.2);
+      env.gain.setValueAtTime(0.07, t + 1.3); env.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+      os.connect(env); env.connect(this.thBus);
+      const vg = this.vib2; vg.connect(os.detune);
+      this.reg('ther', [os, env], end, () => vg.disconnect(os.detune));
+      this.note('ther', t, pr[0], e, bar); this.note('ther', t + 1.0, pr[1], e, bar);
+    }
+  };
+  return E.api();
+}
+
 export const CANDIDATES = [
   { id: 'A', label: '案A 軽いアンビエント', make: makeA, tempo: 84, level: 1.24,
     desc: '84 /分(8分音符)・7/8(2+2+3)・Fリディアン。サイン/三角のやわらかいパッドが F(add9)→G7/F→Dm7→F7 と2小節ごとに推移し、ガラス質のベルが群頭にまばらに響く。疑似ステレオのディレイで広がる。90Hz以下は極小のサインのみ。軽く静か。' },
@@ -368,6 +446,8 @@ export const CANDIDATES = [
     desc: '140 /分・7/8(2+2+3)。25%/12.5%デューティのパルス・アルペジオ、群頭の三角ベース、小さなハット。ローパスで角を丸めた軽快なチップチューン。16小節ごとにアルペジオの向きやトップラインが変わる。ジングルに最も近い。' },
   { id: 'D', label: '案D 重低音×ポップ・キッチュ', make: makeD, tempo: 120, level: 0.26,
     desc: '120 /分・7/8(2+2+3)。現行タイトルの重いドローンをF基準(低いF+Cの5度)で残し、現行より低めに混ぜてアクセントで約-3dBダック。その上にトイピアノ/オルゴール調のおどけたフック(#4のBとb7のEbを使用)、跳ねるピチカート・ベース、2〜4小節おきに応答するテルミン風グライド、小さなティック。重さとの落差が魅力。' },
+  { id: 'E', label: '案E 牧歌から深宇宙へ（B×D）', make: makeE, tempo: 96, level: 0.35,
+    desc: '96 /分・7/8(2+2+3)。約140秒（32小節）で一巡する呼吸。小節1-8は案Bそのままの牧歌。小節9から約10秒かけて、低いFの重いドローンがローパスを開きながら旋律の下に昇ってくる（旋律のアクセントで約-3dBダック、裏メロは少し間引き、4小節に1回だけ小さなテルミン風グライドが応答）。小節24から約8秒で退き、牧歌に戻って一巡。周回ごとにフレーズ順が入れ替わる。明るく穏やかなまま神秘的に。' },
 ];
 
 export function createCandidate(id, ctx, dest, opts) {
