@@ -25,7 +25,7 @@ function request(url, init, ms, parse) {
 export async function submitScore(entry, timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return { ok: false, error: 'disabled' };
   try {
-    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage, key: entry.key });
+    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage, key: entry.key, ...(Number.isFinite(entry.startStage) ? { startStage: entry.startStage } : {}) });   // startStage は中継が現状は無視（将来の表示用）
     return await request(RELAY_URL + '/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs,
       (res) => ({ ok: !!(res && res.ok), status: res && res.status }));
   } catch (e) {

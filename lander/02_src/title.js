@@ -2,11 +2,11 @@
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX } from './ranking.js';
+import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts } from './ranking.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawBetaTag } from './art.js';
+import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag } from './art.js';
 
 import { stageInfo } from './bodies.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
@@ -209,6 +209,7 @@ export class TitleScene extends Scene {
     this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
     this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
     this.cp = null;
+    this.pick = null;                                               // CHOOSE START { list, sel, page }
     this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
     this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
@@ -235,7 +236,7 @@ export class TitleScene extends Scene {
   _submitName(name) {
     this.name = setPlayerName(this.engine.storage, name); this.prof = null;
     try { addProfile(this.engine.storage, this.name); } catch (_) { /* ignore */ }
-    if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+    if (this.pendingStart) { this.pendingStart = false; this._startOrChoose(); }
   }
   // 名前入力オーバーレイからの確定（新規パイロット）。-> null（受理）| エラー文字列 | Promise<エラー文字列|null>（WORLD の重複確認が必要な時のみ）
   _onNameEntered(v) {
@@ -245,7 +246,7 @@ export class TitleScene extends Scene {
     const accept = () => {
       if (!addProfile(this.engine.storage, nm)) return 'MAX ' + PROFILE_MAX + ' PILOTS';
       this.name = nm; this.prof = null;
-      if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+      if (this.pendingStart) { this.pendingStart = false; this._startOrChoose(); }
       return null;
     };
     if (list.some((p) => p.name === nm)) return accept();
@@ -329,15 +330,57 @@ export class TitleScene extends Scene {
     musicOf(this.engine).sfx.uiTap();
     if (!this.name) { this._openName(false); return; }
     this.engine.resumeCheckpoint = this.cp;
+    this.engine.startStage = null;
     this._begin();
   }
-  // NEW MISSION: チェックポイントを破棄して最初から
+  // NEW MISSION: 最初から（到達済みの天体が複数あれば CHOOSE START）。チェックポイントは開始が確定した時に破棄（CANCEL では失わない）
   _newMission() {
     musicOf(this.engine).sfx.uiTap();
+    if (!this.name) { clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null; this._openName(true); return; }
+    this._startOrChoose();
+  }
+  _startOptions() { return unlockedStarts(getMaxStage(this.engine.storage, this.name)); }
+  _startOrChoose() {
+    const list = this._startOptions();
+    if (list.length > 1) { this.showRank = false; this.pick = { list, sel: 0, page: 0 }; return; }
+    this._startAt(1);
+  }
+  _startAt(stage) {
+    this.pick = null;
     clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
-    if (!this.name) { this._openName(true); return; }
+    this.engine.startStage = stage > 1 ? stage : null;
     this._begin();
   }
+  // ---- CHOOSE START ----
+  _pickRects() {
+    const pk = this.pick, PER = 6;
+    const pages = Math.max(1, Math.ceil(pk.list.length / PER));
+    const page = Math.max(0, Math.min(pages - 1, pk.page));
+    const rows = [];
+    for (let i = page * PER; i < Math.min(pk.list.length, (page + 1) * PER); i++) {
+      const o = pk.list[i];
+      rows.push({ i, o, rect: { x: 36, y: 124 + (i - page * PER) * 52, w: W - 72, h: 44 }, cursor: i === pk.sel, best: i === 0,
+        label: o.label, stage: o.stage, g: o.realG.toFixed(2) });
+    }
+    return { rows, page, pages, prev: { x: 36, y: 446, w: 56, h: 32 }, next: { x: W - 92, y: 446, w: 56, h: 32 }, cancel: { x: W / 2 - 60, y: 510, w: 120, h: 36 } };
+  }
+  _pickInput(action, data) {
+    const pk = this.pick, R = this._pickRects();
+    if (action === 'back') { this.pick = null; return; }
+    if (action === 'up' || action === 'down') {
+      pk.sel = Math.max(0, Math.min(pk.list.length - 1, pk.sel + (action === 'down' ? 1 : -1)));
+      pk.page = Math.floor(pk.sel / 6); return;
+    }
+    if (action === 'left' || action === 'right') { pk.page = Math.max(0, Math.min(R.pages - 1, R.page + (action === 'right' ? 1 : -1))); return; }
+    if (action === 'confirm') { musicOf(this.engine).sfx.uiTap(); this._startAt(pk.list[pk.sel].stage); return; }
+    if (action !== 'tap' || !data) return;
+    if (this._hit(R.cancel, data)) { musicOf(this.engine).sfx.uiTap(); this.pick = null; return; }
+    if (R.pages > 1 && this._hit(R.prev, data)) { pk.page = Math.max(0, R.page - 1); return; }
+    if (R.pages > 1 && this._hit(R.next, data)) { pk.page = Math.min(R.pages - 1, R.page + 1); return; }
+    for (const r of R.rows) if (this._hit(r.rect, data)) { musicOf(this.engine).sfx.uiTap(); this._startAt(r.o.stage); return; }
+    // それ以外のタップは何もしない（裏の START/CONTINUE に貫通させない）
+  }
+  blocksBack() { return !!this.pick; }
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
@@ -351,6 +394,7 @@ export class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
+    if (this.pick) { this._pickInput(action, data); return; }   // CHOOSE START 表示中は入力を独占
     if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
       if (this._hit(this.muteBtn, data)) {
@@ -385,7 +429,7 @@ export class TitleScene extends Scene {
     if (action === 'tap' || action === 'confirm') {
       musicOf(this.engine).sfx.uiTap();
       if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
-      this._begin();
+      this._startOrChoose();
     }
   }
 
@@ -521,6 +565,10 @@ export class TitleScene extends Scene {
       ctx.save(); ctx.globalAlpha = 0.55 + 0.25 * Math.sin(this.t * 2.4);
       this.engine.text('TAP TO CLOSE', W / 2, 508, 9, p.dim, 'center');
       ctx.restore();
+    }
+    if (this.pick) {
+      const R = this._pickRects();
+      drawStartPanel(ctx, { rows: R.rows, page: R.page, pages: R.pages, prev: R.prev, next: R.next, cancel: R.cancel });
     }
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;

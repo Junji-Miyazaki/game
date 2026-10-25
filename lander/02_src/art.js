@@ -1699,6 +1699,32 @@ export function drawProfilePanel(ctx, d) {
   txt(ctx, 'CLOSE', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
   if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, p.bad, 'center', { sp: 2, w: 500 });
 }
+// CHOOSE START パネル（PILOTS と同じ言語）。d = { title, rows:[{rect,label,stage,g,cursor,best}], page, pages, prev, next, cancel, hint }
+export function drawStartPanel(ctx, d) {
+  const p = P();
+  veil(ctx, 0.6);
+  panel(ctx, 20, 70, AW - 40, 500, { a: 0.92, border: p.mid, ba: 0.25 });
+  txt(ctx, d.title || 'CHOOSE START', AW / 2, 86, 16, p.hi, 'center', { sp: 6, w: 300 });
+  txt(ctx, d.hint || 'SCORE STARTS AT 0', AW / 2, 108, 7, p.dim, 'center', { sp: 3, w: 500 });
+  for (const r of d.rows) {
+    const b = r.rect;
+    pill(ctx, b.x, b.y, b.w, b.h, r.cursor ? rgba(p.mid, 0.10) : null, rgba(r.cursor ? p.mid : p.fg, r.cursor ? 0.6 : 0.2));
+    txt(ctx, r.label, b.x + 16, b.y + 9, 12, r.cursor ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    txt(ctx, 'g ' + r.g, b.x + 16, b.y + 28, 8, p.dim, 'left', { sp: 2, w: 500 });
+    txt(ctx, 'ST.' + r.stage, b.x + b.w - 14, b.y + 10, 11, r.cursor ? p.hi : p.mid, 'right', { sp: 2, w: 500 });
+    if (r.best) txt(ctx, 'FURTHEST', b.x + b.w - 14, b.y + 28, 7, p.warn, 'right', { sp: 3, w: 500 });
+  }
+  if (d.pages > 1) {
+    for (const [b, lab, on] of [[d.prev, '\u2039', d.page > 0], [d.next, '\u203a', d.page < d.pages - 1]]) {
+      pill(ctx, b.x, b.y, b.w, b.h, null, rgba(p.fg, on ? 0.3 : 0.1));
+      txt(ctx, lab, b.x + b.w / 2, b.y + b.h / 2 - 8, 16, on ? p.hi : p.dim, 'center', { w: 400 });
+    }
+    txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, d.prev.y + d.prev.h / 2 - 5, 9, p.mid, 'center', { sp: 3, w: 500 });
+  }
+  const c = d.cancel;
+  pill(ctx, c.x, c.y, c.w, c.h, null, rgba(p.fg, 0.22));
+  txt(ctx, 'CANCEL', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+}
 export function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));

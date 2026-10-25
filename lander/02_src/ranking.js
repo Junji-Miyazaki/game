@@ -3,6 +3,7 @@
 import { P } from './core/palette.js';
 import { relayEnabled, fetchWorldTop, makeNameKey } from './net.js';
 import { txt, rgba, hair, pill } from './art.js';
+import { stageInfo, STAGES_PER_BODY, bodyGravity } from './bodies.js';
 
 export const RANK_MAX = 10;
 const RANK_KEY = 'ranking';
@@ -221,9 +222,55 @@ export function addProfile(storage, name) {
 export function removeProfile(storage, name) {
   const list = loadProfiles(storage).filter((p) => p.name !== name);
   writeProfiles(storage, list);
+  clearProgress(storage, name);
   const cur = getPlayerName(storage);
   if (cur === name || !list.some((p) => p.name === cur)) {
     try { storage.set('lastName', list.length ? list[0].name : ''); storage.set(ACTIVE_KEY, list.length ? list[0].name : ''); } catch (_) { /* ignore */ }
   }
   return list;
+}
+
+// ---- パイロット別の到達記録（'progress': { 名前: { maxStage } }）。開始地点の解放に使う ----
+const PROGRESS_KEY = 'progress';
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function readProgress(storage) {
+  try {
+    const o = JSON.parse(storage.get(PROGRESS_KEY, '') || '{}');
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (_) { return {}; }
+}
+function writeProgress(storage, o) { try { storage.set(PROGRESS_KEY, JSON.stringify(o)); } catch (_) { /* ignore */ } }
+export function getMaxStage(storage, name) {
+  const key = sanitizeName(name);
+  if (!key) return 1;
+  const o = readProgress(storage);
+  const m = hasOwn(o, key) && o[key] ? o[key].maxStage : 1;
+  return Number.isInteger(m) && m >= 1 && m <= 9999 ? m : 1;
+}
+// 通常ステージの開始時に呼ぶ。到達が伸びた時だけ保存
+export function recordStageReached(storage, name, stage) {
+  const key = sanitizeName(name);
+  if (!key || !Number.isInteger(stage) || stage < 1 || stage > 9999) return false;
+  if (stage <= getMaxStage(storage, key)) return false;
+  const o = readProgress(storage);
+  o[key] = { maxStage: stage };
+  writeProgress(storage, o);
+  return true;
+}
+export function clearProgress(storage, name) {
+  const o = readProgress(storage);
+  if (!hasOwn(o, name)) return;
+  delete o[name];
+  writeProgress(storage, o);
+}
+// 解放済みの開始地点 = 到達済み天体の最初のステージ。新しい順（最遠が先頭）で返す
+export function unlockedStarts(maxStage) {
+  const m = Math.max(1, Math.floor(maxStage) || 1);
+  const out = [];
+  for (let s = 1; s <= m; s += STAGES_PER_BODY) {
+    const info = stageInfo(s);
+    out.push({ stage: s, loop: info.loop, name: info.body.name, label: (info.loop >= 1 ? 'ORBIT ' + (info.loop + 1) + ' \u00b7 ' : '') + info.body.name,
+      realG: info.body.realG, gravity: bodyGravity(info.body, info.loop) });
+  }
+  return out.reverse();
 }

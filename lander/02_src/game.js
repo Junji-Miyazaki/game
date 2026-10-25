@@ -6,7 +6,7 @@
 // Safe landing on the pad = STAGE CLEAR. Crash = GAME OVER.
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, saveRanking, recordEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, getActiveProfile, newRunId, loadCheckpoint, saveCheckpoint, clearCheckpoint } from './ranking.js';
+import { loadRanking, saveRanking, recordEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, getActiveProfile, newRunId, recordStageReached, loadCheckpoint, saveCheckpoint, clearCheckpoint } from './ranking.js';
 import { isDebug } from './debug.js';
 import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose, TERRA, BONUS_ALT, missionOf, bonusBody, bonusScoreFor } from './bodies.js';
@@ -242,11 +242,19 @@ export class Game extends Scene {
     this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
     this._duck(false);
     this.runId      = newRunId();
+    this.startStage = 1;             // このランの開始ステージ（到達済み天体から開始した場合は >1）
     this._worldNote = '';
+    // タイトルの CHOOSE START: 到達済み天体の最初のステージから、スコア0・残機3・モジュールなしで開始
+    const ss = this.engine.startStage; this.engine.startStage = null;
+    if (Number.isInteger(ss) && ss > 1 && ss <= 9999 && !this.engine.resumeCheckpoint) {
+      this.stage = ss; this.startStage = ss;
+      this.bonusCount = Math.floor((ss - 1) / BONUS_EVERY);
+    }
     // タイトルの CONTINUE MISSION: 保存したステージの「開始」から再開（地形は新規）
     const cp = this.engine.resumeCheckpoint; this.engine.resumeCheckpoint = null;
     if (cp && cp.v === 1) {
       this.stage = cp.stage; this.totalScore = cp.totalScore; this.continues = cp.continues; this.runId = cp.runId;
+      this.startStage = Number.isInteger(cp.startStage) && cp.startStage >= 1 ? cp.startStage : 1;
       for (const k of Object.keys(this.modules)) { const d = moduleDef(k); this.modules[k] = Math.max(0, Math.min(d ? d.max : 0, (cp.modules && cp.modules[k]) | 0)); }
       this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
     }
@@ -356,6 +364,12 @@ export class Game extends Scene {
     // Floating obstacles (stage 2+)。ボーナスミッションは障害物なし（穏やかな特別ステージ。難度は重力・パッド・風・抗力で作る）
     this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
+    // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
+    if (!this.bonus && !this._isDebugRun()) {
+      const pr = getActiveProfile(this.engine.storage);
+      if (pr && pr.name) recordStageReached(this.engine.storage, pr.name, this.stage);
+    }
+
     this._keys = this._keys || { left: false, right: false, up: false };
     this._saveCheckpoint();
   }
@@ -365,7 +379,7 @@ export class Game extends Scene {
     if (this._isDebugRun()) return;
     const prof = getActiveProfile(this.engine.storage);
     saveCheckpoint(this.engine.storage, {
-      runId: this.runId, stage: this.bonus ? this.stage + 1 : this.stage, totalScore: this.totalScore,
+      runId: this.runId, startStage: this.startStage, stage: this.bonus ? this.stage + 1 : this.stage, totalScore: this.totalScore,
       continues: this.continues, modules: Object.assign({}, this.modules), name: prof ? prof.name : getPlayerName(this.engine.storage),
     });
   }
@@ -771,7 +785,7 @@ export class Game extends Scene {
     if (!dbgRun) {
       const ex = this.rankList.find((e) => e.runId === this.runId);
       if (ex ? this.totalScore > ex.score : qualifies(this.rankList, this.totalScore)) {
-        const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString(), runId: this.runId };
+        const entry = { name: nm, score: this.totalScore, stage: this.stage, startStage: this.startStage, date: new Date().toISOString(), runId: this.runId };
         const list = recordEntry(this.rankList, entry);
         saveRanking(this.engine.storage, list);
         this.rankList = list;
@@ -780,7 +794,7 @@ export class Game extends Scene {
     }
     if (!dbgRun && relayEnabled() && this.totalScore > 0) {
       try {
-        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, key: prof ? prof.key : undefined })).then((r) => {
+        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
           if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
         }, () => {});
       } catch (_) { /* 送信失敗はゲームに影響させない */ }

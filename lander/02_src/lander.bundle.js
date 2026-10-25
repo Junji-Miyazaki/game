@@ -621,7 +621,7 @@ function request(url, init, ms, parse) {
 async function submitScore(entry, timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return { ok: false, error: 'disabled' };
   try {
-    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage, key: entry.key });
+    const body = JSON.stringify({ name: entry.name, score: entry.score, stage: entry.stage, key: entry.key, ...(Number.isFinite(entry.startStage) ? { startStage: entry.startStage } : {}) });   // startStage は中継が現状は無視（将来の表示用）
     return await request(RELAY_URL + '/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs,
       (res) => ({ ok: !!(res && res.ok), status: res && res.status }));
   } catch (e) {
@@ -1038,11 +1038,57 @@ function addProfile(storage, name) {
 function removeProfile(storage, name) {
   const list = loadProfiles(storage).filter((p) => p.name !== name);
   writeProfiles(storage, list);
+  clearProgress(storage, name);
   const cur = getPlayerName(storage);
   if (cur === name || !list.some((p) => p.name === cur)) {
     try { storage.set('lastName', list.length ? list[0].name : ''); storage.set(ACTIVE_KEY, list.length ? list[0].name : ''); } catch (_) { /* ignore */ }
   }
   return list;
+}
+
+// ---- パイロット別の到達記録（'progress': { 名前: { maxStage } }）。開始地点の解放に使う ----
+const PROGRESS_KEY = 'progress';
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function readProgress(storage) {
+  try {
+    const o = JSON.parse(storage.get(PROGRESS_KEY, '') || '{}');
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (_) { return {}; }
+}
+function writeProgress(storage, o) { try { storage.set(PROGRESS_KEY, JSON.stringify(o)); } catch (_) { /* ignore */ } }
+function getMaxStage(storage, name) {
+  const key = sanitizeName(name);
+  if (!key) return 1;
+  const o = readProgress(storage);
+  const m = hasOwn(o, key) && o[key] ? o[key].maxStage : 1;
+  return Number.isInteger(m) && m >= 1 && m <= 9999 ? m : 1;
+}
+// 通常ステージの開始時に呼ぶ。到達が伸びた時だけ保存
+function recordStageReached(storage, name, stage) {
+  const key = sanitizeName(name);
+  if (!key || !Number.isInteger(stage) || stage < 1 || stage > 9999) return false;
+  if (stage <= getMaxStage(storage, key)) return false;
+  const o = readProgress(storage);
+  o[key] = { maxStage: stage };
+  writeProgress(storage, o);
+  return true;
+}
+function clearProgress(storage, name) {
+  const o = readProgress(storage);
+  if (!hasOwn(o, name)) return;
+  delete o[name];
+  writeProgress(storage, o);
+}
+// 解放済みの開始地点 = 到達済み天体の最初のステージ。新しい順（最遠が先頭）で返す
+function unlockedStarts(maxStage) {
+  const m = Math.max(1, Math.floor(maxStage) || 1);
+  const out = [];
+  for (let s = 1; s <= m; s += STAGES_PER_BODY) {
+    const info = stageInfo(s);
+    out.push({ stage: s, loop: info.loop, name: info.body.name, label: (info.loop >= 1 ? 'ORBIT ' + (info.loop + 1) + ' \u00b7 ' : '') + info.body.name,
+      realG: info.body.realG, gravity: bodyGravity(info.body, info.loop) });
+  }
+  return out.reverse();
 }
 
 
@@ -2747,6 +2793,32 @@ function drawProfilePanel(ctx, d) {
   txt(ctx, 'CLOSE', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
   if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, p.bad, 'center', { sp: 2, w: 500 });
 }
+// CHOOSE START パネル（PILOTS と同じ言語）。d = { title, rows:[{rect,label,stage,g,cursor,best}], page, pages, prev, next, cancel, hint }
+function drawStartPanel(ctx, d) {
+  const p = P();
+  veil(ctx, 0.6);
+  panel(ctx, 20, 70, AW - 40, 500, { a: 0.92, border: p.mid, ba: 0.25 });
+  txt(ctx, d.title || 'CHOOSE START', AW / 2, 86, 16, p.hi, 'center', { sp: 6, w: 300 });
+  txt(ctx, d.hint || 'SCORE STARTS AT 0', AW / 2, 108, 7, p.dim, 'center', { sp: 3, w: 500 });
+  for (const r of d.rows) {
+    const b = r.rect;
+    pill(ctx, b.x, b.y, b.w, b.h, r.cursor ? rgba(p.mid, 0.10) : null, rgba(r.cursor ? p.mid : p.fg, r.cursor ? 0.6 : 0.2));
+    txt(ctx, r.label, b.x + 16, b.y + 9, 12, r.cursor ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    txt(ctx, 'g ' + r.g, b.x + 16, b.y + 28, 8, p.dim, 'left', { sp: 2, w: 500 });
+    txt(ctx, 'ST.' + r.stage, b.x + b.w - 14, b.y + 10, 11, r.cursor ? p.hi : p.mid, 'right', { sp: 2, w: 500 });
+    if (r.best) txt(ctx, 'FURTHEST', b.x + b.w - 14, b.y + 28, 7, p.warn, 'right', { sp: 3, w: 500 });
+  }
+  if (d.pages > 1) {
+    for (const [b, lab, on] of [[d.prev, '\u2039', d.page > 0], [d.next, '\u203a', d.page < d.pages - 1]]) {
+      pill(ctx, b.x, b.y, b.w, b.h, null, rgba(p.fg, on ? 0.3 : 0.1));
+      txt(ctx, lab, b.x + b.w / 2, b.y + b.h / 2 - 8, 16, on ? p.hi : p.dim, 'center', { w: 400 });
+    }
+    txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, d.prev.y + d.prev.h / 2 - 5, 9, p.mid, 'center', { sp: 3, w: 500 });
+  }
+  const c = d.cancel;
+  pill(ctx, c.x, c.y, c.w, c.h, null, rgba(p.fg, 0.22));
+  txt(ctx, 'CANCEL', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+}
 function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
@@ -3843,6 +3915,7 @@ class TitleScene extends Scene {
     this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
     this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
     this.cp = null;
+    this.pick = null;                                               // CHOOSE START { list, sel, page }
     this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
     this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
@@ -3869,7 +3942,7 @@ class TitleScene extends Scene {
   _submitName(name) {
     this.name = setPlayerName(this.engine.storage, name); this.prof = null;
     try { addProfile(this.engine.storage, this.name); } catch (_) { /* ignore */ }
-    if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+    if (this.pendingStart) { this.pendingStart = false; this._startOrChoose(); }
   }
   // 名前入力オーバーレイからの確定（新規パイロット）。-> null（受理）| エラー文字列 | Promise<エラー文字列|null>（WORLD の重複確認が必要な時のみ）
   _onNameEntered(v) {
@@ -3879,7 +3952,7 @@ class TitleScene extends Scene {
     const accept = () => {
       if (!addProfile(this.engine.storage, nm)) return 'MAX ' + PROFILE_MAX + ' PILOTS';
       this.name = nm; this.prof = null;
-      if (this.pendingStart) { this.pendingStart = false; this._begin(); }
+      if (this.pendingStart) { this.pendingStart = false; this._startOrChoose(); }
       return null;
     };
     if (list.some((p) => p.name === nm)) return accept();
@@ -3963,15 +4036,57 @@ class TitleScene extends Scene {
     musicOf(this.engine).sfx.uiTap();
     if (!this.name) { this._openName(false); return; }
     this.engine.resumeCheckpoint = this.cp;
+    this.engine.startStage = null;
     this._begin();
   }
-  // NEW MISSION: チェックポイントを破棄して最初から
+  // NEW MISSION: 最初から（到達済みの天体が複数あれば CHOOSE START）。チェックポイントは開始が確定した時に破棄（CANCEL では失わない）
   _newMission() {
     musicOf(this.engine).sfx.uiTap();
+    if (!this.name) { clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null; this._openName(true); return; }
+    this._startOrChoose();
+  }
+  _startOptions() { return unlockedStarts(getMaxStage(this.engine.storage, this.name)); }
+  _startOrChoose() {
+    const list = this._startOptions();
+    if (list.length > 1) { this.showRank = false; this.pick = { list, sel: 0, page: 0 }; return; }
+    this._startAt(1);
+  }
+  _startAt(stage) {
+    this.pick = null;
     clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
-    if (!this.name) { this._openName(true); return; }
+    this.engine.startStage = stage > 1 ? stage : null;
     this._begin();
   }
+  // ---- CHOOSE START ----
+  _pickRects() {
+    const pk = this.pick, PER = 6;
+    const pages = Math.max(1, Math.ceil(pk.list.length / PER));
+    const page = Math.max(0, Math.min(pages - 1, pk.page));
+    const rows = [];
+    for (let i = page * PER; i < Math.min(pk.list.length, (page + 1) * PER); i++) {
+      const o = pk.list[i];
+      rows.push({ i, o, rect: { x: 36, y: 124 + (i - page * PER) * 52, w: W - 72, h: 44 }, cursor: i === pk.sel, best: i === 0,
+        label: o.label, stage: o.stage, g: o.realG.toFixed(2) });
+    }
+    return { rows, page, pages, prev: { x: 36, y: 446, w: 56, h: 32 }, next: { x: W - 92, y: 446, w: 56, h: 32 }, cancel: { x: W / 2 - 60, y: 510, w: 120, h: 36 } };
+  }
+  _pickInput(action, data) {
+    const pk = this.pick, R = this._pickRects();
+    if (action === 'back') { this.pick = null; return; }
+    if (action === 'up' || action === 'down') {
+      pk.sel = Math.max(0, Math.min(pk.list.length - 1, pk.sel + (action === 'down' ? 1 : -1)));
+      pk.page = Math.floor(pk.sel / 6); return;
+    }
+    if (action === 'left' || action === 'right') { pk.page = Math.max(0, Math.min(R.pages - 1, R.page + (action === 'right' ? 1 : -1))); return; }
+    if (action === 'confirm') { musicOf(this.engine).sfx.uiTap(); this._startAt(pk.list[pk.sel].stage); return; }
+    if (action !== 'tap' || !data) return;
+    if (this._hit(R.cancel, data)) { musicOf(this.engine).sfx.uiTap(); this.pick = null; return; }
+    if (R.pages > 1 && this._hit(R.prev, data)) { pk.page = Math.max(0, R.page - 1); return; }
+    if (R.pages > 1 && this._hit(R.next, data)) { pk.page = Math.min(R.pages - 1, R.page + 1); return; }
+    for (const r of R.rows) if (this._hit(r.rect, data)) { musicOf(this.engine).sfx.uiTap(); this._startAt(r.o.stage); return; }
+    // それ以外のタップは何もしない（裏の START/CONTINUE に貫通させない）
+  }
+  blocksBack() { return !!this.pick; }
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
@@ -3985,6 +4100,7 @@ class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
+    if (this.pick) { this._pickInput(action, data); return; }   // CHOOSE START 表示中は入力を独占
     if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
       if (this._hit(this.muteBtn, data)) {
@@ -4019,7 +4135,7 @@ class TitleScene extends Scene {
     if (action === 'tap' || action === 'confirm') {
       musicOf(this.engine).sfx.uiTap();
       if (!this.name) { this._openName(true); return; }   // 名前未設定: 入力後に開始
-      this._begin();
+      this._startOrChoose();
     }
   }
 
@@ -4155,6 +4271,10 @@ class TitleScene extends Scene {
       ctx.save(); ctx.globalAlpha = 0.55 + 0.25 * Math.sin(this.t * 2.4);
       this.engine.text('TAP TO CLOSE', W / 2, 508, 9, p.dim, 'center');
       ctx.restore();
+    }
+    if (this.pick) {
+      const R = this._pickRects();
+      drawStartPanel(ctx, { rows: R.rows, page: R.page, pages: R.pages, prev: R.prev, next: R.next, cancel: R.cancel });
     }
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;
@@ -4400,11 +4520,19 @@ class Game extends Scene {
     this._holdPrev = null; this._holdConfirm = false; this._holdGrace = 0;
     this._duck(false);
     this.runId      = newRunId();
+    this.startStage = 1;             // このランの開始ステージ（到達済み天体から開始した場合は >1）
     this._worldNote = '';
+    // タイトルの CHOOSE START: 到達済み天体の最初のステージから、スコア0・残機3・モジュールなしで開始
+    const ss = this.engine.startStage; this.engine.startStage = null;
+    if (Number.isInteger(ss) && ss > 1 && ss <= 9999 && !this.engine.resumeCheckpoint) {
+      this.stage = ss; this.startStage = ss;
+      this.bonusCount = Math.floor((ss - 1) / BONUS_EVERY);
+    }
     // タイトルの CONTINUE MISSION: 保存したステージの「開始」から再開（地形は新規）
     const cp = this.engine.resumeCheckpoint; this.engine.resumeCheckpoint = null;
     if (cp && cp.v === 1) {
       this.stage = cp.stage; this.totalScore = cp.totalScore; this.continues = cp.continues; this.runId = cp.runId;
+      this.startStage = Number.isInteger(cp.startStage) && cp.startStage >= 1 ? cp.startStage : 1;
       for (const k of Object.keys(this.modules)) { const d = moduleDef(k); this.modules[k] = Math.max(0, Math.min(d ? d.max : 0, (cp.modules && cp.modules[k]) | 0)); }
       this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
     }
@@ -4514,6 +4642,12 @@ class Game extends Scene {
     // Floating obstacles (stage 2+)。ボーナスミッションは障害物なし（穏やかな特別ステージ。難度は重力・パッド・風・抗力で作る）
     this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
+    // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
+    if (!this.bonus && !this._isDebugRun()) {
+      const pr = getActiveProfile(this.engine.storage);
+      if (pr && pr.name) recordStageReached(this.engine.storage, pr.name, this.stage);
+    }
+
     this._keys = this._keys || { left: false, right: false, up: false };
     this._saveCheckpoint();
   }
@@ -4523,7 +4657,7 @@ class Game extends Scene {
     if (this._isDebugRun()) return;
     const prof = getActiveProfile(this.engine.storage);
     saveCheckpoint(this.engine.storage, {
-      runId: this.runId, stage: this.bonus ? this.stage + 1 : this.stage, totalScore: this.totalScore,
+      runId: this.runId, startStage: this.startStage, stage: this.bonus ? this.stage + 1 : this.stage, totalScore: this.totalScore,
       continues: this.continues, modules: Object.assign({}, this.modules), name: prof ? prof.name : getPlayerName(this.engine.storage),
     });
   }
@@ -4929,7 +5063,7 @@ class Game extends Scene {
     if (!dbgRun) {
       const ex = this.rankList.find((e) => e.runId === this.runId);
       if (ex ? this.totalScore > ex.score : qualifies(this.rankList, this.totalScore)) {
-        const entry = { name: nm, score: this.totalScore, stage: this.stage, date: new Date().toISOString(), runId: this.runId };
+        const entry = { name: nm, score: this.totalScore, stage: this.stage, startStage: this.startStage, date: new Date().toISOString(), runId: this.runId };
         const list = recordEntry(this.rankList, entry);
         saveRanking(this.engine.storage, list);
         this.rankList = list;
@@ -4938,7 +5072,7 @@ class Game extends Scene {
     }
     if (!dbgRun && relayEnabled() && this.totalScore > 0) {
       try {
-        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, key: prof ? prof.key : undefined })).then((r) => {
+        Promise.resolve(submitScore({ name: nm, score: this.totalScore, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
           if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
         }, () => {});
       } catch (_) { /* 送信失敗はゲームに影響させない */ }

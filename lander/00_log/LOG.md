@@ -2,6 +2,11 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-25 到達済み天体から開始（統合：Opus 5.5 リーダー）
+- **決定（ユーザー）**: ゲームオーバー後も到達済みの天体から再挑戦可。単位は天体（必ず天体紹介から）、得点0・CONTINUE 3・モジュールなし。
+- **統合時の追加**: net.js の submitScore 本文に startStage を追加（中継は現状この項目を無視＝害なし。将来の表示用）。
+- **検証**: 新規 p8start 85件、全テスト通過。公開。
+
 ## 2026-10-25 タイトル曲：背景テルミンを間欠ジェスチャーに（Opus 5.5 リーダー／Sonnet 実装）
 - **要望**: 6小節目からは単発と同じ音量で。鳴り続けるとドローンに埋もれるので、約3拍「にゅわーん」「びーよよよよ」→1拍休み→「みよよよよーん」の断続的な繰り返しに。
 - **実施（music.js）**: 小節6〜18（ドローン後退）に、長さ2.5〜3.5拍＋休み1〜1.5拍のジェスチャーを繰り返す。3種（NYUWAAN 5〜12半音の滑り／BIIYOYOYO 7〜9Hz・20→60セントのワブル＋最後に下降／MIYOYOYOON ワブル→5度〜1オクターブの滑り＋尾）。同種3連続なし、音量は単発と同じ0.11（`_MUS_T_GEST_VEL`）、端点は音階内・F4〜Eb6、主旋律との同音回避。
@@ -190,3 +195,13 @@
 - **テスト**: 新規 `04_tests/p6bonus.mjs` 383件（選択は3/6/9/12のみ・3枚の倍率・★★交互・入力規則・SKIP→module→s+1・得点なし・各ミッションの物理フラグ/パッド幅/重力/障害物なし/祝福の格・HUD文言・得点式（燃料 0/12.3/55/100）・STORM +1 continue と上限・失敗で continue 不変・HOLD/ABORT・チェックポイント・デバッグ BONUS・リレー上限 stage*8000（60ステージ最良ケース＋全ステージ STORM 満タンでも半分未満）・自動操縦着陸可能性・全ミッション×全状態×loop 描画・3000フレーム fuzz）。全体: smoke 2, p1 107, p15 392, p2a 30, p2m 49, p2b 100, p2j 54, p3fix 104, p4hold 72, p4save 81, p4net 132, p5hud 1307, p6bonus 383 すべて通過。`node build.js`＋`node --check` OK。
 - **目視（Chrome ペイン ?debug → DBG → BONUS ▶）**: 選択画面（TERRA の昼空・丘が透ける）、CALM APPROACH / CROSSWIND / ROVER DOCK / STORM LANDING のプレイ画面（バナー・星・HUD・雲・太陽・海・丘）を確認。コンソールに新規エラーなし（既存の 'Unexpected token export'/404 履歴のみ）。
 - **未確認**: terra 音楽・ジングルは聴いていない（音量・音色は要試聴）。実機 iOS 未確認。人間の操作での難易度（自動操縦は折り返し待ちの戦略で 96〜100% だが、人間にとって ROVER/STORM のタイミングが適切かは体感確認が必要）。プレイ画面右上の 'BEST' など dim 色の文字は昼空では薄め（上端を沈めて改善済みだが最も淡い）。
+
+## 2026-10-25 P8start — 到達済み天体から開始（CHOOSE START）（Sonnet 5.5）
+- **仕様**: ゲームオーバー後などに NEW MISSION / START（チェックポイント無し）を押すと、到達済みの天体の最初のステージから開始できる。得点0・残機3・モジュール全0・新 runId。単位は天体（常に天体の最初のステージ＝導入表示あり）。ボーナス/モジュールの周期は絶対ステージ番号のまま（bonusCount は再開と同じ `floor((s-1)/3)`）。
+- **進捗**: ストレージキー `progress`（`{名前: {maxStage}}`、破損JSON・配列・非数値・`__proto__` 等は 1 扱い）。通常ステージ開始（`_initStage`、ボーナス中は除外）で更新、デバッグ/デバッグ操作ランは更新しない。プロフィール削除（`removeProfile`）で該当エントリも削除。関数は ranking.js: `getMaxStage / recordStageReached / clearProgress / unlockedStarts`。
+- **解放**: 到達済み天体の最初のステージ（1,3,5,7,9,11,13…）。ラベルは天体名、周回>=1 は 'ORBIT 2 · MOON' 形式。行に 'ST.n' と実重力 'g x.xx'。
+- **並び順**: 新しい順（最遠が先頭、'FURTHEST' 表示）。6件/ページでページ送り（‹ ›、左右キーも可）。件数の上限（周回カット）は設けず全件ページ送り（maxStage 400＝200件でも描画OK）。カーソル初期位置は最遠。
+- **UX**: 解放が2件以上のときのみ CHOOSE START を開く（1件のみは従来どおり直接開始）。NEW MISSION は選択確定までチェックポイントを破棄しない（CANCEL/Back で失わない）。タップは行の選択か CANCEL/ページ送りのみ、他（START/CONTINUE/RANKING/PILOTS/ミュート/ロゴ/パネル外）は無視（貫通なし）。Back=キャンセル、Enter=カーソル行で開始（キーのリピートは無視）、↑↓でカーソル。`blocksBack()` 対応。名前入力後の開始待ちも同じ分岐を通る。CONTINUE MISSION は startStage を持ち越さない。受け渡しは `engine.startStage`（Game.enter が消費、1以下・不正値は無視）。
+- **ランキング**: ソートは不変。ローカル行とチェックポイントに `startStage`（再開したランは引き継ぐ）。submitScore の引数にも startStage を渡している。**注意**: net.js の submitScore は body を {name,score,stage,key} だけで組み立てるため、startStage は現状送信されない（net.js は編集不可の指示。送るなら net.js 側で1行追加が必要）。表示はしていない。
+- **テスト**: 新規 `04_tests/p8start.mjs` 85件（解放リスト maxStage 1/2/3/6/12/13/25 とラベル、進捗更新の条件（ボーナス/デバッグ/下降）、パイロット別隔離・削除・破損JSON、オーバーレイの開閉・貫通なし・Back/CANCEL/行/キー、NEW MISSION とチェックポイント保持、CONTINUE、200件のページ送りと描画、開始ランの状態、ランキング startStage）。既存 smoke 2 / p1 107 / p15 392 / p2a 30 / p2m 85 / p2b 100 / p2j 54 / p3fix 104 / p4hold 72 / p4save 81 / p4net 132 / p5hud 1307 / p6bonus 383 / p7title 14 すべて通過。`node build.js` と全ファイルの `node --check` OK。
+- **目視**（preview 'lander'、モバイル幅、進捗 maxStage 15 を localStorage に投入）: CHOOSE START（ORBIT 2 · EUROPA ST.15 が FURTHEST、1/2 ページ）を確認、MARS 行タップで ST.7 MARS から開始（導入・HUD 正常）。コンソールエラーなし。ストレージは確認後に消去済み。
