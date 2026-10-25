@@ -11,6 +11,63 @@ const $=s=>document.querySelector(s);
 let run=null, bt=null, busy=false;
 let sel=null, targets=[], ddosArm=false;
 
+/* ---------- 駒SVGアイコン(stroke=currentColor) ---------- */
+const ICONS={
+  K:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4.5 17V9l4.5 3.5L12 5.5 15 12.5 19.5 9v8z"/><path d="M4.5 19.5h15"/><circle cx="12" cy="15" r="1" fill="currentColor" stroke="none"/></svg>`,
+  R:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/><path d="M12 9.5 14.5 12 12 14.5 9.5 12z"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></svg>`,
+  B:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 7.5 16.5 12 12 16.5 7.5 12z"/><path d="M7.5 12H5M19 12h-2.5"/><rect x="1.8" y="9.6" width="3.2" height="4.8"/><rect x="19" y="9.6" width="3.2" height="4.8"/><path d="M12 7.5V4.5"/></svg>`,
+  G:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3.5 19 6.5v6c0 4-3 6.7-7 8-4-1.3-7-4-7-8v-6z"/><path d="M5 10.5h14M8 14.5h8"/></svg>`,
+  S:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M9.8 9.5 8 6.5M14.2 9.5 16 6.5M7.5 13.5h-4M16.5 13.5h4M8.8 16.8l-3 2.6M15.2 16.8l3 2.6"/></svg>`,
+  P:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="6.5" y="9" width="11" height="9" rx="2"/><circle cx="9.8" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="14.2" cy="13" r="1" fill="currentColor" stroke="none"/><path d="M12 9V6"/><circle cx="12" cy="5" r="1.2"/></svg>`,
+};
+/* 陣営カラー */
+const FCOLOR={botnet:"#7dff4d", corp:"#9fd0ff", state:"#ff5a3c", hacker:"#c04dff"};
+function applyFactionColor(fid){
+  const c=FCOLOR[fid]||"#ff2d95";
+  document.body.style.setProperty("--efg",c);
+  document.body.style.setProperty("--efg-glow",c+"40");
+}
+
+/* ---------- 初回コンテキストヒント(1回だけ、タップで閉じる) ---------- */
+const HINTS={
+  offline:{t:"OFFLINE — 回線切断",b:`自分の駒が<b>CEOとの隣接チェーン</b>から切れて<b>OFFLINE</b>になった。<br>
+    オフラインの駒は<b>走れない・成れない</b>。回線(シアンの線)を繋ぎ直すか、SAT(衛星)の同行・同列中継でオンラインに戻せる。`},
+  tap:{t:"TAPPED — 敵のハッカー",b:`敵<b>HCK</b>の隣接マスに入った駒は<b>タップ=強制オフライン</b>にされる。<br>
+    <b>F/W(金)</b>の隣にいる味方はタップから防護される。敵HCK自体を倒すか、F/Wの傘の下で戦え。`},
+  blackout:{t:"BLACKOUT予告",b:`赤いカウントのマスは、数字が0になると<b>サーバーダウン=永久封鎖</b>。<br>
+    その瞬間に乗っていた駒は<b>消滅</b>する(CEOなら即敗北)。カウントは完全に公開情報——逃がすか、敵を追い込むかはあなた次第。`},
+  rank:{t:"★RANK UP — 捕獲昇格",b:`敵を<b>2体乗っ取った駒</b>は★ランクアップ。<br>
+    AI=切断無効 / SAT=斜めにも中継 / HCK=タップ範囲2 / F/W=防護範囲2 / bot=斜め前にも進める。成りとは別枠。取られるとリセット。`},
+  eddos:{t:"敵DDoS — 反撃",b:`ライバルハッカーは<b>こちらの最高価値の駒</b>へDDoSを撃ってくる(計2回)。<br>
+    撃たれた駒は2手停止。大駒を前に出すタイミングに注意。`},
+};
+let hintQueue=[], hintOpen=false;
+function hintSeen(id){ try{return !!localStorage.getItem("cs.hint."+id);}catch(e){return true;} }
+function showHint(id){
+  if(hintSeen(id)) return;
+  try{localStorage.setItem("cs.hint."+id,"1");}catch(e){}
+  hintQueue.push(id);
+  if(!hintOpen) nextHint();
+}
+function nextHint(){
+  const id=hintQueue.shift();
+  if(!id){hintOpen=false; $("#hint-modal").classList.remove("on"); return;}
+  hintOpen=true;
+  $("#hint-title").textContent=HINTS[id].t;
+  $("#hint-body").innerHTML=HINTS[id].b;
+  $("#hint-modal").classList.add("on");
+}
+function checkStateHints(){
+  if(!bt||bt.over) return;
+  const nets=computeNets(bt.board);
+  for(let i=0;i<25;i++){
+    const p=bt.board[i];
+    if(!p||p.s!==0||p.t==="K") continue;
+    if(nets.tapped[0].has(i)){ showHint("tap"); }
+    else if(!nets.on[0].has(i)&&!(p.t==="R"&&rk(p))){ showHint("offline"); }
+  }
+}
+
 const UPGRADES=[
   {id:"bot",    ic:"▣", nm:"増援BOT",       ds:"各局の開始時、手駒にbot+1(重複可)", stack:true},
   {id:"awaken", ic:"◈", nm:"AI覚醒",        ds:"AIコア(飛)がAGI(竜)状態で開始", stack:false},
@@ -41,6 +98,7 @@ function startBattle(){
       boScript:makeBoScript(run.seed,run.stage), boPtr:0,
       eDdos:fid==="hacker"?2:0, eDdosAt:fid==="hacker"?[4,12]:[]};
   setCtx({down:bt.down, pending:bt.pending, faction:fid, orbit:has("orbit")});
+  applyFactionColor(fid);
   run.ddos=cnt("ddos")-run.ddosSpent;
   sel=null; targets=[]; ddosArm=false;
   banner(`STAGE ${run.stage+1} :: ${F.tgt}`, `${F.nm} — ${F.rule}`);
@@ -103,6 +161,7 @@ function tickBlackout(){
       if(p&&p.t==="K") continue;
       bt.pending.set(cell,4);
       log(`<span class="y">⚠ BLACKOUT予告</span> ${cellName(cell)}: 4手後にサーバーダウン`);
+      showHint("blackout");
       break;
     }
   }
@@ -115,6 +174,7 @@ function checkRankUp(i){
   if(!pc||pc.t==="K"||!rk(pc)||pc.rkLogged) return;
   pc.rkLogged=true; sRank();
   log(`<span class="y">★RANK UP</span>: ${pc.s===0?"自":"敵"}${PDEF[pc.t].g} — 能力強化`);
+  if(pc.s===0) showHint("rank");
 }
 
 /* ---------- render ---------- */
@@ -136,7 +196,7 @@ function drawNet(nets){
   let out="";
   const ctr=i=>[(i%N+0.5)*20,(((i/N)|0)+0.5)*20];
   for(const s of [0,1]){
-    const col=s===0?"#19e3ff":"#ff2d95", op=s===0?0.45:0.28;
+    const col=s===0?"#19e3ff":(FCOLOR[bt.faction]||"#ff2d95"), op=s===0?0.45:0.28;
     const list=[...nets.on[s]];
     for(let a=0;a<list.length;a++)for(let b=a+1;b<list.length;b++){
       const i=list[a], j=list[b];
@@ -185,11 +245,11 @@ function render(){
       const offline=pc.t!=="K"&&!nets.on[pc.s].has(i)&&!(pc.t==="R"&&rk(pc));
       const d=document.createElement("div");
       d.className=`pc s${pc.s}${pc.p?" promo":""}${pc.frozen>0?" frozen":""}${offline?" offline":""}`;
-      let sub="";
+      let sub=`<span class="g2">${pc.p?PDEF[pc.t].pg:PDEF[pc.t].g}</span>`;
       if(pc.frozen>0) sub=`<span class="lv">STUN ${pc.frozen}</span>`;
       else if(offline) sub=`<span class="lv">OFFLINE</span>`;
       d.innerHTML=(rk(pc)&&pc.t!=="K"?`<span class="rk">★</span>`:"")+
-        `<span class="g">${pc.p?PDEF[pc.t].pg:PDEF[pc.t].g}</span>`+sub;
+        `<span class="ic">${ICONS[pc.t]}</span>`+sub;
       cell.appendChild(d);
     }
   }
@@ -288,6 +348,7 @@ function enemyTurn(){
     if(tgt>=0){
       bt.board[tgt].frozen=2; bt.eDdos--; sDdos();
       log(`<span class="m">⚡敵DDoS</span>: 自${PDEF[bt.board[tgt].t].g}が2手停止 [COUNTER ATTACK]`);
+      showHint("eddos");
     }
   }
   const mv=legalMoves(bt.board,bt.hands,1);
@@ -320,6 +381,7 @@ function enemyTurn(){
   const pl=legalMoves(bt.board,bt.hands,0);
   if(pl.length===0){ runOver(false); return; }
   if(inCheck(bt.board,bt.hands,0)) log(`<span class="m">⚠ WARNING: CEOが攻撃圏内 (王手)</span>`);
+  checkStateHints();
 }
 
 // render()がclassNameをリセットするため、演出は状態(bt.fx)経由でrenderに反映する
@@ -413,6 +475,7 @@ function runOver(win){
   $("#bt-home").addEventListener("click",()=>{
     $("#end-modal").classList.remove("on");
     $("#game").classList.remove("on"); $("#title").classList.add("on");
+    renderRouteCard(); startNetBg();
   });
 }
 function banner(txt,sub){
@@ -440,4 +503,21 @@ function newRun(mode){
   log(`<span class="c">CYBER SHOGI :: FACTION WARS</span> [${mode.toUpperCase()}]`);
   log(`侵入経路: <span class="y">${run.lineup.map(f=>FACTIONS[f].nm).join(" → ")}</span>`);
   startBattle();
+}
+
+/* ---------- タイトル: 本日の経路カード ---------- */
+function dailySeed(){
+  const d=new Date();
+  return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
+}
+function renderRouteCard(){
+  const seed=dailySeed(), lineup=makeLineup(seed);
+  let best=null;
+  try{best=JSON.parse(localStorage.getItem("cs.daily."+seed)||"null");}catch(e){}
+  const route=lineup.map(f=>
+    `<span class="dot" style="background:${FCOLOR[f]}"></span>${FACTIONS[f].nm}`).join(" → ");
+  $("#route-card").innerHTML=
+    `<div class="rc-t">TODAY'S ROUTE — DAILY#${seed}</div>`+
+    `<div class="rc-route">${route}</div>`+
+    `<div class="rc-best">${best?`本日ベスト: ${best.score} [${best.rank}]${best.win?" 全制圧":""}`:"未侵入 — 全員同条件のスコアアタック"}</div>`;
 }

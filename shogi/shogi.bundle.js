@@ -384,6 +384,12 @@ g.Engine={
 /* ---------- SFX (WebAudio 合成。v4aで music.js に統合予定) ---------- */
 let AC=null, muted=false;
 function setMuted(v){muted=v;}
+function audioUnlock(){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    AC.resume();
+  }catch(e){}
+}
 function beep(f,d,type="square",g=.05){
   if(muted) return;
   try{
@@ -415,6 +421,63 @@ const $=s=>document.querySelector(s);
 let run=null, bt=null, busy=false;
 let sel=null, targets=[], ddosArm=false;
 
+/* ---------- 駒SVGアイコン(stroke=currentColor) ---------- */
+const ICONS={
+  K:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4.5 17V9l4.5 3.5L12 5.5 15 12.5 19.5 9v8z"/><path d="M4.5 19.5h15"/><circle cx="12" cy="15" r="1" fill="currentColor" stroke="none"/></svg>`,
+  R:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/><path d="M12 9.5 14.5 12 12 14.5 9.5 12z"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></svg>`,
+  B:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 7.5 16.5 12 12 16.5 7.5 12z"/><path d="M7.5 12H5M19 12h-2.5"/><rect x="1.8" y="9.6" width="3.2" height="4.8"/><rect x="19" y="9.6" width="3.2" height="4.8"/><path d="M12 7.5V4.5"/></svg>`,
+  G:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3.5 19 6.5v6c0 4-3 6.7-7 8-4-1.3-7-4-7-8v-6z"/><path d="M5 10.5h14M8 14.5h8"/></svg>`,
+  S:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M9.8 9.5 8 6.5M14.2 9.5 16 6.5M7.5 13.5h-4M16.5 13.5h4M8.8 16.8l-3 2.6M15.2 16.8l3 2.6"/></svg>`,
+  P:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="6.5" y="9" width="11" height="9" rx="2"/><circle cx="9.8" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="14.2" cy="13" r="1" fill="currentColor" stroke="none"/><path d="M12 9V6"/><circle cx="12" cy="5" r="1.2"/></svg>`,
+};
+/* 陣営カラー */
+const FCOLOR={botnet:"#7dff4d", corp:"#9fd0ff", state:"#ff5a3c", hacker:"#c04dff"};
+function applyFactionColor(fid){
+  const c=FCOLOR[fid]||"#ff2d95";
+  document.body.style.setProperty("--efg",c);
+  document.body.style.setProperty("--efg-glow",c+"40");
+}
+
+/* ---------- 初回コンテキストヒント(1回だけ、タップで閉じる) ---------- */
+const HINTS={
+  offline:{t:"OFFLINE — 回線切断",b:`自分の駒が<b>CEOとの隣接チェーン</b>から切れて<b>OFFLINE</b>になった。<br>
+    オフラインの駒は<b>走れない・成れない</b>。回線(シアンの線)を繋ぎ直すか、SAT(衛星)の同行・同列中継でオンラインに戻せる。`},
+  tap:{t:"TAPPED — 敵のハッカー",b:`敵<b>HCK</b>の隣接マスに入った駒は<b>タップ=強制オフライン</b>にされる。<br>
+    <b>F/W(金)</b>の隣にいる味方はタップから防護される。敵HCK自体を倒すか、F/Wの傘の下で戦え。`},
+  blackout:{t:"BLACKOUT予告",b:`赤いカウントのマスは、数字が0になると<b>サーバーダウン=永久封鎖</b>。<br>
+    その瞬間に乗っていた駒は<b>消滅</b>する(CEOなら即敗北)。カウントは完全に公開情報——逃がすか、敵を追い込むかはあなた次第。`},
+  rank:{t:"★RANK UP — 捕獲昇格",b:`敵を<b>2体乗っ取った駒</b>は★ランクアップ。<br>
+    AI=切断無効 / SAT=斜めにも中継 / HCK=タップ範囲2 / F/W=防護範囲2 / bot=斜め前にも進める。成りとは別枠。取られるとリセット。`},
+  eddos:{t:"敵DDoS — 反撃",b:`ライバルハッカーは<b>こちらの最高価値の駒</b>へDDoSを撃ってくる(計2回)。<br>
+    撃たれた駒は2手停止。大駒を前に出すタイミングに注意。`},
+};
+let hintQueue=[], hintOpen=false;
+function hintSeen(id){ try{return !!localStorage.getItem("cs.hint."+id);}catch(e){return true;} }
+function showHint(id){
+  if(hintSeen(id)) return;
+  try{localStorage.setItem("cs.hint."+id,"1");}catch(e){}
+  hintQueue.push(id);
+  if(!hintOpen) nextHint();
+}
+function nextHint(){
+  const id=hintQueue.shift();
+  if(!id){hintOpen=false; $("#hint-modal").classList.remove("on"); return;}
+  hintOpen=true;
+  $("#hint-title").textContent=HINTS[id].t;
+  $("#hint-body").innerHTML=HINTS[id].b;
+  $("#hint-modal").classList.add("on");
+}
+function checkStateHints(){
+  if(!bt||bt.over) return;
+  const nets=computeNets(bt.board);
+  for(let i=0;i<25;i++){
+    const p=bt.board[i];
+    if(!p||p.s!==0||p.t==="K") continue;
+    if(nets.tapped[0].has(i)){ showHint("tap"); }
+    else if(!nets.on[0].has(i)&&!(p.t==="R"&&rk(p))){ showHint("offline"); }
+  }
+}
+
 const UPGRADES=[
   {id:"bot",    ic:"▣", nm:"増援BOT",       ds:"各局の開始時、手駒にbot+1(重複可)", stack:true},
   {id:"awaken", ic:"◈", nm:"AI覚醒",        ds:"AIコア(飛)がAGI(竜)状態で開始", stack:false},
@@ -445,6 +508,7 @@ function startBattle(){
       boScript:makeBoScript(run.seed,run.stage), boPtr:0,
       eDdos:fid==="hacker"?2:0, eDdosAt:fid==="hacker"?[4,12]:[]};
   setCtx({down:bt.down, pending:bt.pending, faction:fid, orbit:has("orbit")});
+  applyFactionColor(fid);
   run.ddos=cnt("ddos")-run.ddosSpent;
   sel=null; targets=[]; ddosArm=false;
   banner(`STAGE ${run.stage+1} :: ${F.tgt}`, `${F.nm} — ${F.rule}`);
@@ -507,6 +571,7 @@ function tickBlackout(){
       if(p&&p.t==="K") continue;
       bt.pending.set(cell,4);
       log(`<span class="y">⚠ BLACKOUT予告</span> ${cellName(cell)}: 4手後にサーバーダウン`);
+      showHint("blackout");
       break;
     }
   }
@@ -519,6 +584,7 @@ function checkRankUp(i){
   if(!pc||pc.t==="K"||!rk(pc)||pc.rkLogged) return;
   pc.rkLogged=true; sRank();
   log(`<span class="y">★RANK UP</span>: ${pc.s===0?"自":"敵"}${PDEF[pc.t].g} — 能力強化`);
+  if(pc.s===0) showHint("rank");
 }
 
 /* ---------- render ---------- */
@@ -540,7 +606,7 @@ function drawNet(nets){
   let out="";
   const ctr=i=>[(i%N+0.5)*20,(((i/N)|0)+0.5)*20];
   for(const s of [0,1]){
-    const col=s===0?"#19e3ff":"#ff2d95", op=s===0?0.45:0.28;
+    const col=s===0?"#19e3ff":(FCOLOR[bt.faction]||"#ff2d95"), op=s===0?0.45:0.28;
     const list=[...nets.on[s]];
     for(let a=0;a<list.length;a++)for(let b=a+1;b<list.length;b++){
       const i=list[a], j=list[b];
@@ -589,11 +655,11 @@ function render(){
       const offline=pc.t!=="K"&&!nets.on[pc.s].has(i)&&!(pc.t==="R"&&rk(pc));
       const d=document.createElement("div");
       d.className=`pc s${pc.s}${pc.p?" promo":""}${pc.frozen>0?" frozen":""}${offline?" offline":""}`;
-      let sub="";
+      let sub=`<span class="g2">${pc.p?PDEF[pc.t].pg:PDEF[pc.t].g}</span>`;
       if(pc.frozen>0) sub=`<span class="lv">STUN ${pc.frozen}</span>`;
       else if(offline) sub=`<span class="lv">OFFLINE</span>`;
       d.innerHTML=(rk(pc)&&pc.t!=="K"?`<span class="rk">★</span>`:"")+
-        `<span class="g">${pc.p?PDEF[pc.t].pg:PDEF[pc.t].g}</span>`+sub;
+        `<span class="ic">${ICONS[pc.t]}</span>`+sub;
       cell.appendChild(d);
     }
   }
@@ -692,6 +758,7 @@ function enemyTurn(){
     if(tgt>=0){
       bt.board[tgt].frozen=2; bt.eDdos--; sDdos();
       log(`<span class="m">⚡敵DDoS</span>: 自${PDEF[bt.board[tgt].t].g}が2手停止 [COUNTER ATTACK]`);
+      showHint("eddos");
     }
   }
   const mv=legalMoves(bt.board,bt.hands,1);
@@ -724,6 +791,7 @@ function enemyTurn(){
   const pl=legalMoves(bt.board,bt.hands,0);
   if(pl.length===0){ runOver(false); return; }
   if(inCheck(bt.board,bt.hands,0)) log(`<span class="m">⚠ WARNING: CEOが攻撃圏内 (王手)</span>`);
+  checkStateHints();
 }
 
 // render()がclassNameをリセットするため、演出は状態(bt.fx)経由でrenderに反映する
@@ -817,6 +885,7 @@ function runOver(win){
   $("#bt-home").addEventListener("click",()=>{
     $("#end-modal").classList.remove("on");
     $("#game").classList.remove("on"); $("#title").classList.add("on");
+    renderRouteCard(); startNetBg();
   });
 }
 function banner(txt,sub){
@@ -846,8 +915,150 @@ function newRun(mode){
   startBattle();
 }
 
+/* ---------- タイトル: 本日の経路カード ---------- */
+function dailySeed(){
+  const d=new Date();
+  return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
+}
+function renderRouteCard(){
+  const seed=dailySeed(), lineup=makeLineup(seed);
+  let best=null;
+  try{best=JSON.parse(localStorage.getItem("cs.daily."+seed)||"null");}catch(e){}
+  const route=lineup.map(f=>
+    `<span class="dot" style="background:${FCOLOR[f]}"></span>${FACTIONS[f].nm}`).join(" → ");
+  $("#route-card").innerHTML=
+    `<div class="rc-t">TODAY'S ROUTE — DAILY#${seed}</div>`+
+    `<div class="rc-route">${route}</div>`+
+    `<div class="rc-best">${best?`本日ベスト: ${best.score} [${best.rank}]${best.win?" 全制圧":""}`:"未侵入 — 全員同条件のスコアアタック"}</div>`;
+}
+
 /* ===== main.js ===== */
-/* ---------- 起動・コントロール配線 ---------- */
+/* ---------- 起動(音声アンロック)→タイトル→配線 ---------- */
+
+/* boot: ブラウザの自動再生制限対策。最初のタップで AudioContext を解錠 */
+$("#boot").addEventListener("click",()=>{
+  audioUnlock();
+  $("#boot").classList.remove("on");
+  $("#title").classList.add("on");
+  renderRouteCard();
+  startNetBg();
+  // music.js 導入後はここでタイトル曲を開始する
+});
+
+/* ---------- タイトル背景: 生成ネットワーク ---------- */
+let netBgRun=false;
+function startNetBg(){
+  if(netBgRun) return;
+  netBgRun=true;
+  const cv=$("#net-bg"), ctx=cv.getContext("2d");
+  const NODES=34, nodes=[];
+  for(let i=0;i<NODES;i++) nodes.push({
+    x:Math.random(), y:Math.random(),
+    vx:(Math.random()-.5)*0.00035, vy:(Math.random()-.5)*0.00035,
+    m:Math.random()<0.18,            // 一部はマゼンタ(敵ノード)
+  });
+  let pulse=null; // {a,b,t} リンク上を走るパケット
+  function frame(){
+    if(!$("#title").classList.contains("on")){ netBgRun=false; return; }
+    const W=cv.clientWidth, H=cv.clientHeight;
+    if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
+    ctx.clearRect(0,0,W,H);
+    for(const n of nodes){
+      n.x+=n.vx; n.y+=n.vy;
+      if(n.x<0||n.x>1) n.vx*=-1;
+      if(n.y<0||n.y>1) n.vy*=-1;
+    }
+    const R=0.17;
+    for(let i=0;i<NODES;i++)for(let j=i+1;j<NODES;j++){
+      const a=nodes[i], b=nodes[j];
+      const dx=a.x-b.x, dy=a.y-b.y, d=Math.hypot(dx,dy);
+      if(d<R){
+        const al=(1-d/R)*0.3;
+        ctx.strokeStyle=(a.m&&b.m)?`rgba(255,45,149,${al})`:`rgba(25,227,255,${al})`;
+        ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(a.x*W,a.y*H); ctx.lineTo(b.x*W,b.y*H); ctx.stroke();
+      }
+    }
+    for(const n of nodes){
+      ctx.fillStyle=n.m?"rgba(255,45,149,.8)":"rgba(25,227,255,.8)";
+      ctx.beginPath(); ctx.arc(n.x*W,n.y*H,1.6,0,7); ctx.fill();
+    }
+    if(!pulse&&Math.random()<0.02){
+      const i=(Math.random()*NODES)|0; let j=-1,bd=9;
+      for(let k=0;k<NODES;k++){ if(k===i)continue;
+        const d=Math.hypot(nodes[i].x-nodes[k].x,nodes[i].y-nodes[k].y);
+        if(d<R&&d<bd){bd=d;j=k;} }
+      if(j>=0) pulse={a:i,b:j,t:0};
+    }
+    if(pulse){
+      pulse.t+=0.04;
+      if(pulse.t>=1) pulse=null;
+      else{
+        const a=nodes[pulse.a], b=nodes[pulse.b];
+        const x=a.x+(b.x-a.x)*pulse.t, y=a.y+(b.y-a.y)*pulse.t;
+        ctx.fillStyle="rgba(255,210,62,.9)";
+        ctx.beginPath(); ctx.arc(x*cv.width,y*cv.height,2.4,0,7); ctx.fill();
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- HOW TO PLAY(カード5枚) ---------- */
+const HOWTO=[
+ {t:"① 目的と流れ", b:`シードが決めた<b>3つの敵陣営</b>に連続侵入し、各局で敵<b>CEO(玉)を詰ませる</b>。
+   勝つたびにサイバー強化を1つドラフトして次へ。3連勝で全システム掌握。<br><br>
+   奪った敵駒は<b>乗っ取り済=持ち駒</b>となり、自軍として盤に投入できる(将棋の持ち駒ルール)。<br>
+   1局2〜5分、1ラン10分前後。<b>DAILY</b>は日替わり固定シードの全員同条件スコアアタック。`},
+ {t:"② 駒(動きは5五将棋のまま)", b:`<table>
+   <tr><td>CEO</td><td>玉 — 全方向1マス。詰まされたら負け</td></tr>
+   <tr><td>AI</td><td>飛車 — 縦横に走る(成=AGI)。切断に最も弱い</td></tr>
+   <tr><td>SAT</td><td>角 — 斜めに走る(成=SAT+)。同行・同列を無線中継</td></tr>
+   <tr><td>F/W</td><td>金 — 自身と隣接味方をタップから防護</td></tr>
+   <tr><td>HCK</td><td>銀 — 隣接する敵をタップ(強制オフライン化)</td></tr>
+   <tr><td>bot</td><td>歩 — 最安の配線。抜かれると回線が崩れる急所</td></tr></table>
+   二歩・最奥段bot打ち禁止。最奥段に入ると自動で成る(オンライン時のみ)。`},
+ {t:"③ 回線 — このゲームの核", b:`<div class="ht-svg"><svg viewBox="0 0 200 110" fill="none">
+   <line x1="40" y1="90" x2="70" y2="60" stroke="#19e3ff" stroke-width="2"/>
+   <line x1="70" y1="60" x2="110" y2="60" stroke="#19e3ff" stroke-width="2"/>
+   <circle cx="40" cy="90" r="11" stroke="#19e3ff" stroke-width="2"/><text x="40" y="94" fill="#19e3ff" font-size="9" text-anchor="middle">CEO</text>
+   <circle cx="70" cy="60" r="11" stroke="#19e3ff" stroke-width="2"/><text x="70" y="64" fill="#19e3ff" font-size="9" text-anchor="middle">bot</text>
+   <circle cx="110" cy="60" r="11" stroke="#19e3ff" stroke-width="2"/><text x="110" y="64" fill="#19e3ff" font-size="9" text-anchor="middle">AI</text>
+   <circle cx="165" cy="30" r="11" stroke="#5a7aa0" stroke-width="2" stroke-dasharray="3 3"/><text x="165" y="34" fill="#5a7aa0" font-size="8" text-anchor="middle">SAT</text>
+   <text x="165" y="52" fill="#ff4444" font-size="8" text-anchor="middle">OFFLINE</text></svg></div>
+   自CEOから<b>味方の隣接チェーン(8方向)</b>で繋がる駒だけ<b>オンライン</b>。
+   切断された駒は<b>走れない・成れない</b>。持ち駒は<b>自回線の隣接マス</b>にしか打てない。<br>
+   → 勝ち筋は「駒得」より<b>「敵回線の切断」</b>。敵botを1枚抜くと、その先の大駒が丸ごと沈黙する。`},
+ {t:"④ 敵陣営と昇格★", b:`陣営ごとに編成+固有ルールが1つ変わり、正解の戦略が入れ替わる:<table>
+   <tr><td>ボットネット</td><td>bot群。成ると増殖 → 速攻で潰せ</td></tr>
+   <tr><td>メガコーポ</td><td>F/W×2・防護範囲2 → タップ不通。駒得で正面突破</td></tr>
+   <tr><td>国家中枢</td><td>SAT常時中継+AGI → 切断無効。SAT自体を奪え</td></tr>
+   <tr><td>ライバルハッカー</td><td>HCK×2+DDoS反撃 → F/Wで大駒を守れ</td></tr></table>
+   敵を<b>2体乗っ取った駒は★ランクアップ</b>(AI=切断無効/SAT=斜め中継/HCK=タップ範囲2/F/W=防護範囲2/bot=斜め前)。`},
+ {t:"⑤ BLACKOUTとDDoS", b:`<b>BLACKOUT:</b> 赤いカウントのマスは0で<b>サーバーダウン=永久封鎖</b>。
+   乗っていた駒は消滅(CEOなら即敗北)。完全公開の決定論——長期戦は物理的に不可能。<br><br>
+   <b>DDoS(強化で入手):</b> 手番を消費せず敵1体を2手停止。
+   「DDoS込みの詰み手順」が組める。全敵駒を止めるとSYSTEM LOCKDOWN勝ち。<br><br>
+   スコア=乗っ取り価値+ステージボーナス+<b>速度ボーナス(手数が少ないほど高い)</b>。ランクS〜D。`},
+];
+let howtoPage=0;
+function showHowto(p){
+  howtoPage=Math.max(0,Math.min(HOWTO.length-1,p));
+  $("#howto-title").textContent=HOWTO[howtoPage].t;
+  $("#howto-body").innerHTML=HOWTO[howtoPage].b;
+  $("#howto-pos").textContent=(howtoPage+1)+" / "+HOWTO.length;
+  $("#howto-prev").disabled=howtoPage===0;
+  $("#howto-next").disabled=howtoPage===HOWTO.length-1;
+  $("#howto-modal").classList.add("on");
+}
+$("#bt-howto").addEventListener("click",()=>showHowto(0));
+$("#howto-prev").addEventListener("click",()=>showHowto(howtoPage-1));
+$("#howto-next").addEventListener("click",()=>showHowto(howtoPage+1));
+$("#howto-close").addEventListener("click",()=>$("#howto-modal").classList.remove("on"));
+$("#hint-modal").addEventListener("click",nextHint);
+
+/* ---------- メニュー・対局コントロール ---------- */
 $("#bt-free").addEventListener("click",()=>newRun("free"));
 $("#bt-daily").addEventListener("click",()=>newRun("daily"));
 $("#bt-ddos").addEventListener("click",()=>{
@@ -861,13 +1072,18 @@ $("#bt-kifu").addEventListener("click",()=>{
   $("#kifu-modal").classList.add("on");
 });
 $("#bt-kifu-close").addEventListener("click",()=>$("#kifu-modal").classList.remove("on"));
-$("#bt-mute").addEventListener("click",e=>{
+function toggleMute(){
   muted=!muted; setMuted(muted);
-  e.target.textContent=muted?"SOUND OFF":"SOUND ON";
-});
+  const lbl=muted?"SOUND OFF":"SOUND ON";
+  $("#bt-mute").textContent=lbl;
+  $("#bt-mute-title").textContent=lbl;
+}
+$("#bt-mute").addEventListener("click",toggleMute);
+$("#bt-mute-title").addEventListener("click",e=>{e.stopPropagation(); toggleMute();});
 $("#bt-quit").addEventListener("click",()=>{
   if(!bt.over&&!confirm("侵入を中断してタイトルへ戻る?")) return;
   $("#game").classList.remove("on"); $("#title").classList.add("on");
+  renderRouteCard(); startNetBg();
 });
 
 buildBoard();

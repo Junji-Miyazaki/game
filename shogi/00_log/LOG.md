@@ -43,3 +43,19 @@
 - v2: 回線ルール・ネットワーク機能(SAT中継/HCKタップ/F/W防護)・予告ブラックアウト(1449310)
 - v3: 敵ファクション4種・捕獲昇格★・シード分離(954564d)
 - 検証方式: エンジンは機械的テスト優先(CLAUDE.md)。v1/v2はOpus第三者レビュー実施、いずれもCRITICAL 0。
+
+## 2026-10-25 v4a: 起動画面・新タイトル・駒SVG・陣営カラー・HOW TO PLAY・初回ヒント(Fable リーダー、直接実装)
+- **実施**: ①起動画面 TAP TO CONNECT(自動再生制限対策の音声アンロック。music.js導入時はここで曲開始)
+  ②新タイトル: canvas生成ネットワーク背景(ノード+リンク+パケットパルス)、本日の経路カード
+  (DAILY#シード・陣営3つを色ドット付きで表示・本日ベスト) ③駒をSVGベクターアイコン化
+  (CEO=王冠/AI=コア/SAT=衛星/F/W=盾/HCK=スパイダー/bot=ロボ、stroke=currentColor で陣営色継承)
+  ④陣営カラー(botnet=毒緑/corp=冷青/state=赤橙/hacker=紫、bodyのCSS変数--efgで敵駒・回線・バナーに適用)
+  ⑤HOW TO PLAY カード5枚(目的/駒/回線+SVG図解/陣営と★/BLACKOUTとDDoS)
+  ⑥初回コンテキストヒント5種(offline/tap/blackout/rank/敵DDoS、localStorageで1回だけ、タップで閉じる)。
+- **デザイン方針**: 情報UI=現代(カード・余白)、世界表現=レトロフューチャー(グロー・グリッチ)のレイヤー分離。
+- **公開**: 親階層 game/index.html のポータルに CYBER_SHOGI を登録、GitHub(Junji-Miyazaki/game)へpush
+  (ユーザー指示)。公開URL: https://junji-miyazaki.github.io/game/shogi/
+- **検証**: エンジンテスト23/23、ブラウザで boot→title→経路カード→HOWTO全頁→DAILY開始→陣営色#ff5a3c
+  適用→アイコン12個描画を確認、コンソールエラー0。
+- **未確認**: 音楽候補の聴感(07_lab試聴ページ、ユーザー待ち)。ヒントの発火はコード経路のみ確認。
+- **次**: ユーザーの曲選定→music.js本実装。ランキングPhase B(共有テキスト)/C(Worker)。

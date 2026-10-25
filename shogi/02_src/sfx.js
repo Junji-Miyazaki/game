@@ -1,6 +1,12 @@
 /* ---------- SFX (WebAudio 合成。v4aで music.js に統合予定) ---------- */
 let AC=null, muted=false;
 function setMuted(v){muted=v;}
+function audioUnlock(){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    AC.resume();
+  }catch(e){}
+}
 function beep(f,d,type="square",g=.05){
   if(muted) return;
   try{

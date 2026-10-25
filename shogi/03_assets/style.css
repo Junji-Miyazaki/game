@@ -179,3 +179,66 @@ body::before{
   font-size:clamp(12px,3vw,15px); color:var(--gold); letter-spacing:.1em;
   text-shadow:0 0 10px rgba(255,210,62,.6);
 }
+
+/* ========== v4a: boot / title v2 / howto / hints / faction colors / icons ========== */
+.logo{
+  font-size:clamp(30px,8vw,46px); letter-spacing:.12em; color:var(--cyan);
+  text-shadow:0 0 14px rgba(25,227,255,.65), 0 0 40px rgba(25,227,255,.25);
+  text-align:center;
+}
+.logo span{color:var(--magenta); text-shadow:0 0 14px rgba(255,45,149,.7);}
+.sub{margin:6px 0 26px; color:var(--dim); letter-spacing:.3em; font-size:12px; text-align:center;}
+
+#boot{min-height:92vh; display:none; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;}
+#boot.on{display:flex;}
+#boot-tap{
+  margin-top:40px; font-size:15px; letter-spacing:.3em; color:var(--gold);
+  text-shadow:0 0 10px rgba(255,210,62,.6); animation:pulse 1.6s infinite;
+}
+
+#title{position:relative; min-height:92vh;}
+#net-bg{position:absolute; inset:0; width:100%; height:100%; z-index:0; opacity:.55;}
+#title-inner{position:relative; z-index:1; padding:40px 8px 24px; text-align:center;}
+.menu-btn.sm{font-size:13px; padding:10px 8px; color:#9dc3ee; border-color:var(--dim); text-shadow:none;}
+.menu-btn.sm:hover{color:var(--cyan); border-color:var(--cyan);}
+#route-card{
+  margin:22px auto 0; width:min(360px,92%); border:1px solid var(--grid); border-radius:6px;
+  background:rgba(10,17,32,.85); padding:12px 14px; text-align:left; font-size:12px; line-height:1.9;
+}
+#route-card .rc-t{color:var(--magenta); letter-spacing:.15em; font-size:11px;}
+#route-card .rc-route{color:#cfe8ff; font-size:13px;}
+#route-card .dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin:0 6px 0 2px;}
+#route-card .rc-best{color:var(--gold); font-size:11px;}
+#title-foot{margin-top:26px; color:var(--dim); font-size:11px; letter-spacing:.1em;}
+#bt-mute-title{cursor:pointer; border-bottom:1px dashed var(--dim);}
+
+#howto-card, #hint-card{
+  width:min(94vw,480px); border:1px solid var(--grid); border-radius:6px;
+  background:var(--panel); padding:20px 22px;
+}
+#howto-card h2, #hint-card h2{text-align:left; font-size:16px; margin-bottom:10px;}
+#howto-body, #hint-body{color:#9dc3ee; font-size:12.5px; line-height:1.9; min-height:210px;}
+#howto-body b, #hint-body b{color:var(--gold);}
+#howto-body .ht-svg{display:flex; justify-content:center; margin:10px 0;}
+#howto-body svg{width:min(70%,230px);}
+#howto-body table{width:100%; border-collapse:collapse; font-size:11.5px; margin:8px 0;}
+#howto-body td{border-bottom:1px solid #12305a; padding:3px 4px; color:#8fb4e0;}
+#howto-body td:first-child{color:var(--cyan);}
+#howto-nav{display:flex; align-items:center; gap:10px; margin-top:14px;}
+#howto-nav .cbtn{flex:0 0 auto; min-width:90px;}
+#howto-pos{flex:1; text-align:center; color:var(--dim); font-size:11px; letter-spacing:.2em;}
+#hint-modal{cursor:pointer;}
+#hint-card .tapcont{margin-top:14px; text-align:center; color:var(--dim); font-size:11px; letter-spacing:.25em; animation:pulse 1.6s infinite;}
+
+/* 駒SVGアイコン */
+.pc .ic{display:block; line-height:0;}
+.pc .ic svg{width:min(34px,7.2vw); height:auto; display:block;}
+.pc .g2{font-size:clamp(8px,1.9vw,10px); letter-spacing:.05em; margin-top:1px; opacity:.9;}
+
+/* 陣営カラー(bodyのCSS変数で注入。既定はマゼンタ) */
+body{--efg:#ff2d95; --efg-glow:rgba(255,45,149,.25);}
+.pc.s1{color:var(--efg); border-color:var(--efg); box-shadow:0 0 8px var(--efg-glow);
+  background:linear-gradient(0deg,var(--efg-glow),rgba(0,0,0,0));}
+.chip.enemy{color:var(--efg);}
+#hud .stg{color:var(--efg);}
+.stage-banner .bn-main{color:var(--efg); text-shadow:0 0 20px var(--efg-glow);}
