@@ -2952,20 +2952,187 @@ function _musDelay(sc, time, fb, wet) {
 const _musPENT = [0, 2, 4, 7, 9];      // 長調ペンタ
 const _musMINP = [0, 3, 5, 7, 10];     // 短調ペンタ
 
-const _musSCENES = {
-  title: {
+
+// ---- タイトル曲「牧歌から深宇宙へ」（07_lab の案E2を移植）----
+// F リディアン・ドミナント(F G A B C D Eb) / 7/8拍子 2+2+3 / 96 8分音符/分 / 24小節(≒105秒)で一巡。
+// 小節1-3 牧歌（三角+サインの主旋律・パルス裏メロ・三角ベース・シェイカー）→ 小節4から約10秒で低いFのドローン(F1+C2)が昇り、
+// 小節18から約8秒で退き、牧歌(小節20-24)に戻って周回。ドローン中は主旋律アクセントで約-3dBダック、裏メロを間引き、
+// テルミン風グライドが4小節に1回（ドローン中のみ）。奇数周回はフレーズ順を1つずらす。音は全てオリジナル。
+// ボイスは一過性の音楽ボイス('m')として数える（上限14。タイトルの実測最大は9）。
+const _MUS_T_ROOT = 349.23;                 // F4
+const _MUS_T_E = 60 / 96;                   // 8分音符の秒数
+const _MUS_T_BAR = 7;
+const _MUS_T_ACC = [0, 2, 4];               // 2+2+3 の群頭
+const _MUS_T_GRP = [2, 2, 3];
+const _MUS_T_CYCLE = 24;                    // 一周の小節数
+const _MUS_T_IN = 3;                        // ドローンが入る小節（0始まり＝小節4）
+const _MUS_T_OUT = 17;                      // ドローンが退き始める小節（0始まり＝小節18）
+const _MUS_T_FADE_IN = 10, _MUS_T_FADE_OUT = 8;
+const _MUS_T_DRONE = 0.12;                  // ドローンのゲイン（現行タイトルの0.5より大幅に低い）
+const _MUS_T_LEVEL = 1.6;                   // シーン出力ゲイン（音楽バス0.125の手前）。旧タイトル RMS -24.6/peak -14 dBFS に対し新曲 約 -26.6/-14 dBFS（オフライン実測、同一経路）
+const _MUS_T_PLAN = [0, 1, 0, 1, 0, 2];     // 4小節フレーズ型: 0=A 1=B 2=B'（終止）
+const _MUS_T_PH = [
+  [[12, null, 19, null, 18, 19, null], [21, null, 19, 16, 19, null, null], [16, null, 19, null, 22, 21, 19], [18, null, 19, null, 12, null, null]],
+  [[12, 14, 16, null, 19, null, 21], [22, null, 21, 19, 16, null, null], [14, null, 16, null, 19, 21, 22], [19, null, 18, null, 12, null, null]],
+];
+const _MUS_T_CNT = [
+  [null, 4, null, 7, null, 12, null], [null, 9, null, 7, null, 4, 7],
+  [null, 7, null, 9, null, 10, 9], [null, 6, null, 7, null, null, null],
+];
+const _MUS_T_BASS = [[-12, -5, -12], [-12, -2, -5], [-15, -12, -5], [-12, -10, -12]];
+const _MUS_T_THER = [[16, 21], [19, 18], [22, 19], [12, 19]];
+
+// 緩いビブラート: detune を直線ランプで往復（共有LFOを使わないので切断が単純）
+function _musTVib(o, t, dur, cents, rate) {
+  if (!o.detune || dur < 0.35) return;
+  const half = 0.5 / rate; let sign = 1;
+  o.detune.setValueAtTime(0, t + 0.18);
+  for (let x = t + 0.18 + half; x < t + dur - 0.05; x += half) { o.detune.linearRampToValueAtTime(sign * cents, x); sign = -sign; }
+}
+
+// 擬似ステレオのフィードバックディレイ。入力ゲインを返す（出力は sc.out へ）
+function _musTStereoDelay(sc, tl, tr, fb, wet, lpHz) {
+  const ctx = _musS.ctx;
+  const input = ctx.createGain(); input.gain.value = 1;
+  const w = ctx.createGain(); w.gain.value = wet; w.connect(sc.out);
+  sc.nodes.push(input, w);
+  [[tl, -0.7], [tr, 0.7]].forEach(([time, pan]) => {
+    const d = ctx.createDelay(2); d.delayTime.value = time;
+    const f = ctx.createGain(); f.gain.value = fb;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpHz;
+    input.connect(d); d.connect(lp); lp.connect(f); f.connect(d);
+    sc.nodes.push(d, f, lp);
+    if (typeof ctx.createStereoPanner === 'function') {
+      const sp = ctx.createStereoPanner(); sp.pan.value = pan; lp.connect(sp); sp.connect(w); sc.nodes.push(sp);
+    } else lp.connect(w);
+  });
+  return input;
+}
+
+// 音程付きの1音。spec: {t, semi, dur, vel, dest, type|wave, atk, holdFrac, partials, vib}
+function _musTTone(sc, spec) {
+  if (!_musCanVoice('m')) return;
+  const ctx = _musS.ctx; const t = spec.t; const end = t + spec.dur + 0.05;
+  const f = _musHz(_MUS_T_ROOT, spec.semi);
+  const env = ctx.createGain(); const atk = spec.atk || 0.008;
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(spec.vel, t + atk);
+  env.gain.setValueAtTime(spec.vel, t + Math.max(atk, spec.dur * (spec.holdFrac != null ? spec.holdFrac : 0.5)));
+  env.gain.exponentialRampToValueAtTime(0.0001, t + spec.dur);
+  env.connect(spec.dest);
+  const nodes = [env];
+  const mk = (type, freq, g, wave) => {
+    const o = ctx.createOscillator(); o.frequency.value = freq;
+    if (wave) o.setPeriodicWave(wave); else o.type = type;
+    o.start(t); o._musStarted = true; o.stop(end);
+    if (g !== 1) { const gg = ctx.createGain(); gg.gain.value = g; o.connect(gg); gg.connect(env); nodes.push(gg); } else o.connect(env);
+    nodes.push(o); return o;
+  };
+  const pw = spec.wave ? _musPulse() : null;
+  const main = mk(pw ? 'square' : spec.type, f, 1, pw);
+  for (const p of (spec.partials || [])) mk(p.type, f * p.ratio, p.gain, null);
+  if (spec.vib) _musTVib(main, t, spec.dur, 6, 5.2);
+  _musReg('m', nodes, end);
+  sc.log.push({ kind: spec.kind, t, semi: spec.semi, e: spec.e, bar: spec.bar }); if (sc.log.length > 600) sc.log.shift();
+}
+
+function _musTitleScene() {
+  return {
     build(sc) {
-      _musDelay(sc, 0.52, 0.5, 0.55);
-      _musDrone(sc, { osc: [{ type: 'sawtooth', f: 55, det: -6 }, { type: 'sawtooth', f: 55, det: 7 }, { type: 'triangle', f: 110 }],
-        lp: 420, gain: 0.5, lfoRate: 0.045, lfoDepth: 260 });
+      const ctx = _musS.ctx; const now = ctx.currentTime;
+      sc.n = 0; sc.dState = null; sc.thNext = 0; sc.log = []; sc.dlog = [];
+      sc.out = ctx.createGain(); sc.out.gain.value = _MUS_T_LEVEL; sc.out.connect(sc.bus); sc.nodes.push(sc.out);
+      const lp = (type, hzv, to) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = hzv; b.Q.value = 0.5; b.connect(to); sc.nodes.push(b); return b; };
+      sc.leadBus = lp('lowpass', 2600, sc.out);
+      sc.leadBus.connect(_musTStereoDelay(sc, _MUS_T_E, _MUS_T_E * 1.5, 0.3, 0.22, 2400));
+      sc.cntBus = lp('lowpass', 1800, sc.out);
+      sc.bassBus = lp('lowpass', 700, sc.out);
+      sc.thBus = ctx.createGain(); sc.thBus.gain.value = 1; sc.thBus.connect(sc.out); sc.nodes.push(sc.thBus);
+      sc.thBus.connect(_musTStereoDelay(sc, _MUS_T_E * 1.5, _MUS_T_E * 2, 0.35, 0.25, 2600));
+      // ドローン（F1 + C2 + F2）: 無音から始め、ローパスをゆっくり開く。duck でアクセント時に約-3dB
+      sc.duck = ctx.createGain(); sc.duck.gain.value = 1; sc.duck.connect(sc.out);
+      sc.dlp = ctx.createBiquadFilter(); sc.dlp.type = 'lowpass'; sc.dlp.frequency.value = 160; sc.dlp.Q.value = 0.7; sc.dlp.connect(sc.duck);
+      sc.dg = ctx.createGain(); sc.dg.gain.value = 0.0001; sc.dg.connect(sc.dlp);
+      sc.nodes.push(sc.duck, sc.dlp, sc.dg);
+      [['sawtooth', 43.65, -6], ['sawtooth', 43.65, 7], ['sawtooth', 65.41, 4], ['triangle', 87.31, 0]].forEach(([type, f, det]) => {
+        const o = _musOsc(type, f, now, null, det); o.connect(sc.dg); sc.nodes.push(o);
+      });
+      _musLfo(sc, 0.045, 120, sc.dlp.frequency);
     },
     step(t, sc) {
-      const deg = _musPick(_musPENT) + _musPick([12, 24, 24, 36]);
-      _musBell(sc, t, _musHz(110, deg), 3.2, 0.2, 2.76);
-      if (Math.random() < 0.25) _musBell(sc, t + 0.35, _musHz(110, _musPick(_musPENT) + 24), 3, 0.12, 2.76);
-      return _musRand(2.6, 5.5);
+      const E = _MUS_T_E; const n = sc.n++;
+      const e = n % _MUS_T_BAR, bar = Math.floor(n / _MUS_T_BAR), b = bar % 4;
+      const cyc = Math.floor(bar / _MUS_T_CYCLE), bc = bar % _MUS_T_CYCLE;
+      // ドローンの出入り（状態遷移で管理: 遅れても取りこぼさない）
+      if (e === 0) {
+        const want = bc >= _MUS_T_IN && bc < _MUS_T_OUT;
+        if (want && sc.dState !== 'in') {
+          sc.dState = 'in';
+          sc.dg.gain.cancelScheduledValues(t); sc.dg.gain.setValueAtTime(0.0001, t); sc.dg.gain.linearRampToValueAtTime(_MUS_T_DRONE, t + _MUS_T_FADE_IN);
+          sc.dlp.frequency.setValueAtTime(160, t); sc.dlp.frequency.exponentialRampToValueAtTime(400, t + _MUS_T_FADE_IN + 2);
+          sc.dlog.push({ kind: 'in', t0: t, t1: t + _MUS_T_FADE_IN, bar });
+        } else if (!want && sc.dState === 'in') {
+          sc.dState = 'out';
+          sc.dg.gain.cancelScheduledValues(t); sc.dg.gain.setValueAtTime(_MUS_T_DRONE, t); sc.dg.gain.linearRampToValueAtTime(0.0001, t + _MUS_T_FADE_OUT);
+          sc.dlp.frequency.setValueAtTime(400, t); sc.dlp.frequency.exponentialRampToValueAtTime(160, t + _MUS_T_FADE_OUT);
+          sc.dlog.push({ kind: 'out', t0: t, t1: t + _MUS_T_FADE_OUT, bar });
+        }
+      }
+      const droneOn = bc >= _MUS_T_IN && bc < _MUS_T_OUT + 2;
+      const ph = Math.floor(bc / 4);
+      const typ = _MUS_T_PLAN[(ph + (cyc % 2)) % _MUS_T_PLAN.length];
+      const row = typ === 0 ? _MUS_T_PH[0][b] : (typ === 2 && b === 3) ? _MUS_T_PH[0][3] : _MUS_T_PH[1][b];
+      const semi = row[e];
+      const acc = _MUS_T_ACC.indexOf(e);
+      if (semi != null) {
+        let j = e + 1; while (j < _MUS_T_BAR && row[j] == null) j++;
+        const dur = Math.min(3 * E, j < _MUS_T_BAR ? (j - e) * E * 0.97 : (_MUS_T_BAR - e) * E * 1.2);
+        _musTTone(sc, { kind: 'lead', t, semi, e, bar, dur, vel: acc >= 0 ? 0.24 : 0.19, dest: sc.leadBus, type: 'triangle', atk: 0.03, holdFrac: 0.6, vib: true,
+          partials: [{ type: 'sine', ratio: 1, gain: 0.6 }] });
+        if (acc >= 0 && droneOn) { const d = sc.duck.gain; d.setValueAtTime(1, t); d.linearRampToValueAtTime(0.7, t + 0.03); d.linearRampToValueAtTime(1, t + 0.5); }
+      }
+      if (ph >= 1) {
+        const c = _MUS_T_CNT[b][e];
+        if (c != null && !(droneOn && (e === 3 || e === 6))) {
+          _musTTone(sc, { kind: 'cnt', t, semi: c, e, bar, dur: E * 0.7, vel: droneOn ? 0.06 : 0.08, dest: sc.cntBus, wave: true, atk: 0.004, holdFrac: 0.3 });
+        }
+      }
+      if (acc >= 0) {
+        const bs = _MUS_T_BASS[b][acc];
+        _musTTone(sc, { kind: 'bass', t, semi: bs, e, bar, dur: E * _MUS_T_GRP[acc] * 0.85, vel: 0.3, dest: sc.bassBus, type: 'triangle', atk: 0.01, holdFrac: 0.5 });
+        if (_musCanVoice('m')) {   // 極小のシェイカー（帯域ノイズ）
+          const ctx = _musS.ctx; const end = t + 0.1;
+          const src = _musNoiseSrc(t, end);
+          const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 6000; bp.Q.value = 1;
+          const env = ctx.createGain(); const v = acc === 0 ? 0.05 : 0.032;
+          env.gain.setValueAtTime(v, t); env.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+          src.connect(bp); bp.connect(env); env.connect(sc.out);
+          _musReg('m', [src, bp, env], end);
+        }
+      }
+      // テルミン風グライド: ドローン中のみ、4小節に1回（各4小節組の最後の小節の e=5）
+      if (bc >= _MUS_T_IN + 2 && bc < _MUS_T_OUT && b === 3 && e === 5 && _musCanVoice('m')) {
+        const pr = _musPick(_MUS_T_THER);
+        const f1 = _musHz(_MUS_T_ROOT, pr[0]), f2 = _musHz(_MUS_T_ROOT, pr[1]);
+        const ctx = _musS.ctx; const end = t + 1.85;
+        const o = _musOsc('sine', f1 * 0.94, t, end);
+        o.frequency.setValueAtTime(f1 * 0.94, t); o.frequency.exponentialRampToValueAtTime(f1, t + 0.18);
+        o.frequency.setValueAtTime(f1, t + 0.7); o.frequency.exponentialRampToValueAtTime(f2, t + 1.0);
+        _musTVib(o, t, 1.8, 12, 5.6);
+        const env = ctx.createGain();
+        env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(0.07, t + 0.2);
+        env.gain.setValueAtTime(0.07, t + 1.3); env.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+        o.connect(env); env.connect(sc.thBus);
+        _musReg('m', [o, env], end);
+        sc.log.push({ kind: 'ther', t, semi: pr[0], e, bar }, { kind: 'ther', t: t + 1.0, semi: pr[1], e, bar });
+      }
+      return E;
     },
-  },
+  };
+}
+
+const _musSCENES = {
+  title: _musTitleScene(),   // 案E2「牧歌から深宇宙へ」（下の _MUS_T_* 参照）
   moon: {
     build(sc) {
       _musDelay(sc, 0.7, 0.45, 0.4);
@@ -3291,7 +3458,7 @@ const Music = {
     let persistent = 0;
     for (const sc of _musS.scenes) persistent += sc.nodes.length;
     return { jingle: _musS.jingle ? { tier: _musS.jingle.tier, perfect: _musS.jingle.perfect, E: _musS.jingle.E, t0: _musS.jingle.t0, tempo: _musS.jingle.tempo } : null,
-      jingleLog: _musS.jingle ? _musS.jingle.log.slice() : [], dying: _musS.dying.length, voices: _musS.voices.length, scenes: _musS.scenes.length, persistentNodes: persistent, cur: _musS.curId };
+      jingleLog: _musS.jingle ? _musS.jingle.log.slice() : [], titleLog: (_musS.cur && _musS.curId === 'title') ? _musS.cur.log.slice() : [], titleDrone: (_musS.cur && _musS.curId === 'title') ? _musS.cur.dlog.slice() : [], dying: _musS.dying.length, voices: _musS.voices.length, scenes: _musS.scenes.length, persistentNodes: persistent, cur: _musS.curId };
   },
 
   jingleInfo: { root: _MUS_J_ROOT, scale: _MUS_J_SCALE.slice(), barLength: _MUS_J_BAR, accents: _MUS_J_ACCENTS.slice(), tempos: _MUS_J_TEMPO.slice() },

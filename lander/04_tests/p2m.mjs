@@ -28,7 +28,7 @@ class Node {
     created++; live++; maxLive = Math.max(maxLive, live);
   }
   connect(n) { this.out.add(n); return n; }
-  disconnect() { if (!this.dead) { this.dead = true; live--; disconnected++; } this.out.clear(); }
+  disconnect(t) { if (t) { this.out.delete(t); return; } if (!this.dead) { this.dead = true; live--; disconnected++; } this.out.clear(); }
   start() { this.started = true; }
   stop() { this.stoppedCalled = true; }
 }
@@ -125,6 +125,58 @@ for (let i = 0; i < 200; i++) { Music.sfx.crash(); Music.sfx.launch(); Music.sfx
 ok(Music._debug().voices <= BOUND_VOICES, 'sfx spam capped: ' + Music._debug().voices);
 ctx.currentTime += 10; Music.tick(0.1);
 ok(Music._debug().voices <= 2, 'voices drain after spam: ' + Music._debug().voices);
+
+
+// 4b) タイトル曲「牧歌から深宇宙へ」: F リディアン・ドミナント / 7/8(2+2+3) / 24小節周期 / ドローン出入り / 240秒の有界性
+{
+  const SCALE = [0, 2, 4, 6, 7, 9, 10];
+  const E8 = 60 / 96;
+  Music.playTitle();
+  const seen = new Map(); let maxTV = 0, maxPT = 0, drone = [];
+  for (let i = 0; i < 2400; i++) { // 240 s @ 10 Hz
+    ctx.currentTime += 0.1; Music.tick(0.1);
+    const d = Music._debug();
+    maxTV = Math.max(maxTV, d.voices); maxPT = Math.max(maxPT, d.persistentNodes);
+    for (const x of d.titleLog) seen.set(x.kind + '@' + x.t.toFixed(4) + '@' + x.semi, x);
+    drone = d.titleDrone;
+  }
+  const L = [...seen.values()];
+  ok(L.length > 300, 'title notes scheduled over 240 s: ' + L.length);
+  ok(L.every((x) => SCALE.includes(((x.semi % 12) + 12) % 12)), 'title scale is exactly F G A B C D Eb');
+  ok(new Set(L.map((x) => ((x.semi % 12) + 12) % 12)).size === 7, 'title uses all seven scale degrees');
+  const bass = L.filter((x) => x.kind === 'bass');
+  ok(bass.length > 20 && bass.every((x) => [0, 2, 4].includes(x.e)), 'title bass only on eighths 0,2,4 (2+2+3 group heads)');
+  const lead0 = L.filter((x) => x.kind === 'lead' && x.bar === 0 && x.e === 0)[0], t0 = lead0.t;
+  ok(Math.abs(bass.filter((x) => x.bar === 0).map((x) => x.t).reduce((a, b) => a + b, 0) - (3 * t0 + (0 + 2 + 4) * E8)) < 1e-6, 'bar-0 bass at eighths 0,2,4 spaced by the eighth');
+  const bars = new Set(L.filter((x) => x.kind === 'lead' && x.e === 0).map((x) => Math.round((x.t - t0) / (7 * E8))));
+  ok(bars.has(1) && bars.has(2), 'one bar = 7 eighths at 96/min (' + (7 * E8).toFixed(3) + ' s)');
+  const ins = drone.filter((x) => x.kind === 'in'), outs = drone.filter((x) => x.kind === 'out');
+  ok(ins.length >= 3 && outs.length >= 2, 'drone cycles over 240 s: in=' + ins.length + ' out=' + outs.length);
+  ok(Math.abs(ins[0].t0 - (t0 + 3 * 7 * E8)) < 1e-6 && Math.abs(ins[0].t1 - ins[0].t0 - 10) < 1e-9, 'drone fades in at bar 4 over 10 s (t=' + (ins[0].t0 - t0).toFixed(2) + ')');
+  ok(Math.abs(outs[0].t0 - (t0 + 17 * 7 * E8)) < 1e-6 && Math.abs(outs[0].t1 - outs[0].t0 - 8) < 1e-9, 'drone recedes at bar 18 over 8 s (t=' + (outs[0].t0 - t0).toFixed(2) + ')');
+  ok(Math.abs(ins[1].t0 - ins[0].t0 - 24 * 7 * E8) < 1e-6 && Math.abs(outs[1].t0 - outs[0].t0 - 24 * 7 * E8) < 1e-6, 'cycle is 24 bars (' + (24 * 7 * E8).toFixed(1) + ' s)');
+  const th = L.filter((x) => x.kind === 'ther');
+  const inDrone = (b) => { const c = b % 24; return c >= 5 && c < 17; };
+  ok(th.length > 0 && th.every((x) => x.bar % 4 === 3 && inDrone(x.bar)), 'theremin glides only while the drone is present, once per 4 bars');
+  ok(L.filter((x) => x.t < t0 + 3 * 7 * E8 && x.kind === 'ther').length === 0, 'pastoral opening has no glide');
+  const ph0 = L.filter((x) => x.kind === 'lead' && x.bar < 24).map((x) => x.semi + '@' + x.e).join(), ph1 = L.filter((x) => x.kind === 'lead' && x.bar >= 24 && x.bar < 48).map((x) => x.semi + '@' + x.e).join();
+  ok(ph0 !== ph1, 'phrase order varies between cycles');
+  ok(maxTV <= 14, 'title voices bounded over 240 s (max ' + maxTV + ' <= 14)');
+  ok(maxPT < 80, 'title persistent nodes bounded (' + maxPT + ')');
+  // マスター・ミュートでタイトルも無音へ
+  Music.setMuted(true); ok(masterOf().gain.target === 0, 'mute ramps master to 0 during title'); Music.setMuted(false);
+  // playBody へクロスフェード → タイトルのノードが切断される
+  const persistTitle = Music._debug().persistentNodes, discBefore = disconnected;
+  Music.playBody('moon'); ctx.currentTime += 0.01; Music.tick(0.01);
+  ok(Music._debug().scenes >= 2, 'crossfade from title keeps the old scene briefly');
+  for (let i = 0; i < 40; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
+  ok(Music._debug().scenes === 1 && Music._debug().cur === 'moon', 'title scene torn down after crossfade');
+  ok(disconnected - discBefore >= persistTitle, 'title nodes disconnected after crossfade (' + (disconnected - discBefore) + ' >= ' + persistTitle + ')');
+  // stopAll でも破棄
+  Music.playTitle(); for (let i = 0; i < 50; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
+  Music.stopAll(0.5); for (let i = 0; i < 20; i++) { ctx.currentTime += 0.1; Music.tick(0.1); }
+  ok(Music._debug().scenes === 0 && Music._debug().voices <= 2, 'stopAll tears the title down');
+}
 
 // 5) SFX 反復
 ok(!throws(() => { for (let i = 0; i < 20; i++) { Music.sfx.landing(); Music.sfx.crash(); Music.sfx.module(); Music.sfx.launch(); Music.sfx.uiTap(); ctx.currentTime += 4; Music.tick(0.1); } }), 'sfx repeated');

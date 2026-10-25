@@ -361,9 +361,12 @@ function makeD(ctx, dest, opts) {
 
 // ---------------- 案E 牧歌から深宇宙へ（B×D）----------------
 // 32小節(約140秒)の呼吸: 小節1-8 牧歌(Bのみ) / 小節9から約10秒でドローンが昇る / 小節24から約8秒で退く / 小節25-32 牧歌 → 周回
-const E_PERIOD = 32, E_OUT = 23, E_FADE_IN = 10, E_FADE_OUT = 8, E_DRONE = 0.12;
+const E_FADE_IN = 10, E_FADE_OUT = 8, E_DRONE = 0.12;
 function makeE(ctx, dest, opts) {
-  const IN_BAR = ((opts && opts.inBar) || 9) - 1;   // ドローンが入る小節(1始まりで指定)
+  const IN_BAR = ((opts && opts.inBar) || 9) - 1;            // ドローンが入る小節(1始まりで指定)
+  const CYC = (opts && opts.cycleBars) || 32;                 // 一周の小節数
+  const E_OUT = ((opts && opts.recedeBar) || 24) - 1;         // ドローンが退き始める小節(1始まりで指定)
+  const PLAN = CYC === 32 ? [0, 1, 0, 2] : [0, 1, 0, 1, 0, 2]; // フレーズ型 0=A 1=B 2=B′
   const o = Object.assign({ tempo: 96, level: 0.35, caps: { lead: 4, cnt: 4, bass: 4, shk: 3, ther: 2 } }, opts);
   const E = new Engine(ctx, dest, o);
   E.droneEvents = [];
@@ -383,7 +386,7 @@ function makeE(ctx, dest, opts) {
   E.lfo(0.045, 120, E.dlp.frequency);
   E.step = function (n, t) {
     const e = n % BAR, bar = Math.floor(n / BAR), b = bar % 4, p = Math.floor(bar / 4) % 4;
-    const cyc = Math.floor(bar / E_PERIOD), bc = bar % E_PERIOD;
+    const cyc = Math.floor(bar / CYC), bc = bar % CYC;
     if (e === 0 && bc === IN_BAR) {
       this.dg.gain.setValueAtTime(0.0001, t); this.dg.gain.linearRampToValueAtTime(E_DRONE, t + E_FADE_IN);
       this.dlp.frequency.setValueAtTime(160, t); this.dlp.frequency.exponentialRampToValueAtTime(400, t + E_FADE_IN + 2);
@@ -395,8 +398,9 @@ function makeE(ctx, dest, opts) {
       this.droneEvents.push({ kind: 'out', t0: t, t1: t + E_FADE_OUT, bar });
     }
     const droneOn = bc >= IN_BAR && bc < E_OUT + 2;
-    const q = (cyc % 2 === 1) ? (p + 1) % 4 : p;           // 奇数周回はフレーズ順を入れ替え（A-B-A-B′ → B-A-B′-A）
-    const row = (q === 0 || q === 2) ? B_PH[0][b] : (q === 3 && b === 3) ? B_PH[0][3] : B_PH[1][b];
+    const ph = Math.floor(bc / 4);
+    const typ = PLAN[(ph + (cyc % 2)) % PLAN.length];       // 奇数周回はフレーズ順を1つずらす
+    const row = typ === 0 ? B_PH[0][b] : (typ === 2 && b === 3) ? B_PH[0][3] : B_PH[1][b];
     const semi = row[e];
     if (semi != null) {
       let j = e + 1; while (j < BAR && row[j] == null) j++;
@@ -407,7 +411,7 @@ function makeE(ctx, dest, opts) {
       this.note('lead', t, semi, e, bar);
       if (acc && droneOn) { const d = this.duck.gain; d.setValueAtTime(1, t); d.linearRampToValueAtTime(0.7, t + 0.03); d.linearRampToValueAtTime(1, t + 0.5); }
     }
-    if (p >= 1) {
+    if (ph % PLAN.length >= 1) {
       const c = B_COUNTER[b][e];
       if (c != null && !(droneOn && (e === 3 || e === 6))) {   // ドローン中は裏メロを少し間引く
         this.tone('cnt', { t, hz: hz(c), dur: this.E * 0.7, vel: droneOn ? 0.06 : 0.08, dest: this.cntBus, wave: 0.25, atk: 0.004, holdFrac: 0.3 }); this.note('cnt', t, c, e, bar);
@@ -438,7 +442,7 @@ function makeE(ctx, dest, opts) {
   return E.api();
 }
 
-const makeE2 = (ctx, dest, opts) => makeE(ctx, dest, Object.assign({ inBar: 4 }, opts));
+const makeE2 = (ctx, dest, opts) => makeE(ctx, dest, Object.assign({ inBar: 4, cycleBars: 24, recedeBar: 18 }, opts));
 
 export const CANDIDATES = [
   { id: 'A', label: '案A 軽いアンビエント', make: makeA, tempo: 84, level: 1.24,
@@ -452,7 +456,7 @@ export const CANDIDATES = [
   { id: 'E', label: '案E 牧歌から深宇宙へ（B×D）', make: makeE, tempo: 96, level: 0.35,
     desc: '96 /分・7/8(2+2+3)。約140秒（32小節）で一巡する呼吸。小節1-8は案Bそのままの牧歌。小節9から約10秒かけて、低いFの重いドローンがローパスを開きながら旋律の下に昇ってくる（旋律のアクセントで約-3dBダック、裏メロは少し間引き、4小節に1回だけ小さなテルミン風グライドが応答）。小節24から約8秒で退き、牧歌に戻って一巡。周回ごとにフレーズ順が入れ替わる。明るく穏やかなまま神秘的に。' },
   { id: 'E2', label: '案E2 牧歌から深宇宙へ（4小節目から）', make: makeE2, tempo: 96, level: 0.35,
-    desc: '案Eと同じ構成で、ドローンが早く入る版。96 /分・7/8(2+2+3)・32小節(約140秒)で一巡。案Bの牧歌で始まり、小節4(約13秒)から約10秒かけて低いFのドローンが昇り、小節24から約8秒で退いて牧歌に戻る。ダック・裏メロの間引き・テルミン風グライド(ドローン中のみ4小節に1回)は案Eと同じ。' },
+    desc: '【採用案・ゲーム収録版】96 /分・7/8(2+2+3)・24小節(約105秒)で一巡。案Bの牧歌で始まり、小節4(約13秒)から約10秒かけて低いFのドローンが昇り、小節18から約8秒で退いて牧歌(小節20〜24)に戻り、また小節4から昇る。旋律のアクセントでドローンを約-3dBダック、裏メロは間引き、テルミン風グライドはドローン中のみ4小節に1回。奇数周回はフレーズ順が入れ替わる。' },
 ];
 
 export function createCandidate(id, ctx, dest, opts) {
