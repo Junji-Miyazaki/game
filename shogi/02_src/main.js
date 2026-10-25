@@ -10,94 +10,96 @@ $("#boot").addEventListener("click",()=>{
   Music.title();
 });
 
-/* ---------- タイトル背景: データアート(テキストストリーム×パースグリッド×ノード網) ----------
-   参照: 池田亮二系の微細データ描写+工学ワイヤーフレーム。白基調・低彩度、発光は瞬間のみ。 */
+/* ---------- タイトル背景: ミニマル(回転する5×5ワイヤーフレーム格子+データ帯) ----------
+   墨地に生成りの細線のみ。動くのはこの1要素。アクセント色は回線パルス1点だけ。 */
 let netBgRun=false;
-const GLYPHS="01748ACEF∴∵ΔΣ歩銀金角飛玉成#%&+=<>/\\|";
 function startNetBg(){
   if(netBgRun) return;
   netBgRun=true;
   const cv=$("#net-bg"), ctx=cv.getContext("2d");
-  // テキストストリーム列
-  const COLS=9, cols=[];
-  for(let i=0;i<COLS;i++) cols.push({
-    x:0.04+0.92*Math.random(), y:Math.random(),
-    sp:(0.0006+Math.random()*0.0022)*(Math.random()<0.5?1:-1),
-    n:14+(Math.random()*18|0), fs:9+(Math.random()*3|0),
-    chars:Array.from({length:40},()=>GLYPHS[(Math.random()*GLYPHS.length)|0]),
-    hot:Math.random()<0.22,
-  });
-  // 浮遊ノード網(白・微細)
-  const NODES=24, nodes=[];
-  for(let i=0;i<NODES;i++) nodes.push({
-    x:Math.random(), y:Math.random(),
-    vx:(Math.random()-.5)*0.0003, vy:(Math.random()-.5)*0.0003,
-  });
-  let t=0, flickerAt=180+Math.random()*240;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  // 5×5の盤面格子上に、高さの異なる"塔"(ノード)を立てる=都市/データの柱
+  const H=[];
+  for(let i=0;i<25;i++) H.push(Math.random()<0.45?0.15+Math.random()*0.85:0);
+  let t=0, pulse=null, bars=[];
+  function proj(x,y,z,rot,W,Hh){
+    const c=Math.cos(rot), s=Math.sin(rot);
+    const X=x*c-y*s, Y=x*s+y*c;
+    const tilt=0.52;
+    const sx=X, sy=Y*Math.sin(tilt)-z*Math.cos(tilt);
+    const narrow=W<760;
+    const sc=Math.min(W,Hh)*(narrow?0.24:0.30);
+    return narrow?[W*0.66+sx*sc, Hh*0.86+sy*sc]:[W*0.70+sx*sc, Hh*0.50+sy*sc];
+  }
   function frame(){
     if(!$("#title").classList.contains("on")){ netBgRun=false; return; }
-    const W=cv.clientWidth, H=cv.clientHeight;
-    if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
-    ctx.clearRect(0,0,W,H);
+    const W=cv.clientWidth, Hh=cv.clientHeight;
+    if(cv.width!==W*dpr||cv.height!==Hh*dpr){cv.width=W*dpr;cv.height=Hh*dpr;}
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,Hh);
     t++;
-    // 1) パースグリッド(奥行きトンネル、ゆっくり呼吸)
-    const vx=W/2, vy=H*0.46, zoom=1+0.05*Math.sin(t*0.004);
-    ctx.strokeStyle="rgba(140,170,210,0.07)"; ctx.lineWidth=1;
-    for(let k=1;k<=7;k++){
-      const s=Math.pow(k/7,1.7)*zoom;
-      ctx.strokeRect(vx-W*0.46*s, vy-H*0.40*s, W*0.92*s, H*0.80*s);
-    }
-    for(const [cx,cy] of [[-0.46,-0.40],[0.46,-0.40],[-0.46,0.40],[0.46,0.40],[0,-0.40],[0,0.40],[-0.46,0],[0.46,0]]){
-      ctx.beginPath(); ctx.moveTo(vx+cx*W*0.13, vy+cy*H*0.13);
-      ctx.lineTo(vx+cx*W*zoom, vy+cy*H*zoom); ctx.stroke();
-    }
-    // 2) テキストストリーム
-    ctx.textBaseline="top";
-    for(const c of cols){
-      c.y+=c.sp;
-      if(c.y>1.2) c.y=-0.2; if(c.y<-0.2) c.y=1.2;
-      ctx.font=c.fs+"px monospace";
-      for(let k=0;k<c.n;k++){
-        const yy=((c.y+k*0.028)%1.4-0.2)*H;
-        if(yy<-14||yy>H) continue;
-        if(Math.random()<0.012) c.chars[k%c.chars.length]=GLYPHS[(Math.random()*GLYPHS.length)|0];
-        const head=k===0;
-        ctx.fillStyle=head&&c.hot?"rgba(25,227,255,.8)":
-          head?"rgba(220,235,255,.55)":`rgba(150,180,215,${0.05+0.13*(1-k/c.n)})`;
-        ctx.fillText(c.chars[k%c.chars.length], c.x*W, yy);
-      }
-    }
-    // 3) ノード網(白微細)
+    const rot=t*0.0016;
+    const g=k=>(k-2)*0.5;
     ctx.lineWidth=1;
-    for(const n of nodes){
-      n.x+=n.vx; n.y+=n.vy;
-      if(n.x<0||n.x>1) n.vx*=-1;
-      if(n.y<0||n.y>1) n.vy*=-1;
+    // 床の格子
+    ctx.strokeStyle="rgba(233,231,226,0.13)";
+    for(let k=0;k<=5;k++){
+      const a=proj(-1.25+k*0.5,-1.25,0,rot,W,Hh), b=proj(-1.25+k*0.5,1.25,0,rot,W,Hh);
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+      const c=proj(-1.25,-1.25+k*0.5,0,rot,W,Hh), d=proj(1.25,-1.25+k*0.5,0,rot,W,Hh);
+      ctx.beginPath(); ctx.moveTo(c[0],c[1]); ctx.lineTo(d[0],d[1]); ctx.stroke();
     }
-    const R=0.16;
-    for(let i=0;i<NODES;i++)for(let j=i+1;j<NODES;j++){
-      const a=nodes[i], b=nodes[j];
-      const d=Math.hypot(a.x-b.x,a.y-b.y);
-      if(d<R){
-        ctx.strokeStyle=`rgba(200,220,245,${(1-d/R)*0.14})`;
-        ctx.beginPath(); ctx.moveTo(a.x*W,a.y*H); ctx.lineTo(b.x*W,b.y*H); ctx.stroke();
+    // 塔(垂直線)と頂点、近接頂点を結ぶ回線
+    const tops=[];
+    for(let i=0;i<25;i++){
+      if(!H[i]) continue;
+      const x=g(i%5), y=g((i/5)|0), z=H[i]*(0.9+0.1*Math.sin(t*0.01+i));
+      const p0=proj(x,y,0,rot,W,Hh), p1=proj(x,y,z,rot,W,Hh);
+      ctx.strokeStyle="rgba(233,231,226,0.30)";
+      ctx.beginPath(); ctx.moveTo(p0[0],p0[1]); ctx.lineTo(p1[0],p1[1]); ctx.stroke();
+      ctx.fillStyle="rgba(233,231,226,0.85)";
+      ctx.fillRect(p1[0]-1.5,p1[1]-1.5,3,3);
+      tops.push({i,p:p1,x:i%5,y:(i/5)|0});
+    }
+    ctx.strokeStyle="rgba(233,231,226,0.16)";
+    const links=[];
+    for(let a=0;a<tops.length;a++)for(let b=a+1;b<tops.length;b++){
+      if(Math.max(Math.abs(tops[a].x-tops[b].x),Math.abs(tops[a].y-tops[b].y))===1){
+        links.push([tops[a].p,tops[b].p]);
+        ctx.beginPath(); ctx.moveTo(tops[a].p[0],tops[a].p[1]); ctx.lineTo(tops[b].p[0],tops[b].p[1]); ctx.stroke();
       }
     }
-    ctx.fillStyle="rgba(220,235,255,.6)";
-    for(const n of nodes) ctx.fillRect(n.x*W-1,n.y*H-1,2,2);
-    // 4) フリッカー帯(数秒に一度、1-2フレーム)
-    if(t>flickerAt){
-      if(t<flickerAt+2){
-        const y=Math.random()*H, h=4+Math.random()*30;
-        ctx.fillStyle="rgba(230,240,255,0.10)";
-        ctx.fillRect(0,y,W,h);
-        ctx.fillStyle="rgba(25,227,255,0.05)";
-        ctx.fillRect(0,0,W,H);
-      } else flickerAt=t+180+Math.random()*300;
+    // 回線パルス(唯一のアクセント)
+    if(!pulse&&links.length&&Math.random()<0.025) pulse={l:(Math.random()*links.length)|0,k:0};
+    if(pulse){
+      pulse.k+=0.035;
+      const L=links[pulse.l];
+      if(!L||pulse.k>=1) pulse=null;
+      else{
+        ctx.fillStyle="#19e3ff";
+        ctx.fillRect(L[0][0]+(L[1][0]-L[0][0])*pulse.k-2, L[0][1]+(L[1][1]-L[0][1])*pulse.k-2,4,4);
+      }
     }
+    // データ帯(池田亮二的バーコード) — 画面下部の細い帯
+    if(t%4===0){
+      bars=[];
+      let x=0;
+      while(x<W){ const w=1+((Math.random()*4)|0); if(Math.random()<0.5) bars.push([x,w]); x+=w+((Math.random()*3)|0); }
+    }
+    ctx.fillStyle="rgba(233,231,226,0.10)";
+    const by=Hh-46;
+    for(const [x,w] of bars) ctx.fillRect(x,by,w,6);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  // 時計(メタ行)
+  const tick=()=>{
+    if(!$("#title").classList.contains("on")) return;
+    const d=new Date(), z=n=>String(n).padStart(2,"0");
+    const el=$("#g-clock"); if(el) el.textContent=`${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+    setTimeout(tick,1000);
+  };
+  tick();
 }
 
 /* ---------- HOW TO PLAY(カード5枚) ---------- */

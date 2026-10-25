@@ -5,28 +5,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>CYBER_SHOGI — 電脳将棋</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%2305080f'/%3E%3Cpath d='M4.5 17V9l4.5 3.5L12 5.5 15 12.5 19.5 9v8z' fill='none' stroke='%2319e3ff' stroke-width='1.7'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="03_assets/style.css?v=62eed12feb">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="03_assets/style.css?v=13c19b55de">
 </head>
 <body>
 <div id="app">
 
   <div id="boot" class="screen on">
-    <h1 class="logo" data-txt="CYBER_SHOGI">CYBER<span>_</span>SHOGI</h1>
-    <div class="sub">電脳将棋 :: INTRUSION PROTOCOL</div>
-    <div id="boot-tap">▸ TAP TO CONNECT ◂</div>
+    <div class="g-wrap">
+      <div class="g-meta"><span>CYBER_SHOGI</span><span>電脳将棋</span><span>2026</span></div>
+      <h1 class="g-logo">CYBER<span class="us">_</span><br>SHOGI</h1>
+      <div id="boot-tap"><span class="g-dot"></span>Tap to connect</div>
+    </div>
   </div>
 
   <div id="title" class="screen">
     <canvas id="net-bg"></canvas>
-    <div id="title-inner">
-      <h1 class="logo" data-txt="CYBER_SHOGI">CYBER<span>_</span>SHOGI</h1>
-      <div class="sub">電脳将棋 :: FACTION WARS</div>
+    <div class="g-wrap">
+      <div class="g-meta"><span>CYBER_SHOGI</span><span>Intrusion protocol / 5&times;5</span><span id="g-clock"></span></div>
+      <div class="g-main">
+        <div class="g-left">
+          <h1 class="g-logo" data-txt="CYBER_SHOGI">CYBER<span class="us">_</span><br>SHOGI</h1>
+          <p class="g-lede">電脳将棋 — 奪った駒を乗っ取り、敵の回線を切断する。<br>5&times;5、一局三分の侵入戦。</p>
+        </div>
+        <div class="g-right">
+          <nav class="g-menu">
+            <button id="bt-free"><i>01</i><b>Free run</b><em>侵入開始</em></button>
+            <button id="bt-daily"><i>02</i><b>Daily run</b><em>本日のシード</em></button>
+            <button id="bt-howto"><i>03</i><b>How to play</b><em>遊び方</em></button>
+          </nav>
+          <section id="route-card"></section>
+        </div>
+      </div>
       <div id="marquee"><span class="mq"></span></div>
-      <button class="menu-btn" id="bt-free">FREE RUN — 侵入開始</button>
-      <button class="menu-btn mg" id="bt-daily">DAILY RUN — 本日のシード</button>
-      <button class="menu-btn sm" id="bt-howto">HOW TO PLAY — 遊び方</button>
-      <div id="route-card"></div>
-      <div id="title-foot"><span id="bt-mute-title">SOUND ON</span> ・ CYBER_SHOGI v4a</div>
+      <div id="title-foot"><span id="bt-mute-title">SOUND ON</span><span>v4c</span></div>
     </div>
   </div>
 
@@ -92,6 +106,6 @@
   <div class="bn-sub" id="banner-sub"></div>
 </div>
 
-<script src="shogi.bundle.js?v=a2c0f8d368"></script>
+<script src="shogi.bundle.js?v=51be825bcf"></script>
 </body>
 </html>

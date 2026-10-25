@@ -308,3 +308,71 @@ body{--efg:#ff2d95; --efg-glow:rgba(255,45,149,.25);}
 @media (max-width:430px){
   .menu-btn{font-size:13px; letter-spacing:.1em; white-space:nowrap;}
 }
+
+/* ========== v4c: GALLERY TITLE — ミニマル/現代アートギャラリー調 ==========
+   原則: 色は墨と生成りの2色+アクセント1点 / グローなし / 書体2種(Grotesk+Mono) /
+   左揃えグリッドと余白 / ボタンは枠ではなく番号付きテキスト行 / 動きは背景の1要素のみ */
+:root{
+  --g-bg:#0c0c0b; --g-fg:#e9e7e2; --g-mute:#7a7770; --g-line:#2b2a27; --g-acc:#19e3ff;
+  --g-sans:"Space Grotesk","Noto Sans JP",system-ui,sans-serif;
+  --g-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+body:has(#title.on)::before, body:has(#boot.on)::before{display:none;}
+body:has(#title.on), body:has(#boot.on){background:var(--g-bg);}
+#boot, #title{position:fixed; inset:0; z-index:10; background:var(--g-bg); color:var(--g-fg);
+  overflow-y:auto; font-family:var(--g-sans); min-height:0;}
+#boot.on{display:block;} #title.on{display:block;}
+#net-bg{position:fixed; inset:0; width:100%; height:100%; opacity:1; z-index:0;}
+.g-wrap{position:relative; z-index:1; min-height:100%; display:flex; flex-direction:column;
+  padding:clamp(18px,4vw,48px) clamp(18px,5vw,64px); max-width:1280px; margin:0 auto;}
+.g-meta{display:grid; grid-template-columns:1fr 1fr auto; gap:12px; font-family:var(--g-mono);
+  font-size:11px; color:var(--g-mute); letter-spacing:.02em; padding-bottom:12px;
+  border-bottom:1px solid var(--g-line);}
+.g-meta span:nth-child(2){text-align:center;}
+.g-logo{font-family:var(--g-sans); font-weight:500; color:var(--g-fg);
+  font-size:clamp(64px,15vw,184px); line-height:.84; letter-spacing:-.045em;
+  margin:clamp(36px,9vh,110px) 0 0; position:relative; text-shadow:none;}
+.g-logo .us{color:var(--g-acc);}
+.g-logo::after{content:attr(data-txt); position:absolute; left:0; top:0; color:var(--g-acc);
+  opacity:0; pointer-events:none; white-space:pre; animation:gslice 9s infinite;}
+@keyframes gslice{0%,96%,100%{opacity:0;}96.5%{opacity:.9; clip-path:inset(38% 0 52% 0); transform:translateX(6px);}
+  97%{opacity:0;}}
+.g-main{display:grid; grid-template-columns:1fr; gap:clamp(28px,5vh,56px); flex:1;}
+@media (min-width:860px){ .g-main{grid-template-columns:7fr 5fr; align-items:end;} }
+.g-lede{margin-top:22px; max-width:30em; font-size:14px; line-height:1.85; color:var(--g-mute); font-weight:400;}
+.g-menu{display:flex; flex-direction:column; border-top:1px solid var(--g-line);}
+.g-menu button{all:unset; cursor:pointer; display:grid; grid-template-columns:44px 1fr auto;
+  align-items:baseline; padding:16px 2px; border-bottom:1px solid var(--g-line);
+  font-family:var(--g-sans); color:var(--g-fg); transition:padding .25s ease, color .25s ease;}
+.g-menu button i{font-style:normal; font-family:var(--g-mono); font-size:11px; color:var(--g-mute);}
+.g-menu button b{font-weight:500; font-size:clamp(20px,2.4vw,26px); letter-spacing:-.01em;}
+.g-menu button em{font-style:normal; font-size:12px; color:var(--g-mute);}
+.g-menu button:hover, .g-menu button:focus-visible{padding-left:12px;}
+.g-menu button:hover i{color:var(--g-acc);}
+#route-card{all:unset; display:block; margin-top:26px; font-family:var(--g-mono); font-size:11px;
+  line-height:1.9; color:var(--g-mute);}
+#route-card .rc-t{color:var(--g-mute); letter-spacing:.02em;}
+#route-card .rc-route{color:var(--g-fg); font-family:var(--g-sans); font-size:14px;}
+#route-card .dot{width:6px; height:6px; margin:0 6px 1px 0; vertical-align:middle;}
+#route-card .rc-best{color:var(--g-fg);}
+#title #marquee{width:100%; margin:clamp(28px,6vh,64px) 0 0; border:0; border-top:1px solid var(--g-line);}
+#title #marquee .mq{font-family:var(--g-mono); font-size:10px; color:var(--g-mute); letter-spacing:.04em;
+  padding:9px 0; animation-duration:60s;}
+#title-foot{display:flex; justify-content:space-between; margin-top:0; padding-top:10px;
+  border-top:1px solid var(--g-line); font-family:var(--g-mono); font-size:11px; color:var(--g-mute); letter-spacing:.02em;}
+#bt-mute-title{border:0; text-decoration:underline; text-underline-offset:3px;}
+#boot .g-wrap{justify-content:space-between; cursor:pointer;}
+#boot-tap{font-family:var(--g-mono); font-size:12px; color:var(--g-fg); letter-spacing:.04em;
+  margin:auto 0 0; padding-top:40px; text-shadow:none; animation:none;}
+.g-dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--g-acc);
+  margin-right:10px; vertical-align:1px; animation:gblink 1.4s steps(2,end) infinite;}
+@keyframes gblink{50%{opacity:0;}}
+/* 旧タイトル規則(#title h1 / text-align:center / padding)の打ち消し */
+#title, #boot{text-align:left; padding:0;}
+#title h1.g-logo, #boot h1.g-logo{color:var(--g-fg); text-shadow:none; letter-spacing:-.045em; text-align:left;}
+#title h1.g-logo span.us, #boot h1.g-logo span.us{color:var(--g-acc); text-shadow:none;}
+@media (max-width:520px){
+  .g-meta{grid-template-columns:1fr auto;} .g-meta span:nth-child(2){display:none;}
+  .g-menu button{grid-template-columns:34px 1fr auto;}
+}
+#title h1.g-logo, #boot h1.g-logo{font-size:clamp(64px,15vw,184px); line-height:.84;}
