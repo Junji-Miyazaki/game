@@ -279,6 +279,7 @@ class Engine {
 
     // ---- ポインタ追跡 ----
     const SWIPE = 24;
+    const DRAG_PX = 6;      // ドラッグ対応シーンでスクロールとみなす移動量(px CSS)
     const TAP_MAX_MS = 400; // これより長く押した指の解除はタップにしない（長押しは操作入力）
     const nowMs = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // スワイプとみなす最小移動量(px CSS)
     this._touchMap = new Map(); // id -> {x,y}（論理座標。this.touches の要素と同一オブジェクト＝常に最新）
@@ -300,6 +301,12 @@ class Engine {
       this._touchMap.set(id, toLogical(cx, cy));
       // 2本目以降の指が来たらジェスチャ判定は無効（単一指のみ）
       this._gesture = wasEmpty ? { id, sx: cx, sy: cy, t0: nowMs() } : null;
+      // ドラッグ対応シーン（任意）: scene.dragZone(論理座標) が真の位置で始まった指だけ、6px超の移動を onDrag に渡す
+      if (this._gesture) {
+        const sc = this.scene, lp0 = this._touchMap.get(id);
+        let z = false; try { z = !!(sc && sc.dragZone && sc.onDrag && sc.dragZone(lp0)); } catch (_) { z = false; }
+        if (z) { this._gesture.drag = true; this._gesture.active = false; this._gesture.ly = lp0.y; }
+      }
       sync();
     };
     this._pMove = (id, cx, cy) => {
@@ -307,6 +314,14 @@ class Engine {
       if (!pt) return;
       const lp = toLogical(cx, cy);
       pt.x = lp.x; pt.y = lp.y;
+      const g = this._gesture;
+      if (g && g.id === id && g.drag) {
+        if (!g.active && Math.hypot(cx - g.sx, cy - g.sy) > DRAG_PX) g.active = true;   // 以降はタップ/スワイプとして扱わない
+        if (g.active) {
+          const dy = lp.y - g.ly; g.ly = lp.y;
+          try { if (this.scene && this.scene.onDrag) this.scene.onDrag({ x: lp.x, y: lp.y, dy }); } catch (_) { /* ignore */ }
+        }
+      }
       sync();
     };
     this._pEnd = (id, cx, cy, cancelled) => {
@@ -316,6 +331,7 @@ class Engine {
       const g = this._gesture;
       if (!g || g.id !== id) return;
       this._gesture = null;
+      if (g.active) return;  // ドラッグ（スクロール）した指はタップ/スワイプにしない
       if (cancelled) return; // キャンセルされた接触はタップ扱いにしない
       const dx = cx - g.sx, dy = cy - g.sy;
       const adx = Math.abs(dx), ady = Math.abs(dy);
@@ -344,6 +360,18 @@ class Engine {
     c.addEventListener('mousedown', (e) => { if (e.button) return; this._pStart('mouse', e.clientX, e.clientY); });
     window.addEventListener('mousemove', (e) => { this._pMove('mouse', e.clientX, e.clientY); });
     window.addEventListener('mouseup', (e) => { if (e.button) return; this._pEnd('mouse', e.clientX, e.clientY, false); });
+
+    // ホイール（任意）: scene.onWheel({x,y,dy}) があるシーンにだけ渡す。dragZone 内ならページのスクロールも止める
+    c.addEventListener('wheel', (e) => {
+      const sc = this.scene;
+      if (!sc || !sc.onWheel) return;
+      const lp = toLogical(e.clientX, e.clientY);
+      let z = true; try { if (sc.dragZone) z = !!sc.dragZone(lp); } catch (_) { z = false; }
+      if (!z) return;
+      const k = e.deltaMode === 1 ? 16 : 1;   // 行単位ならpx換算
+      try { sc.onWheel({ x: lp.x, y: lp.y, dy: (e.deltaY || 0) * k / (this.scale || 1) }); } catch (_) { /* ignore */ }
+      if (e.preventDefault) e.preventDefault();
+    }, { passive: false });
 
     c.addEventListener('contextmenu', (e) => { e.preventDefault(); this._clearPointers(); });
 
@@ -1728,6 +1756,16 @@ function charW(ctx, font, ch) {
   let w = _wMemo.get(k);
   if (w === undefined) { w = ctx.measureText(ch).width; if (!(w >= 0)) w = 6; _wMemo.set(k, w); }
   return w;
+}
+// txt と同じ指定での描画幅（字間込み）。見出しの右に別の部品を置く位置決め用
+function txtW(ctx, s, size, wt, sp) {
+  s = String(s == null ? '' : s); sp = sp || 0;
+  const n = Array.from(s).length;
+  try {
+    ctx.save(); ctx.font = fontStr(wt || 400, size); if (ART_LS) ctx.letterSpacing = '0px';
+    const w = ctx.measureText(s).width; ctx.restore();
+    return (w >= 0 ? w : n * size * 0.6) + sp * Math.max(0, n - 1);
+  } catch (_) { return n * (size * 0.6 + sp); }
 }
 // 幅 maxW に収まるよう末尾を省略記号にする（書記素単位）。sp=字間。テスト用ctxでも例外を出さない
 function ellipsize(ctx, s, size, wt, sp, maxW) {
@@ -3627,8 +3665,8 @@ function drawStartPanel(ctx, d) {
 }
 function drawBetaTag(ctx, r, a) {
   const p = P();
-  pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
-  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 3, 6, p.dim, 'center', { sp: 2, w: 500, a });
+  pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));   // モノクロ（色付きにしない）
+  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 3, 6, p.fg, 'center', { sp: 2, w: 500, a: 0.55 * a });
 }
 
 // タイトルの WORLD CHAMPION プレート。box={x,y,w,h}。d={name,score,title}。o={t:経過秒, you:閲覧者が本人}
@@ -3731,6 +3769,86 @@ function drawWorldTop5(ctx, view, t, a, y0, e) {
     y += 8;
     txt(ctx, 'YOU  #' + view.extra.rank, x + 4, y, 9, p.warn, 'left', { sp: 2, w: 500, a: A });
     txt(ctx, String(view.extra.score), x + w - 4, y, 9, p.warn, 'right', { sp: 1, w: 500, a: A });
+  }
+}
+
+
+// ---- 02_src/bootfx.js ----
+// 起動画面の背景（07_lab/boot_backdrop の案 B「太陽系を暗く」を移植）。
+// 3層の視差星 + 流れ星 + 明るさ約30%の太陽グロー・細い軌道・ゆっくり公転する惑星 + ロゴの呼吸グロー(周期4s)。
+// 軽量化: 太陽グラデーションは ctx ごとに1回だけ作って使い回す（毎フレーム生成しない）。
+
+const BFX_W = 360, BFX_H = 640, BFX_TAU = Math.PI * 2;
+const bfxRnd = (a, b) => a + Math.random() * (b - a);
+const BFX_PLANETS = [   // 軌道半径, 周期(s), 半径, 色, 初期位相
+  { r: 40, T: 70, s: 1.6, c: '#b9a58a', ph: 0.5 }, { r: 66, T: 110, s: 2.2, c: '#e8c98a', ph: 2.1 },
+  { r: 98, T: 160, s: 2.6, c: '#63D8C9', ph: 4.0 }, { r: 132, T: 220, s: 2.0, c: '#d9805f', ph: 1.2 },
+  { r: 186, T: 340, s: 4.2, c: '#d8b88e', ph: 5.3 }, { r: 236, T: 480, s: 3.6, c: '#e3d3a0', ph: 3.3 },
+  { r: 290, T: 640, s: 3.0, c: '#8fd0e8', ph: 0.2 },
+];
+const BFX_BRIGHT = 0.3;   // 太陽系全体の明るさ
+
+class BootFx {
+  constructor() {
+    this.t = 0;
+    this.layers = [
+      { n: 22, r: 0.6, a: 0.28, vx: 1.2, vy: 2.0 },
+      { n: 16, r: 0.9, a: 0.4, vx: 2.4, vy: 3.6 },
+      { n: 8, r: 1.3, a: 0.55, vx: 3.6, vy: 5.5 },
+    ].map((L) => ({ ...L, s: Array.from({ length: L.n }, () => ({ x: bfxRnd(0, BFX_W), y: bfxRnd(0, BFX_H), tw: bfxRnd(0, 6.28), f: bfxRnd(0.4, 0.9) })) }));
+    this.shoot = null; this.nextShoot = bfxRnd(4, 8);
+    this._g = null; this._gctx = null;
+  }
+  update(dt) {
+    dt = dt > 0 ? dt : 0.016;
+    this.t += dt;
+    for (const L of this.layers) for (const s of L.s) {
+      s.x += L.vx * dt; s.y += L.vy * dt;
+      if (s.x > BFX_W + 2) s.x -= BFX_W + 4;
+      if (s.y > BFX_H + 2) s.y -= BFX_H + 4;
+    }
+    this.nextShoot -= dt;
+    if (!this.shoot && this.nextShoot <= 0) { this.shoot = { x: bfxRnd(60, BFX_W), y: bfxRnd(10, BFX_H * 0.3), u: 0, len: bfxRnd(40, 70) }; this.nextShoot = bfxRnd(8, 15); }
+    if (this.shoot) { this.shoot.u += dt / 1.1; if (this.shoot.u >= 1) this.shoot = null; }
+  }
+  // 呼吸 0..1（周期 4 s）
+  breath() { return 0.5 + 0.5 * Math.sin(this.t * BFX_TAU / 4 - 1.57); }
+  draw(ctx) {
+    const p = P(), t = this.t, cx = BFX_W / 2, cy = BFX_H * 0.34;
+    // 太陽グロー・軌道・惑星
+    ctx.save(); ctx.globalAlpha = BFX_BRIGHT;
+    if (this._gctx !== ctx || !this._g) {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 90);
+      g.addColorStop(0, rgba(p.warn, 0.9)); g.addColorStop(0.15, rgba(p.warn, 0.35)); g.addColorStop(1, rgba(p.warn, 0));
+      this._g = g; this._gctx = ctx;
+    }
+    ctx.fillStyle = this._g; ctx.fillRect(cx - 90, cy - 90, 180, 180);
+    ctx.fillStyle = '#ffd98a'; ctx.beginPath(); ctx.arc(cx, cy, 6, 0, BFX_TAU); ctx.fill();
+    ctx.strokeStyle = p.dim; ctx.lineWidth = 0.6; ctx.globalAlpha = BFX_BRIGHT * 0.55;
+    ctx.beginPath();
+    for (const o of BFX_PLANETS) { ctx.moveTo(cx + o.r, cy); ctx.ellipse(cx, cy, o.r, o.r * 0.55, 0, 0, BFX_TAU); }
+    ctx.stroke();
+    ctx.globalAlpha = BFX_BRIGHT * 1.4;
+    for (const o of BFX_PLANETS) {
+      const a = o.ph + t * BFX_TAU / o.T;
+      ctx.fillStyle = o.c; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * o.r, cy + Math.sin(a) * o.r * 0.55, o.s, 0, BFX_TAU); ctx.fill();
+    }
+    ctx.restore();
+    // 星
+    ctx.fillStyle = p.fg;
+    for (const L of this.layers) for (const s of L.s) {
+      ctx.globalAlpha = L.a * (0.55 + 0.45 * Math.sin(t * s.f + s.tw));
+      ctx.beginPath(); ctx.arc(s.x, s.y, L.r, 0, BFX_TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const sh = this.shoot;
+    if (sh) {
+      const ang = 2.55, dx = Math.cos(ang), dy = Math.sin(ang), d = sh.u * 150;
+      const hx = sh.x + dx * d, hy = sh.y + dy * d, fade = Math.sin(sh.u * Math.PI) * 0.35;
+      const g = ctx.createLinearGradient(hx, hy, hx - dx * sh.len, hy - dy * sh.len);
+      g.addColorStop(0, 'rgba(236,230,216,' + fade + ')'); g.addColorStop(1, 'rgba(236,230,216,0)');
+      ctx.strokeStyle = g; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx - dx * sh.len, hy - dy * sh.len); ctx.stroke();
+    }
   }
 }
 
@@ -4699,18 +4817,25 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 
 
 // ---- 02_src/whatsnew.js ----
-// 起動画面（TAP TO BEGIN）の WHAT'S NEW。version を変えると、まだ見ていない端末に NEW 表示が出る。
-// 行は日本語の短文（全角20字前後まで、3〜5行）。他の表示（英語）と違う見た目にして読んでもらうため日本語にする（ユーザー決定）。
-const WHATSNEW = {
-  version: APP_VERSION,
-  lines: [
+// 起動画面（TAP TO BEGIN）の UPDATE INFORMATION。新しい順。先頭の version が APP_VERSION（NEW 表示・seenVersion の基準）。
+// 項目は日本語の短文（22字まで）。他の表示（英語）と違う見た目にして読んでもらうため日本語にする（ユーザー決定）。
+const WHATSNEW_ENTRIES = [
+  { version: APP_VERSION, date: '2026.10.26', items: [
     '降下ルートの輪をくぐってコンボ',
     '特別な輪で短時間の特典',
     'ステージごとに★3つを集めよう',
     '新天体：水星（暗闇のクレーター）',
-    '平らな地面ならどこでも着地できる',
-  ],
-};
+    '起動時に世界ランキング TOP 5',
+  ] },
+  { version: '1.1.0-beta', date: '2026.10.26', items: [
+    '平らな地面ならどこでも着地（得点なし）',
+    '着地後も再噴射で離陸できる',
+    '着陸の評価 C・B・A・S・PERFECT',
+    'PINで別の端末でも同じ名前',
+    'ランキングは v1.0 と別集計',
+  ] },
+];
+const WHATSNEW = { version: WHATSNEW_ENTRIES[0].version, entries: WHATSNEW_ENTRIES };
 
 
 // ---- 02_src/title.js ----
@@ -5021,59 +5146,110 @@ class BootScene extends Scene {
     this.isRoot = true;   // BACKボタン非表示
     this.t = 0;
     this.done = false;
-    this.stars = [];
-    for (let i = 0; i < 46; i++) {
-      this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.15 ? 1.3 : 0.7, tw: Math.random() * 6.28 });
-    }
+    this.fx = new BootFx();
+    this.scroll = 0;      // UPDATE INFORMATION の縦スクロール量(px)
+    this._headW = 0;
   }
   onInput(action, data) {
     if (this.done) return;
     if (data && data.repeat) return;
+    if (action === 'up') { this.scrollBy(-NEWS_STEP); return; }
+    if (action === 'down') { this.scrollBy(NEWS_STEP); return; }
     if (action === 'tap' || action === 'confirm') {
       this.done = true;
       try { this.engine.storage.set('seenVersion', WHATSNEW.version); } catch (_) { /* 保存できなくても進める */ }
       if (typeof this.next === 'function') this.next();
     }
   }
-  // WHAT'S NEW の配置（ロゴ y~256 / TAP TO BEGIN y~384 / SOUND ON y~412 の下。360x640 で重ならない）
+  // ---- UPDATE INFORMATION のスクロール ----
+  dragZone(pt) { const f = NEWS_FRAME; return !!pt && pt.x >= f.x && pt.x <= f.x + f.w && pt.y >= f.y && pt.y <= f.y + f.h; }
+  onDrag(d) { if (!this.done) this.scrollBy(-d.dy); }     // 指に内容が付いてくる向き
+  onWheel(d) { if (!this.done) this.scrollBy(d.dy); }
+  scrollMax() { return Math.max(0, newsContentH() - NEWS_VIEW.h); }
+  scrollBy(d) { this.scroll = Math.max(0, Math.min(this.scrollMax(), this.scroll + d)); }
+  // 配置（360x640。ロゴ y~256 / TAP TO BEGIN y~384 / SOUND ON y~412 の下。枠は固定高）
   newsLayout() {
-    const y0 = 470, n = WHATSNEW.lines.length;
-    return { head: { x: W / 2 - 60, y: y0, w: 120, h: 9 }, pill: { x: W / 2 + 66, y: y0 - 2, w: 28, h: 13 },
-      lines: WHATSNEW.lines.map((_, i) => ({ x: 20, y: y0 + 18 + i * 18, w: W - 40, h: 12 })), bottom: y0 + 18 + (n - 1) * 18 + 12 };   // 日本語は 11px・行間18
+    const hw = this._headW || 150;
+    return { head: { x: W / 2 - hw / 2, y: NEWS_HEAD_Y, w: hw, h: 9 }, pill: { x: W / 2 + hw / 2 + 10, y: NEWS_HEAD_Y - 2, w: 28, h: 13 },
+      frame: NEWS_FRAME, view: NEWS_VIEW, bottom: NEWS_FRAME.y + NEWS_FRAME.h, build: { x: W / 2 - 60, y: NEWS_FRAME.y + NEWS_FRAME.h + 8, w: 120, h: 8 } };
   }
   isNewVersion() {
     let seen = null; try { seen = this.engine.storage.get('seenVersion', null); } catch (_) { /* ignore */ }
     return seen !== WHATSNEW.version;
   }
-  update(dt) { this.t += (dt > 0 ? dt : 0.016); }
+  update(dt) { this.t += (dt > 0 ? dt : 0.016); this.fx.update(dt); }
   render(ctx) {
     const p = P();
     ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
-    for (const s of this.stars) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.18 + 0.32 * Math.abs(Math.sin(this.t * 0.6 + s.tw))));
-      ctx.fillStyle = p.fg;
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+    this.fx.draw(ctx);
     const fadeIn = Math.min(1, this.t / 0.8);
-    txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: 0.85 * fadeIn });
+    const br = this.fx.breath();   // ロゴの呼吸グロー（周期4s）
+    ctx.save(); ctx.shadowColor = rgba(p.mid, 0.25 + 0.4 * br); ctx.shadowBlur = 6 + 14 * br;
+    txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: (0.78 + 0.17 * br) * fadeIn });
+    ctx.restore();
     txt(ctx, 'SOFT LANDING TOUR', W / 2, H * 0.40 + 34, 8, p.dim, 'center', { sp: 5, w: 400, a: fadeIn });
-    txt(ctx, APP_LABEL, W / 2, H * 0.40 + 52, 8, p.mid, 'center', { sp: 5, w: 500, a: 0.8 * fadeIn });
+    txt(ctx, APP_LABEL, W / 2, H * 0.40 + 52, 8, p.fg, 'center', { sp: 5, w: 500, a: 0.5 * fadeIn });   // モノクロ
     const pulse = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 2.2));
     txt(ctx, 'TAP TO BEGIN', W / 2, H * 0.60, 12, p.fg, 'center', { sp: 6, w: 400, a: pulse * fadeIn });
     txt(ctx, 'SOUND ON', W / 2, H * 0.60 + 28, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.7 * fadeIn });
-    // WHAT'S NEW（静かに）。未確認のバージョンなら NEW のピルと少し明るい文字
-    const nw = this.newsLayout(), fresh = this.isNewVersion(), nf = Math.max(0, Math.min(1, (this.t - 0.4) / 0.8));
-    txt(ctx, "WHAT'S NEW", W / 2, nw.head.y, 7, fresh ? p.mid : p.dim, 'center', { sp: 5, w: 500, a: (fresh ? 0.95 : 0.7) * nf });
+    // UPDATE INFORMATION（静かに）。見出しはモノクロ。未確認のバージョンなら見出しが少し明るく、右に NEW のピル
+    const nf = Math.max(0, Math.min(1, (this.t - 0.4) / 0.8)), fresh = this.isNewVersion();
+    this._headW = txtW(ctx, NEWS_TITLE, 7, 500, 5);
+    const nw = this.newsLayout();
+    txt(ctx, NEWS_TITLE, W / 2, nw.head.y, 7, fresh ? p.hi : p.fg, 'center', { sp: 5, w: 500, a: (fresh ? 0.9 : 0.55) * nf });
     if (fresh) {
       ctx.save(); ctx.globalAlpha = nf; pill(ctx, nw.pill.x, nw.pill.y, nw.pill.w, nw.pill.h, rgba(p.warn, 0.14), rgba(p.warn, 0.7));
       txt(ctx, 'NEW', nw.pill.x + nw.pill.w / 2, nw.pill.y + 3.5, 6, p.warn, 'center', { sp: 2, w: 600 }); ctx.restore();
     }
-    for (let i = 0; i < WHATSNEW.lines.length; i++) {
-      txt(ctx, ellipsize(ctx, WHATSNEW.lines[i], 11, 400, 0.5, nw.lines[i].w), W / 2, nw.lines[i].y, 11, p.fg, 'center', { sp: 0.5, w: 400, a: (fresh ? 0.85 : 0.6) * nf });
+    // 枠（細い1px・低アルファ・暗い半透明の塗り）
+    const f = nw.frame;
+    ctx.save(); ctx.globalAlpha = nf;
+    rr(ctx, f.x, f.y, f.w, f.h, 10); ctx.fillStyle = rgba('#06080E', 0.72); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.fg, 0.16); ctx.stroke();
+    ctx.restore();
+    // 内容（枠でクリップ。範囲外の行は描かない）
+    const v = nw.view, max = this.scrollMax(), sc = Math.max(0, Math.min(max, this.scroll));
+    ctx.save();
+    rr(ctx, v.x, v.y, v.w, v.h, 6); ctx.clip();
+    const edge = (y, h) => {   // 上下端のやわらかいフェード（さらに内容がある側だけ）
+      let k = 1;
+      if (sc > 0) k = Math.min(k, (y - v.y + 2) / 14);
+      if (sc < max) k = Math.min(k, (v.y + v.h - (y + h) + 2) / 14);
+      return Math.max(0, Math.min(1, k));
+    };
+    let y = v.y - sc;
+    for (let ei = 0; ei < WHATSNEW.entries.length; ei++) {
+      const en = WHATSNEW.entries[ei];
+      if (y + NEWS_DATE_H > v.y && y < v.y + v.h) txt(ctx, en.date + ' · build ' + en.version, v.x, y + 2, 8, p.dim, 'left', { sp: 1, w: 500, a: edge(y, NEWS_DATE_H) * nf * (ei === 0 && fresh ? 1 : 0.85) });
+      y += NEWS_DATE_H;
+      for (const it of en.items) {
+        if (y + NEWS_LINE > v.y && y < v.y + v.h) {
+          const a = edge(y, NEWS_LINE) * nf * (ei === 0 && fresh ? 0.88 : 0.7);
+          txt(ctx, '・', v.x, y + 2, 11, p.fg, 'left', { w: 400, a });
+          txt(ctx, ellipsize(ctx, it, 11, 400, 0.5, v.w - NEWS_INDENT), v.x + NEWS_INDENT, y + 2, 11, p.fg, 'left', { sp: 0.5, w: 400, a });
+        }
+        y += NEWS_LINE;
+      }
+      y += NEWS_GAP;
     }
-    txt(ctx, APP_BUILD_TEXT, W / 2, nw.bottom + 16, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
+    ctx.restore();
+    if (max > 0) {   // 細いスクロールバー
+      const th = Math.max(14, v.h * v.h / newsContentH()), ty = v.y + (v.h - th) * (sc / max);
+      ctx.save(); ctx.globalAlpha = nf; rr(ctx, f.x + f.w - 5, ty, 2, th, 1); ctx.fillStyle = rgba(p.fg, 0.35); ctx.fill(); ctx.restore();
+    }
+    txt(ctx, APP_BUILD_TEXT, W / 2, nw.build.y, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
   }
+}
+// UPDATE INFORMATION の寸法（論理座標 360x640）
+const NEWS_TITLE = 'UPDATE INFORMATION';
+const NEWS_HEAD_Y = 436, NEWS_STEP = 36;
+const NEWS_FRAME = { x: 20, y: 452, w: 320, h: 136 };
+const NEWS_VIEW = { x: 32, y: 458, w: 296, h: 124 };   // 枠の内側（余白つき）
+const NEWS_DATE_H = 16, NEWS_LINE = 18, NEWS_GAP = 10, NEWS_INDENT = 12;
+function newsContentH() {
+  let h = 0;
+  for (const en of WHATSNEW.entries) h += NEWS_DATE_H + en.items.length * NEWS_LINE + NEWS_GAP;
+  return h - NEWS_GAP;
 }
 
 // 起動画面とタイトルの間に1回だけ挟む HALL OF FAME（WORLD TOP 5、v1.1 ボードのキャッシュ/取得のみ）。タップ/決定で即タイトルへ（タップは消費）。約4秒で自動遷移。

@@ -151,6 +151,7 @@ export class Engine {
 
     // ---- ポインタ追跡 ----
     const SWIPE = 24;
+    const DRAG_PX = 6;      // ドラッグ対応シーンでスクロールとみなす移動量(px CSS)
     const TAP_MAX_MS = 400; // これより長く押した指の解除はタップにしない（長押しは操作入力）
     const nowMs = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); // スワイプとみなす最小移動量(px CSS)
     this._touchMap = new Map(); // id -> {x,y}（論理座標。this.touches の要素と同一オブジェクト＝常に最新）
@@ -172,6 +173,12 @@ export class Engine {
       this._touchMap.set(id, toLogical(cx, cy));
       // 2本目以降の指が来たらジェスチャ判定は無効（単一指のみ）
       this._gesture = wasEmpty ? { id, sx: cx, sy: cy, t0: nowMs() } : null;
+      // ドラッグ対応シーン（任意）: scene.dragZone(論理座標) が真の位置で始まった指だけ、6px超の移動を onDrag に渡す
+      if (this._gesture) {
+        const sc = this.scene, lp0 = this._touchMap.get(id);
+        let z = false; try { z = !!(sc && sc.dragZone && sc.onDrag && sc.dragZone(lp0)); } catch (_) { z = false; }
+        if (z) { this._gesture.drag = true; this._gesture.active = false; this._gesture.ly = lp0.y; }
+      }
       sync();
     };
     this._pMove = (id, cx, cy) => {
@@ -179,6 +186,14 @@ export class Engine {
       if (!pt) return;
       const lp = toLogical(cx, cy);
       pt.x = lp.x; pt.y = lp.y;
+      const g = this._gesture;
+      if (g && g.id === id && g.drag) {
+        if (!g.active && Math.hypot(cx - g.sx, cy - g.sy) > DRAG_PX) g.active = true;   // 以降はタップ/スワイプとして扱わない
+        if (g.active) {
+          const dy = lp.y - g.ly; g.ly = lp.y;
+          try { if (this.scene && this.scene.onDrag) this.scene.onDrag({ x: lp.x, y: lp.y, dy }); } catch (_) { /* ignore */ }
+        }
+      }
       sync();
     };
     this._pEnd = (id, cx, cy, cancelled) => {
@@ -188,6 +203,7 @@ export class Engine {
       const g = this._gesture;
       if (!g || g.id !== id) return;
       this._gesture = null;
+      if (g.active) return;  // ドラッグ（スクロール）した指はタップ/スワイプにしない
       if (cancelled) return; // キャンセルされた接触はタップ扱いにしない
       const dx = cx - g.sx, dy = cy - g.sy;
       const adx = Math.abs(dx), ady = Math.abs(dy);
@@ -216,6 +232,18 @@ export class Engine {
     c.addEventListener('mousedown', (e) => { if (e.button) return; this._pStart('mouse', e.clientX, e.clientY); });
     window.addEventListener('mousemove', (e) => { this._pMove('mouse', e.clientX, e.clientY); });
     window.addEventListener('mouseup', (e) => { if (e.button) return; this._pEnd('mouse', e.clientX, e.clientY, false); });
+
+    // ホイール（任意）: scene.onWheel({x,y,dy}) があるシーンにだけ渡す。dragZone 内ならページのスクロールも止める
+    c.addEventListener('wheel', (e) => {
+      const sc = this.scene;
+      if (!sc || !sc.onWheel) return;
+      const lp = toLogical(e.clientX, e.clientY);
+      let z = true; try { if (sc.dragZone) z = !!sc.dragZone(lp); } catch (_) { z = false; }
+      if (!z) return;
+      const k = e.deltaMode === 1 ? 16 : 1;   // 行単位ならpx換算
+      try { sc.onWheel({ x: lp.x, y: lp.y, dy: (e.deltaY || 0) * k / (this.scale || 1) }); } catch (_) { /* ignore */ }
+      if (e.preventDefault) e.preventDefault();
+    }, { passive: false });
 
     c.addEventListener('contextmenu', (e) => { e.preventDefault(); this._clearPointers(); });
 

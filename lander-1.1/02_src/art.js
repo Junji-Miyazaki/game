@@ -108,6 +108,16 @@ function charW(ctx, font, ch) {
   if (w === undefined) { w = ctx.measureText(ch).width; if (!(w >= 0)) w = 6; _wMemo.set(k, w); }
   return w;
 }
+// txt と同じ指定での描画幅（字間込み）。見出しの右に別の部品を置く位置決め用
+export function txtW(ctx, s, size, wt, sp) {
+  s = String(s == null ? '' : s); sp = sp || 0;
+  const n = Array.from(s).length;
+  try {
+    ctx.save(); ctx.font = fontStr(wt || 400, size); if (ART_LS) ctx.letterSpacing = '0px';
+    const w = ctx.measureText(s).width; ctx.restore();
+    return (w >= 0 ? w : n * size * 0.6) + sp * Math.max(0, n - 1);
+  } catch (_) { return n * (size * 0.6 + sp); }
+}
 // 幅 maxW に収まるよう末尾を省略記号にする（書記素単位）。sp=字間。テスト用ctxでも例外を出さない
 export function ellipsize(ctx, s, size, wt, sp, maxW) {
   s = String(s == null ? '' : s);
@@ -2006,8 +2016,8 @@ export function drawStartPanel(ctx, d) {
 }
 export function drawBetaTag(ctx, r, a) {
   const p = P();
-  pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
-  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 3, 6, p.dim, 'center', { sp: 2, w: 500, a });
+  pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));   // モノクロ（色付きにしない）
+  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 3, 6, p.fg, 'center', { sp: 2, w: 500, a: 0.55 * a });
 }
 
 // タイトルの WORLD CHAMPION プレート。box={x,y,w,h}。d={name,score,title}。o={t:経過秒, you:閲覧者が本人}

@@ -484,9 +484,10 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 // ---------- 11. WHAT'S NEW / 版 ----------
 {
   ok(APP_VERSION === '1.1.0-beta.2' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.2', 'version 1.1.0-beta.2, label unchanged');
-  ok(WHATSNEW.version === APP_VERSION && WHATSNEW.lines.length >= 4 && WHATSNEW.lines.length <= 5, 'whatsnew 4-5 lines');
-  ok(WHATSNEW.lines.every((l) => l.length <= 24), 'each line <= 24 chars: ' + WHATSNEW.lines.map((l) => l.length).join(','));
-  const joined = WHATSNEW.lines.join('|');
+  const E0 = WHATSNEW.entries[0];
+  ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 4 && E0.items.length <= 5, 'whatsnew newest entry: 4-5 items');
+  ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
+  const joined = E0.items.join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
 }
 

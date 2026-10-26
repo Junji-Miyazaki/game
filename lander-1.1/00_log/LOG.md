@@ -75,3 +75,16 @@ v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/
 - 判断: 中継 Worker は1つで両版を扱うため、正本は `../lander/06_server/` のみ。本フォルダの p3fix/p4net/p9net/p11net はそれを参照する。05_legacy・07_lab も v1.0 側のみ。
 - 状態: 全19テスト通過（p10touch 254、p11net 185 含む）。
 - 次: BETA v1.1 表示・`build 1.1.0-beta`・保存領域の分離と v1.0 パイロットの引き継ぎ選択・PIN UI・ボード v1.1（中継対応まで世界送信は停止）。
+
+## 2026-10-26 起動画面の改訂（UPDATE INFORMATION・枠・スクロール・背景B）
+- 実施:
+  - 版ラベルをモノクロ化: 起動画面の `BETA v1.1` は p.fg の低アルファ（旧 p.mid=ティール）、タイトルの `drawBetaTag`（art.js）も文字を p.fg 低アルファに。色付きのピルなし。
+  - 見出しを `UPDATE INFORMATION`（7px・字間5・モノクロ）に。`NEW` ピル（琥珀）は `txtW`（art.js、実測幅）で見出しの右 +10px に置く＝フォントが変わっても重ならない。表示は seenVersion ≠ 先頭 entry の version の間だけ。起動画面タップで seenVersion を保存→次回起動で消える。
+  - `02_src/whatsnew.js`: `WHATSNEW_ENTRIES`（新しい順の `{version,date,items}`）。`WHATSNEW = {version: entries[0].version, entries}`。`APP_VERSION`（1.1.0-beta.2）が先頭 version（単一の定義元）。各 entry は `2026.10.26 · build <version>` の日付行＋「・」付き項目（11px・行高18・ぶら下げインデント）。
+  - 枠: 角丸1px・低アルファ・暗い半透明塗り（x20,y452,w320,h136）。見出しは枠の上(y436)、build 文字は枠の下(y~596)。内容は枠でクリップ、範囲外の行は描かない。さらに内容がある側の端は文字をフェード、細いスクロールバー（2px）。
+  - スクロール: 縦ドラッグ（タッチ/マウス）・マウスホイール・↑↓キー(36px)。エンジン `core/engine.js` に最小の追加: シーンが `dragZone(pt)`+`onDrag` を持つときだけ、その領域で始まった指の 6px 超の移動を `onDrag({dy})` に渡し、その指の解除はタップ/スワイプにしない。`wheel` は `onWheel` を持つシーンの dragZone 内だけ渡し preventDefault。他シーンは影響なし（全テスト通過）。短い無移動のタップは枠内でも BEGIN（音の解除も兼ねる）。Enter/Space も BEGIN。
+  - 背景: 07_lab/boot_backdrop の案 B を `02_src/bootfx.js`（`BootFx`、build.js の FILES に追加）へ移植。3層の視差星・流れ星・明るさ30%の太陽グロー・細い軌道・公転する惑星・ロゴの呼吸グロー(周期4s)。太陽グラデーションは ctx ごとに1回だけ生成。lab 側は変更なし。
+  - テスト: p10touch(260)/p12v11(119)/p13rings(246) を新構造に更新。新規 `04_tests/p14boot.mjs`（42: NEW ピル出る/タップ後は消える・ピルが実測幅の右・360x640 の枠配置・ホイール/ドラッグ/キーのクランプ・枠内ドラッグで BEGIN しない・枠内/枠外タップで BEGIN・6px 以内はタップ・他シーンの swipe 不変・版ラベルのモノクロ）。
+- 判断: ドラッグ判定は engine 側（6px, CSS px）で行い、BootScene の dragZone を枠に限定。枠外のスワイプは何もしない（BEGIN もしない）。ピルは見出しの実測幅で配置し、極端に広いフォントでは画面外に出うる（7px 文字が 1 字 8px まで確認）。
+- 目視（preview lander-1.1, 375x812）: 初回（NEW あり・見出しと非重複）、ドラッグでスクロール（上下フェード・バー・BEGIN せず）、枠内タップで開始→seenVersion=1.1.0-beta.2 保存、再読込で NEW なし、タイトルの BETA タグがモノクロ、を確認。
+- 未確認: 実機タッチ（慣性なし・mouse/emulated のみ）、実機の 60fps、ホイールは engine のテストのみ（ブラウザ操作ツールのスクロールでは未確認）、日本語フォントのフォールバック別の見え方。

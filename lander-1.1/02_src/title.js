@@ -7,10 +7,11 @@ import { APP_LABEL, APP_BUILD_TEXT } from './version.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner, drawWorldTop5 } from './art.js';
+import { txt, txtW, rr, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner, drawWorldTop5 } from './art.js';
 
 import { stageInfo } from './bodies.js';
 import { WHATSNEW } from './whatsnew.js';
+import { BootFx } from './bootfx.js';
 import { stageRecord } from './stars.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
@@ -317,59 +318,110 @@ export class BootScene extends Scene {
     this.isRoot = true;   // BACKボタン非表示
     this.t = 0;
     this.done = false;
-    this.stars = [];
-    for (let i = 0; i < 46; i++) {
-      this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.15 ? 1.3 : 0.7, tw: Math.random() * 6.28 });
-    }
+    this.fx = new BootFx();
+    this.scroll = 0;      // UPDATE INFORMATION の縦スクロール量(px)
+    this._headW = 0;
   }
   onInput(action, data) {
     if (this.done) return;
     if (data && data.repeat) return;
+    if (action === 'up') { this.scrollBy(-NEWS_STEP); return; }
+    if (action === 'down') { this.scrollBy(NEWS_STEP); return; }
     if (action === 'tap' || action === 'confirm') {
       this.done = true;
       try { this.engine.storage.set('seenVersion', WHATSNEW.version); } catch (_) { /* 保存できなくても進める */ }
       if (typeof this.next === 'function') this.next();
     }
   }
-  // WHAT'S NEW の配置（ロゴ y~256 / TAP TO BEGIN y~384 / SOUND ON y~412 の下。360x640 で重ならない）
+  // ---- UPDATE INFORMATION のスクロール ----
+  dragZone(pt) { const f = NEWS_FRAME; return !!pt && pt.x >= f.x && pt.x <= f.x + f.w && pt.y >= f.y && pt.y <= f.y + f.h; }
+  onDrag(d) { if (!this.done) this.scrollBy(-d.dy); }     // 指に内容が付いてくる向き
+  onWheel(d) { if (!this.done) this.scrollBy(d.dy); }
+  scrollMax() { return Math.max(0, newsContentH() - NEWS_VIEW.h); }
+  scrollBy(d) { this.scroll = Math.max(0, Math.min(this.scrollMax(), this.scroll + d)); }
+  // 配置（360x640。ロゴ y~256 / TAP TO BEGIN y~384 / SOUND ON y~412 の下。枠は固定高）
   newsLayout() {
-    const y0 = 470, n = WHATSNEW.lines.length;
-    return { head: { x: W / 2 - 60, y: y0, w: 120, h: 9 }, pill: { x: W / 2 + 66, y: y0 - 2, w: 28, h: 13 },
-      lines: WHATSNEW.lines.map((_, i) => ({ x: 20, y: y0 + 18 + i * 18, w: W - 40, h: 12 })), bottom: y0 + 18 + (n - 1) * 18 + 12 };   // 日本語は 11px・行間18
+    const hw = this._headW || 150;
+    return { head: { x: W / 2 - hw / 2, y: NEWS_HEAD_Y, w: hw, h: 9 }, pill: { x: W / 2 + hw / 2 + 10, y: NEWS_HEAD_Y - 2, w: 28, h: 13 },
+      frame: NEWS_FRAME, view: NEWS_VIEW, bottom: NEWS_FRAME.y + NEWS_FRAME.h, build: { x: W / 2 - 60, y: NEWS_FRAME.y + NEWS_FRAME.h + 8, w: 120, h: 8 } };
   }
   isNewVersion() {
     let seen = null; try { seen = this.engine.storage.get('seenVersion', null); } catch (_) { /* ignore */ }
     return seen !== WHATSNEW.version;
   }
-  update(dt) { this.t += (dt > 0 ? dt : 0.016); }
+  update(dt) { this.t += (dt > 0 ? dt : 0.016); this.fx.update(dt); }
   render(ctx) {
     const p = P();
     ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
-    for (const s of this.stars) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, 0.18 + 0.32 * Math.abs(Math.sin(this.t * 0.6 + s.tw))));
-      ctx.fillStyle = p.fg;
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+    this.fx.draw(ctx);
     const fadeIn = Math.min(1, this.t / 0.8);
-    txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: 0.85 * fadeIn });
+    const br = this.fx.breath();   // ロゴの呼吸グロー（周期4s）
+    ctx.save(); ctx.shadowColor = rgba(p.mid, 0.25 + 0.4 * br); ctx.shadowBlur = 6 + 14 * br;
+    txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: (0.78 + 0.17 * br) * fadeIn });
+    ctx.restore();
     txt(ctx, 'SOFT LANDING TOUR', W / 2, H * 0.40 + 34, 8, p.dim, 'center', { sp: 5, w: 400, a: fadeIn });
-    txt(ctx, APP_LABEL, W / 2, H * 0.40 + 52, 8, p.mid, 'center', { sp: 5, w: 500, a: 0.8 * fadeIn });
+    txt(ctx, APP_LABEL, W / 2, H * 0.40 + 52, 8, p.fg, 'center', { sp: 5, w: 500, a: 0.5 * fadeIn });   // モノクロ
     const pulse = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 2.2));
     txt(ctx, 'TAP TO BEGIN', W / 2, H * 0.60, 12, p.fg, 'center', { sp: 6, w: 400, a: pulse * fadeIn });
     txt(ctx, 'SOUND ON', W / 2, H * 0.60 + 28, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.7 * fadeIn });
-    // WHAT'S NEW（静かに）。未確認のバージョンなら NEW のピルと少し明るい文字
-    const nw = this.newsLayout(), fresh = this.isNewVersion(), nf = Math.max(0, Math.min(1, (this.t - 0.4) / 0.8));
-    txt(ctx, "WHAT'S NEW", W / 2, nw.head.y, 7, fresh ? p.mid : p.dim, 'center', { sp: 5, w: 500, a: (fresh ? 0.95 : 0.7) * nf });
+    // UPDATE INFORMATION（静かに）。見出しはモノクロ。未確認のバージョンなら見出しが少し明るく、右に NEW のピル
+    const nf = Math.max(0, Math.min(1, (this.t - 0.4) / 0.8)), fresh = this.isNewVersion();
+    this._headW = txtW(ctx, NEWS_TITLE, 7, 500, 5);
+    const nw = this.newsLayout();
+    txt(ctx, NEWS_TITLE, W / 2, nw.head.y, 7, fresh ? p.hi : p.fg, 'center', { sp: 5, w: 500, a: (fresh ? 0.9 : 0.55) * nf });
     if (fresh) {
       ctx.save(); ctx.globalAlpha = nf; pill(ctx, nw.pill.x, nw.pill.y, nw.pill.w, nw.pill.h, rgba(p.warn, 0.14), rgba(p.warn, 0.7));
       txt(ctx, 'NEW', nw.pill.x + nw.pill.w / 2, nw.pill.y + 3.5, 6, p.warn, 'center', { sp: 2, w: 600 }); ctx.restore();
     }
-    for (let i = 0; i < WHATSNEW.lines.length; i++) {
-      txt(ctx, ellipsize(ctx, WHATSNEW.lines[i], 11, 400, 0.5, nw.lines[i].w), W / 2, nw.lines[i].y, 11, p.fg, 'center', { sp: 0.5, w: 400, a: (fresh ? 0.85 : 0.6) * nf });
+    // 枠（細い1px・低アルファ・暗い半透明の塗り）
+    const f = nw.frame;
+    ctx.save(); ctx.globalAlpha = nf;
+    rr(ctx, f.x, f.y, f.w, f.h, 10); ctx.fillStyle = rgba('#06080E', 0.72); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.fg, 0.16); ctx.stroke();
+    ctx.restore();
+    // 内容（枠でクリップ。範囲外の行は描かない）
+    const v = nw.view, max = this.scrollMax(), sc = Math.max(0, Math.min(max, this.scroll));
+    ctx.save();
+    rr(ctx, v.x, v.y, v.w, v.h, 6); ctx.clip();
+    const edge = (y, h) => {   // 上下端のやわらかいフェード（さらに内容がある側だけ）
+      let k = 1;
+      if (sc > 0) k = Math.min(k, (y - v.y + 2) / 14);
+      if (sc < max) k = Math.min(k, (v.y + v.h - (y + h) + 2) / 14);
+      return Math.max(0, Math.min(1, k));
+    };
+    let y = v.y - sc;
+    for (let ei = 0; ei < WHATSNEW.entries.length; ei++) {
+      const en = WHATSNEW.entries[ei];
+      if (y + NEWS_DATE_H > v.y && y < v.y + v.h) txt(ctx, en.date + ' · build ' + en.version, v.x, y + 2, 8, p.dim, 'left', { sp: 1, w: 500, a: edge(y, NEWS_DATE_H) * nf * (ei === 0 && fresh ? 1 : 0.85) });
+      y += NEWS_DATE_H;
+      for (const it of en.items) {
+        if (y + NEWS_LINE > v.y && y < v.y + v.h) {
+          const a = edge(y, NEWS_LINE) * nf * (ei === 0 && fresh ? 0.88 : 0.7);
+          txt(ctx, '・', v.x, y + 2, 11, p.fg, 'left', { w: 400, a });
+          txt(ctx, ellipsize(ctx, it, 11, 400, 0.5, v.w - NEWS_INDENT), v.x + NEWS_INDENT, y + 2, 11, p.fg, 'left', { sp: 0.5, w: 400, a });
+        }
+        y += NEWS_LINE;
+      }
+      y += NEWS_GAP;
     }
-    txt(ctx, APP_BUILD_TEXT, W / 2, nw.bottom + 16, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
+    ctx.restore();
+    if (max > 0) {   // 細いスクロールバー
+      const th = Math.max(14, v.h * v.h / newsContentH()), ty = v.y + (v.h - th) * (sc / max);
+      ctx.save(); ctx.globalAlpha = nf; rr(ctx, f.x + f.w - 5, ty, 2, th, 1); ctx.fillStyle = rgba(p.fg, 0.35); ctx.fill(); ctx.restore();
+    }
+    txt(ctx, APP_BUILD_TEXT, W / 2, nw.build.y, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
   }
+}
+// UPDATE INFORMATION の寸法（論理座標 360x640）
+const NEWS_TITLE = 'UPDATE INFORMATION';
+const NEWS_HEAD_Y = 436, NEWS_STEP = 36;
+const NEWS_FRAME = { x: 20, y: 452, w: 320, h: 136 };
+const NEWS_VIEW = { x: 32, y: 458, w: 296, h: 124 };   // 枠の内側（余白つき）
+const NEWS_DATE_H = 16, NEWS_LINE = 18, NEWS_GAP = 10, NEWS_INDENT = 12;
+function newsContentH() {
+  let h = 0;
+  for (const en of WHATSNEW.entries) h += NEWS_DATE_H + en.items.length * NEWS_LINE + NEWS_GAP;
+  return h - NEWS_GAP;
 }
 
 // 起動画面とタイトルの間に1回だけ挟む HALL OF FAME（WORLD TOP 5、v1.1 ボードのキャッシュ/取得のみ）。タップ/決定で即タイトルへ（タップは消費）。約4秒で自動遷移。

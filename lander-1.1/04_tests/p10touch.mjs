@@ -478,35 +478,39 @@ function landAndClear(extra = [], opts = {}) {
 
 // ---------- 12. WHAT'S NEW ----------
 {
-  ok(WHATSNEW.version === '1.1.0-beta.2' && WHATSNEW.lines.length >= 3 && WHATSNEW.lines.length <= 5, 'whatsnew: version + 3-5 lines');
-  ok(WHATSNEW.lines.every(l => l.length <= 24 && /[\u3040-\u30ff]/.test(l)), 'lines <= 24 chars, Japanese (user decision): ' + WHATSNEW.lines.map(l => l.length).join(','));
+  const ENT = WHATSNEW.entries;
+  ok(WHATSNEW.version === '1.1.0-beta.2' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
+  ok(ENT.every(en => /^\d{4}\.\d\d\.\d\d$/.test(en.date) && en.items.length >= 3 && en.items.length <= 6), 'each entry: date + 3-6 items');
+  ok(ENT.every(en => en.items.every(l => l.length <= 22 && /[\u3040-\u30ff]/.test(l))), 'items <= 22 chars, Japanese (user decision)');
+  const ITEMS = ENT.flatMap(en => en.items);
   const mk = (extra = []) => { const e = makeEngine(extra); const b = new BootScene(e, () => { e.started = true; }); return { e, b }; };
   const draw = (b, t = 5) => { b.t = t; const rec = { texts: [], tr: [] }; b.render(makeCtx(rec)); return rec.texts; };
   let { e, b } = mk();
   ok(b.isNewVersion() === true, 'fresh device: NEW');
   let tx = draw(b);
-  ok(tx.some(t => t.s === 'NEW') && tx.some(t => t.s === "WHAT'S NEW") && WHATSNEW.lines.every(l => tx.some(t => t.s === l)), 'NEW pill + header + all lines drawn');
+  ok(tx.some(t => t.s === 'NEW') && tx.some(t => t.s === 'UPDATE INFORMATION') && !tx.some(t => t.s === "WHAT'S NEW") && ENT[0].items.every(l => tx.some(t => t.s === l)), 'NEW pill + header + visible newest items drawn');
   b.onInput('tap', { x: 10, y: 10 });
   ok(e.started === true && e.store.get('seenVersion') === WHATSNEW.version, 'boot tap starts and stores seenVersion');
   ({ e, b } = mk([['seenVersion', WHATSNEW.version]]));
-  tx = draw(b); ok(!b.isNewVersion() && !tx.some(t => t.s === 'NEW') && WHATSNEW.lines.every(l => tx.some(t => t.s === l)), 'same version: no NEW pill, block still shown');
+  tx = draw(b); ok(!b.isNewVersion() && !tx.some(t => t.s === 'NEW') && tx.some(t => t.s === 'UPDATE INFORMATION'), 'same version: no NEW pill, block still shown');
   ({ e, b } = mk([['seenVersion', '2020.01.01']])); ok(b.isNewVersion(), 'old version: NEW again');
   // 明るさ: NEW のときは行が少し明るい（alpha 記録）
-  const alphas = (extra) => { const { b: bb } = mk(extra); bb.t = 5; const ctx = makeCtx(null); const rec = []; const orig = ctx.fillText; const c2 = new Proxy({}, { get: (t, k) => k === 'fillText' ? (s) => rec.push([String(s), ctx.globalAlpha]) : ctx[k], set: (t, k, v) => { ctx[k] = v; return true; } }); bb.render(c2); return rec.find(r => r[0] === WHATSNEW.lines[0])[1]; };
+  const alphas = (extra) => { const { b: bb } = mk(extra); bb.t = 5; const ctx = makeCtx(null); const rec = []; const c2 = new Proxy({}, { get: (t, k) => k === 'fillText' ? (s) => rec.push([String(s), ctx.globalAlpha]) : ctx[k], set: (t, k, v) => { ctx[k] = v; return true; } }); bb.render(c2); return rec.find(r => r[0] === ENT[0].items[0])[1]; };
   ok(alphas([]) > alphas([['seenVersion', WHATSNEW.version]]), 'unseen version: text slightly brighter');
   // レイアウト (360x640): ロゴ/TAP/SOUND ON と非重複、画面内
   ({ e, b } = mk()); tx = draw(b, 5);
   const bx = tx.map(boxOf);
   const find = (s) => bx.find(x => x.s === s);
   const logo = find('LANDER'), sub = find('SOFT LANDING TOUR'), tap = find('TAP TO BEGIN'), snd = find('SOUND ON');
-  const news = bx.filter(x => x.s === "WHAT'S NEW" || x.s === 'NEW' || WHATSNEW.lines.includes(x.s));
-  ok(news.length === WHATSNEW.lines.length + 2, 'news boxes found');
+  const news = bx.filter(x => x.s === 'UPDATE INFORMATION' || x.s === 'NEW' || ITEMS.includes(x.s));
+  ok(news.length >= 7, 'news boxes found');
   let ov = 0; for (const n of news) for (const o of [logo, sub, tap, snd]) if (overlap(n, o)) { ov++; console.log('  overlap', n.s, o.s); }
-  for (let i = 0; i < news.length; i++) for (let j = i + 1; j < news.length; j++) if (overlap(news[i], news[j])) { ov++; console.log('  overlap', news[i].s, news[j].s); }
-  ok(ov === 0, "WHAT'S NEW does not overlap the logo / tap prompt / each other");
+  const hd = find('UPDATE INFORMATION'), npill = find('NEW');
+  ok(!overlap(hd, npill) && npill.x0 >= hd.x1, 'NEW pill is right of the heading, no overlap');
+  ok(ov === 0, 'UPDATE INFORMATION does not overlap the logo / tap prompt');
   ok(news.every(n => n.x0 >= 8 && n.x1 <= 352 && n.y1 <= 632), 'news block inside the screen');
-  ok(Math.min(...news.map(n => n.y0)) > snd.y1 + 20, 'news block sits clearly below TAP TO BEGIN / SOUND ON');
-  const L = b.newsLayout(); ok(L.bottom <= 600 && L.pill.x + L.pill.w <= 352 && L.head.y > snd.y1, 'newsLayout bounds');
+  ok(Math.min(...news.map(n => n.y0)) > snd.y1 + 8, 'news block sits clearly below TAP TO BEGIN / SOUND ON');
+  const L = b.newsLayout(); ok(L.bottom <= 600 && L.pill.x + L.pill.w <= 352 && L.head.y > snd.y1 && L.frame.y > L.head.y, 'newsLayout bounds');
   ok(!tx.some(t => t.y < 0), 'sanity');
   // 保存できない端末でも進める
   ({ e, b } = mk()); e.storage.set = () => { throw new Error('x'); }; e.storage.get = () => { throw new Error('x'); };
