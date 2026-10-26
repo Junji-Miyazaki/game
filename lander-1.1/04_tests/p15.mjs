@@ -314,12 +314,12 @@ const realFetch = globalThis.fetch;
   ok(relayEnabled() === true, 'relay on after setter');
   const rs = await submitScore({ name: 'ABC', score: 1234, stage: 7, date: 'ignored', extra: 1 });
   ok(rs.ok === true && calls.length === 1 && calls[0].url === 'https://relay.test/submit' && calls[0].init.method === 'POST', 'POST /submit');
-  ok(JSON.stringify(JSON.parse(calls[0].init.body)) === JSON.stringify({ name: 'ABC', score: 1234, stage: 7, board: 'v1.0' }), 'payload only {name,score,stage,board}');
+  ok(JSON.stringify(JSON.parse(calls[0].init.body)) === JSON.stringify({ name: 'ABC', score: 1234, stage: 7, board: 'v1.1' }), 'payload only {name,score,stage,board}');
   ok(calls[0].init.headers['Content-Type'] === 'application/json' && calls[0].init.signal, 'JSON header + abort signal');
   calls.length = 0;
   globalThis.fetch = mkFetch(() => ({ ok: true, json: async () => ({ top: [{ name: 'A', score: 9, stage: 2, date: 'd' }] }) }));
   const top = await fetchWorldTop();
-  ok(Array.isArray(top) && top.length === 1 && calls[0].url === 'https://relay.test/ranking?board=v1.0' && calls[0].init.method === 'GET', 'GET /ranking returns array');
+  ok(Array.isArray(top) && top.length === 1 && calls[0].url === 'https://relay.test/ranking?board=v1.1' && calls[0].init.method === 'GET', 'GET /ranking returns array');
   globalThis.fetch = mkFetch(() => ({ ok: true, json: async () => ({ nope: 1 }) })); ok(await fetchWorldTop() === null, 'malformed body -> null');
   globalThis.fetch = mkFetch(() => ({ ok: false, status: 500, json: async () => ({}) })); ok(await fetchWorldTop() === null, 'HTTP error -> null');
   ok((await submitScore({ name: 'A', score: 1, stage: 1 })).ok === false, 'HTTP 500 -> ok:false');
@@ -336,10 +336,11 @@ const realFetch = globalThis.fetch;
   ok((await submitScore({ name: 'A', score: 1, stage: 1 }, 60)).ok === false, 'timeout even if fetch ignores the signal');
 
   // game over -> fire-and-forget submit with the stored name; WORLD tab loading/offline
-  calls.length = 0; globalThis.fetch = mkFetch(() => ({ ok: true, json: async () => ({ top: [{ name: 'W1', score: 99, stage: 3, date: 'd' }] }) }));
+  calls.length = 0; globalThis.fetch = mkFetch(() => ({ ok: true, json: async () => ({ board: 'v1.1', top: [{ name: 'W1', score: 99, stage: 3, date: 'd' }] }) }));
   { const { e, g } = newGame(); e.storage.set('lastName', 'ZED'); g.stage = 4; g.totalScore = 900; g.continues = 0; g.fuel = 0; g._doCrash('X');
-    await Promise.resolve();
-    ok(calls.length === 1 && calls[0].url === 'https://relay.test/submit' && JSON.parse(calls[0].init.body).name === 'ZED' && JSON.parse(calls[0].init.body).score === 900, 'game over submits to world with stored name');
+    await new Promise((r) => setTimeout(r, 5));   // v1.1: 送信前にボード対応の確認(/ranking)が1回入る
+    const sc = calls.filter((c) => /\/submit$/.test(c.url));
+    ok(sc.length === 1 && sc[0].url === 'https://relay.test/submit' && JSON.parse(sc[0].init.body).name === 'ZED' && JSON.parse(sc[0].init.body).score === 900, 'game over submits to world with stored name');
     g.render(ctx);
     const tabs = g.rankTabs; ok(tabs.mode === 'local', 'overlay starts on LOCAL');
     tick(g, 0.6); const gx = 32, wr = { x: gx + Math.floor((360 - 64 - 8) / 2) + 8 + 4, y: 146 + 5 };
@@ -430,7 +431,7 @@ const realFetch = globalThis.fetch;
     ok(wins >= 0.8 * tries, 'AUTO LAND lands on every body: ' + wins + '/' + tries);
     const { g } = newGame(); g.stage = 4; g._initStage(); open(g); press(g, 0); g.state === 'play'; g._doCrash('x'); g._initStage(); ok(g._auto === false, 'auto cleared on new stage'); }
   // debug runs never enter ranking / world submit
-  const sf = []; globalThis.fetch = async (u, i) => { sf.push(u); return { ok: true, json: async () => ({ top: [] }) }; }; __setRelayUrl('https://relay.test');
+  const sf = []; globalThis.fetch = async (u, i) => { if (!/\/ranking/.test(String(u))) sf.push(u); return { ok: true, json: async () => ({ board: 'v1.1', top: [] }) }; }; __setRelayUrl('https://relay.test');
   { const { e, g } = newGame(); e.storage.set('lastName', 'DBG'); g.totalScore = 5000; g.continues = 0; g.fuel = 0; g._doCrash('X');
     await Promise.resolve();
     ok(g.state === 'gameover' && loadRanking(e.storage).length === 0 && g.newIdx === -1 && sf.length === 0, 'debug-on run: not in local ranking, not submitted'); g.render(ctx); }
@@ -438,7 +439,7 @@ const realFetch = globalThis.fetch;
   { const { e, g } = newGame(); e.storage.set('lastName', 'DBG'); g.totalScore = 5000; g.continues = 0;
     g.render(ctx); g._dbgTainted = true; g.fuel = 0; g._doCrash('X'); await Promise.resolve();
     ok(loadRanking(e.storage).length === 0 && sf.length === 0, 'run that used a debug action: excluded even after debug is off'); }
-  { const { e, g } = newGame(); e.storage.set('lastName', 'REAL'); g.totalScore = 5000; g.continues = 0; g.fuel = 0; g._doCrash('X'); await Promise.resolve();
+  { const { e, g } = newGame(); e.storage.set('lastName', 'REAL'); g.totalScore = 5000; g.continues = 0; g.fuel = 0; g._doCrash('X'); await new Promise((r) => setTimeout(r, 5));
     ok(loadRanking(e.storage).length === 1 && sf.length === 1, 'sanity: normal run is recorded and submitted'); }
   __setRelayUrl(''); globalThis.fetch = realFetch;
   { const { g } = newGame(); g.render(ctx); const b = g._dbgBtnRect(); tap(g, b.x + 3, b.y + 3); ok(g.state === 'play', 'DBG inert when debug is off'); }
@@ -507,7 +508,7 @@ const realFetch = globalThis.fetch;
 {
   const { e, g } = newGame();
   const rnd = lcg(987654); const visited = new Set(); const bodiesSeen = new Set(); let threw = null;
-  const savedFetch = globalThis.fetch; globalThis.fetch = async () => ({ ok: true, json: async () => ({ top: [] }) });
+  const savedFetch = globalThis.fetch; globalThis.fetch = async () => ({ ok: true, json: async () => ({ board: 'v1.1', top: [] }) });
   try {
     for (let f = 0; f < 5000; f++) {
       const n = Math.floor(rnd() * 4); e.touches = [];

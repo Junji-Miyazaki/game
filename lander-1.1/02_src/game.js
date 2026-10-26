@@ -11,7 +11,7 @@ import { isDebug } from './debug.js';
 import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose, TERRA, BONUS_ALT, missionOf, bonusBody, bonusScoreFor } from './bodies.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
-import { relayEnabled, adminList, adminDelete } from './net.js';
+import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
 import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex } from './art.js';
 
@@ -721,7 +721,7 @@ export class Game extends Scene {
       const b = n.best;
       rows.push({ name: String(n.name == null ? '' : n.name), label: String(n.name == null ? '' : n.name).slice(0, 14),
         sub: (b ? 'BEST ' + b.score + '  ST.' + b.stage : 'NO SCORE') + (n.first ? '  FIRST ' + String(n.first).slice(0, 10) : ''),
-        del: { x: W - 36 - 56, y: 128 + i * 72, w: 56, h: 40 } });
+        del: { x: W - 36 - 56, y: 128 + i * 72, w: 56, h: 40 }, pin: { x: W - 36 - 56 - 8 - 76, y: 128 + i * 72, w: 76, h: 40 }, hasPin: n.hasPin === true });
     }
     const pages = Math.max(1, Math.ceil(a.names.length / ADMIN_PER_PAGE));
     return { rows, pages,
@@ -729,7 +729,7 @@ export class Game extends Scene {
       next: a.page < pages - 1 ? { x: W - 110, y: 496, w: 80, h: 36, label: 'NEXT' } : null,
       close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' } };
   }
-  _adminConfirmRects() { return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
+  _adminConfirmRects() { const pin = this._admin && this._admin.confirmKind === 'pin'; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: pin ? 'CONFIRM RESET' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
   _adminInput(action, data) {
     const a = this._admin;
     if (action === 'back') { if (a.confirm) a.confirm = null; else { this._admin = null; this._adminTok++; } return; }
@@ -737,14 +737,17 @@ export class Game extends Scene {
     if (a.confirm) {
       const c = this._adminConfirmRects();
       if (this._inRect(c.no, data)) a.confirm = null;
-      else if (this._inRect(c.yes, data)) this._adminDelete(a.confirm);
+      else if (this._inRect(c.yes, data)) { if (a.confirmKind === 'pin') this._adminPinReset(a.confirm); else this._adminDelete(a.confirm); }
       return;
     }
     const R = this._adminRects();
     if (this._inRect(R.close, data)) { this._admin = null; this._adminTok++; return; }
     if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
     if (R.next && this._inRect(R.next, data)) { a.page++; return; }
-    for (const r of R.rows) if (this._inRect(r.del, data)) { a.confirm = r.name; return; }
+    for (const r of R.rows) {
+      if (this._inRect(r.del, data)) { a.confirm = r.name; a.confirmKind = 'delete'; return; }
+      if (r.hasPin && this._inRect(r.pin, data)) { a.confirm = r.name; a.confirmKind = 'pin'; return; }
+    }
   }
   async _adminDelete(name) {
     const a = this._admin; if (!a) return;
@@ -753,10 +756,18 @@ export class Game extends Scene {
     if (this._admin !== a) return;
     if (r && r.ok) await this._adminLoad(); else { a.phase = 'list'; a.msg = this._adminErr(r); }
   }
+  async _adminPinReset(name) {
+    const a = this._admin; if (!a) return;
+    a.confirm = null; a.msg = 'RESETTING PIN\u2026';
+    let r; try { r = await adminResetPin(_adminKeyMem, name); } catch (_) { r = { ok: false }; }
+    if (this._admin !== a) return;
+    if (r && r.ok) { a.msg = 'PIN RESET: ' + String(name).slice(0, 14); await this._adminLoad(); if (this._admin === a && a.phase === 'list') a.msg = 'PIN RESET: ' + String(name).slice(0, 14); }
+    else { a.phase = 'list'; a.msg = this._adminErr(r); }
+  }
   _drawAdmin(ctx) {
     const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
     drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,
-      confirm: a.confirm ? { text: 'DELETE ' + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
+      confirm: a.confirm ? { text: (a.confirmKind === 'pin' ? 'RESET PIN OF ' : 'DELETE ') + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
   }
   _dbgClose() { this.state = this._dbgPrev || 'play'; }
   // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）
@@ -921,7 +932,8 @@ export class Game extends Scene {
       const score = this.totalScore, tok = this._champTok = (this._champTok || 0) + 1;
       try {
         Promise.resolve(WorldNet.submit({ name: nm, score, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
-          if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
+          if (r && r.ok === false && r.error === 'updating') this._worldNote = 'WORLD: UPDATING';
+          else if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
           if (r && r.ok === true && prof && prof.key) return this._maybeChampion(nm, prof.key, score, tok);
         }, () => {}).catch(() => {});
       } catch (_) { /* 送信失敗はゲームに影響させない */ }

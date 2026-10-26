@@ -1,7 +1,7 @@
 // ローカルランキング（端末ごとの localStorage 保存）。純関数中心でヘッドレステスト可能。
 // Entry = { name, score, stage, date(ISO) }。上位10件を score降順 → stage降順 → 日付が早い順 で保持する。
 import { P } from './core/palette.js';
-import { relayEnabled, fetchWorldTop, submitScore, makeNameKey } from './net.js';
+import { relayEnabled, fetchWorldTop, submitScore, makeNameKey, relayBoardState, setPin, clearPin, loginWithPin } from './net.js';
 import * as NetNS from './net.js';
 import { txt, rgba, hair, pill, ellipsize } from './art.js';
 import { stageInfo, STAGES_PER_BODY, bodyGravity } from './bodies.js';
@@ -18,16 +18,83 @@ const _netSetTitle = () => {
     return typeof setTitle === 'function' ? setTitle : null;
   } catch (_) { return null; }
 };
+// 中継が v1.1 ボードに未対応（旧 Worker）の間は、世界の取得・送信・二つ名設定をしない（エラーではなく「UPDATING」扱い）。
+// 旧 Worker は board を無視して v1.0 の順位を返すので、確認なしに取得すると別の版の順位を表示してしまう。
 export const WorldNet = {
-  fetchTop: (...a) => fetchWorldTop(...a),
-  submit: (e) => submitScore(e),
-  setTitle: (name, key, title) => {
+  updating: false,   // 直近の fetchTop が「ボード未対応」で見送られたか（loadWorld が OFFLINE と区別するのに使う）
+  fetchTop: async (...a) => {
+    WorldNet.updating = false;
+    const st = await relayBoardState();
+    if (st !== 'supported') { WorldNet.updating = st === 'unsupported'; return null; }
+    return fetchWorldTop(...a);
+  },
+  submit: async (e) => {
+    const st = await relayBoardState();
+    if (st === 'unsupported') return { ok: false, error: 'updating' };
+    if (st !== 'supported') return { ok: false, error: 'offline' };   // 対応が確認できない間は送らない（旧中継だと別の版のボードに入ってしまう）
+    return submitScore(e);
+  },
+  setTitle: async (name, key, title) => {
+    const st = await relayBoardState();
+    if (st === 'unsupported') return { ok: false, error: 'updating' };
+    if (st !== 'supported') return { ok: false, error: 'offline' };
     const f = _netSetTitle();
-    if (!f) return Promise.resolve({ ok: false, error: 'unavailable' });
-    try { return Promise.resolve(f(name, key, title)).then((r) => r || { ok: false, error: 'unavailable' }, () => ({ ok: false, error: 'unavailable' })); }
-    catch (_) { return Promise.resolve({ ok: false, error: 'unavailable' }); }
+    if (!f) return { ok: false, error: 'unavailable' };
+    try { return (await f(name, key, title)) || { ok: false, error: 'unavailable' }; }
+    catch (_) { return { ok: false, error: 'unavailable' }; }
   },
 };
+
+// ---- PIN（任意。別端末でも同じ名前を使う）。PIN そのものは保存しない・ログに出さない（引数として通過するだけ）----
+export const PIN_RE = /^\d{4,6}$/;
+export const PinNet = {
+  set: (name, key, pin) => setPin(name, key, pin),
+  clear: (name, key) => clearPin(name, key),
+  login: (name, pin, newKey) => loginWithPin(name, pin, newKey),
+};
+export function pinErrorMessage(r) {
+  if (r && r.ok) return '';
+  const e = r && r.error;
+  if (e === 'bad-pin') return 'WRONG PIN';
+  if (e === 'locked') {
+    const ra = r && Number.isFinite(r.retryAfter) ? r.retryAfter : 0;
+    if (ra >= 3600) return 'TOO MANY TRIES \u2014 TRY LATER TODAY';
+    return ra > 0 ? 'LOCKED \u2014 TRY IN ' + Math.max(1, Math.ceil(ra / 60)) + ' MIN' : 'LOCKED \u2014 TRY LATER';
+  }
+  if (e === 'pin-disabled' || e === 'unavailable' || e === 'disabled') return 'PIN NOT AVAILABLE YET';
+  if (e === 'rate') { const ra = r && Number.isFinite(r.retryAfter) ? r.retryAfter : 0; return ra > 0 ? 'TOO FAST \u2014 WAIT ' + Math.max(1, Math.ceil(ra / 60)) + ' MIN' : 'TOO FAST \u2014 WAIT A BIT'; }
+  if (e === 'no-pin') return 'THIS NAME HAS NO PIN';
+  if (e === 'unknown') return 'NAME NOT REGISTERED YET';
+  if (e === 'forbidden') return 'NOT ALLOWED \u2014 KEY MISMATCH';
+  if (e === 'invalid') return 'PIN MUST BE 4-6 DIGITS';
+  return 'OFFLINE \u2014 TRY LATER';
+}
+// 別端末のログイン: 新しい端末キーを作って /pin/login。成功したらその名前のプロフィールをそのキーで追加・選択。-> { ok, msg, profile? }
+export async function pinLoginAndAdopt(storage, name, pin) {
+  const nm = sanitizeName(name);
+  if (!nm) return { ok: false, msg: 'ENTER A NAME' };
+  if (!PIN_RE.test(String(pin))) return { ok: false, msg: 'PIN MUST BE 4-6 DIGITS' };
+  const key = makeNameKey();
+  if (!key) return { ok: false, msg: 'CANNOT CREATE KEY ON THIS DEVICE' };
+  let r; try { r = await PinNet.login(nm, String(pin), key); } catch (_) { r = { ok: false }; }
+  if (!(r && r.ok)) return { ok: false, msg: pinErrorMessage(r), result: r };
+  const profile = addProfile(storage, nm, key);
+  if (!profile) return { ok: false, msg: 'MAX ' + PROFILE_MAX + ' PILOTS' };
+  return { ok: true, msg: 'WELCOME BACK', profile };
+}
+export async function pinSetFor(storage, name, pin) {
+  const prof = loadProfiles(storage).find((p) => p.name === name);
+  if (!prof) return { ok: false, msg: 'NO SUCH PILOT' };
+  if (!PIN_RE.test(String(pin))) return { ok: false, msg: 'PIN MUST BE 4-6 DIGITS' };
+  let r; try { r = await PinNet.set(prof.name, prof.key, String(pin)); } catch (_) { r = { ok: false }; }
+  return (r && r.ok) ? { ok: true, msg: 'PIN SAVED' } : { ok: false, msg: pinErrorMessage(r), result: r };
+}
+export async function pinClearFor(storage, name) {
+  const prof = loadProfiles(storage).find((p) => p.name === name);
+  if (!prof) return { ok: false, msg: 'NO SUCH PILOT' };
+  let r; try { r = await PinNet.clear(prof.name, prof.key); } catch (_) { r = { ok: false }; }
+  return (r && r.ok) ? { ok: true, msg: 'PIN REMOVED' } : { ok: false, msg: pinErrorMessage(r), result: r };
+}
 
 // ---- チャンピオンの称号（epithet）と WORLD #1 のキャッシュ ----
 export const TITLE_MAX = 16;
@@ -46,6 +113,7 @@ export function titleResultMessage(r) {
   if (r && r.ok) return 'TITLE SAVED';
   const e = r && r.error;
   if (e === 'not-champion') return 'NOT THE CHAMPION ANYMORE';
+  if (e === 'updating') return 'WORLD: UPDATING';
   if (e === 'unavailable' || e === 'disabled') return 'TITLE SERVICE UNAVAILABLE';
   if (e === 'forbidden') return 'NOT ALLOWED \u2014 KEY MISMATCH';
   if (e === 'unknown') return 'NAME NOT REGISTERED';
@@ -152,7 +220,7 @@ export function rankTabsTap(tabs, x, y, px, py, w) {
   if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
   if (inRect(r.world, px, py)) {
     tabs.mode = 'world';
-    if (tabs.status === 'idle' || tabs.status === 'offline') loadWorld(tabs);
+    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs);
     return true;
   }
   return false;
@@ -164,7 +232,7 @@ export function loadWorld(tabs) {
   return WorldNet.fetchTop().then((list) => {
     if (tk !== tabs.token) return;
     if (list) { tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
-    else tabs.status = 'offline';
+    else tabs.status = WorldNet.updating ? 'updating' : 'offline';
   });
 }
 
@@ -180,6 +248,7 @@ export function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) 
   }
   if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
   else if (tabs.status === 'loading' || tabs.status === 'idle') txt(ctx, 'LOADING\u2026', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
+  else if (tabs.status === 'updating') txt(ctx, 'WORLD: UPDATING', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
   else if (tabs.status === 'offline') txt(ctx, 'OFFLINE', x + w / 2, y + 40, 11, p.bad, 'center', { sp: 3 });
   else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
 }
@@ -278,14 +347,14 @@ export function setActiveProfile(storage, name) {
   return p;
 }
 // 追加して有効化。空名/枠なし -> null。同名が既にあれば選択のみ
-export function addProfile(storage, name) {
+export function addProfile(storage, name, key) {
   const nm = sanitizeName(name);
   if (!nm) return null;
   const list = loadProfiles(storage);
   const ex = list.find((p) => p.name === nm);
   if (ex) return setActiveProfile(storage, nm);
   if (list.length >= PROFILE_MAX) return null;
-  list.push({ name: nm, key: makeNameKey() });
+  list.push({ name: nm, key: (typeof key === 'string' && key) ? key : makeNameKey() });
   writeProfiles(storage, list);
   return setActiveProfile(storage, nm);
 }

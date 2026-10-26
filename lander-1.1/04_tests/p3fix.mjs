@@ -148,7 +148,7 @@ lsCtl.throwAll = true;
 ok(store.Storage.getHigh('lander') === 0, 'D2: getHigh returns 0 on throw');
 ok(store.Storage.get('x', 'd') === 'd', 'D2: get returns default on throw');
 ok(store.Storage.set('x', 1) === false && store.Storage.setHigh('lander', 5) === false, 'D2: set/setHigh fail silently');
-ls.set('lander.high.lander', 'garbage'); lsCtl.throwAll = false;
+ls.set('lander11.high.lander', 'garbage'); lsCtl.throwAll = false;
 ok(store.Storage.getHigh('lander') === 0, 'D2: NaN high -> 0');
 ls.clear();
 {
@@ -210,7 +210,7 @@ win.fire('mouseup', { clientX: 180, clientY: 600, button: 0 }); ok(!E.pointer.do
   ok(title.nameOverlayOpen(), 'overlay: opened by START without name');
   const w = doc.getElementById('lander-name-entry');
   const input = w.children[1], btn = w.children[2];
-  ls.delete('lander.profiles'); ls.delete('lander.lastName');   // 以前の節で作られたパイロット(最大3名)を消す
+  ls.delete('lander11.profiles'); ls.delete('lander11.lastName');   // 以前の節で作られたパイロット(最大3名)を消す
   const _relay0 = net.RELAY_URL; net.__setRelayUrl('');   // 新規名はWORLD重複確認(非同期)を挟むので、同期経路を見るためリレーを切る
   input.value = 'Zed'; btn.fire('click'); net.__setRelayUrl(_relay0);
   ok(!title.nameOverlayOpen() && started === 1, 'overlay: removed on submit and game starts');

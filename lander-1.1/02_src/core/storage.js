@@ -1,6 +1,7 @@
 // ハイスコア等のローカル保存。localStorageの薄いラッパ。
 // localStorage はブロック(SecurityError)・容量超過で例外を投げうるため、全メソッドが決して投げない。
-const PREFIX = 'lander.';
+import { STORAGE_PREFIX } from '../version.js';
+const PREFIX = STORAGE_PREFIX;   // 'lander11.'（v1.0 は 'lander.'。同一オリジンなので混ざらないよう分離）
 
 export const Storage = {
   getHigh(gameId) {

@@ -86,3 +86,35 @@ html, body {
 #lander-champ-entry button:active { background: rgba(255, 181, 71, 0.14); }
 #lander-champ-entry button:disabled { opacity: 0.5; }
 #lander-champ-entry .ce-msg { min-height: 16px; margin-top: 14px; font-size: 11px; letter-spacing: 0.2em; color: #FFB547; }
+
+/* 名前入力の追加アクション（PIN ありの名前 → THIS IS MY NAME） */
+#lander-name-entry .ne-alt { display: block; width: 100%; margin-top: 12px !important; font-size: 10px !important; letter-spacing: 0.2em !important; color: #FFB547 !important; border-color: rgba(255, 181, 71, 0.6) !important; }
+
+/* PIN 入力（本物の <form>。username 欄は画面外に置き、パスワードマネージャに見せる） */
+#lander-pin-entry {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1000;
+  width: min(300px, 86vw); box-sizing: border-box; padding: 24px 20px 20px; text-align: center;
+  background: rgba(8, 11, 20, 0.9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid rgba(99, 216, 201, 0.4); border-radius: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  color: #ECE6D8; font-family: -apple-system, "SF Pro Display", "Helvetica Neue", "Rajdhani", sans-serif;
+}
+#lander-pin-entry form { margin: 0; }
+#lander-pin-entry .pe-head { font-size: 15px; font-weight: 500; letter-spacing: 0.3em; color: #63D8C9; margin-bottom: 6px; }
+#lander-pin-entry .pe-name { font-size: 13px; letter-spacing: 0.12em; color: #ECE6D8; margin-bottom: 16px; word-break: break-all; }
+#lander-pin-entry .pe-label { display: block; font-size: 10px; font-weight: 500; letter-spacing: 0.2em; color: #5B667C; margin-bottom: 10px; }
+#lander-pin-entry .pe-user { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+#lander-pin-entry input[type="password"] {
+  width: 100%; box-sizing: border-box; padding: 12px; text-align: center; outline: none;
+  background: rgba(236, 230, 216, 0.05); color: #F8F4EA; border: 1px solid rgba(236, 230, 216, 0.22); border-radius: 12px;
+  font-size: 20px; font-weight: 300; letter-spacing: 0.4em; font-family: inherit;
+}
+#lander-pin-entry input[type="password"]:focus { border-color: rgba(99, 216, 201, 0.7); }
+#lander-pin-entry .pe-row { display: flex; gap: 10px; margin-top: 16px; }
+#lander-pin-entry .pe-btn { flex: 1; background: transparent; border-radius: 999px; padding: 12px 8px; cursor: pointer; font-size: 11px; font-weight: 500; letter-spacing: 0.3em; font-family: inherit; }
+#lander-pin-entry .pe-go { color: #63D8C9; border: 1px solid rgba(99, 216, 201, 0.6); }
+#lander-pin-entry .pe-cancel { color: #8C97AB; border: 1px solid rgba(236, 230, 216, 0.22); }
+#lander-pin-entry .pe-btn:active { background: rgba(99, 216, 201, 0.14); }
+#lander-pin-entry .pe-btn:disabled { opacity: 0.5; }
+#lander-pin-entry .pe-msg { min-height: 16px; margin-top: 14px; font-size: 11px; letter-spacing: 0.15em; color: #FFB547; }
+#lander-pin-entry .pe-msg.pe-ok { color: #63D8C9; }
+#lander-pin-entry .pe-note { margin-top: 12px; font-size: 10px; line-height: 1.5; letter-spacing: 0.04em; color: #8C97AB; }

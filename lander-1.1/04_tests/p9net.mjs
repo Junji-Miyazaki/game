@@ -262,7 +262,7 @@ globalThis.fetch = fakeGH;
   const reply = (status, body) => { globalThis.fetch = async (u, i) => { seen = { u, i }; return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }); }; };
   reply(200, { ok: true, title: 'T' });
   let r = await net.setTitle('Ace', 'kk', 'T');
-  ok(r.ok === true && r.title === 'T' && seen.u === 'https://x.invalid/title' && seen.i.method === 'POST' && JSON.stringify(JSON.parse(seen.i.body)) === JSON.stringify({ name: 'Ace', key: 'kk', title: 'T', board: 'v1.0' }), 'client: setTitle ok + request shape');
+  ok(r.ok === true && r.title === 'T' && seen.u === 'https://x.invalid/title' && seen.i.method === 'POST' && JSON.stringify(JSON.parse(seen.i.body)) === JSON.stringify({ name: 'Ace', key: 'kk', title: 'T', board: 'v1.1' }), 'client: setTitle ok + request shape');
   r = await net.adminSetTitle('AK', 'Ace', 'T2');
   ok(r.ok && r.title === 'T' && seen.u === 'https://x.invalid/admin/title' && seen.i.headers['X-Admin-Key'] === 'AK' && JSON.parse(seen.i.body).name === 'Ace' && !('key' in JSON.parse(seen.i.body)), 'client: adminSetTitle ok + header');
   reply(200, {}); r = await net.setTitle('Ace', 'k', ''); ok(r.ok && r.title === '', 'client: ok with no title in body falls back to sent value');

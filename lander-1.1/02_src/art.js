@@ -3,6 +3,7 @@
 //   静かな余白 / ゆっくりしたフェード / 1画面2アクセントまで / スキャンライン・強いネオン・過剰なグロー無し。
 // 性能: 静的な背景・地形は画面外キャンバス(layer)へ1回だけ描いてキャッシュ。グラデーションもキーでキャッシュ。
 import { P } from './core/palette.js';
+import { APP_LABEL } from './version.js';
 
 export const ART_VERSION = 1;
 const AW = 360;
@@ -1773,8 +1774,12 @@ export function drawAdminPanel(ctx, d) {
   }
   for (const r of d.rows) {
     hair(ctx, 36, r.del.y - 4, AW - 36, r.del.y - 4, p.fg, 0.08);
-    txt(ctx, r.label, 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
-    txt(ctx, r.sub, 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
+    txt(ctx, ellipsize(ctx, r.label, 11, 500, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
+    txt(ctx, ellipsize(ctx, r.sub, 8, 400, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
+    if (r.pin) {
+      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.45 : 0.12));
+      txt(ctx, 'PIN RESET', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 8, r.hasPin ? p.warn : p.dim, 'center', { sp: 1.5, w: 500 });
+    }
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
   }
@@ -1791,6 +1796,20 @@ export function drawProfilePanel(ctx, d) {
   veil(ctx, 0.6);
   panel(ctx, 20, 110, AW - 40, 360, { a: 0.92, border: p.mid, ba: 0.25 });
   txt(ctx, 'PILOTS', AW / 2, 126, 16, p.hi, 'center', { sp: 8, w: 300 });
+  if (d.mode === 'pin' && d.pin) {
+    txt(ctx, 'PIN', AW / 2, 160, 10, p.mid, 'center', { sp: 6, w: 500 });
+    txt(ctx, ellipsize(ctx, d.pin.name, 13, 500, 3, AW - 80), AW / 2, 180, 13, p.hi, 'center', { sp: 3, w: 500 });
+    d.pin.note.forEach((l, i) => txt(ctx, l, AW / 2, 206 + i * 13, 7, p.dim, 'center', { sp: 1, w: 400 }));
+    for (const b of d.pin.buttons) {
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(b.danger ? p.bad : p.mid, 0.08), rgba(b.danger ? p.bad : p.mid, 0.5));
+      txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, b.danger ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+    }
+    const bk = d.pin.back;
+    pill(ctx, bk.x, bk.y, bk.w, bk.h, null, rgba(p.fg, 0.22));
+    txt(ctx, 'BACK', bk.x + bk.w / 2, bk.y + bk.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+    if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, d.ok ? p.mid : p.bad, 'center', { sp: 2, w: 500 });
+    return;
+  }
   if (d.mode === 'confirm') {
     txt(ctx, d.confirm.l1, AW / 2, 196, 12, p.fg, 'center', { sp: 2, w: 500 });
     txt(ctx, d.confirm.l2, AW / 2, 220, 8, p.warn, 'center', { sp: 2, w: 500 });
@@ -1804,7 +1823,11 @@ export function drawProfilePanel(ctx, d) {
   }
   for (const r of d.rows) {
     pill(ctx, r.sel.x, r.sel.y, r.sel.w, r.sel.h, r.active ? rgba(p.mid, 0.10) : null, rgba(r.active ? p.mid : p.fg, r.active ? 0.6 : 0.2));
-    txt(ctx, r.name, r.sel.x + 18, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    txt(ctx, ellipsize(ctx, r.name, 13, 500, 3, r.sel.w - 30), r.sel.x + 14, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    if (r.pin) {
+      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.55 : 0.3));
+      txt(ctx, 'PIN', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 9, p.warn, 'center', { sp: 2, w: 500 });
+    }
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, null, rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
   }
@@ -1815,7 +1838,7 @@ export function drawProfilePanel(ctx, d) {
   const c = d.close;
   pill(ctx, c.x, c.y, c.w, c.h, null, rgba(p.fg, 0.22));
   txt(ctx, 'CLOSE', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
-  if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, p.bad, 'center', { sp: 2, w: 500 });
+  if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, d.ok ? p.mid : p.bad, 'center', { sp: 2, w: 500 });
 }
 // CHOOSE START パネル（PILOTS と同じ言語）。d = { title, rows:[{rect,label,stage,g,cursor,best}], page, pages, prev, next, cancel, hint }
 export function drawStartPanel(ctx, d) {
@@ -1846,7 +1869,7 @@ export function drawStartPanel(ctx, d) {
 export function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
-  txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
 }
 
 // タイトルの WORLD #1 バナー。box={x,y,w,h}（2行: y+0 と y+14）。d={name,score,title}。maxW1=1行目の最大幅

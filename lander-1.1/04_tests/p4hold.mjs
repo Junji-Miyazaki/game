@@ -14,7 +14,7 @@ const DT = 1 / 60;
 let clock = 1000;
 Object.defineProperty(globalThis, 'performance', { value: { now: () => clock }, configurable: true });
 const fetchCalls = [];
-globalThis.fetch = (url, opt) => { fetchCalls.push({ url, body: opt && opt.body }); return Promise.resolve({ ok: true, status: 200, json: async () => ({}) }); };
+globalThis.fetch = (url, opt) => { fetchCalls.push({ url, body: opt && opt.body }); return Promise.resolve({ ok: true, status: 200, json: async () => ({ board: 'v1.1', top: [] }) }); };
 
 function makeCtx(st) {
   const state = { globalAlpha: 1, letterSpacing: '0px', font: '', fillStyle: '', strokeStyle: '', lineWidth: 1 };

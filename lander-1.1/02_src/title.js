@@ -2,7 +2,8 @@
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts, WorldNet, sanitizeTitle, titleResultMessage, loadTop1, top1FromList, saveTop1, graphemes, TITLE_MAX } from './ranking.js';
+import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts, WorldNet, sanitizeTitle, titleResultMessage, loadTop1, top1FromList, saveTop1, graphemes, TITLE_MAX, PIN_RE, pinLoginAndAdopt, pinSetFor, pinClearFor } from './ranking.js';
+import { APP_LABEL, APP_BUILD_TEXT } from './version.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
@@ -110,25 +111,40 @@ export function showNameOverlay(initial, onSubmit, opts) {
   const msg = document.createElement('div');
   msg.style.cssText = 'min-height:18px;margin-top:10px;font-size:13px;letter-spacing:1px;color:#ffb547;';
   let busy = false;
-  const fin = (m) => { busy = false; btn.disabled = false; if (m) msg.textContent = String(m); else if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+  const alt = document.createElement('button');   // 任意の追加アクション（例: 名前が登録済みで PIN あり → THIS IS MY NAME）
+  alt.type = 'button'; alt.className = 'ne-alt'; alt.style.display = 'none';
+  const fin = (m) => {
+    busy = false; btn.disabled = false; alt.style.display = 'none';
+    if (m && typeof m === 'object' && m.msg) {
+      msg.textContent = String(m.msg);
+      if (m.action && typeof m.action.run === 'function') {
+        alt.textContent = String(m.action.label || 'OK'); alt.style.display = '';
+        alt.onclick = () => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); try { m.action.run(); } catch (_) { /* ignore */ } };
+      }
+    } else if (m) msg.textContent = String(m);
+    else if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+  };
   const done = () => {
     if (busy) return;
     let r = null;
     try { r = onSubmit(input.value); } catch (_) { r = null; }
     if (r && typeof r.then === 'function') { busy = true; btn.disabled = true; msg.textContent = 'CHECKING\u2026'; r.then(fin, () => fin(null)); }
-    else fin(typeof r === 'string' ? r : null);
+    else fin(typeof r === 'string' || (r && typeof r === 'object') ? r : null);
   };
   btn.addEventListener('click', done);
   input.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') { e.preventDefault(); done(); }
   });
-  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn); wrap.appendChild(msg);
+  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn); wrap.appendChild(msg); wrap.appendChild(alt);
   document.body.appendChild(wrap);
   try { input.focus(); input.select(); } catch (_) { /* ignore */ }
   return true;
 }
 
+export function pinOverlayDom() {
+  return typeof document !== 'undefined' && !!(document.getElementById && document.getElementById(PIN_ID));
+}
 export function nameOverlayOpen() {
   return typeof document !== 'undefined' && !!(document.getElementById && document.getElementById('lander-name-entry'));
 }
@@ -139,6 +155,78 @@ export function hideNameOverlay() {
     if (old && old.parentNode) old.parentNode.removeChild(old);
   } catch (_) { /* ignore */ }
 }
+
+// ---- PIN 入力（HTML の本物の <form>：パスワードマネージャが保存・自動入力できるよう username 欄を持つ）----
+// o = { mode:'login'|'set', name, heading, onSubmit(pin) -> Promise<{ok,msg}>, onClose(ctrl) }。PIN は入力欄と onSubmit の引数を通過するだけで、保存・ログ出力しない。
+// document が無い環境でも状態機械として動く（テスト用）。成功は約0.7秒後に自動で閉じる（c.ok で成功を判別）。
+export const PIN_ID = 'lander-pin-entry';
+export const PIN_NOTE = "PIN lets you use this name on other devices. Don't reuse a password from other services.";
+export function openPinEntry(o) {
+  hidePinEntry();
+  const c = { open: true, busy: false, msg: '', ok: false, mode: o.mode, name: o.name, _timer: 0, _dom: null };
+  const render = () => { if (c._dom) { c._dom.msg.textContent = c.msg; c._dom.msg.className = 'pe-msg' + (c.ok ? ' pe-ok' : ''); c._dom.ok.disabled = c.busy; c._dom.cancel.textContent = c.ok ? 'CLOSE' : 'CANCEL'; } };
+  c.close = () => {
+    if (!c.open) return;
+    c.open = false;
+    if (c._timer) { clearTimeout(c._timer); c._timer = 0; }
+    if (c._dom) { try { c._dom.pw.value = ''; } catch (_) { /* ignore */ } if (c._dom.wrap.parentNode) c._dom.wrap.parentNode.removeChild(c._dom.wrap); }
+    c._dom = null;
+    try { if (o.onClose) o.onClose(c); } catch (_) { /* ignore */ }
+  };
+  c.submit = async (pin) => {
+    if (!c.open || c.busy) return null;
+    pin = String(pin == null ? '' : pin);
+    if (!PIN_RE.test(pin)) { c.msg = 'PIN MUST BE 4-6 DIGITS'; c.ok = false; render(); return { ok: false, msg: c.msg }; }
+    c.busy = true; c.ok = false; c.msg = 'CHECKING\u2026'; render();
+    let r; try { r = await o.onSubmit(pin); } catch (_) { r = { ok: false, msg: 'OFFLINE \u2014 TRY LATER' }; }
+    pin = '';
+    if (!c.open) return r;
+    c.busy = false; c.ok = !!(r && r.ok); c.msg = (r && r.msg) || (c.ok ? 'OK' : 'ERROR');
+    if (c._dom) { try { c._dom.pw.value = ''; if (!c.ok) c._dom.pw.focus(); } catch (_) { /* ignore */ } }
+    if (c.ok) c._timer = setTimeout(() => c.close(), 700);
+    render();
+    return r;
+  };
+  if (typeof document !== 'undefined' && document.body && document.createElement) {
+    try {
+      const login = o.mode === 'login';
+      const wrap = document.createElement('div'); wrap.id = PIN_ID;
+      const form = document.createElement('form'); form.setAttribute('autocomplete', 'on'); form.method = 'post'; form.action = '#'; form.noValidate = true;
+      const head = document.createElement('div'); head.className = 'pe-head'; head.textContent = o.heading || (login ? 'ENTER PIN' : 'SET PIN');
+      const nm = document.createElement('div'); nm.className = 'pe-name'; nm.textContent = o.name;
+      const user = document.createElement('input');   // パスワードマネージャ用のアカウント名（画面外・読み取り専用）
+      user.type = 'text'; user.name = 'username'; user.id = 'lander-pin-user'; user.value = o.name; user.readOnly = true; user.tabIndex = -1;
+      user.setAttribute('autocomplete', 'username'); user.setAttribute('aria-hidden', 'true'); user.className = 'pe-user';
+      const label = document.createElement('label'); label.className = 'pe-label'; label.htmlFor = 'lander-pin-pw'; label.textContent = login ? 'PIN (4-6 DIGITS)' : 'NEW PIN (4-6 DIGITS, 6 RECOMMENDED)';
+      const pw = document.createElement('input');
+      pw.type = 'password'; pw.name = 'password'; pw.id = 'lander-pin-pw'; pw.maxLength = 6; pw.pattern = '\\d{4,6}'; pw.spellcheck = false;
+      pw.setAttribute('inputmode', 'numeric'); pw.setAttribute('autocomplete', login ? 'current-password' : 'new-password'); pw.setAttribute('autocapitalize', 'off');
+      const ok = document.createElement('button'); ok.type = 'submit'; ok.textContent = 'OK'; ok.className = 'pe-btn pe-go';
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'CANCEL'; cancel.className = 'pe-btn pe-cancel';
+      const row = document.createElement('div'); row.className = 'pe-row'; row.appendChild(ok); row.appendChild(cancel);
+      const msg = document.createElement('div'); msg.className = 'pe-msg';
+      form.addEventListener('submit', (e) => { e.preventDefault(); c.submit(pw.value); });
+      cancel.addEventListener('click', () => c.close());
+      pw.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); c.close(); } });
+      pw.addEventListener('input', () => { const v = pw.value.replace(/\D/g, '').slice(0, 6); if (v !== pw.value) pw.value = v; });
+      [head, nm, user, label, pw, row, msg].forEach((n) => form.appendChild(n));
+      if (!login) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = PIN_NOTE; form.appendChild(note); }
+      wrap.appendChild(form);
+      document.body.appendChild(wrap);
+      c._dom = { wrap, form, pw, ok, cancel, msg, user };
+      try { pw.focus(); } catch (_) { /* ignore */ }
+    } catch (_) { c._dom = null; }
+  }
+  return c;
+}
+export function hidePinEntry() {
+  try {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    const old = document.getElementById(PIN_ID);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  } catch (_) { /* ignore */ }
+}
+export function pinEntryOpen(c) { return !!(c && c.open); }
 
 // ---- チャンピオン称号の入力（WORLD #1 のみ）----
 // document が無い環境でも状態機械として動く（テスト用）。DOM は薄い皮。
@@ -265,6 +353,7 @@ export class BootScene extends Scene {
     const fadeIn = Math.min(1, this.t / 0.8);
     txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: 0.85 * fadeIn });
     txt(ctx, 'SOFT LANDING TOUR', W / 2, H * 0.40 + 34, 8, p.dim, 'center', { sp: 5, w: 400, a: fadeIn });
+    txt(ctx, APP_LABEL, W / 2, H * 0.40 + 52, 8, p.mid, 'center', { sp: 5, w: 500, a: 0.8 * fadeIn });
     const pulse = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 2.2));
     txt(ctx, 'TAP TO BEGIN', W / 2, H * 0.60, 12, p.fg, 'center', { sp: 6, w: 400, a: pulse * fadeIn });
     txt(ctx, 'SOUND ON', W / 2, H * 0.60 + 28, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.7 * fadeIn });
@@ -278,6 +367,7 @@ export class BootScene extends Scene {
     for (let i = 0; i < WHATSNEW.lines.length; i++) {
       txt(ctx, WHATSNEW.lines[i], W / 2, nw.lines[i].y, 8, p.fg, 'center', { sp: 2, w: 400, a: (fresh ? 0.8 : 0.5) * nf });
     }
+    txt(ctx, APP_BUILD_TEXT, W / 2, nw.bottom + 16, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
   }
 }
 
@@ -337,7 +427,8 @@ export class TitleScene extends Scene {
     let pr = null;
     try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { return Promise.resolve(); }
     return pr.then((list) => {
-      if (tk !== this._topTok || !Array.isArray(list)) return;
+      if (tk !== this._topTok) return;
+      if (!Array.isArray(list)) { if (WorldNet.updating) this.top1 = null; return; }   // ボード未対応の間は別の版の #1 を出さない
       this.top1 = top1FromList(this.engine.storage, list);
     }, () => {});
   }
@@ -382,8 +473,26 @@ export class TitleScene extends Scene {
     if (list.length >= PROFILE_MAX) return 'MAX ' + PROFILE_MAX + ' PILOTS';
     if (!relayEnabled()) return accept();
     return Promise.resolve().then(() => checkName(nm)).then(
-      (r) => (r && r.ok && r.taken) ? 'NAME ALREADY REGISTERED \u2014 CHOOSE ANOTHER' : accept(),   // {ok:false}（オフライン）は検証できないので許可
+      (r) => {
+        if (!(r && r.ok && r.taken)) return accept();
+        // PIN が設定された名前なら、自分の名前としてログインできる（別端末）。無ければ従来どおり
+        if (r.hasPin) return { msg: 'NAME ALREADY REGISTERED', action: { label: 'THIS IS MY NAME \u2014 ENTER PIN', run: () => this._openPinLogin(nm) } };
+        return 'NAME ALREADY REGISTERED \u2014 CHOOSE ANOTHER';
+      },   // {ok:false}（オフライン）は検証できないので許可
       () => accept());
+  }
+  // 別端末の同名パイロットを PIN で引き継ぐ（成功でその名前の端末キーが中継に登録され、この端末のプロフィールに保存される）
+  _openPinLogin(nm) {
+    const wasPending = this.pendingStart;
+    const c = openPinEntry({ mode: 'login', name: nm, heading: 'ENTER PIN',
+      onSubmit: (pin) => pinLoginAndAdopt(this.engine.storage, nm, pin),
+      onClose: (cc) => {
+        this._pin = null;
+        if (cc && cc.ok) { this.name = nm; this.prof = null; this.pendingStart = false; if (wasPending) this._startOrChoose(); }
+        else this.pendingStart = wasPending;
+      } });
+    this._pin = c;
+    return c;
   }
   _openName(thenStart) {
     this.pendingStart = !!thenStart;
@@ -395,15 +504,22 @@ export class TitleScene extends Scene {
     const list = loadProfiles(this.engine.storage);
     const act = getActiveProfile(this.engine.storage);
     const rows = list.map((p, i) => ({ name: p.name, active: !!act && act.name === p.name,
-      sel: { x: 36, y: 164 + i * 56, w: 200, h: 44 }, del: { x: 248, y: 164 + i * 56, w: 56, h: 44 } }));
-    return { rows, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
+      sel: { x: 36, y: 164 + i * 56, w: 148, h: 44 }, pin: { x: 192, y: 164 + i * 56, w: 52, h: 44 }, del: { x: 252, y: 164 + i * 56, w: 52, h: 44 } }));
+    const pf = this.prof, hp = pf && pf.hasPin === true;
+    return { rows, pset: { x: 60, y: 250, w: W - 120, h: 44, label: hp ? 'CHANGE PIN' : 'SET PIN' }, prem: hp ? { x: 60, y: 302, w: W - 120, h: 44, label: 'REMOVE PIN', danger: true } : null, pback: { x: W / 2 - 50, y: 366, w: 100, h: 36 }, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
       yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 356, w: W - 120, h: 44, label: 'CANCEL' } };
   }
   _profInput(action, data) {
     const pf = this.prof;
-    if (action === 'back') { if (pf.mode === 'confirm') { pf.mode = 'list'; pf.msg = ''; } else this.prof = null; return; }
+    if (action === 'back') { if (pf.mode === 'confirm' || pf.mode === 'pin') { pf.mode = 'list'; pf.msg = ''; pf.ok = false; } else this.prof = null; return; }
     if (action !== 'tap' || !data || pf.busy) return;
     const R = this._profRects();
+    if (pf.mode === 'pin') {
+      if (this._hit(R.pback, data)) { pf.mode = 'list'; pf.msg = ''; pf.ok = false; }
+      else if (this._hit(R.pset, data)) this._pinSet(pf.target);
+      else if (R.prem && this._hit(R.prem, data)) this._pinRemove(pf.target);
+      return;
+    }
     if (pf.mode === 'confirm') {
       if (this._hit(R.no, data)) { pf.mode = 'list'; pf.msg = ''; }
       else if (this._hit(R.yes, data)) this._deletePilot(pf.target);
@@ -412,9 +528,41 @@ export class TitleScene extends Scene {
     if (this._hit(R.close, data)) { this.prof = null; return; }
     if (this._hit(R.add, data)) { if (!R.add.off) { this.prof = null; this._openName(false); } else pf.msg = 'MAX ' + PROFILE_MAX + ' PILOTS'; return; }
     for (const r of R.rows) {
+      if (this._hit(r.pin, data)) { this._openPinMenu(r.name); return; }
       if (this._hit(r.del, data)) { pf.mode = 'confirm'; pf.target = r.name; pf.msg = ''; return; }
       if (this._hit(r.sel, data)) { setActiveProfile(this.engine.storage, r.name); this.name = r.name; return; }
     }
+  }
+  // ---- PILOTS > PIN（設定/変更/解除。この端末で所有しているパイロットのみ＝プロフィールにキーがある名前）----
+  async _openPinMenu(name) {
+    const pf = this.prof; if (!pf) return;
+    if (!loadProfiles(this.engine.storage).some((p) => p.name === name)) return;
+    musicOf(this.engine).sfx.uiTap();
+    pf.mode = 'pin'; pf.target = name; pf.hasPin = null; pf.ok = false; pf.msg = '';
+    if (!relayEnabled()) { pf.msg = 'PIN NOT AVAILABLE YET'; return; }
+    pf.busy = true; pf.msg = 'CHECKING\u2026';
+    let r = null; try { r = await checkName(name); } catch (_) { r = null; }
+    if (this.prof !== pf || pf.target !== name) return;
+    pf.busy = false;
+    if (r && r.ok) { pf.hasPin = r.hasPin === true; pf.msg = r.taken ? '' : 'NAME NOT REGISTERED YET \u2014 SUBMIT A SCORE FIRST'; }
+    else pf.msg = 'OFFLINE \u2014 TRY LATER';
+  }
+  _pinSet(name) {
+    const pf = this.prof; if (!pf || pinEntryOpen(this._pin)) return;
+    musicOf(this.engine).sfx.uiTap();
+    this._pin = openPinEntry({ mode: 'set', name, heading: pf.hasPin ? 'CHANGE PIN' : 'SET PIN',
+      onSubmit: (pin) => pinSetFor(this.engine.storage, name, pin),
+      onClose: (cc) => { this._pin = null; if (this.prof === pf && cc && cc.ok) { pf.hasPin = true; pf.ok = true; pf.msg = 'PIN SAVED'; } } });
+  }
+  async _pinRemove(name) {
+    const pf = this.prof; if (!pf || pf.busy) return;
+    musicOf(this.engine).sfx.uiTap();
+    pf.busy = true; pf.ok = false; pf.msg = 'REMOVING\u2026';
+    let r; try { r = await pinClearFor(this.engine.storage, name); } catch (_) { r = { ok: false, msg: 'OFFLINE \u2014 TRY LATER' }; }
+    pf.busy = false;
+    if (this.prof !== pf) return;
+    pf.ok = !!(r && r.ok); pf.msg = r.msg;
+    if (pf.ok) pf.hasPin = false;
   }
   // サーバー側の名前と記録も削除。成功/「未登録」ならローカルから削除、通信失敗なら残す。ローカルのランキング行は消さない
   async _deletePilot(name) {
@@ -509,14 +657,15 @@ export class TitleScene extends Scene {
     for (const r of R.rows) if (this._hit(r.rect, data)) { musicOf(this.engine).sfx.uiTap(); this._startAt(r.o.stage); return; }
     // それ以外のタップは何もしない（裏の START/CONTINUE に貫通させない）
   }
-  blocksBack() { return !!this.pick || championEntryOpen(this._champ); }
+  blocksBack() { return !!this.pick || championEntryOpen(this._champ) || pinEntryOpen(this._pin); }
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
-  exit() { hideNameOverlay(); this._topTok++; if (this._champ) this._champ.close(); hideChampionEntry(); }
+  exit() { hideNameOverlay(); if (this._pin) this._pin.close(); hidePinEntry(); this._topTok++; if (this._champ) this._champ.close(); hideChampionEntry(); }
 
   onInput(action, data) {
     if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（下で開始しない）
+    if (pinEntryOpen(this._pin) || pinOverlayDom()) return;   // PIN 入力中は全入力を消費
     if (nameOverlayOpen()) return;           // 名前入力中はキャンバスの入力を受けない（下で発射が始まらない）
     if (data && data.repeat) return;         // キーのオートリピートでは開始・スキップしない
     if (this.launch) {            // 発射中: タップ/決定でスキップ
@@ -712,7 +861,10 @@ export class TitleScene extends Scene {
     }
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;
-      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg,
+      const pinBtns = pf.mode === 'pin' ? [R.pset].concat(R.prem ? [R.prem] : []) : [];
+      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg, ok: !!pf.ok,
+        pin: pf.mode === 'pin' ? { name: pf.target, buttons: pinBtns, back: R.pback,
+          note: ['PIN LETS YOU USE THIS NAME ON OTHER DEVICES.', "DON'T REUSE A PASSWORD FROM OTHER SERVICES.", 'OPTIONAL \u00b7 4-6 DIGITS \u00b7 6 RECOMMENDED'] } : null,
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
     if (championEntryOpen(this._champ)) veil(ctx, 0.55);

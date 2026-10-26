@@ -21,6 +21,7 @@ globalThis.fetch = async (url, init) => {
   srv.calls.push({ path, init, url: u });
   if (srv.offline) throw new Error('offline');
   const hdr = (init && init.headers) || {};
+  if (path === '/ranking') return res(200, { board: 'v1.1', top: [] });
   if (path === '/name') return res(200, { taken: srv.taken.has(decodeURIComponent(u.split('n=')[1])) });
   if (path === '/submit') { const b = JSON.parse(init.body); return srv.taken.has('owned:' + b.name) ? res(403, {}) : res(200, {}); }
   if (path === '/delete') return res(srv.deleteStatus, {});

@@ -11,6 +11,7 @@ const stripExport = (s) => s.replace(/\bexport\s+(?=(const|class|function|async|
 
 // 結合順（依存順）。すべて同一IIFEスコープに展開する。新ファイルを足したらここにも追加する。
 const FILES = [
+  '02_src/version.js',
   '02_src/core/palette.js',
   '02_src/core/audio.js',
   '02_src/core/storage.js',
@@ -25,6 +26,7 @@ const FILES = [
   '02_src/music.js',
   '02_src/whatsnew.js',
   '02_src/title.js',
+  '02_src/migrate.js',
   '02_src/game.js',
   '02_src/main.js',
 ];

@@ -1,9 +1,10 @@
 // 世界ランキング中継クライアント（P1.5）。RELAY_URL が空なら機能オフ＝ネットワーク呼び出しは一切しない。
+import { APP_BOARD } from './version.js';
 // どの関数も例外を投げない。タイムアウトは AbortController＋競合タイマーの両方で保証し、本文の読み取り(json)まで含めて覆う。
 export let RELAY_URL = 'https://lander-ranking.euler057721.workers.dev';   // ランキング中継（Cloudflare Worker、06_server/）。空にすると機能オフ
 export function __setRelayUrl(u) { RELAY_URL = String(u || '').replace(/\/+$/, ''); boardSupport = null; }  // テスト用
 // ランキングのボード（版別）。v1.0 は既存、v1.1 は別ボード。中継が board 非対応(旧版)なら relayBoardSupported() が false
-export let RELAY_BOARD = 'v1.0';
+export let RELAY_BOARD = APP_BOARD;
 let boardSupport = null;   // 確定した応答のみキャッシュ（ネットワーク失敗は次回再試行）
 export function __setRelayBoard(b) { RELAY_BOARD = String(b || 'v1.0'); boardSupport = null; }
 export function relayEnabled() { return !!RELAY_URL; }
@@ -64,24 +65,28 @@ export function makeNameKey() {
   } catch (_) { return ''; }
 }
 
-// 中継がこのボードに対応しているか。GET /ranking?board= の応答に board === RELAY_BOARD があれば true（旧中継は board を返さない→false）。
-// 応答を受け取れたときだけセッション内キャッシュ。-> boolean（オフ/失敗は false）
-export async function relayBoardSupported(timeoutMs = NET_TIMEOUT_MS) {
-  if (!RELAY_URL) return false;
-  if (boardSupport && boardSupport.url === RELAY_URL && boardSupport.board === RELAY_BOARD) return boardSupport.v;
+// 中継がこのボードに対応しているか。GET /ranking?board= の応答に board === RELAY_BOARD があれば対応（旧中継は board を返さない→非対応）。
+// 応答を受け取れたときだけセッション内キャッシュ。ネットワーク失敗・HTTPエラーは「不明」（非対応とは区別し、次回再試行）。
+// -> 'supported' | 'unsupported' | 'unknown'
+export async function relayBoardState(timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return 'unknown';
+  if (boardSupport && boardSupport.url === RELAY_URL && boardSupport.board === RELAY_BOARD) return boardSupport.v ? 'supported' : 'unsupported';
   const url = RELAY_URL, board = RELAY_BOARD;
   try {
     const v = await request(url + '/ranking?board=' + encodeURIComponent(board), { method: 'GET' }, timeoutMs, async (res) => {
-      if (!res || !res.ok) return false;
+      if (!res || !res.ok) return null;
       const j = await res.json();
       return !!(j && j.board === board);
     });
+    if (v === null) return 'unknown';
     boardSupport = { url, board, v };
-    return v;
+    return v ? 'supported' : 'unsupported';
   } catch (_) {
-    return false;
+    return 'unknown';
   }
 }
+// -> boolean（オフ/失敗/非対応は false）
+export async function relayBoardSupported(timeoutMs = NET_TIMEOUT_MS) { return (await relayBoardState(timeoutMs)) === 'supported'; }
 
 // -> { ok:true, taken, hasPin } | { ok:false }（オフ/失敗/不正応答）。決して throw しない
 export async function checkName(name, timeoutMs = NET_TIMEOUT_MS) {

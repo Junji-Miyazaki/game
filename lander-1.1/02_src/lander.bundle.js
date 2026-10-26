@@ -2,6 +2,17 @@
 (function(){
 "use strict";
 
+// ---- 02_src/version.js ----
+// 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
+// v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
+const APP_VERSION = '1.1.0-beta';
+const APP_LABEL = 'BETA v1.1';
+const APP_BUILD_TEXT = 'build ' + APP_VERSION;
+const STORAGE_PREFIX = 'lander11.';
+const LEGACY_PREFIX = 'lander.';      // v1.0 の保存領域（読み取り専用。書き込み・削除は一切しない）
+const APP_BOARD = 'v1.1';
+
+
 // ---- 02_src/core/palette.js ----
 // LANDER — レトロフューチャー × 抑制のパレット（単一テーマ）。
 // 近黒の背景 / 象牙の船体 / ティールの計器 / 琥珀の燃料・推力 / 赤は危険状態（低燃料・クラッシュ・速度超過）のみ。
@@ -82,7 +93,7 @@ class Audio {
 // ---- 02_src/core/storage.js ----
 // ハイスコア等のローカル保存。localStorageの薄いラッパ。
 // localStorage はブロック(SecurityError)・容量超過で例外を投げうるため、全メソッドが決して投げない。
-const PREFIX = 'lander.';
+const PREFIX = STORAGE_PREFIX;   // 'lander11.'（v1.0 は 'lander.'。同一オリジンなので混ざらないよう分離）
 
 const Storage = {
   getHigh(gameId) {
@@ -599,7 +610,7 @@ function rollOffers(mods, rnd = Math.random, count = 2) {
 let RELAY_URL = 'https://lander-ranking.euler057721.workers.dev';   // ランキング中継（Cloudflare Worker、06_server/）。空にすると機能オフ
 function __setRelayUrl(u) { RELAY_URL = String(u || '').replace(/\/+$/, ''); boardSupport = null; }  // テスト用
 // ランキングのボード（版別）。v1.0 は既存、v1.1 は別ボード。中継が board 非対応(旧版)なら relayBoardSupported() が false
-let RELAY_BOARD = 'v1.0';
+let RELAY_BOARD = APP_BOARD;
 let boardSupport = null;   // 確定した応答のみキャッシュ（ネットワーク失敗は次回再試行）
 function __setRelayBoard(b) { RELAY_BOARD = String(b || 'v1.0'); boardSupport = null; }
 function relayEnabled() { return !!RELAY_URL; }
@@ -660,24 +671,28 @@ function makeNameKey() {
   } catch (_) { return ''; }
 }
 
-// 中継がこのボードに対応しているか。GET /ranking?board= の応答に board === RELAY_BOARD があれば true（旧中継は board を返さない→false）。
-// 応答を受け取れたときだけセッション内キャッシュ。-> boolean（オフ/失敗は false）
-async function relayBoardSupported(timeoutMs = NET_TIMEOUT_MS) {
-  if (!RELAY_URL) return false;
-  if (boardSupport && boardSupport.url === RELAY_URL && boardSupport.board === RELAY_BOARD) return boardSupport.v;
+// 中継がこのボードに対応しているか。GET /ranking?board= の応答に board === RELAY_BOARD があれば対応（旧中継は board を返さない→非対応）。
+// 応答を受け取れたときだけセッション内キャッシュ。ネットワーク失敗・HTTPエラーは「不明」（非対応とは区別し、次回再試行）。
+// -> 'supported' | 'unsupported' | 'unknown'
+async function relayBoardState(timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return 'unknown';
+  if (boardSupport && boardSupport.url === RELAY_URL && boardSupport.board === RELAY_BOARD) return boardSupport.v ? 'supported' : 'unsupported';
   const url = RELAY_URL, board = RELAY_BOARD;
   try {
     const v = await request(url + '/ranking?board=' + encodeURIComponent(board), { method: 'GET' }, timeoutMs, async (res) => {
-      if (!res || !res.ok) return false;
+      if (!res || !res.ok) return null;
       const j = await res.json();
       return !!(j && j.board === board);
     });
+    if (v === null) return 'unknown';
     boardSupport = { url, board, v };
-    return v;
+    return v ? 'supported' : 'unsupported';
   } catch (_) {
-    return false;
+    return 'unknown';
   }
 }
+// -> boolean（オフ/失敗/非対応は false）
+async function relayBoardSupported(timeoutMs = NET_TIMEOUT_MS) { return (await relayBoardState(timeoutMs)) === 'supported'; }
 
 // -> { ok:true, taken, hasPin } | { ok:false }（オフ/失敗/不正応答）。決して throw しない
 async function checkName(name, timeoutMs = NET_TIMEOUT_MS) {
@@ -914,16 +929,83 @@ const _netSetTitle = () => {
     return typeof setTitle === 'function' ? setTitle : null;
   } catch (_) { return null; }
 };
+// 中継が v1.1 ボードに未対応（旧 Worker）の間は、世界の取得・送信・二つ名設定をしない（エラーではなく「UPDATING」扱い）。
+// 旧 Worker は board を無視して v1.0 の順位を返すので、確認なしに取得すると別の版の順位を表示してしまう。
 const WorldNet = {
-  fetchTop: (...a) => fetchWorldTop(...a),
-  submit: (e) => submitScore(e),
-  setTitle: (name, key, title) => {
+  updating: false,   // 直近の fetchTop が「ボード未対応」で見送られたか（loadWorld が OFFLINE と区別するのに使う）
+  fetchTop: async (...a) => {
+    WorldNet.updating = false;
+    const st = await relayBoardState();
+    if (st !== 'supported') { WorldNet.updating = st === 'unsupported'; return null; }
+    return fetchWorldTop(...a);
+  },
+  submit: async (e) => {
+    const st = await relayBoardState();
+    if (st === 'unsupported') return { ok: false, error: 'updating' };
+    if (st !== 'supported') return { ok: false, error: 'offline' };   // 対応が確認できない間は送らない（旧中継だと別の版のボードに入ってしまう）
+    return submitScore(e);
+  },
+  setTitle: async (name, key, title) => {
+    const st = await relayBoardState();
+    if (st === 'unsupported') return { ok: false, error: 'updating' };
+    if (st !== 'supported') return { ok: false, error: 'offline' };
     const f = _netSetTitle();
-    if (!f) return Promise.resolve({ ok: false, error: 'unavailable' });
-    try { return Promise.resolve(f(name, key, title)).then((r) => r || { ok: false, error: 'unavailable' }, () => ({ ok: false, error: 'unavailable' })); }
-    catch (_) { return Promise.resolve({ ok: false, error: 'unavailable' }); }
+    if (!f) return { ok: false, error: 'unavailable' };
+    try { return (await f(name, key, title)) || { ok: false, error: 'unavailable' }; }
+    catch (_) { return { ok: false, error: 'unavailable' }; }
   },
 };
+
+// ---- PIN（任意。別端末でも同じ名前を使う）。PIN そのものは保存しない・ログに出さない（引数として通過するだけ）----
+const PIN_RE = /^\d{4,6}$/;
+const PinNet = {
+  set: (name, key, pin) => setPin(name, key, pin),
+  clear: (name, key) => clearPin(name, key),
+  login: (name, pin, newKey) => loginWithPin(name, pin, newKey),
+};
+function pinErrorMessage(r) {
+  if (r && r.ok) return '';
+  const e = r && r.error;
+  if (e === 'bad-pin') return 'WRONG PIN';
+  if (e === 'locked') {
+    const ra = r && Number.isFinite(r.retryAfter) ? r.retryAfter : 0;
+    if (ra >= 3600) return 'TOO MANY TRIES \u2014 TRY LATER TODAY';
+    return ra > 0 ? 'LOCKED \u2014 TRY IN ' + Math.max(1, Math.ceil(ra / 60)) + ' MIN' : 'LOCKED \u2014 TRY LATER';
+  }
+  if (e === 'pin-disabled' || e === 'unavailable' || e === 'disabled') return 'PIN NOT AVAILABLE YET';
+  if (e === 'rate') { const ra = r && Number.isFinite(r.retryAfter) ? r.retryAfter : 0; return ra > 0 ? 'TOO FAST \u2014 WAIT ' + Math.max(1, Math.ceil(ra / 60)) + ' MIN' : 'TOO FAST \u2014 WAIT A BIT'; }
+  if (e === 'no-pin') return 'THIS NAME HAS NO PIN';
+  if (e === 'unknown') return 'NAME NOT REGISTERED YET';
+  if (e === 'forbidden') return 'NOT ALLOWED \u2014 KEY MISMATCH';
+  if (e === 'invalid') return 'PIN MUST BE 4-6 DIGITS';
+  return 'OFFLINE \u2014 TRY LATER';
+}
+// 別端末のログイン: 新しい端末キーを作って /pin/login。成功したらその名前のプロフィールをそのキーで追加・選択。-> { ok, msg, profile? }
+async function pinLoginAndAdopt(storage, name, pin) {
+  const nm = sanitizeName(name);
+  if (!nm) return { ok: false, msg: 'ENTER A NAME' };
+  if (!PIN_RE.test(String(pin))) return { ok: false, msg: 'PIN MUST BE 4-6 DIGITS' };
+  const key = makeNameKey();
+  if (!key) return { ok: false, msg: 'CANNOT CREATE KEY ON THIS DEVICE' };
+  let r; try { r = await PinNet.login(nm, String(pin), key); } catch (_) { r = { ok: false }; }
+  if (!(r && r.ok)) return { ok: false, msg: pinErrorMessage(r), result: r };
+  const profile = addProfile(storage, nm, key);
+  if (!profile) return { ok: false, msg: 'MAX ' + PROFILE_MAX + ' PILOTS' };
+  return { ok: true, msg: 'WELCOME BACK', profile };
+}
+async function pinSetFor(storage, name, pin) {
+  const prof = loadProfiles(storage).find((p) => p.name === name);
+  if (!prof) return { ok: false, msg: 'NO SUCH PILOT' };
+  if (!PIN_RE.test(String(pin))) return { ok: false, msg: 'PIN MUST BE 4-6 DIGITS' };
+  let r; try { r = await PinNet.set(prof.name, prof.key, String(pin)); } catch (_) { r = { ok: false }; }
+  return (r && r.ok) ? { ok: true, msg: 'PIN SAVED' } : { ok: false, msg: pinErrorMessage(r), result: r };
+}
+async function pinClearFor(storage, name) {
+  const prof = loadProfiles(storage).find((p) => p.name === name);
+  if (!prof) return { ok: false, msg: 'NO SUCH PILOT' };
+  let r; try { r = await PinNet.clear(prof.name, prof.key); } catch (_) { r = { ok: false }; }
+  return (r && r.ok) ? { ok: true, msg: 'PIN REMOVED' } : { ok: false, msg: pinErrorMessage(r), result: r };
+}
 
 // ---- チャンピオンの称号（epithet）と WORLD #1 のキャッシュ ----
 const TITLE_MAX = 16;
@@ -942,6 +1024,7 @@ function titleResultMessage(r) {
   if (r && r.ok) return 'TITLE SAVED';
   const e = r && r.error;
   if (e === 'not-champion') return 'NOT THE CHAMPION ANYMORE';
+  if (e === 'updating') return 'WORLD: UPDATING';
   if (e === 'unavailable' || e === 'disabled') return 'TITLE SERVICE UNAVAILABLE';
   if (e === 'forbidden') return 'NOT ALLOWED \u2014 KEY MISMATCH';
   if (e === 'unknown') return 'NAME NOT REGISTERED';
@@ -1048,7 +1131,7 @@ function rankTabsTap(tabs, x, y, px, py, w) {
   if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
   if (inRect(r.world, px, py)) {
     tabs.mode = 'world';
-    if (tabs.status === 'idle' || tabs.status === 'offline') loadWorld(tabs);
+    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs);
     return true;
   }
   return false;
@@ -1060,7 +1143,7 @@ function loadWorld(tabs) {
   return WorldNet.fetchTop().then((list) => {
     if (tk !== tabs.token) return;
     if (list) { tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
-    else tabs.status = 'offline';
+    else tabs.status = WorldNet.updating ? 'updating' : 'offline';
   });
 }
 
@@ -1076,6 +1159,7 @@ function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) {
   }
   if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
   else if (tabs.status === 'loading' || tabs.status === 'idle') txt(ctx, 'LOADING\u2026', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
+  else if (tabs.status === 'updating') txt(ctx, 'WORLD: UPDATING', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
   else if (tabs.status === 'offline') txt(ctx, 'OFFLINE', x + w / 2, y + 40, 11, p.bad, 'center', { sp: 3 });
   else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
 }
@@ -1174,14 +1258,14 @@ function setActiveProfile(storage, name) {
   return p;
 }
 // 追加して有効化。空名/枠なし -> null。同名が既にあれば選択のみ
-function addProfile(storage, name) {
+function addProfile(storage, name, key) {
   const nm = sanitizeName(name);
   if (!nm) return null;
   const list = loadProfiles(storage);
   const ex = list.find((p) => p.name === nm);
   if (ex) return setActiveProfile(storage, nm);
   if (list.length >= PROFILE_MAX) return null;
-  list.push({ name: nm, key: makeNameKey() });
+  list.push({ name: nm, key: (typeof key === 'string' && key) ? key : makeNameKey() });
   writeProfiles(storage, list);
   return setActiveProfile(storage, nm);
 }
@@ -3019,8 +3103,12 @@ function drawAdminPanel(ctx, d) {
   }
   for (const r of d.rows) {
     hair(ctx, 36, r.del.y - 4, AW - 36, r.del.y - 4, p.fg, 0.08);
-    txt(ctx, r.label, 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
-    txt(ctx, r.sub, 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
+    txt(ctx, ellipsize(ctx, r.label, 11, 500, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
+    txt(ctx, ellipsize(ctx, r.sub, 8, 400, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
+    if (r.pin) {
+      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.45 : 0.12));
+      txt(ctx, 'PIN RESET', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 8, r.hasPin ? p.warn : p.dim, 'center', { sp: 1.5, w: 500 });
+    }
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
   }
@@ -3037,6 +3125,20 @@ function drawProfilePanel(ctx, d) {
   veil(ctx, 0.6);
   panel(ctx, 20, 110, AW - 40, 360, { a: 0.92, border: p.mid, ba: 0.25 });
   txt(ctx, 'PILOTS', AW / 2, 126, 16, p.hi, 'center', { sp: 8, w: 300 });
+  if (d.mode === 'pin' && d.pin) {
+    txt(ctx, 'PIN', AW / 2, 160, 10, p.mid, 'center', { sp: 6, w: 500 });
+    txt(ctx, ellipsize(ctx, d.pin.name, 13, 500, 3, AW - 80), AW / 2, 180, 13, p.hi, 'center', { sp: 3, w: 500 });
+    d.pin.note.forEach((l, i) => txt(ctx, l, AW / 2, 206 + i * 13, 7, p.dim, 'center', { sp: 1, w: 400 }));
+    for (const b of d.pin.buttons) {
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(b.danger ? p.bad : p.mid, 0.08), rgba(b.danger ? p.bad : p.mid, 0.5));
+      txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 5, 10, b.danger ? p.bad : p.hi, 'center', { sp: 3, w: 500 });
+    }
+    const bk = d.pin.back;
+    pill(ctx, bk.x, bk.y, bk.w, bk.h, null, rgba(p.fg, 0.22));
+    txt(ctx, 'BACK', bk.x + bk.w / 2, bk.y + bk.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+    if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, d.ok ? p.mid : p.bad, 'center', { sp: 2, w: 500 });
+    return;
+  }
   if (d.mode === 'confirm') {
     txt(ctx, d.confirm.l1, AW / 2, 196, 12, p.fg, 'center', { sp: 2, w: 500 });
     txt(ctx, d.confirm.l2, AW / 2, 220, 8, p.warn, 'center', { sp: 2, w: 500 });
@@ -3050,7 +3152,11 @@ function drawProfilePanel(ctx, d) {
   }
   for (const r of d.rows) {
     pill(ctx, r.sel.x, r.sel.y, r.sel.w, r.sel.h, r.active ? rgba(p.mid, 0.10) : null, rgba(r.active ? p.mid : p.fg, r.active ? 0.6 : 0.2));
-    txt(ctx, r.name, r.sel.x + 18, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    txt(ctx, ellipsize(ctx, r.name, 13, 500, 3, r.sel.w - 30), r.sel.x + 14, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    if (r.pin) {
+      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.55 : 0.3));
+      txt(ctx, 'PIN', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 9, p.warn, 'center', { sp: 2, w: 500 });
+    }
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, null, rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
   }
@@ -3061,7 +3167,7 @@ function drawProfilePanel(ctx, d) {
   const c = d.close;
   pill(ctx, c.x, c.y, c.w, c.h, null, rgba(p.fg, 0.22));
   txt(ctx, 'CLOSE', c.x + c.w / 2, c.y + c.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
-  if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, p.bad, 'center', { sp: 2, w: 500 });
+  if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, d.ok ? p.mid : p.bad, 'center', { sp: 2, w: 500 });
 }
 // CHOOSE START パネル（PILOTS と同じ言語）。d = { title, rows:[{rect,label,stage,g,cursor,best}], page, pages, prev, next, cancel, hint }
 function drawStartPanel(ctx, d) {
@@ -3092,7 +3198,7 @@ function drawStartPanel(ctx, d) {
 function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
-  txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
 }
 
 // タイトルの WORLD #1 バナー。box={x,y,w,h}（2行: y+0 と y+14）。d={name,score,title}。maxW1=1行目の最大幅
@@ -4033,7 +4139,7 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // 起動画面（TAP TO BEGIN）の WHAT'S NEW。version を変えると、まだ見ていない端末に NEW 表示が出る。
 // 行は英語の短文（34文字以内、3〜5行）。
 const WHATSNEW = {
-  version: '2026.10.26',
+  version: APP_VERSION,
   lines: [
     'LAND ON FLAT GROUND · NO SCORE',
     'LIFT OFF AGAIN TO REACH THE PAD',
@@ -4146,25 +4252,40 @@ function showNameOverlay(initial, onSubmit, opts) {
   const msg = document.createElement('div');
   msg.style.cssText = 'min-height:18px;margin-top:10px;font-size:13px;letter-spacing:1px;color:#ffb547;';
   let busy = false;
-  const fin = (m) => { busy = false; btn.disabled = false; if (m) msg.textContent = String(m); else if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
+  const alt = document.createElement('button');   // 任意の追加アクション（例: 名前が登録済みで PIN あり → THIS IS MY NAME）
+  alt.type = 'button'; alt.className = 'ne-alt'; alt.style.display = 'none';
+  const fin = (m) => {
+    busy = false; btn.disabled = false; alt.style.display = 'none';
+    if (m && typeof m === 'object' && m.msg) {
+      msg.textContent = String(m.msg);
+      if (m.action && typeof m.action.run === 'function') {
+        alt.textContent = String(m.action.label || 'OK'); alt.style.display = '';
+        alt.onclick = () => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); try { m.action.run(); } catch (_) { /* ignore */ } };
+      }
+    } else if (m) msg.textContent = String(m);
+    else if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+  };
   const done = () => {
     if (busy) return;
     let r = null;
     try { r = onSubmit(input.value); } catch (_) { r = null; }
     if (r && typeof r.then === 'function') { busy = true; btn.disabled = true; msg.textContent = 'CHECKING\u2026'; r.then(fin, () => fin(null)); }
-    else fin(typeof r === 'string' ? r : null);
+    else fin(typeof r === 'string' || (r && typeof r === 'object') ? r : null);
   };
   btn.addEventListener('click', done);
   input.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') { e.preventDefault(); done(); }
   });
-  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn); wrap.appendChild(msg);
+  wrap.appendChild(label); wrap.appendChild(input); wrap.appendChild(btn); wrap.appendChild(msg); wrap.appendChild(alt);
   document.body.appendChild(wrap);
   try { input.focus(); input.select(); } catch (_) { /* ignore */ }
   return true;
 }
 
+function pinOverlayDom() {
+  return typeof document !== 'undefined' && !!(document.getElementById && document.getElementById(PIN_ID));
+}
 function nameOverlayOpen() {
   return typeof document !== 'undefined' && !!(document.getElementById && document.getElementById('lander-name-entry'));
 }
@@ -4175,6 +4296,78 @@ function hideNameOverlay() {
     if (old && old.parentNode) old.parentNode.removeChild(old);
   } catch (_) { /* ignore */ }
 }
+
+// ---- PIN 入力（HTML の本物の <form>：パスワードマネージャが保存・自動入力できるよう username 欄を持つ）----
+// o = { mode:'login'|'set', name, heading, onSubmit(pin) -> Promise<{ok,msg}>, onClose(ctrl) }。PIN は入力欄と onSubmit の引数を通過するだけで、保存・ログ出力しない。
+// document が無い環境でも状態機械として動く（テスト用）。成功は約0.7秒後に自動で閉じる（c.ok で成功を判別）。
+const PIN_ID = 'lander-pin-entry';
+const PIN_NOTE = "PIN lets you use this name on other devices. Don't reuse a password from other services.";
+function openPinEntry(o) {
+  hidePinEntry();
+  const c = { open: true, busy: false, msg: '', ok: false, mode: o.mode, name: o.name, _timer: 0, _dom: null };
+  const render = () => { if (c._dom) { c._dom.msg.textContent = c.msg; c._dom.msg.className = 'pe-msg' + (c.ok ? ' pe-ok' : ''); c._dom.ok.disabled = c.busy; c._dom.cancel.textContent = c.ok ? 'CLOSE' : 'CANCEL'; } };
+  c.close = () => {
+    if (!c.open) return;
+    c.open = false;
+    if (c._timer) { clearTimeout(c._timer); c._timer = 0; }
+    if (c._dom) { try { c._dom.pw.value = ''; } catch (_) { /* ignore */ } if (c._dom.wrap.parentNode) c._dom.wrap.parentNode.removeChild(c._dom.wrap); }
+    c._dom = null;
+    try { if (o.onClose) o.onClose(c); } catch (_) { /* ignore */ }
+  };
+  c.submit = async (pin) => {
+    if (!c.open || c.busy) return null;
+    pin = String(pin == null ? '' : pin);
+    if (!PIN_RE.test(pin)) { c.msg = 'PIN MUST BE 4-6 DIGITS'; c.ok = false; render(); return { ok: false, msg: c.msg }; }
+    c.busy = true; c.ok = false; c.msg = 'CHECKING\u2026'; render();
+    let r; try { r = await o.onSubmit(pin); } catch (_) { r = { ok: false, msg: 'OFFLINE \u2014 TRY LATER' }; }
+    pin = '';
+    if (!c.open) return r;
+    c.busy = false; c.ok = !!(r && r.ok); c.msg = (r && r.msg) || (c.ok ? 'OK' : 'ERROR');
+    if (c._dom) { try { c._dom.pw.value = ''; if (!c.ok) c._dom.pw.focus(); } catch (_) { /* ignore */ } }
+    if (c.ok) c._timer = setTimeout(() => c.close(), 700);
+    render();
+    return r;
+  };
+  if (typeof document !== 'undefined' && document.body && document.createElement) {
+    try {
+      const login = o.mode === 'login';
+      const wrap = document.createElement('div'); wrap.id = PIN_ID;
+      const form = document.createElement('form'); form.setAttribute('autocomplete', 'on'); form.method = 'post'; form.action = '#'; form.noValidate = true;
+      const head = document.createElement('div'); head.className = 'pe-head'; head.textContent = o.heading || (login ? 'ENTER PIN' : 'SET PIN');
+      const nm = document.createElement('div'); nm.className = 'pe-name'; nm.textContent = o.name;
+      const user = document.createElement('input');   // パスワードマネージャ用のアカウント名（画面外・読み取り専用）
+      user.type = 'text'; user.name = 'username'; user.id = 'lander-pin-user'; user.value = o.name; user.readOnly = true; user.tabIndex = -1;
+      user.setAttribute('autocomplete', 'username'); user.setAttribute('aria-hidden', 'true'); user.className = 'pe-user';
+      const label = document.createElement('label'); label.className = 'pe-label'; label.htmlFor = 'lander-pin-pw'; label.textContent = login ? 'PIN (4-6 DIGITS)' : 'NEW PIN (4-6 DIGITS, 6 RECOMMENDED)';
+      const pw = document.createElement('input');
+      pw.type = 'password'; pw.name = 'password'; pw.id = 'lander-pin-pw'; pw.maxLength = 6; pw.pattern = '\\d{4,6}'; pw.spellcheck = false;
+      pw.setAttribute('inputmode', 'numeric'); pw.setAttribute('autocomplete', login ? 'current-password' : 'new-password'); pw.setAttribute('autocapitalize', 'off');
+      const ok = document.createElement('button'); ok.type = 'submit'; ok.textContent = 'OK'; ok.className = 'pe-btn pe-go';
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'CANCEL'; cancel.className = 'pe-btn pe-cancel';
+      const row = document.createElement('div'); row.className = 'pe-row'; row.appendChild(ok); row.appendChild(cancel);
+      const msg = document.createElement('div'); msg.className = 'pe-msg';
+      form.addEventListener('submit', (e) => { e.preventDefault(); c.submit(pw.value); });
+      cancel.addEventListener('click', () => c.close());
+      pw.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); c.close(); } });
+      pw.addEventListener('input', () => { const v = pw.value.replace(/\D/g, '').slice(0, 6); if (v !== pw.value) pw.value = v; });
+      [head, nm, user, label, pw, row, msg].forEach((n) => form.appendChild(n));
+      if (!login) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = PIN_NOTE; form.appendChild(note); }
+      wrap.appendChild(form);
+      document.body.appendChild(wrap);
+      c._dom = { wrap, form, pw, ok, cancel, msg, user };
+      try { pw.focus(); } catch (_) { /* ignore */ }
+    } catch (_) { c._dom = null; }
+  }
+  return c;
+}
+function hidePinEntry() {
+  try {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    const old = document.getElementById(PIN_ID);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  } catch (_) { /* ignore */ }
+}
+function pinEntryOpen(c) { return !!(c && c.open); }
 
 // ---- チャンピオン称号の入力（WORLD #1 のみ）----
 // document が無い環境でも状態機械として動く（テスト用）。DOM は薄い皮。
@@ -4301,6 +4494,7 @@ class BootScene extends Scene {
     const fadeIn = Math.min(1, this.t / 0.8);
     txt(ctx, 'LANDER', W / 2, H * 0.40, 22, p.hi, 'center', { sp: 12, w: 300, a: 0.85 * fadeIn });
     txt(ctx, 'SOFT LANDING TOUR', W / 2, H * 0.40 + 34, 8, p.dim, 'center', { sp: 5, w: 400, a: fadeIn });
+    txt(ctx, APP_LABEL, W / 2, H * 0.40 + 52, 8, p.mid, 'center', { sp: 5, w: 500, a: 0.8 * fadeIn });
     const pulse = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(this.t * 2.2));
     txt(ctx, 'TAP TO BEGIN', W / 2, H * 0.60, 12, p.fg, 'center', { sp: 6, w: 400, a: pulse * fadeIn });
     txt(ctx, 'SOUND ON', W / 2, H * 0.60 + 28, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.7 * fadeIn });
@@ -4314,6 +4508,7 @@ class BootScene extends Scene {
     for (let i = 0; i < WHATSNEW.lines.length; i++) {
       txt(ctx, WHATSNEW.lines[i], W / 2, nw.lines[i].y, 8, p.fg, 'center', { sp: 2, w: 400, a: (fresh ? 0.8 : 0.5) * nf });
     }
+    txt(ctx, APP_BUILD_TEXT, W / 2, nw.bottom + 16, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
   }
 }
 
@@ -4373,7 +4568,8 @@ class TitleScene extends Scene {
     let pr = null;
     try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { return Promise.resolve(); }
     return pr.then((list) => {
-      if (tk !== this._topTok || !Array.isArray(list)) return;
+      if (tk !== this._topTok) return;
+      if (!Array.isArray(list)) { if (WorldNet.updating) this.top1 = null; return; }   // ボード未対応の間は別の版の #1 を出さない
       this.top1 = top1FromList(this.engine.storage, list);
     }, () => {});
   }
@@ -4418,8 +4614,26 @@ class TitleScene extends Scene {
     if (list.length >= PROFILE_MAX) return 'MAX ' + PROFILE_MAX + ' PILOTS';
     if (!relayEnabled()) return accept();
     return Promise.resolve().then(() => checkName(nm)).then(
-      (r) => (r && r.ok && r.taken) ? 'NAME ALREADY REGISTERED \u2014 CHOOSE ANOTHER' : accept(),   // {ok:false}（オフライン）は検証できないので許可
+      (r) => {
+        if (!(r && r.ok && r.taken)) return accept();
+        // PIN が設定された名前なら、自分の名前としてログインできる（別端末）。無ければ従来どおり
+        if (r.hasPin) return { msg: 'NAME ALREADY REGISTERED', action: { label: 'THIS IS MY NAME \u2014 ENTER PIN', run: () => this._openPinLogin(nm) } };
+        return 'NAME ALREADY REGISTERED \u2014 CHOOSE ANOTHER';
+      },   // {ok:false}（オフライン）は検証できないので許可
       () => accept());
+  }
+  // 別端末の同名パイロットを PIN で引き継ぐ（成功でその名前の端末キーが中継に登録され、この端末のプロフィールに保存される）
+  _openPinLogin(nm) {
+    const wasPending = this.pendingStart;
+    const c = openPinEntry({ mode: 'login', name: nm, heading: 'ENTER PIN',
+      onSubmit: (pin) => pinLoginAndAdopt(this.engine.storage, nm, pin),
+      onClose: (cc) => {
+        this._pin = null;
+        if (cc && cc.ok) { this.name = nm; this.prof = null; this.pendingStart = false; if (wasPending) this._startOrChoose(); }
+        else this.pendingStart = wasPending;
+      } });
+    this._pin = c;
+    return c;
   }
   _openName(thenStart) {
     this.pendingStart = !!thenStart;
@@ -4431,15 +4645,22 @@ class TitleScene extends Scene {
     const list = loadProfiles(this.engine.storage);
     const act = getActiveProfile(this.engine.storage);
     const rows = list.map((p, i) => ({ name: p.name, active: !!act && act.name === p.name,
-      sel: { x: 36, y: 164 + i * 56, w: 200, h: 44 }, del: { x: 248, y: 164 + i * 56, w: 56, h: 44 } }));
-    return { rows, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
+      sel: { x: 36, y: 164 + i * 56, w: 148, h: 44 }, pin: { x: 192, y: 164 + i * 56, w: 52, h: 44 }, del: { x: 252, y: 164 + i * 56, w: 52, h: 44 } }));
+    const pf = this.prof, hp = pf && pf.hasPin === true;
+    return { rows, pset: { x: 60, y: 250, w: W - 120, h: 44, label: hp ? 'CHANGE PIN' : 'SET PIN' }, prem: hp ? { x: 60, y: 302, w: W - 120, h: 44, label: 'REMOVE PIN', danger: true } : null, pback: { x: W / 2 - 50, y: 366, w: 100, h: 36 }, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
       yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 356, w: W - 120, h: 44, label: 'CANCEL' } };
   }
   _profInput(action, data) {
     const pf = this.prof;
-    if (action === 'back') { if (pf.mode === 'confirm') { pf.mode = 'list'; pf.msg = ''; } else this.prof = null; return; }
+    if (action === 'back') { if (pf.mode === 'confirm' || pf.mode === 'pin') { pf.mode = 'list'; pf.msg = ''; pf.ok = false; } else this.prof = null; return; }
     if (action !== 'tap' || !data || pf.busy) return;
     const R = this._profRects();
+    if (pf.mode === 'pin') {
+      if (this._hit(R.pback, data)) { pf.mode = 'list'; pf.msg = ''; pf.ok = false; }
+      else if (this._hit(R.pset, data)) this._pinSet(pf.target);
+      else if (R.prem && this._hit(R.prem, data)) this._pinRemove(pf.target);
+      return;
+    }
     if (pf.mode === 'confirm') {
       if (this._hit(R.no, data)) { pf.mode = 'list'; pf.msg = ''; }
       else if (this._hit(R.yes, data)) this._deletePilot(pf.target);
@@ -4448,9 +4669,41 @@ class TitleScene extends Scene {
     if (this._hit(R.close, data)) { this.prof = null; return; }
     if (this._hit(R.add, data)) { if (!R.add.off) { this.prof = null; this._openName(false); } else pf.msg = 'MAX ' + PROFILE_MAX + ' PILOTS'; return; }
     for (const r of R.rows) {
+      if (this._hit(r.pin, data)) { this._openPinMenu(r.name); return; }
       if (this._hit(r.del, data)) { pf.mode = 'confirm'; pf.target = r.name; pf.msg = ''; return; }
       if (this._hit(r.sel, data)) { setActiveProfile(this.engine.storage, r.name); this.name = r.name; return; }
     }
+  }
+  // ---- PILOTS > PIN（設定/変更/解除。この端末で所有しているパイロットのみ＝プロフィールにキーがある名前）----
+  async _openPinMenu(name) {
+    const pf = this.prof; if (!pf) return;
+    if (!loadProfiles(this.engine.storage).some((p) => p.name === name)) return;
+    musicOf(this.engine).sfx.uiTap();
+    pf.mode = 'pin'; pf.target = name; pf.hasPin = null; pf.ok = false; pf.msg = '';
+    if (!relayEnabled()) { pf.msg = 'PIN NOT AVAILABLE YET'; return; }
+    pf.busy = true; pf.msg = 'CHECKING\u2026';
+    let r = null; try { r = await checkName(name); } catch (_) { r = null; }
+    if (this.prof !== pf || pf.target !== name) return;
+    pf.busy = false;
+    if (r && r.ok) { pf.hasPin = r.hasPin === true; pf.msg = r.taken ? '' : 'NAME NOT REGISTERED YET \u2014 SUBMIT A SCORE FIRST'; }
+    else pf.msg = 'OFFLINE \u2014 TRY LATER';
+  }
+  _pinSet(name) {
+    const pf = this.prof; if (!pf || pinEntryOpen(this._pin)) return;
+    musicOf(this.engine).sfx.uiTap();
+    this._pin = openPinEntry({ mode: 'set', name, heading: pf.hasPin ? 'CHANGE PIN' : 'SET PIN',
+      onSubmit: (pin) => pinSetFor(this.engine.storage, name, pin),
+      onClose: (cc) => { this._pin = null; if (this.prof === pf && cc && cc.ok) { pf.hasPin = true; pf.ok = true; pf.msg = 'PIN SAVED'; } } });
+  }
+  async _pinRemove(name) {
+    const pf = this.prof; if (!pf || pf.busy) return;
+    musicOf(this.engine).sfx.uiTap();
+    pf.busy = true; pf.ok = false; pf.msg = 'REMOVING\u2026';
+    let r; try { r = await pinClearFor(this.engine.storage, name); } catch (_) { r = { ok: false, msg: 'OFFLINE \u2014 TRY LATER' }; }
+    pf.busy = false;
+    if (this.prof !== pf) return;
+    pf.ok = !!(r && r.ok); pf.msg = r.msg;
+    if (pf.ok) pf.hasPin = false;
   }
   // サーバー側の名前と記録も削除。成功/「未登録」ならローカルから削除、通信失敗なら残す。ローカルのランキング行は消さない
   async _deletePilot(name) {
@@ -4545,14 +4798,15 @@ class TitleScene extends Scene {
     for (const r of R.rows) if (this._hit(r.rect, data)) { musicOf(this.engine).sfx.uiTap(); this._startAt(r.o.stage); return; }
     // それ以外のタップは何もしない（裏の START/CONTINUE に貫通させない）
   }
-  blocksBack() { return !!this.pick || championEntryOpen(this._champ); }
+  blocksBack() { return !!this.pick || championEntryOpen(this._champ) || pinEntryOpen(this._pin); }
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
-  exit() { hideNameOverlay(); this._topTok++; if (this._champ) this._champ.close(); hideChampionEntry(); }
+  exit() { hideNameOverlay(); if (this._pin) this._pin.close(); hidePinEntry(); this._topTok++; if (this._champ) this._champ.close(); hideChampionEntry(); }
 
   onInput(action, data) {
     if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（下で開始しない）
+    if (pinEntryOpen(this._pin) || pinOverlayDom()) return;   // PIN 入力中は全入力を消費
     if (nameOverlayOpen()) return;           // 名前入力中はキャンバスの入力を受けない（下で発射が始まらない）
     if (data && data.repeat) return;         // キーのオートリピートでは開始・スキップしない
     if (this.launch) {            // 発射中: タップ/決定でスキップ
@@ -4748,10 +5002,109 @@ class TitleScene extends Scene {
     }
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;
-      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg,
+      const pinBtns = pf.mode === 'pin' ? [R.pset].concat(R.prem ? [R.prem] : []) : [];
+      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg, ok: !!pf.ok,
+        pin: pf.mode === 'pin' ? { name: pf.target, buttons: pinBtns, back: R.pback,
+          note: ['PIN LETS YOU USE THIS NAME ON OTHER DEVICES.', "DON'T REUSE A PASSWORD FROM OTHER SERVICES.", 'OPTIONAL \u00b7 4-6 DIGITS \u00b7 6 RECOMMENDED'] } : null,
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
     if (championEntryOpen(this._champ)) veil(ctx, 0.55);
+  }
+}
+
+
+// ---- 02_src/migrate.js ----
+// v1.0 → v1.1 のパイロット引き継ぎ。v1.0 の保存領域（'lander.'）は読むだけで、書き込み・削除は一切しない。
+// 引き継ぐのは「パイロットの身元」だけ：プロフィール（名前＋所有キー）・選択中の名前・チャンピオン称号のキャッシュ・ミュート。
+// 進行(progress)・チェックポイント・ステージ開始・ローカルランキング・stageBest・ハイスコアは、ルールが違うので引き継がない。
+
+const IMPORT_KEYS = ['profiles', 'activeProfile', 'lastName', 'worldTop1', 'muted'];   // 'lander.'+key → 'lander11.'+key
+const MIGRATION_KEY = 'migration';   // 'lander11.migration' = 'imported' | 'fresh' | 'none'（一度だけ尋ねる印）
+
+const rawGet = (raw, k) => { try { return raw.getItem(k); } catch (_) { return null; } };
+const rawKeys = (raw) => { const out = []; try { for (let i = 0; i < raw.length; i++) { const k = raw.key(i); if (k != null) out.push(k); } } catch (_) { /* ignore */ } return out; };
+
+// v1.0 のパイロット名の一覧（壊れていれば空）。プロフィールが無く lastName だけの端末も 1 名として扱う
+function legacyPilotNames(raw) {
+  const names = [];
+  try {
+    const arr = JSON.parse(rawGet(raw, LEGACY_PREFIX + 'profiles') || '[]');
+    if (Array.isArray(arr)) for (const p of arr) if (p && typeof p.name === 'string' && p.name.trim() && typeof p.key === 'string') names.push(p.name.trim());
+  } catch (_) { /* ignore */ }
+  if (!names.length) { const ln = String(rawGet(raw, LEGACY_PREFIX + 'lastName') || '').trim(); if (ln) names.push(ln); }
+  return names;
+}
+// v1.1 側に既にデータがあるか（'lander11.' で始まるキーが 1 つでもあるか）
+function hasOwnData(raw) { return rawKeys(raw).some((k) => k.startsWith(STORAGE_PREFIX)); }
+// 起動時に 1 度だけ呼ぶ（BootScene が seenVersion を書く前）。-> 'ask' | 'skip'
+//   v1.1 のデータが既にある／既に尋ねた → 'skip'。初回で v1.0 パイロットが無い → 印だけ付けて 'skip'（後から v1.0 を遊んでも再度は尋ねない）
+function migrationPlan(raw) {
+  try {
+    if (rawGet(raw, STORAGE_PREFIX + MIGRATION_KEY) != null) return 'skip';
+    if (hasOwnData(raw)) return 'skip';
+    if (legacyPilotNames(raw).length) return 'ask';
+    raw.setItem(STORAGE_PREFIX + MIGRATION_KEY, 'none');
+  } catch (_) { /* ignore */ }
+  return 'skip';
+}
+// 'imported' | 'fresh' を記録する。import のときは IMPORT_KEYS だけコピー。-> コピーしたキー名の配列
+function applyMigration(raw, choice) {
+  const copied = [];
+  try {
+    if (choice === 'imported') {
+      for (const k of IMPORT_KEYS) {
+        const v = rawGet(raw, LEGACY_PREFIX + k);
+        if (v != null && v !== '') { raw.setItem(STORAGE_PREFIX + k, v); copied.push(k); }
+      }
+    }
+    raw.setItem(STORAGE_PREFIX + MIGRATION_KEY, choice === 'imported' ? 'imported' : 'fresh');
+  } catch (_) { /* 保存できなくても続行 */ }
+  return copied;
+}
+
+// ---- 選択画面（TAP TO BEGIN の後・タイトルの前）----
+class MigrateScene extends Scene {
+  constructor(engine, next, raw, names) {
+    super(engine);
+    this.next = next; this.raw = raw; this.names = names || [];
+    this.isRoot = true; this.t = 0; this.done = false; this.sel = 0;
+    this.btnImport = { x: 40, y: 340, w: W - 80, h: 48 };
+    this.btnFresh = { x: 40, y: 400, w: W - 80, h: 48 };
+  }
+  choose(choice) {
+    if (this.done) return;
+    this.done = true;
+    applyMigration(this.raw, choice);
+    if (typeof this.next === 'function') this.next();
+  }
+  _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
+  onInput(action, data) {
+    if (this.done || (data && data.repeat)) return;
+    if (action === 'up' || action === 'down') { this.sel = this.sel ? 0 : 1; return; }
+    if (action === 'confirm') { this.choose(this.sel === 0 ? 'imported' : 'fresh'); return; }
+    if (action === 'tap' && data) {
+      if (this._hit(this.btnImport, data)) this.choose('imported');
+      else if (this._hit(this.btnFresh, data)) this.choose('fresh');   // それ以外のタップでは何も決めない
+    }
+  }
+  update(dt) { this.t += (dt > 0 ? dt : 0.016); }
+  render(ctx) {
+    const p = P();
+    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
+    txt(ctx, 'LANDER', W / 2, 96, 22, p.hi, 'center', { sp: 12, w: 300, a: 0.85 });
+    txt(ctx, APP_LABEL, W / 2, 130, 9, p.mid, 'center', { sp: 5, w: 500 });
+    txt(ctx, 'v1.0 PILOTS FOUND', W / 2, 190, 11, p.fg, 'center', { sp: 5, w: 500 });
+    const shown = this.names.slice(0, 3);
+    shown.forEach((n, i) => txt(ctx, Array.from(n).slice(0, 12).join(''), W / 2, 220 + i * 22, 13, p.hi, 'center', { sp: 3, w: 500 }));
+    txt(ctx, 'COPIES NAMES, KEYS & SETTINGS ONLY.', W / 2, 296, 7, p.dim, 'center', { sp: 2, w: 400 });
+    txt(ctx, 'PROGRESS AND RANKINGS ARE NOT COPIED.', W / 2, 310, 7, p.dim, 'center', { sp: 2, w: 400 });
+    const bs = [[this.btnImport, 'IMPORT v1.0 PILOTS'], [this.btnFresh, 'START FRESH']];
+    bs.forEach(([b, lab], i) => {
+      const on = this.sel === i;
+      pill(ctx, b.x, b.y, b.w, b.h, rgba(p.mid, on ? 0.10 : 0.03), rgba(on ? p.mid : p.fg, on ? 0.6 : 0.22), on ? 1.2 : 1);
+      txt(ctx, lab, W / 2, b.y + b.h / 2 - 6, 11, on ? p.hi : p.fg, 'center', { sp: 4, w: 500 });
+    });
+    txt(ctx, 'ASKED ONLY ONCE. v1.0 DATA IS NEVER CHANGED.', W / 2, 474, 7, p.dim, 'center', { sp: 2, w: 400 });
   }
 }
 
@@ -5470,7 +5823,7 @@ class Game extends Scene {
       const b = n.best;
       rows.push({ name: String(n.name == null ? '' : n.name), label: String(n.name == null ? '' : n.name).slice(0, 14),
         sub: (b ? 'BEST ' + b.score + '  ST.' + b.stage : 'NO SCORE') + (n.first ? '  FIRST ' + String(n.first).slice(0, 10) : ''),
-        del: { x: W - 36 - 56, y: 128 + i * 72, w: 56, h: 40 } });
+        del: { x: W - 36 - 56, y: 128 + i * 72, w: 56, h: 40 }, pin: { x: W - 36 - 56 - 8 - 76, y: 128 + i * 72, w: 76, h: 40 }, hasPin: n.hasPin === true });
     }
     const pages = Math.max(1, Math.ceil(a.names.length / ADMIN_PER_PAGE));
     return { rows, pages,
@@ -5478,7 +5831,7 @@ class Game extends Scene {
       next: a.page < pages - 1 ? { x: W - 110, y: 496, w: 80, h: 36, label: 'NEXT' } : null,
       close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' } };
   }
-  _adminConfirmRects() { return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
+  _adminConfirmRects() { const pin = this._admin && this._admin.confirmKind === 'pin'; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: pin ? 'CONFIRM RESET' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
   _adminInput(action, data) {
     const a = this._admin;
     if (action === 'back') { if (a.confirm) a.confirm = null; else { this._admin = null; this._adminTok++; } return; }
@@ -5486,14 +5839,17 @@ class Game extends Scene {
     if (a.confirm) {
       const c = this._adminConfirmRects();
       if (this._inRect(c.no, data)) a.confirm = null;
-      else if (this._inRect(c.yes, data)) this._adminDelete(a.confirm);
+      else if (this._inRect(c.yes, data)) { if (a.confirmKind === 'pin') this._adminPinReset(a.confirm); else this._adminDelete(a.confirm); }
       return;
     }
     const R = this._adminRects();
     if (this._inRect(R.close, data)) { this._admin = null; this._adminTok++; return; }
     if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
     if (R.next && this._inRect(R.next, data)) { a.page++; return; }
-    for (const r of R.rows) if (this._inRect(r.del, data)) { a.confirm = r.name; return; }
+    for (const r of R.rows) {
+      if (this._inRect(r.del, data)) { a.confirm = r.name; a.confirmKind = 'delete'; return; }
+      if (r.hasPin && this._inRect(r.pin, data)) { a.confirm = r.name; a.confirmKind = 'pin'; return; }
+    }
   }
   async _adminDelete(name) {
     const a = this._admin; if (!a) return;
@@ -5502,10 +5858,18 @@ class Game extends Scene {
     if (this._admin !== a) return;
     if (r && r.ok) await this._adminLoad(); else { a.phase = 'list'; a.msg = this._adminErr(r); }
   }
+  async _adminPinReset(name) {
+    const a = this._admin; if (!a) return;
+    a.confirm = null; a.msg = 'RESETTING PIN\u2026';
+    let r; try { r = await adminResetPin(_adminKeyMem, name); } catch (_) { r = { ok: false }; }
+    if (this._admin !== a) return;
+    if (r && r.ok) { a.msg = 'PIN RESET: ' + String(name).slice(0, 14); await this._adminLoad(); if (this._admin === a && a.phase === 'list') a.msg = 'PIN RESET: ' + String(name).slice(0, 14); }
+    else { a.phase = 'list'; a.msg = this._adminErr(r); }
+  }
   _drawAdmin(ctx) {
     const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
     drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,
-      confirm: a.confirm ? { text: 'DELETE ' + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
+      confirm: a.confirm ? { text: (a.confirmKind === 'pin' ? 'RESET PIN OF ' : 'DELETE ') + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
   }
   _dbgClose() { this.state = this._dbgPrev || 'play'; }
   // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）
@@ -5670,7 +6034,8 @@ class Game extends Scene {
       const score = this.totalScore, tok = this._champTok = (this._champTok || 0) + 1;
       try {
         Promise.resolve(WorldNet.submit({ name: nm, score, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
-          if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
+          if (r && r.ok === false && r.error === 'updating') this._worldNote = 'WORLD: UPDATING';
+          else if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
           if (r && r.ok === true && prof && prof.key) return this._maybeChampion(nm, prof.key, score, tok);
         }, () => {}).catch(() => {});
       } catch (_) { /* 送信失敗はゲームに影響させない */ }
@@ -6655,7 +7020,11 @@ window.addEventListener('load', () => {
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。
-  engine.start(new BootScene(engine, toTitle));
+  // v1.0 と同一オリジンのため、初回(v1.1 のデータ無し)に v1.0 のパイロットがあれば引き継ぎを尋ねる。BootScene が書き込む前に判定する
+  const raw = (() => { try { return window.localStorage; } catch (_) { return null; } })();
+  const plan = raw ? migrationPlan(raw) : 'skip';
+  const afterBoot = plan === 'ask' ? () => engine.changeScene(new MigrateScene(engine, toTitle, raw, legacyPilotNames(raw))) : toTitle;
+  engine.start(new BootScene(engine, afterBoot));
 });
 
 })();
