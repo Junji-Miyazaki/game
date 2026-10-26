@@ -3,6 +3,11 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-10-26 公開と中継の再デプロイ
+- 実施: v1.1 を push（/game/lander-1.1/）。ユーザーが Worker を貼り替え＋Secret `PIN_PEPPER` を追加。リーダーが本番の応答を確認（/ranking?board=v1.1 → 空、/ranking → board v1.0＋既存記録、/name → hasPin、/pin/login 未登録名 → 404 = ペッパー有効）。ポータルに「LANDER BETA v1.1」を追加。
+- 07_lab/solar_map: 太陽系マップ演出の試作 A/B/C を公開。ユーザーは B と C で迷い、B の画面＋C のキャラの動きの D 案を追加中。
+- 次: 実機で PIN（設定・別端末ログイン）と世界送信を確認 → L2（輪・特典・★3）＋水星 → L3 太陽系マップ（採用案で）。
+
 ## 2026-10-26 v1.1 基盤: 版ラベル・保存分離・引き継ぎ・ボード v1.1・PIN UI
 - 実施:
   - 版: `02_src/version.js`（APP_VERSION `1.1.0-beta` / APP_LABEL `BETA v1.1` / APP_BUILD_TEXT / STORAGE_PREFIX `lander11.` / LEGACY_PREFIX `lander.` / APP_BOARD `v1.1`）を単一の定義元に。タイトルのタグ（旧 PUBLIC BETA）と起動画面に `BETA v1.1`、WHAT'S NEW の下に `build 1.1.0-beta`。whatsnew の seenVersion も APP_VERSION。
