@@ -7,12 +7,13 @@ import { APP_LABEL, APP_BUILD_TEXT } from './version.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, txtW, rr, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner, drawWorldTop5 } from './art.js';
+import { txt, txtW, rr, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawBetaTag, drawWorldBanner, drawWorldTop5 } from './art.js';
 
 import { stageInfo } from './bodies.js';
 import { WHATSNEW } from './whatsnew.js';
 import { BootFx } from './bootfx.js';
-import { stageRecord } from './stars.js';
+import { starsSummary } from './stars.js';
+import { SolarMap } from './solarmap.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
 // ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
@@ -526,7 +527,7 @@ export class TitleScene extends Scene {
     this.top1 = null;       // { name, score, title, at } 既知の WORLD #1
     this._topTok = 0; this._champ = null;
     this.cp = null;
-    this.pick = null;                                               // CHOOSE START { list, sel, page }
+    this.map = null;                                                // 太陽系マップ（旧 CHOOSE START）。開いている間は SolarMap
     this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
     this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
     this.stars = [];
@@ -746,48 +747,26 @@ export class TitleScene extends Scene {
     const list = this._startOptions();
     if (list.length > 1) {
       this.showRank = false;
-      const recs = Object.create(null);   // L2: ステージごとの★と最高グレード（開いた時に1回だけ読む）
-      for (const o of list) recs[o.stage] = stageRecord(this.engine.storage, this.name, o.stage);
-      this.pick = { list, sel: 0, page: 0, recs }; return;
+      let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
+      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+      return;
     }
     this._startAt(1);
   }
   _startAt(stage) {
-    this.pick = null;
+    this.map = null;
     clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
     this.engine.startStage = stage > 1 ? stage : null;
     this._begin();
   }
-  // ---- CHOOSE START ----
-  _pickRects() {
-    const pk = this.pick, PER = 6;
-    const pages = Math.max(1, Math.ceil(pk.list.length / PER));
-    const page = Math.max(0, Math.min(pages - 1, pk.page));
-    const rows = [];
-    for (let i = page * PER; i < Math.min(pk.list.length, (page + 1) * PER); i++) {
-      const o = pk.list[i];
-      rows.push({ i, o, rect: { x: 36, y: 124 + (i - page * PER) * 52, w: W - 72, h: 44 }, cursor: i === pk.sel, best: i === 0,
-        label: o.label, stage: o.stage, g: o.realG.toFixed(2), mask: pk.recs && pk.recs[o.stage] ? pk.recs[o.stage].stars : 0, grade: pk.recs && pk.recs[o.stage] ? pk.recs[o.stage].grade : '' });
-    }
-    return { rows, page, pages, prev: { x: 36, y: 446, w: 56, h: 32 }, next: { x: W - 92, y: 446, w: 56, h: 32 }, cancel: { x: W / 2 - 60, y: 510, w: 120, h: 36 } };
+  // ---- 太陽系マップ（旧 CHOOSE START）。選べるステージの源は _startOptions() のまま ----
+  _mapInput(action, data) {
+    const r = this.map.input(action, data);
+    if (!r) return;
+    if (r.close) { this.map = null; return; }        // BACK で閉じる＝何も始めず、チェックポイントも触らずタイトルへ
+    if (r.start) this._startAt(r.start);
   }
-  _pickInput(action, data) {
-    const pk = this.pick, R = this._pickRects();
-    if (action === 'back') { this.pick = null; return; }
-    if (action === 'up' || action === 'down') {
-      pk.sel = Math.max(0, Math.min(pk.list.length - 1, pk.sel + (action === 'down' ? 1 : -1)));
-      pk.page = Math.floor(pk.sel / 6); return;
-    }
-    if (action === 'left' || action === 'right') { pk.page = Math.max(0, Math.min(R.pages - 1, R.page + (action === 'right' ? 1 : -1))); return; }
-    if (action === 'confirm') { musicOf(this.engine).sfx.uiTap(); this._startAt(pk.list[pk.sel].stage); return; }
-    if (action !== 'tap' || !data) return;
-    if (this._hit(R.cancel, data)) { musicOf(this.engine).sfx.uiTap(); this.pick = null; return; }
-    if (R.pages > 1 && this._hit(R.prev, data)) { pk.page = Math.max(0, R.page - 1); return; }
-    if (R.pages > 1 && this._hit(R.next, data)) { pk.page = Math.min(R.pages - 1, R.page + 1); return; }
-    for (const r of R.rows) if (this._hit(r.rect, data)) { musicOf(this.engine).sfx.uiTap(); this._startAt(r.o.stage); return; }
-    // それ以外のタップは何もしない（裏の START/CONTINUE に貫通させない）
-  }
-  blocksBack() { return !!this.pick || championEntryOpen(this._champ) || pinEntryOpen(this._pin); }
+  blocksBack() { return !!this.map || championEntryOpen(this._champ) || pinEntryOpen(this._pin); }
 
   _hit(b, d) { return d.x >= b.x && d.x <= b.x + b.w && d.y >= b.y && d.y <= b.y + b.h; }
 
@@ -803,7 +782,7 @@ export class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
-    if (this.pick) { this._pickInput(action, data); return; }   // CHOOSE START 表示中は入力を独占
+    if (this.map) { this._mapInput(action, data); return; }   // 太陽系マップ表示中は入力を独占
     if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
       if (this._hit(this.muteBtn, data)) {
@@ -854,6 +833,7 @@ export class TitleScene extends Scene {
     this.t += dt;
     if (this.toastT > 0) this.toastT = Math.max(0, this.toastT - dt);
     musicOf(this.engine).tick(dt);
+    if (this.map) this.map.update(dt);
     const L = this.launch;
     if (L) {
       L.e += dt;
@@ -882,6 +862,7 @@ export class TitleScene extends Scene {
   }
 
   render(ctx) {
+    if (this.map) { this.map.render(ctx); return; }   // 太陽系マップは全面を覆う（下のタイトルは描かない）
     const p = P();
     const L = this.launch, e = L ? L.e : 0;
     const rise = L ? launchRise(e) : 0;
@@ -990,10 +971,6 @@ export class TitleScene extends Scene {
       ctx.save(); ctx.globalAlpha = 0.55 + 0.25 * Math.sin(this.t * 2.4);
       this.engine.text('TAP TO CLOSE', W / 2, 508, 9, p.dim, 'center');
       ctx.restore();
-    }
-    if (this.pick) {
-      const R = this._pickRects();
-      drawStartPanel(ctx, { rows: R.rows, page: R.page, pages: R.pages, prev: R.prev, next: R.next, cancel: R.cancel });
     }
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;

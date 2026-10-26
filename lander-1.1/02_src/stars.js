@@ -47,7 +47,7 @@ export function recordStage(storage, name, stage, grade, mask) {
 }
 
 // L3（太陽系マップ）が使う集計: 天体ごと・ステージごとの★と最高グレード。
-// 戻り値: { totalStars, maxStars, bodies: [{ id, name, stars, max, grade(最高), stages: [{ stage, loop, part, mask, stars, grade }] }] }
+// 戻り値（totalStars/maxStars と天体の stars/max は1周目のみ）: { totalStars, maxStars, bodies: [{ id, name, stars, max, grade(最高), stages: [{ stage, loop, part, mask, stars, grade }] }] }
 // 各天体に、1周目の2ステージ（記録がなくても）と、記録のある2周目以降のステージを含める。
 export function starsSummary(storage, name) {
   const all = readStageBest(storage);
@@ -65,7 +65,8 @@ export function starsSummary(storage, name) {
   let total = 0, maxT = 0;
   for (const B of bodies) {
     B.stages.sort((a, b) => a.stage - b.stage);
-    for (const st of B.stages) { B.stars += st.stars; B.max += 3; if (st.grade && rankOf(st.grade) > rankOf(B.grade)) B.grade = st.grade; }
+    // ★の合計は1周目だけで数える（分母を 天体数×2×3 に固定。周回の記録が増えても目標が動かない）。最高グレードは全周回から
+    for (const st of B.stages) { if (st.loop === 0) { B.stars += st.stars; B.max += 3; } if (st.grade && rankOf(st.grade) > rankOf(B.grade)) B.grade = st.grade; }
     total += B.stars; maxT += B.max;
   }
   return { totalStars: total, maxStars: maxT, bodies };

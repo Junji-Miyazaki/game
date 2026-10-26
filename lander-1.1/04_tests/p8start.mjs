@@ -1,4 +1,4 @@
-// p8start — 到達済み天体からの開始（CHOOSE START）。実行: node 04_tests/p8start.mjs（lander/ から）
+// p8start — 到達済み天体からの開始（旧 CHOOSE START、L3 から太陽系マップ）。実行: node 04_tests/p8start.mjs（lander/ から）
 import { Game } from '../02_src/game.js';
 import { TitleScene } from '../02_src/title.js';
 import { setDebug } from '../02_src/debug.js';
@@ -108,63 +108,89 @@ const renderOK = (s) => { try { s.render(ctx); return true; } catch (e) { consol
 
 const mkTitle = (store, cb) => { const calls = cb || { n: 0 }; const e = makeEngine(store); const t = new TitleScene(e, () => { calls.n++; }, { launch: false }); t.enter(); t.update(0.016); return { e, t, calls }; };
 const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, continues: 2, modules: {}, name: 'AAA' });
+// 太陽系マップ（旧 CHOOSE START）を実際のタップで操作する: 惑星系チップ -> 拡大 -> (周回) -> ステージのピップ -> START ボタン
+const SYSOF = { moon: 'earth', io: 'jupiter', europa: 'jupiter', titan: 'saturn', mars: 'mars', venus: 'venus', mercury: 'mercury' };
+const SYSORD = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn'];
+const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury'];
+function zoomTo(t, sys) {
+  const m = t.map; m.introT = 1.6;
+  if (m.view === 'zoom' && m.camSys === sys) return;
+  if (m.view === 'zoom') m.input('back');
+  for (let i = 0; i < 40; i++) t.update(0.05);
+  t.onInput('tap', center(m.chipRects()[SYSORD.indexOf(sys)]));
+  for (let i = 0; i < 100 && !(m.view === 'zoom' && m.zProg === 1 && !m.ship.fl); i++) t.update(0.05);
+}
+function selectStage(t, stage) {
+  const m = t.map, id = BODYORD[Math.floor(((stage - 1) % 14) / 2)], sys = SYSOF[id];
+  zoomTo(t, sys);
+  const card = m.cards(sys).find((c) => c.id === id), want = Math.floor((stage - 1) / 14);
+  for (let g = 0; g < 40 && m.B[id].loop !== want; g++) t.onInput('tap', center(m.B[id].loop < want ? m.stepRects(card).next : m.stepRects(card).prev));
+  t.onInput('tap', center(m.pipRect(card, (stage - 1) % 2)));
+  for (let i = 0; i < 100 && m.ship.fl; i++) t.update(0.05);
+}
+const startVia = (t, stage) => { selectStage(t, stage); t.onInput('tap', center(t.map.startRect())); };
 {
   // 段階1のみ: 直接開始
   const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 1 } }));
   t.onInput('tap', center(t.startBtn));
-  ok(t.pick === null && calls.n === 1, 'only stage 1 unlocked: START starts directly');
+  ok(t.map === null && calls.n === 1, 'only stage 1 unlocked: START starts directly');
   ok(e.startStage == null, 'no startStage for a plain start');
 }
 {
-  // 複数: START でオーバーレイ
+  // 複数: START で太陽系マップ
   const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 7 } }));
   t.onInput('tap', center(t.startBtn));
-  ok(!!t.pick && calls.n === 0, 'START with >1 option opens CHOOSE START');
-  ok(t.pick.list.length === 7 && t.pick.list[0].stage === 7 && t.pick.sel === 0, 'list latest first, cursor on furthest');
+  ok(!!t.map && calls.n === 0, 'START with >1 option opens the solar map');
+  ok(t.map.reachable().join() === unlockedStarts(7).map((o) => o.stage).sort((a, b) => a - b).join(), 'map reaches exactly the unlocked stages');
   ok(t.blocksBack() === true, 'blocksBack while open');
-  ok(renderOK(t), 'renders with overlay');
-  // 貫通しない: START 位置や RANKING・PILOTS・ミュート位置のタップ
-  for (const r of [t.startBtn, t.rankBtn, t.changeBtn, t.muteBtn, t.logoBox]) t.onInput('tap', center(r));
-  ok(!!t.pick && calls.n === 0 && !t.showRank && !t.prof, 'taps on START/RANKING/PILOTS/mute/logo do not fall through');
-  t.onInput('tap', { x: 5, y: 5, now: 0 }); t.onInput('tap', { x: 180, y: 600, now: 0 });
-  ok(!!t.pick && calls.n === 0, 'taps outside the panel are ignored');
+  ok(renderOK(t), 'renders with the map');
+  // 貫通しない（1回目のタップはイントロのスキップで消費される）
+  for (const r of [t.startBtn, t.rankBtn, t.changeBtn, t.muteBtn, t.logoBox, t.startBtn]) t.onInput('tap', center(r));
+  ok(!!t.map && calls.n === 0 && !t.showRank && !t.prof, 'taps on START/RANKING/PILOTS/mute/logo do not fall through');
+  t.map.introT = 1.6;
+  t.onInput('tap', { x: 180, y: 8, now: 0 }); t.onInput('tap', { x: 350, y: 300, now: 0 });
+  ok(!!t.map && calls.n === 0, 'taps on empty space are ignored');
   t.onInput('back', {});
-  ok(t.pick === null && calls.n === 0 && t.blocksBack() === false, 'Back cancels without starting');
-  // CANCEL ボタン
-  t.onInput('tap', center(t.startBtn)); const R = t._pickRects();
-  t.onInput('tap', center(R.cancel));
-  ok(t.pick === null && calls.n === 0, 'CANCEL cancels');
-  // 行タップ: 5(=ST.5 MARS?) 実際は index に依らず stage を検証
+  ok(t.map === null && calls.n === 0 && t.blocksBack() === false, 'Back (overview) closes without starting');
+  // BACK ボタン
+  t.onInput('tap', center(t.startBtn)); t.map.introT = 1.6;
+  t.onInput('tap', center(t.map.backRect()));
+  ok(t.map === null && calls.n === 0, 'BACK button closes the map');
+  // ステージをタップ→START ボタン
   t.onInput('tap', center(t.startBtn));
-  const R2 = t._pickRects(); const row = R2.rows.find((r) => r.o.stage === 5);
-  t.onInput('tap', center(row.rect));
-  ok(calls.n === 1 && t.pick === null && e.startStage === 5, 'tapping a row starts at that stage');
+  startVia(t, 5);
+  ok(calls.n === 1 && t.map === null && e.startStage === 5, 'selecting a stage and pressing START starts at that stage');
 }
 {
-  // キー: Enter は最遠、上下で移動
+  // キー: Enter で拡大 -> 右/左でステージ -> Enter で開始
   const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 9 } }));
   t.onInput('confirm', {});
-  ok(!!t.pick, 'Enter on START opens overlay');
-  t.onInput('down', {}); t.onInput('down', {}); t.onInput('up', {});
-  ok(t.pick.sel === 1, 'up/down move the cursor');
+  ok(!!t.map, 'Enter on START opens the map');
+  t.map.introT = 1.6;
   t.onInput('confirm', { repeat: true });
-  ok(calls.n === 0, 'key auto-repeat does not choose');
-  t.onInput('confirm', {});
-  ok(calls.n === 1 && e.startStage === 8, 'Enter chooses the cursor row (stage 8 = second row)');
+  ok(calls.n === 0 && t.map.view === 'over', 'key auto-repeat does nothing');
+  t.onInput('confirm', {});                                        // 最遠のステージ(TITAN)の惑星系へ移動して拡大
+  for (let i = 0; i < 100 && t.map.view !== 'zoom'; i++) t.update(0.05);
+  for (let i = 0; i < 20; i++) t.update(0.05);
+  ok(t.map.view === 'zoom' && t.map.camSys === 'saturn', 'Enter zooms into the focused system (furthest stage)');
+  t.onInput('confirm', {});                                        // 1回目: 選択
+  ok(t.map.sel === 9 && calls.n === 0, 'first Enter selects the furthest stage, does not start');
+  t.onInput('confirm', {});                                        // 2回目: 開始
+  ok(calls.n === 1 && e.startStage === 9, 'second Enter starts it');
 }
 {
   // NEW MISSION（チェックポイントあり）
   const { t, calls, e } = mkTitle((() => { const m = storeWith(['AAA'], { AAA: { maxStage: 13 } }); m.set('checkpoint', cpJson); return m; })());
   ok(!!t.cp, 'checkpoint loaded');
   t.onInput('tap', center(t.newBtn));
-  ok(!!t.pick && !!loadCheckpoint(e.storage) && calls.n === 0, 'NEW MISSION opens overlay and keeps the checkpoint while choosing');
+  ok(!!t.map && !!loadCheckpoint(e.storage) && calls.n === 0, 'NEW MISSION opens the map and keeps the checkpoint while choosing');
   t.onInput('tap', center(t.continueBtn));
-  ok(!!t.pick && calls.n === 0 && !!loadCheckpoint(e.storage), 'tap on CONTINUE area while open does not continue');
-  t.onInput('back', {});
-  ok(!t.pick && !!loadCheckpoint(e.storage) && !!t.cp, 'cancel keeps the checkpoint');
+  ok(!!t.map && calls.n === 0 && !!loadCheckpoint(e.storage), 'tap on CONTINUE area while open does not continue');
+  t.map.introT = 1.6; t.onInput('back', {});
+  ok(!t.map && !!loadCheckpoint(e.storage) && !!t.cp, 'closing keeps the checkpoint');
   t.onInput('tap', center(t.newBtn));
-  ok(t.pick.list.length === 13, '13 options for maxStage 13');
-  t.onInput('confirm', {});
+  ok(t.map.reachable().length === 13, '13 options for maxStage 13');
+  startVia(t, 13);
   ok(calls.n === 1 && e.startStage === 13 && loadCheckpoint(e.storage) === null && e.resumeCheckpoint == null, 'choosing discards the checkpoint and starts');
   // CONTINUE は startStage を持ち越さない
   const x = mkTitle((() => { const m = storeWith(['AAA'], { AAA: { maxStage: 13 } }); m.set('checkpoint', cpJson); return m; })());
@@ -172,17 +198,13 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, c
   ok(x.e.startStage === null && x.e.resumeCheckpoint && x.calls.n === 1, 'CONTINUE ignores/clears startStage');
 }
 {
-  // ページ送り・長いリスト
-  const { t, calls } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 200 } }));
+  // 長いリスト（周回が多い）でも描画が落ちず、後ろの周回のステージを選べる
+  const { t, calls, e } = mkTitle(storeWith(['AAA'], { AAA: { maxStage: 200 } }));
   t.onInput('tap', center(t.startBtn));
-  ok(t.pick.list.length === 200, 'long list: 200 options');
-  let threw = null; try { for (let p = 0; p < 40; p++) { t.render(ctx); t.onInput('tap', center(t._pickRects().next)); } for (let i = 0; i < 250; i++) t.onInput('down', {}); t.render(ctx); } catch (x) { threw = x; }
-  ok(!threw, 'render never throws with long lists: ' + (threw && threw.stack));
-  ok(t.pick.sel === 199 && t._pickRects().page === Math.floor(199 / 6) && t._pickRects().rows.length === 200 - 33 * 6, 'last page shows the remainder and follows the cursor');
-  const R = t._pickRects(); t.onInput('tap', center(R.prev));
-  ok(t._pickRects().page === 32, 'prev button pages back');
-  t.onInput('tap', center(t._pickRects().rows[0].rect));
-  ok(calls.n === 1, 'row on a later page can be chosen');
+  ok(t.map.reachable().length === 200, 'long list: 200 options');
+  let threw = null; try { for (let i = 0; i < 30; i++) { t.update(0.05); t.render(ctx); } startVia(t, 7); } catch (x) { threw = x; }
+  ok(!threw, 'map never throws with 200 stages: ' + (threw && threw.stack));
+  ok(calls.n === 1 && e.startStage === 7, 'a stage of the first orbit can be chosen when 15 orbits are unlocked');
 }
 {
   // 名前なし: 新規名は進捗なし -> 直接開始
@@ -190,7 +212,7 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 1234, c
   const { t, calls } = mkTitle(m);
   t.onInput('tap', center(t.startBtn));   // 名前入力（document 無し環境では開かない）
   t.pendingStart = true; t._onNameEntered('NEWB');
-  ok(!!t.pick && calls.n === 0, 'pending start after entering an existing pilot name opens the overlay');
+  ok(!!t.map && calls.n === 0, 'pending start after entering an existing pilot name opens the map');
 }
 
 // ===== 5. 開始地点からのラン =====

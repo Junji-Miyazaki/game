@@ -28,6 +28,7 @@ const FILES = [
   '02_src/bootfx.js',
   '02_src/music.js',
   '02_src/whatsnew.js',
+  '02_src/solarmap.js',
   '02_src/title.js',
   '02_src/migrate.js',
   '02_src/game.js',

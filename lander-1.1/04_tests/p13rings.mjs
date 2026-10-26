@@ -389,12 +389,11 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   const st = new Map([['hudTipSeen', '1'], ...prof('ACE'), ['progress', JSON.stringify({ ACE: { maxStage: 6 } })], ['stageBest', e.store.get('stageBest')]]);
   const te = makeEngine([...st.entries()]); const t = new TitleScene(te, noop, { launch: false }); t.enter(); t.update(0.016);
   t.onInput('tap', { x: t.startBtn.x + 2, y: t.startBtn.y + 2, now: 0, t0: 0 });
-  ok(!!t.pick, 'CHOOSE START opens');
-  if (t.pick) {
-    const R2 = t._pickRects(); const all = []; for (let p = 0; p < R2.pages; p++) { t.pick.page = p; all.push(...t._pickRects().rows); }
-    const r3s = all.find((r) => r.stage === 3), r1s = all.find((r) => r.stage === 1);
-    ok(r3s && r3s.mask === 7 && r3s.grade === 'PERFECT' && r1s && r1s.mask === 0 && r1s.grade === '', 'CHOOSE START rows carry stars + best grade per stage');
-    const rc = newRec(); let tt = false; try { t.render(makeCtx(rc)); } catch (_) { tt = true; } ok(!tt, 'CHOOSE START renders with stars');
+  ok(!!t.map, 'solar map opens where CHOOSE START did');
+  if (t.map) {
+    const r3s = t.map.pips('europa').find((r) => r.stage === 3), r1s = t.map.pips('moon').find((r) => r.stage === 1);
+    ok(r3s && r3s.mask === 7 && r3s.grade === 'PERFECT' && r1s && r1s.mask === 0 && r1s.grade === '', 'solar map pips carry stars + best grade per stage');
+    const rc = newRec(); let tt = false; try { t.render(makeCtx(rc)); } catch (_) { tt = true; } ok(!tt, 'solar map renders with stars');
   }
 }
 
@@ -485,10 +484,11 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 {
   ok(APP_VERSION === '1.1.0-beta.2' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.2', 'version 1.1.0-beta.2, label unchanged');
   const E0 = WHATSNEW.entries[0];
-  ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 4 && E0.items.length <= 5, 'whatsnew newest entry: 4-5 items');
+  ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 4 && E0.items.length <= 6, 'whatsnew newest entry: 4-6 items');
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
   const joined = E0.items.join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
+  ok(E0.items.includes('太陽系マップから出発地点を選べる') && '太陽系マップから出発地点を選べる'.length <= 22, 'mentions the solar system map');
 }
 
 console.log('p13rings: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));
