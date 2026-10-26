@@ -1,8 +1,8 @@
 // EXPEDITION 共通試作台（07_lab / v1.2 R&D）。使い方は README.md。
 // game.js の Game クラスには依存しない。物理定数だけ game.js から写している（値を変えたら下の「定数」を合わせる）。
 // 描画（機体・操作ボタン・文字）は 02_src/art.js を読み取り専用で import する。
-import { P } from '../../../02_src/core/palette.js';
-import { drawShip, drawControls, txt, rgba } from '../../../02_src/art.js';
+import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
+import { drawShip, drawControls, txt, rgba } from '../../../02_src/art.js?v=86285db95f';
 
 export const W = 360, H = 640;
 

@@ -1,5 +1,5 @@
 // テスト専用（?test=1 のときだけ mission.js が読み込む）。window.__auto に検証用の自動操縦を置く。
-// 流れ: docked(係留1.2s+自動で漂う) → descent → sampling(着地して2s) → return → win。
+// 流れ: docked(タップ待ち→解放→自動で漂う) → descent → sampling(着地して2s) → return → win。
 // 注意: 姿勢は「理想的に」直接セットする（実機の回転は遅いので、これは流れ・判定・燃料の確認用であって人間の腕前の保証ではない）。
 const YR = 130 + 31, SX = 222;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -32,6 +32,7 @@ export function install(lab) {
     if (opt.ph0 != null) lab.params.ph0 = opt.ph0;
     if (opt.mode) window.__flow.begin(opt.mode, opt); else lab.reset();
     const ctl = makeCtl(opt); const log = []; let last = '';
+    if (!opt.keepDocked) { for (let i = 0; i < 120; i++) lab.step(1 / 60); if (lab.m.docked) window.__flow.tap(180, 320); }   // 2s 待っても係留のまま → タップで解放
     for (let i = 0; i < 60 * 150; i++) {
       lab.script = ctl; lab.step(1 / 60);
       const ph = lab.m.result || (lab.m.docked ? 'docked' : lab.m.sampled ? 'return' : lab.state === 'grounded' ? (lab.m.gauge > 0 ? 'sampling' : 'grounded') : 'descent');
@@ -44,7 +45,7 @@ export function install(lab) {
   // 衝突テスト: 解放後に母船へ速く突っ込ませる。墜落せず跳ね返り、プレイが続くこと。speed 大でもすり抜けないこと
   const bump = (opt = {}) => {
     lab.reset(); lab.script = null;
-    for (let i = 0; i < 200 && lab.m.docked; i++) lab.step(1 / 60);
+    if (lab.m.docked) window.__flow.tap(180, 320);
     const s = lab.ship, m = lab.m, sp = opt.speed || 60, ox = opt.ox || 0;
     s.x = m.mx + ox; s.y = 130 + (opt.dy || 60); s.vx = m.mvx + (opt.rvx || 0); s.vy = -sp; s.angle = 0; s.omega = 0;
     let minDy = 1e9, maxDy = -1e9;
@@ -56,7 +57,7 @@ export function install(lab) {
     const A = window.__score, F = window.__flow, B = F.BTN, ok = {}, K = A.KEY_B;
     const get = () => localStorage.getItem(K), step = (sec) => { for (let i = 0; i < sec * 60; i++) lab.step(1 / 60); };
     const center = (b) => [b.x + b.w / 2, b.y + b.h / 2];
-    const kill = () => { for (let i = 0; i < 200 && lab.m.docked; i++) lab.step(1 / 60); lab.m.result || lab.crash('TEST', 'forced'); };   // 解放後に墜落させる
+    const kill = () => { if (lab.m.docked) F.tap(180, 320); lab.step(1 / 60); lab.m.result || lab.crash('TEST', 'forced'); };   // 解放後に墜落させる
     const wipe = () => { localStorage.removeItem(K); localStorage.removeItem('lander11.exp.sample_return.attempts'); };
     wipe(); const sv = { ...F.sess };
     // 式
@@ -65,6 +66,9 @@ export function install(lab) {
     F.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44, B.site.h >= 44, B.near.h >= 44];
     F.tap(...center(B.site)); ok.toggle = [F.sess.atSite === true]; F.tap(...center(B.site));
     F.tap(...center(B.practice)); ok.menu.push(F.sess.mode === 'practice' && !lab.m.menu && lab.m.docked);
+    // 係留: 待っても解放されない・ライフ不変。タップ/キーで解放
+    step(5); ok.dock = [lab.m.docked === true, !lab.m.result, F.sess.lives === 3]; F.tap(180, 320); ok.dock.push(!lab.m.docked && lab.m.released === true && lab.ship.vy > 0);
+    lab.reset(); step(1); const kd = (k) => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })); window.dispatchEvent(new KeyboardEvent('keyup', { key: k })); }; kd(' '); ok.dock.push(!lab.m.docked); lab.reset(); kd('ArrowUp'); ok.dock.push(!lab.m.docked); lab.reset();
     // 練習: 失敗は何度でも・ライフ不変・保存なし
     kill(); step(1); ok.pracFail = [lab.m.result === 'lose', lab.m.lifeLost === false, lab.m.failed === false, F.sess.lives === 3];
     lab.reset(); ok.pracRetry = [F.sess.mode === 'practice', lab.m.docked && !lab.m.result];

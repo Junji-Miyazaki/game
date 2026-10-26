@@ -1,8 +1,8 @@
 // EXPEDITION #1 PHOBOS SAMPLE RETURN（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
 // 着陸 → その場で2秒静止して採取 → 離陸 → 母船のドッキング枠に低速で入る。
-import { createLab, W, H, C } from '../00_harness/harness.js';
-import { txt, rgba, rr } from '../../../02_src/art.js';
-import { P } from '../../../02_src/core/palette.js';
+import { createLab, W, H, C } from '../00_harness/harness.js?v=5781d61e7c';
+import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
+import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
 
 const SITE = { x: 190, y: 512, w: 64, id: 'site' };
 const SAMPLE_S = 2.0;          // 採取に必要な静止秒数
@@ -11,7 +11,7 @@ const MS_Y = 130, MS_AMP = 90;              // 母船の高さ
 const RING_DY = 31, RING_R = 17;   // ドッキング枠: 母船の中心からの下方向オフセットと半径（円形判定の半径）
 const DOCK_REL = 10, DOCK_TILT = 20;
 const STAR2_FUEL = 30;
-const REL_AT = 1.2, DRIFT_S = 1.0, DRIFT_VY = 18;   // 発進: 係留 1.2s → 解放 → 1.0s は自動で漂う（操作不可）
+const DRIFT_S = 1.0, DRIFT_VY = 18;   // 発進: 係留（タップで解放。タイマー無し）→ 解放 → 1.0s は自動で漂う（操作不可）
 const DOCK_CONFIRM = 0.25;   // 条件を満たし続ける秒数（ゴースト点灯 → 成功）
 const KEY_OLD = 'lander11.exp.sample_return.attempts', KEY_B = 'lander11.exp.sample_return.best';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -110,6 +110,11 @@ const BTN = {
 };
 const btnY = (m) => (m.result === 'win' ? 478 : 330);
 const hit = (b, x, y, oy = 0) => x >= b.x && x <= b.x + b.w && y >= b.y + oy && y <= b.y + oy + b.h;
+function release(l) {   // 係留 → 解放: 母船の水平速度を引き継ぎ、下へゆっくり離れる。解放前はライフを失わない
+  const m = l.m, s = l.ship;
+  if (!m.docked || m.menu || m.result) return;
+  m.docked = false; m.released = true; m.relT = 0; m.driftT = 0; l.frozen = false; s.vx = m.mvx; s.vy = DRIFT_VY; toast(l, 'RELEASED', 1.6);
+}
 function onTap(l, x, y) {
   const m = l.m;
   if (m.menu) {
@@ -119,6 +124,7 @@ function onTap(l, x, y) {
     else if (hit(BTN.near, x, y)) sess.nearDock = !sess.nearDock;
     return;
   }
+  if (m.docked) { release(l); return; }   // 係留中は画面のどこをタップしても解放（キャンバス上に UI ボタンは無い）
   if (!m.result || m.resultT < 0.4 || m.lifeLost) return;
   const oy = btnY(m);
   if (hit(BTN.res1, x, y, oy)) begin(l, sess.mode);                 // RETRY / RETRY MISSION
@@ -126,6 +132,7 @@ function onTap(l, x, y) {
 }
 // R: ミッション中（解放後）に押すとライフを1つ失う（無料リトライの抜け道を作らない）。それ以外は harness の即リセット
 window.addEventListener('keydown', (e) => {
+  if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.docked && !lab.m.menu && !e.repeat) { release(lab); e.preventDefault(); return; }
   if ((e.key === 'r' || e.key === 'R') && sess.mode === 'mission' && lab.m && lab.m.released && !lab.m.result && !e.metaKey && !e.ctrlKey) {
     e.stopImmediatePropagation(); e.preventDefault(); lose(lab, 'RESTARTED', 'R pressed: life lost');
   }
@@ -139,11 +146,11 @@ function onUpdate(l, dt) {
   const w = pr.ms / MS_AMP;
   m.ph += w * dt; m.mx = 180 + MS_AMP * Math.sin(m.ph); m.mvx = pr.ms * Math.cos(m.ph);
   if (m.toastT > 0) m.toastT -= dt;
-  if (m.docked) {   // 係留: 母船に固定。1.2s で解放 → 母船の水平速度を引き継いで、下へゆっくり離れる
+  if (m.docked) {   // 係留: 母船に固定してタップ待ち（タイマー無し・何も失わない）
     m.relT += dt; s.x = m.mx; s.y = MS_Y + RING_DY; s.vx = m.mvx; s.vy = 0; s.angle = 0; s.omega = 0;
-    if (m.relT >= REL_AT) { m.docked = false; m.released = true; l.frozen = false; s.vx = m.mvx; s.vy = DRIFT_VY; toast(l, 'RELEASED', 1.6); }
     return;
   }
+  m.relT += dt;   // 解放後の経過秒（チュートリアル表示用）
   if (m.driftT < DRIFT_S) { m.driftT += dt; if (m.driftT >= DRIFT_S) l.controlsEnabled = true; }   // 自動で漂う間は入力なし
   if (m.result) {
     m.resultT += dt;
@@ -400,12 +407,13 @@ function onDrawFront(ctx, l) {
   // ヒント
   let hint = '';
   if (!m.result) {
-    if (l.t < 9 && !m.sampled && l.state !== 'grounded') hint = 'UNDOCK · LAND ON THE SITE · HOLD 2s · RETURN TO THE DOCK';
+    if ((m.docked || m.relT < 9) && !m.sampled && l.state !== 'grounded') hint = 'TAP TO RELEASE · LAND ON THE SITE · HOLD 2s · RETURN TO THE DOCK';
     else if (!m.sampled && l.state === 'grounded') hint = m.gauge > 0 ? 'HOLD STILL...' : (l.padAt(s.x) ? 'DON’T TOUCH THRUST' : 'MOVE ONTO THE SITE: LIFT OFF AND LAND');
     else if (m.sampled) hint = m.fb || (m.dockOk || !m.inZone ? 'FILL THE OUTLINE · UPRIGHT · MATCH SPEED (REL ≤ ' + DOCK_REL + ')' : '');
     if (hint) txt(ctx, hint, 180, 66, 7.5, m.fb ? p.bad : p.fg, 'center', { w: 600, sp: 0.4, a: 0.95 });
   }
   if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
+  if (m.docked && !m.menu && !m.result) txt(ctx, 'TAP TO RELEASE', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
   if (m.toastT > 0) txt(ctx, m.toast, 180, 236, 10, p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
   // 燃料切れの警告 / 範囲外の警告
   if (!m.result && s.fuel <= 0.0001) txt(ctx, 'OUT OF FUEL  ' + Math.max(0, STRAND_S - m.strandT).toFixed(1), 180, 256, 11, p.bad, 'center', { w: 800, sp: 1.2 });
@@ -493,7 +501,7 @@ function drawMenu(ctx, l) {
 
 { const box = document.getElementById('dbg'); if (box) { const b = document.createElement('button'); b.textContent = 'RESET RECORD'; b.style.cssText = 'margin-top:8px;font:9px monospace;opacity:.6;padding:2px 6px';
   b.onclick = () => { lsSet(KEY_B, ''); }; box.appendChild(b); } }
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js').then((m) => m.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=52be223adf').then((m) => m.install(lab));
 window.__score = { mult: lifeMult, score: missionScore, KEY_B };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN, LIFE_LOST_S };
 lab.start();

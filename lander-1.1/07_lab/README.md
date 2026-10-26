@@ -11,3 +11,10 @@
 
 solar_map の診断用 URL パラメータ: `?style=A|B|C|D（既定D）&skip=1（イントロ省略）&view=jupiter（ズーム状態で開始）&reduce=1&faces=1`。
 ブラウザコンソールから `window.__lab`（`gotoSys('saturn')`, `selectBody('io')`, `state` など）で操作可能。
+
+## キャッシュ対策（コミット前に必須）
+GitHub Pages は max-age=600 で配信するため、更新後もスマホが古い .js を掴み続ける。lab の .html/.js が参照する相対の .js/.css（`02_src/` への import を含む）に `?v=<内容ハッシュ>` を刻む:
+
+    node 07_lab/stamp.js      # lab を変更したらコミット前に実行（依存順に固定点まで反復。冪等）
+
+外部URLは触らない。`02_src/` 側の内部 import（art.js → palette.js など）は編集対象外なので刻まれない（lab 側の入口 URL のハッシュは import 先の変更を含めて計算するため、更新自体は反映される）。
