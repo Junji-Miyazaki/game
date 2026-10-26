@@ -48,6 +48,14 @@
         "lander/server.js"
       ],
       "port": 4176
+    },
+    {
+      "name": "lander-1.1",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "lander-1.1/server.js"
+      ],
+      "port": 4177
     }
   ]
 }

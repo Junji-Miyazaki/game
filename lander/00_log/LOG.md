@@ -2,6 +2,13 @@
 
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 
+## 2026-10-26 版の切り分け（v1.0 / BETA v1.1）＋中継の版別ボード・PIN
+- 実施: L1 の成果を `../lander-1.1/` に複製し、本フォルダのゲーム内容（game/art/music/title.js, build.js, p1/p6bonus/p15）を公開中の v1.0 に戻した。whatsnew.js・p10* は v1.1 側のみ。
+- 中継（06_server、両版共通の正本）: ボード v1.0/v1.1（board 省略=v1.0、v1.0 の保存ファイルは不変）、名前の端末鍵を複数化（最大5）、任意PIN（HMAC-SHA256＋Secret `PIN_PEPPER`、ソルト付き）、ロックは「名前×IP」5回連続で15分＋名前全体1日50回（ユーザー決定C：名前が公開のため名前単位ロックは嫌がらせで本人を締め出せる）。IPは生値を保存せずペッパー付きハッシュ先頭16桁。
+- net.js: board を送る（v1.0 は 'v1.0'）。旧中継でも動作（クエリ/余分な項目は無視され、応答の top を読む）。PIN関数を追加。v1.0 も同じ net.js を使用。
+- 確認: リーダー(Opus)が PIN 部を第三者チェック（定数時間比較、秘密情報を応答しない、総当たり計算値 6桁≒55年/4桁≒200日 @1日50回）。全テスト通過（v1.0 18種、v1.1 19種）。
+- 未了: ユーザーによる Worker 貼り替え＋`PIN_PEPPER` 追加（v1.1 クライアント完成後にまとめて依頼）。
+
 ## 2026-10-26 世界1位バナー＋称号（統合：Opus 5.5 リーダー／Sonnet 2並列）
 - **実施**: タイトルに WORLD #1（名前・得点・称号、端末キャッシュ `worldTop1`）。現1位のみ称号を設定可（ゲームオーバー直後の NEW WORLD RECORD 画面、タイトルの SET TITLE）。WORLD行に称号。中継に POST /title・POST /admin/title、names.json/top.json に title、監査ログに kind:'title'。
 - **検証**: 全テスト 3,178件通過（p9net 80、p9champ 148 追加）。テストは本番に書き込まない（実行後の世界ランキングは実ユーザーのみ：uematsu 9691 / みや 4095 / Tom / ひなた / 植松琢麿）。公開済み。
@@ -227,3 +234,15 @@
 - **検証**: build OK、`node --check` bundle/全src/全テスト OK。smoke 2/2、p1 107、p15 392、p2a 30、p2m 85、p2b 100、p2j 54、p3fix 104、p4hold 72、p4save 81、p4net 132、p5hud 1307、p6bonus 383、p7title 14、p8start 87、**p9champ 148/148**（バナー取得/キャッシュ/非表示、チャンピオン判定、SET TITLE、各エラー、NEW WORLD RECORD 出る/出ない条件、入力消費、WORLD 行、レイアウト非重複、長い日本語、偽DOM）。
 - **ブラウザ確認**（localhost:4176、mobile 375x812、fetch はページ側でスタブ）: 非チャンピオン＋称号あり／チャンピオン＋称号なし(SET TITLE 表示)／入力→SAVE で実 net.setTitle が `/title` へ {name,key,title} を POST（バンドル経由の橋渡し確認）／NEW WORLD RECORD オーバーレイ＋'TITLE SERVICE UNAVAILABLE'／WORLD タブの称号行。コンソールエラー 0。
 - **未確認/注意**: 実機 iOS の字面幅・IME。DEBUG ON のトースト(y140)はバナーに一瞬重なる（一時表示のため放置）。本番ワーカー側 /title の挙動は未検証（別担当）。
+
+## 2026-10-26 L1 — 中毒性第1弾（どこでも接地・着陸グレード・集計演出・WHAT'S NEW）（Sonnet 5.5）
+- **仕様（PLAN §7h）**: パッド外でも平地(脚の下の2点の傾斜<=10度)なら接地(state 'grounded'・得点なし)。推力で離陸。失敗理由 HARD IMPACT / TIPPED OVER / STEEP GROUND / HIT AN OBSTACLE / STRANDED — OUT OF FUEL（燃料0で1.5秒）。パッド上は不変。
+- **判断（リーダー指示の曖昧点を私が決めた箇所）**: (1) パッド外の失敗の優先順は TIPPED OVER(傾き>55) → HARD IMPACT(速度/角速度>BOUNCE_*) → STEEP GROUND。(2) 離陸は接地後 0.2 秒以降（押しっぱなしで着地した瞬間に跳ねるのを防ぐ。離陸の初速 -7px/s、y-2）。(3) 接地中は RCS（姿勢制御）も無効（燃料不変の要件のため）。機体は自動で起き上がる。(4) 平地の判定幅: 地形上の連続した傾斜<=10度の区間が>=44px のものを「平地」と数える。生成は幅 80px(5点)優先・無理なら 60px(4点)。ただし脚幅±18pxのため、中心を置ける範囲は約24〜44px（パッドと同程度）。(5) 移動パッドのステージでは、台地全体をパッド領域として平地の目印から除外（台地上のパッド外は着陸可能だが目印は出さない）。(6) グレードは最初の接触の値で評価（バウンスしたら自動的に C）。PERFECT の速度・傾き閾値は従来のまま＋パッド中心の距離。(7) ボーナス着陸もグレードを表示するが stageBest には保存しない（ステージ番号が通常と衝突するため）。(8) ヒントは天体紹介バナー表示中は出さない。
+- **グレード表**（接地時の vy / vx px/s・傾き度・角速度 度/s・中心距離=パッド半幅比、全て以下なら該当）: PERFECT 8/3/5/6/0.25、S 12/6/10/10/0.5、A 16/9/17/14/0.75、B 20/11/24/17/1.0、それ以外 C。
+- **スコア**: 加点式は不変（内訳 FUEL / LANDING(=速度・横速度・傾き・回転の4ボーナス合計) / GUIDE / STAGE BONUS。ボーナスは MISSION BASE / FUEL / MULTIPLIER）。クリア画面は内訳が 0.2 秒/行で数え上がり、合計→スタンプ（全体約1.23秒）。パネルは従来の矩形(20,128,320,216)内。旧「GUIDE BONUS」列は内訳に移動し、列は TOTAL / BEST。
+- **コード**: game.js（`buildTerrain` export・`planSpots`・`footSlopeDeg/flatRuns/landableSpots/gradeFor/GRADE_TABLE` export、`_checkCollision`/`_resolveBounce` 改修、`_doGrounded/_stepGrounded/_touchdownFx/_maybeTouchHint/_groundIndicator/_recordStageBest/_tickClear/_clearView`）、art.js（`drawLandableSpots/drawGroundShadow/drawGroundedBanner/drawTouchHint/drawGradeStamp`、`drawClearPanel` 再設計、砂塵粒子）、music.js（`sfx.thud(strength)` `sfx.tick(step)`。`_musSfxReady` 経由なのでミュート/音声無効で無音）、title.js（BootScene の WHAT'S NEW）、新規 whatsnew.js（`WHATSNEW = {version, lines}` を export。バンドルは同一スコープのため `version`/`lines` という素の名前は使わず1つのオブジェクトにした）、build.js FILES に追加。
+- **既存テストの変更（意図した挙動変更のみ）**: クリア画面の集計(約1.2秒)中のタップは「最後まで進めるだけ」になったため、クリア後に待つ秒数を延ばした（assert 自体は不変）: p1（clearStage の tick 3.0→4.2、STORM クリア後の tick 3→4.2）、p15（'tap after cleared starts next stage' 前の tick 0.6→1.5、'bonus success -> module state' 前の tick 3→4.2）、p6bonus（toCleared の待ち +0.6→+1.4）。**assert を変えたのは1件**: p1 'old static pad position misses live pad' は旧 'bonusfailed / MISSED THE PAD' → 新 'grounded かつ得点0'（移動パッド台地の上のパッド外は平地なので接地になるのが意図）。'MISSED THE PAD' は使われなくなった。
+- **テスト**: 新規 `04_tests/p10touch.mjs` 254件（＋ `p10setup.mjs`＝art.js の字間描画をテスト環境で有効にする小さな前置き）: 平地/急斜面/脚が段差をまたぐ検出、パッド外接地→grounded・離陸・燃料不減（金星でも）、バウンス後の接地、各失敗理由・残機なし・接地中の障害物・STRANDED（離陸直後の燃料切れ含む）、地形保証 2000 ステージ（通常1000＋ボーナス4種1000：全て平地>=2・>=44px・パッドと非重複・y<=520・パッド下端<=525、2つの中心間隔>=80px、100px以上離れる割合 76%）、地面マーカー色、ヒント1回限り（距離境界・storage ブロック）、グレード表（境界値を表駆動29行＋実着陸）、集計（行ごと・単調・音の回数・タップスキップ・無音・入力ロック）、パネル内テキストの収まり/非重複、stageBest（パイロット別・上書き規則・破損JSON・ボーナス/デバッグ/ピロット無し/storage ブロック）、砂塵の色・揺れ(<=3px,<=0.25s)、全新状態×7天体の描画、HOLD、WHAT'S NEW（NEW ピル・seenVersion・明るさ・360x640 で非重複）、5000フレーム fuzz（接地・離陸を含む）。全体: smoke 2, p1 107, p2a 30, p2b 100, p2j 54, p2m 85, p3fix 104, p4hold 72, p4net 132, p4save 81, p5hud 1307, p6bonus 383, p7title 14, p8start 87, p9champ 148, p9net 80, **p10touch 254** 通過。`node build.js`＋全 src/tests の `node --check` OK。
+- **本担当外の失敗**: p15 の 'payload only {name,score,stage}' と 'GET /ranking returns array' の2件が失敗（並行担当が net.js を改修中。私は net.js 未変更）。p4net/p9net は実行順・負荷で稀に1件落ちる揺らぎがある（game を import しない純 net テスト。再実行で通る）。p11net.mjs は並行担当の新規。
+- **目視（preview 'lander'・360x640 相当・?debug、専用の一時ページでゲームを直接駆動。確認後に削除）**: 起動画面の WHAT'S NEW（NEW ピル）、平地の破線＋グリフ、地面マーカー（ティール/琥珀/赤の3色）、接地バナー（'TOUCHDOWN — NO SCORE' / 'THRUST TO LIFT OFF'）と脚元の砂塵、初回ヒントのトースト、PERFECT のスタンプとA のスタンプ付きクリア画面、集計途中（行が順に数え上がり、スタンプ前）。コンソールエラーなし。
+- **未確認**: 音（thud・tick の音色と音量は聴いていない）、画面揺れと砂塵の実機での手応え、実機 iOS、人間の操作での平地着陸の難しさ（中心を置ける範囲は約24〜44px）、PERFECT の出やすさ（自動操縦ではなく人間のプレイでの分布）、フル通しの実プレイ（タイトルから通常フロー）はしていない。

@@ -150,7 +150,7 @@ reset();
 {
   await post({ name: 'Ken', score: 10, stage: 1 });
   let r = await getName('Ken'); let j = await r.json();
-  ok(r.status === 200 && j.taken === true && Object.keys(j).length === 1, 'name: taken');
+  ok(r.status === 200 && j.taken === true && j.hasPin === false && Object.keys(j).length === 2, 'name: taken');
   ok(await taken('nobody') === false, 'name: not taken');
   for (const bad of [undefined, '', '   ', '<>', '​‮']) {
     const rr = await getName(bad); ok(rr.status === 400, 'name: 400 on empty-after-sanitise ' + JSON.stringify(bad));
@@ -219,7 +219,7 @@ files.set('top.json', { text: JSON.stringify([{ name: 'みや', score: 5000, sta
   const kA = 'a1'.repeat(16), kB = 'b2'.repeat(16);
   ok(await taken('みや') === true && !names()['みや'].keyHash, 'own: legacy name taken, no keyHash');
   let r = await track(await post({ name: 'みや', score: 6000, stage: 4, key: kA }));
-  ok(r.status === 200 && names()['みや'].keyHash === await sha(kA) && top()[0].score === 6000, 'own: first keyed submit claims legacy name');
+  ok(r.status === 200 && names()['みや'].keys[0] === await sha(kA) && top()[0].score === 6000, 'own: first keyed submit claims legacy name');
   ok(!JSON.stringify(names()).includes(kA), 'own: raw key never stored, only SHA-256');
   r = await track(await post({ name: 'みや', score: 7000, stage: 4, key: kB }));
   ok(r.status === 403 && (await r.json()).error === 'name-taken' && top()[0].score === 6000, 'own: different key -> 403 name-taken, board unchanged');
@@ -239,7 +239,7 @@ files.set('top.json', { text: JSON.stringify([{ name: 'みや', score: 5000, sta
   ok(r.status === 200 && (await r.json()).ok === true && !names()['Vic'] && !top().some((x) => x.name === 'Vic'), 'delete: right key removes names.json entry and top.json row');
   ok(logText().includes('"Vic"'), 'delete: monthly log keeps the audit line');
   ok(await taken('Vic') === false, 'delete: name is free again (cache invalidated)');
-  r = await track(await post({ name: 'Vic', score: 50, stage: 1, key: kB })); ok(r.status === 200 && names()['Vic'].keyHash === await sha(kB), 'delete: freed name can be registered by someone else');
+  r = await track(await post({ name: 'Vic', score: 50, stage: 1, key: kB })); ok(r.status === 200 && names()['Vic'].keys[0] === await sha(kB), 'delete: freed name can be registered by someone else');
   r = await track(await W.fetch(new Request('https://w/delete', { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Vic', key: kB }) }), env));
   ok(r.status === 403 && names()['Vic'], 'delete: foreign origin refused');
   files.set('names.json', { text: JSON.stringify({ ...names(), Old: { name: 'Old', first: '2026-01-01T00:00:00.000Z' } }) + '\n', sha: 'sN' }); bust();
