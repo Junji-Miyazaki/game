@@ -75,11 +75,14 @@ const STY = {
   A: { id: 'A', name: 'Minimal orrery', font: FONT, planet: 'flat', size: 1, orbitW: 0.7, orbitA: 0.2, dotted: false, scan: false, ticks: false,
        sun: 0.55, mascot: 'calm', amb: 0.8, labelA: 0.5, cardR: 14 },
   B: { id: 'B', name: 'Retro-future instrument', font: MONO, planet: 'wire', size: 1, orbitW: 0.8, orbitA: 0.3, dotted: false, scan: true, ticks: true,
-       sun: 0.4, mascot: 'still', amb: 1, labelA: 0.75, cardR: 3 },
+       sun: 0.4, mascot: 'still', amb: 1, labelA: 0.75, cardR: 3, b: true, cute: 0, boing: 0 },
   C: { id: 'C', name: 'Cute toybox', font: FONT, planet: 'toy', size: 1.28, orbitW: 1.7, orbitA: 0.32, dotted: true, scan: false, ticks: false,
-       sun: 0.9, mascot: 'cheery', amb: 1.25, labelA: 0.9, cardR: 22 },
+       sun: 0.9, mascot: 'cheery', amb: 1.25, labelA: 0.9, cardR: 22, cute: 1, boing: 1 },
+  // D: B の世界・描画 + C のキャラクターの動きだけ（宇宙飛行士／船／ボイン／★ポップ）。boing は C の半分
+  D: { id: 'D', name: 'Instrument + toy motion', font: MONO, planet: 'wire', size: 1, orbitW: 0.8, orbitA: 0.3, dotted: false, scan: true, ticks: true,
+       sun: 0.4, mascot: 'cheery', amb: 1, labelA: 0.75, cardR: 3, b: true, cute: 0.6, boing: 0.5 },
 };
-let S = STY[(qs.get('style') || 'A').toUpperCase()] || STY.A;
+let S = STY[(qs.get('style') || 'D').toUpperCase()] || STY.D;
 let reduce = qs.get('reduce') === '1';
 let faces = qs.get('faces') === '1';
 let sound = false;
@@ -183,7 +186,7 @@ function drawBg(c) {
   const p = P();
   c.fillStyle = p.bg; c.fillRect(0, 0, W, H);
   const g = c.createRadialGradient(OV.cx, OV.cy, 0, OV.cx, OV.cy, 260);
-  const tint = S.id === 'C' ? '120,90,200' : (S.id === 'B' ? '40,120,120' : '70,80,120');
+  const tint = S.id === 'C' ? '120,90,200' : (S.b ? '40,120,120' : '70,80,120');
   g.addColorStop(0, `rgba(${tint},${S.id === 'C' ? 0.2 : 0.1})`); g.addColorStop(1, `rgba(${tint},0)`);
   c.fillStyle = g; c.fillRect(0, 0, W, H);
   const z = ease(zProg), px = (pointer.x - 0.5), py = (pointer.y - 0.5);
@@ -205,8 +208,9 @@ function drawBg(c) {
     c.fillStyle = `rgba(255,255,255,${al})`; c.beginPath(); c.arc(x, y, S.id === 'C' ? 1.8 : 1.1, 0, TAU); c.fill();
     if (S.id === 'C') sparkle(c, x, y, 4, al * 0.8, '#fff');
   }
-  if (S.id === 'C' && !reduce) {
-    for (let i = 0; i < 7; i++) { const x = (i * 53 + 20) % W, y = (i * 97 + 90) % 520, a = Math.max(0, Math.sin(T * 0.9 + i * 1.7)); sparkle(c, x, y, 2.4 + a * 1.6, a * 0.7, i % 2 ? '#ffd6e8' : '#bfe6ff'); }
+  if ((S.id === 'C' || S.id === 'D') && !reduce) {
+    const dd = S.id === 'D';
+    for (let i = 0; i < 7; i++) { const x = (i * 53 + 20) % W, y = (i * 97 + 90) % 520, a = Math.max(0, Math.sin(T * 0.9 + i * 1.7)); sparkle(c, x, y, 2.4 + a * 1.6, a * (dd ? 0.5 : 0.7), dd ? (i % 2 ? '#FFB547' : '#63D8C9') : (i % 2 ? '#ffd6e8' : '#bfe6ff')); }
   }
 }
 
@@ -350,7 +354,7 @@ function mascotPose() {
 }
 function drawShipFull(c, x, y, k, ang, flying) {
   let bob = 0, wob = 0;
-  if (!flying && !reduce) { bob = Math.sin(NOW * 1.6) * (S.id === 'C' ? 1.9 : S.id === 'A' ? 0.8 : 0.3) * k; wob = S.id === 'C' ? Math.sin(NOW * 1.3) * 5 : 0; }
+  if (!flying && !reduce) { bob = Math.sin(NOW * 1.6) * (S.cute ? 1.9 * S.cute : S.id === 'A' ? 0.8 : 0.3) * k; wob = S.cute ? Math.sin(NOW * 1.3) * 5 * S.cute : 0; }
   c.save(); c.translate(x, y + bob); c.scale(k, k);
   drawShip(c, 0, 0, ang + wob, flying, false, false, T);
   if (!flying) {
@@ -385,7 +389,7 @@ function drawFlightArc(c, world) {
   const fl = ship.fl; if (!fl || fl.world !== world) return;
   const e = ease(clamp(fl.t)), end = flightPoint(fl, world, e).to;
   c.save();
-  c.strokeStyle = S.id === 'B' ? rgba(P().warn, 0.8) : (S.id === 'C' ? 'rgba(255,200,230,0.9)' : rgba(P().mid, 0.75));
+  c.strokeStyle = S.b ? rgba(P().warn, 0.8) : (S.id === 'C' ? 'rgba(255,200,230,0.9)' : rgba(P().mid, 0.75));
   c.lineWidth = S.id === 'C' ? 1.8 : 1; c.lineCap = 'round';
   c.setLineDash(S.id === 'C' ? [0.1, 5] : [2, 4]); c.lineDashOffset = -NOW * 14;
   c.beginPath();
@@ -393,8 +397,8 @@ function drawFlightArc(c, world) {
   for (let i = 0; i <= N; i++) { const q = flightPoint(fl, world, e + (1 - e) * i / N); c[i ? 'lineTo' : 'moveTo'](q.x, q.y); }
   c.stroke(); c.setLineDash([]);
   const rr = 4 + 1.5 * Math.sin(NOW * 6);
-  c.strokeStyle = S.id === 'B' ? rgba(P().warn, 0.9) : rgba(P().fg, 0.6); c.lineWidth = 0.8;
-  if (S.id === 'B') { c.beginPath(); c.moveTo(end.x - rr - 2, end.y); c.lineTo(end.x - 2, end.y); c.moveTo(end.x + 2, end.y); c.lineTo(end.x + rr + 2, end.y); c.moveTo(end.x, end.y - rr - 2); c.lineTo(end.x, end.y - 2); c.moveTo(end.x, end.y + 2); c.lineTo(end.x, end.y + rr + 2); c.stroke(); }
+  c.strokeStyle = S.b ? rgba(P().warn, 0.9) : rgba(P().fg, 0.6); c.lineWidth = 0.8;
+  if (S.b) { c.beginPath(); c.moveTo(end.x - rr - 2, end.y); c.lineTo(end.x - 2, end.y); c.moveTo(end.x + 2, end.y); c.lineTo(end.x + rr + 2, end.y); c.moveTo(end.x, end.y - rr - 2); c.lineTo(end.x, end.y - 2); c.moveTo(end.x, end.y + 2); c.lineTo(end.x, end.y + rr + 2); c.stroke(); }
   else { c.beginPath(); c.arc(end.x, end.y, rr, 0, TAU); c.stroke(); }
   c.restore();
 }
@@ -425,9 +429,9 @@ function drawOverviewWorld(c) {
     const o = PL[id], pr = ease(introK(i).orbit); if (pr <= 0) return;
     const hl = hover && hover.sys === id;
     c.save();
-    c.strokeStyle = st.id === 'B' ? rgba(p.mid, hl ? 0.6 : st.orbitA) : (st.id === 'C' ? `rgba(200,190,255,${hl ? 0.6 : st.orbitA})` : rgba(p.fg, hl ? 0.4 : st.orbitA));
+    c.strokeStyle = st.b ? rgba(p.mid, hl ? 0.6 : st.orbitA) : (st.id === 'C' ? `rgba(200,190,255,${hl ? 0.6 : st.orbitA})` : rgba(p.fg, hl ? 0.4 : st.orbitA));
     c.lineWidth = st.orbitW; c.lineCap = 'round';
-    if (st.dotted) c.setLineDash([0.1, 5.5]); else if (st.id === 'B' && i % 2) c.setLineDash([1, 3]);
+    if (st.dotted) c.setLineDash([0.1, 5.5]); else if (st.b && i % 2) c.setLineDash([1, 3]);
     c.beginPath(); c.arc(cx, cy, o.r, -Math.PI / 2, -Math.PI / 2 + TAU * pr); c.stroke(); c.restore();
   });
   const uiA = ovIntroAlpha();
@@ -445,18 +449,18 @@ function drawOverviewWorld(c) {
   const br = reduce ? 1 : 1 + 0.07 * Math.sin(T * 1.4) * st.amb, sr = (st.id === 'C' ? 11 : 8.5) * clamp(introT / 0.5);
   const gk = st.id === 'C' ? 1.2 : 1;
   const gl = c.createRadialGradient(cx, cy, 0, cx, cy, 34 * br * gk);
-  const sc = st.id === 'B' ? '255,181,71' : (st.id === 'C' ? '255,200,120' : '255,226,170');
+  const sc = st.b ? '255,181,71' : (st.id === 'C' ? '255,200,120' : '255,226,170');
   gl.addColorStop(0, `rgba(${sc},${0.55 * st.sun + 0.15})`); gl.addColorStop(0.35, `rgba(${sc},${0.16 * st.sun})`); gl.addColorStop(1, `rgba(${sc},0)`);
   c.fillStyle = gl; c.beginPath(); c.arc(cx, cy, 36 * br * gk, 0, TAU); c.fill();
-  if (st.id === 'B') { c.strokeStyle = rgba(p.warn, 0.9); c.lineWidth = 0.9; c.beginPath(); c.arc(cx, cy, sr, 0, TAU); c.stroke(); c.fillStyle = rgba(p.warn, 0.35); c.fill(); c.beginPath(); c.moveTo(cx - sr - 4, cy); c.lineTo(cx + sr + 4, cy); c.moveTo(cx, cy - sr - 4); c.lineTo(cx, cy + sr + 4); c.stroke(); }
+  if (st.b) { c.strokeStyle = rgba(p.warn, 0.9); c.lineWidth = 0.9; c.beginPath(); c.arc(cx, cy, sr, 0, TAU); c.stroke(); c.fillStyle = rgba(p.warn, 0.35); c.fill(); c.beginPath(); c.moveTo(cx - sr - 4, cy); c.lineTo(cx + sr + 4, cy); c.moveTo(cx, cy - sr - 4); c.lineTo(cx, cy + sr + 4); c.stroke(); }
   else { c.fillStyle = st.id === 'C' ? '#ffe9b0' : '#fff2d6'; c.beginPath(); c.arc(cx, cy, sr, 0, TAU); c.fill(); if (st.id === 'C') { c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.ellipse(cx - 3, cy - 4, 3, 1.8, -0.6, 0, TAU); c.fill(); } }
-  if (faces && st.id !== 'B') { c.fillStyle = 'rgba(80,50,20,.8)'; c.beginPath(); c.arc(cx - 3, cy - 1, 1, 0, TAU); c.arc(cx + 3, cy - 1, 1, 0, TAU); c.fill(); c.strokeStyle = 'rgba(80,50,20,.8)'; c.lineWidth = 0.9; c.beginPath(); c.arc(cx, cy + 1, 3, 0.2 * Math.PI, 0.8 * Math.PI); c.stroke(); }
+  if (faces && !st.b) { c.fillStyle = 'rgba(80,50,20,.8)'; c.beginPath(); c.arc(cx - 3, cy - 1, 1, 0, TAU); c.arc(cx + 3, cy - 1, 1, 0, TAU); c.fill(); c.strokeStyle = 'rgba(80,50,20,.8)'; c.lineWidth = 0.9; c.beginPath(); c.arc(cx, cy + 1, 3, 0.2 * Math.PI, 0.8 * Math.PI); c.stroke(); }
   // 惑星
   SYS_ORDER.forEach((id) => {
     const o = PL[id], q = ovP[id]; if (q.s <= 0.01) return;
     const hl = hover && hover.sys === id, sel = selSys() === id;
     let bounce = 1;
-    if (st.id === 'C' && hl && !reduce) bounce = 1 + 0.12 * Math.sin(NOW * 9);
+    if (st.boing && hl && !reduce) bounce = 1 + 0.12 * st.boing * Math.sin(NOW * 9);
     const r = o.sz * q.s * bounce, locked = sysLocked(id), pg = sysProgress(id);
     c.save(); c.globalAlpha *= locked ? 0.55 : 1;
     if (id === 'earth') {   // TERRA ボーナスの印
@@ -490,10 +494,10 @@ function drawOverviewWorld(c) {
     if (uiA > 0) {
       c.save(); c.globalAlpha *= uiA * (hl || sel ? 1 : 0.9);
       const ly = q.y + r + (id === 'saturn' ? 14 : 10) + (st.id === 'C' ? 2 : 0);
-      T_(c, SYS[id].name, clamp(q.x, 24, W - 24), clamp(ly, 20, 470), st.id === 'C' ? 9 : 8, hl || sel ? (st.id === 'B' ? p.warn : p.hi) : rgba(p.fg, st.labelA), 'center', st.id === 'C' ? 700 : 500, st.id === 'B' ? 1.2 : 0.8);
+      T_(c, SYS[id].name, clamp(q.x, 24, W - 24), clamp(ly, 20, 470), st.id === 'C' ? 9 : 8, hl || sel ? (st.b ? p.warn : p.hi) : rgba(p.fg, st.labelA), 'center', st.id === 'C' ? 700 : 500, st.b ? 1.2 : 0.8);
       c.restore();
     }
-    if (st.id === 'B' && hl) {
+    if (st.b && hl) {
       const b = r + 8, L = 4; c.strokeStyle = rgba(p.warn, 0.95); c.lineWidth = 0.9;
       [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => { c.beginPath(); c.moveTo(q.x + sx * b, q.y + sy * (b - L)); c.lineTo(q.x + sx * b, q.y + sy * b); c.lineTo(q.x + sx * (b - L), q.y + sy * b); c.stroke(); });
       T_(c, `${(o.r / 158 * 9.5).toFixed(2)} AU`, q.x + b + 3, q.y + 3, 7.5, rgba(p.warn, 0.9), 'left', 500, 0.8);
@@ -506,13 +510,13 @@ function drawOverviewUI(c, a) {
   c.save(); c.globalAlpha *= a;
   T_(c, 'SOLAR SYSTEM', 16, 28, 13, p.fg, 'left', S.id === 'C' ? 800 : 600, 3);
   T_(c, 'BETA v1.1', W - 16, 28, 9, p.warn, 'right', 700, 1.5);
-  T_(c, S.id === 'B' ? 'SELECT DESTINATION' : 'Choose where to land', 16, 45, 9.5, p.dim, 'left', 500, S.id === 'B' ? 1.5 : 0.3);
+  T_(c, S.b ? 'SELECT DESTINATION' : 'Choose where to land', 16, 45, 9.5, p.dim, 'left', 500, S.b ? 1.5 : 0.3);
   T_(c, `★ ${tot.st}/${tot.mx}   ${tot.cl}/${tot.bn} CLEARED`, W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6);
-  if (S.id === 'B') { const mm = Math.floor(T / 60) % 60, ss = Math.floor(T) % 60; T_(c, `T+ 00:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`, 16, 58, 8, rgba(p.mid, 0.7), 'left', 500, 1); c.strokeStyle = rgba(p.mid, 0.3); c.lineWidth = 0.6; c.beginPath(); c.moveTo(16, 64); c.lineTo(W - 16, 64); c.stroke(); }
+  if (S.b) { const mm = Math.floor(T / 60) % 60, ss = Math.floor(T) % 60; T_(c, `T+ 00:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`, 16, 58, 8, rgba(p.mid, 0.7), 'left', 500, 1); c.strokeStyle = rgba(p.mid, 0.3); c.lineWidth = 0.6; c.beginPath(); c.moveTo(16, 64); c.lineTo(W - 16, 64); c.stroke(); }
   chipRects().forEach((r, i) => {
     const id = SYS_ORDER[i], pg = sysProgress(id), lk = sysLocked(id), hl = hover && hover.kind === 'chip' && hover.sys === id;
     c.save();
-    if (S.id === 'B') { c.strokeStyle = rgba(hl ? p.warn : p.mid, hl ? 0.9 : 0.35); c.lineWidth = 0.8; c.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1); }
+    if (S.b) { c.strokeStyle = rgba(hl ? p.warn : p.mid, hl ? 0.9 : 0.35); c.lineWidth = 0.8; c.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1); }
     else { rrect(c, r.x, r.y, r.w, r.h, S.id === 'C' ? 14 : 10); c.fillStyle = S.id === 'C' ? `rgba(255,255,255,${hl ? 0.14 : 0.07})` : (hl ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.03)'); c.fill(); c.strokeStyle = rgba(p.fg, hl ? 0.35 : 0.12); c.lineWidth = 0.7; c.stroke(); }
     T_(c, SYS[id].ab, r.x + r.w / 2, r.y + 17, 10, lk ? p.dim : p.fg, 'center', S.id === 'C' ? 800 : 600, 1.2);
     if (lk) lockGlyph(c, r.x + r.w / 2, r.y + 32, 8, p.dim);
@@ -525,8 +529,8 @@ function drawOverviewUI(c, a) {
 }
 function drawSilhouette(c, nm, x, y, s) {
   const k = s || 1, p = P(); c.save(); c.translate(x, y); c.scale(k, k);
-  c.fillStyle = 'rgba(28,34,50,0.9)'; c.strokeStyle = rgba(p.dim, S.id === 'B' ? 0.9 : 0.6); c.lineWidth = 0.8;
-  if (S.id === 'B') c.setLineDash([2, 2]);
+  c.fillStyle = 'rgba(28,34,50,0.9)'; c.strokeStyle = rgba(p.dim, S.b ? 0.9 : 0.6); c.lineWidth = 0.8;
+  if (S.b) c.setLineDash([2, 2]);
   c.beginPath();
   if (nm === 'PHOBOS') c.ellipse(0, 0, 11, 8, -0.3, 0, TAU);
   else if (nm === 'RYUGU') { c.moveTo(0, -11); c.lineTo(9, -3); c.lineTo(10, 3); c.lineTo(0, 11); c.lineTo(-10, 3); c.lineTo(-9, -3); c.closePath(); }
@@ -547,14 +551,14 @@ function drawZoomWorld(c, a) {
   c.save(); c.globalAlpha *= a;
   for (const mid of SYS[sys].bodies) {
     const m = MOONS[mid]; if (!m) continue;
-    c.save(); c.strokeStyle = S.id === 'B' ? rgba(p.mid, 0.3) : (S.id === 'C' ? 'rgba(200,190,255,0.32)' : rgba(p.fg, 0.16)); c.lineWidth = S.orbitW; c.lineCap = 'round';
-    if (S.dotted) c.setLineDash([0.1, 5.5]); else if (S.id === 'B') c.setLineDash([1, 3]);
+    c.save(); c.strokeStyle = S.b ? rgba(p.mid, 0.3) : (S.id === 'C' ? 'rgba(200,190,255,0.32)' : rgba(p.fg, 0.16)); c.lineWidth = S.orbitW; c.lineCap = 'round';
+    if (S.dotted) c.setLineDash([0.1, 5.5]); else if (S.b) c.setLineDash([1, 3]);
     c.beginPath(); c.ellipse(ZH.x, ZH.y, m.zx, m.zy, 0, 0, TAU); c.stroke(); c.restore();
   }
   const moons = SYS[sys].bodies.filter((b) => MOONS[b]).map((id) => ({ id, ...zmMoon(id) }));
   const drawMoon = (m) => {
     const hl = hover && (hover.id === m.id), sc = selected === m.id;
-    let r = m.r; if (S.id === 'C' && (hl || sc) && !reduce) r *= 1 + 0.1 * Math.sin(NOW * 9);
+    let r = m.r; if (S.boing && (hl || sc) && !reduce) r *= 1 + 0.1 * S.boing * Math.sin(NOW * 9);
     c.save(); c.globalAlpha *= bodyLocked(m.id) ? 0.55 : 1;
     drawBody(c, m.id, m.x, m.y, r, T, { halo: true }); c.restore();
     bodyDeco(c, m.id, m.x, m.y, r, hl);
@@ -562,7 +566,7 @@ function drawZoomWorld(c, a) {
   moons.filter((m) => m.depth < 0).forEach(drawMoon);
   const hubLb = SYS[sys].bodies.find((b) => LB[b].hub);
   let hrr = hr; const hhl = hover && hubLb && hover.id === hubLb;
-  if (S.id === 'C' && hhl && !reduce) hrr *= 1 + 0.05 * Math.sin(NOW * 9);
+  if (S.boing && hhl && !reduce) hrr *= 1 + 0.05 * S.boing * Math.sin(NOW * 9);
   c.save(); c.globalAlpha *= (hubLb && bodyLocked(hubLb)) ? 0.6 : 1;
   drawBody(c, sys, ZH.x, ZH.y, hrr, T, {}); c.restore();
   if (hubLb) bodyDeco(c, hubLb, ZH.x, ZH.y, hrr, hhl);
@@ -583,7 +587,7 @@ function bodyDeco(c, id, x, y, r, hl) {       // 制覇リング・旗・BONUS�
     const bx = x - r - 14, by = y - r * 0.7, d = 4; c.strokeStyle = rgba(p.warn, 0.95); c.lineWidth = 1; c.beginPath(); c.moveTo(bx, by - d); c.lineTo(bx + d, by); c.lineTo(bx, by + d); c.lineTo(bx - d, by); c.closePath(); c.stroke();
     T_(c, 'BONUS', bx + 7, by + 3, 7.5, rgba(p.warn, 0.95), 'left', 600, 1);
   }
-  if (hl && S.id === 'B') { const b = r + 9, L = 6; c.strokeStyle = rgba(p.warn, 0.95); c.lineWidth = 1; [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => { c.beginPath(); c.moveTo(x + sx * b, y + sy * (b - L)); c.lineTo(x + sx * b, y + sy * b); c.lineTo(x + sx * (b - L), y + sy * b); c.stroke(); }); }
+  if (hl && S.b) { const b = r + 9, L = 6; c.strokeStyle = rgba(p.warn, 0.95); c.lineWidth = 1; [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => { c.beginPath(); c.moveTo(x + sx * b, y + sy * (b - L)); c.lineTo(x + sx * b, y + sy * b); c.lineTo(x + sx * (b - L), y + sy * b); c.stroke(); }); }
   if (selected === id && NOW - selTime < 1.2) { const k = (NOW - selTime) / 1.2; c.strokeStyle = rgba(p.hi, 0.6 * (1 - k)); c.lineWidth = 1; c.beginPath(); c.arc(x, y, r + 6 + k * 14, 0, TAU); c.stroke(); }
 }
 function cardRects(sys) {
@@ -600,10 +604,10 @@ function drawStarSlot(c, x, y, id, i, k, R) {
   if (NOW < st) return;
   const u = clamp((NOW - st) / 0.36), sc = reduce ? 1 : outBack(u);
   c.save(); c.translate(x, y); c.scale(sc, sc); starPath(c, 0, 0, R * 1.08, R * 0.5);
-  c.fillStyle = S.id === 'B' ? p.warn : (S.id === 'C' ? '#ffcf5a' : '#f5d58a'); c.fill();
+  c.fillStyle = S.b ? p.warn : (S.id === 'C' ? '#ffcf5a' : '#f5d58a'); c.fill();
   if (S.id === 'C') { c.lineJoin = 'round'; c.strokeStyle = '#ffcf5a'; c.lineWidth = 1.4; c.stroke(); }
   c.restore();
-  if (t0 !== undefined && !reduce && NOW - st < 0.6) { const v = (NOW - st) / 0.6; sparkle(c, x + R * 0.9, y - R * 0.9, R * (1.3 + v) * (1 - v * 0.4), 1 - v, '#fff'); sparkle(c, x - R, y + R * 0.4, R * 0.7 * (1 - v), 1 - v, p.warn); }
+  if (t0 !== undefined && !reduce && NOW - st < 0.6) { const v = (NOW - st) / 0.6; sparkle(c, x + R * 0.9, y - R * 0.9, R * (1.3 + v) * (1 - v * 0.4), 1 - v, S.id === 'D' ? p.warn : '#fff'); sparkle(c, x - R, y + R * 0.4, R * 0.7 * (1 - v), 1 - v, S.id === 'D' ? p.mid : p.warn); }
 }
 function drawGrade(c, g, cx, cy) {
   const p = P();
@@ -614,7 +618,7 @@ function drawGrade(c, g, cx, cy) {
     const a = reduce ? 0.8 : 0.5 + 0.5 * Math.sin(NOW * 3); sparkle(c, cx + 29, cy - 8, 3.5, a, '#fff');
     c.strokeStyle = rgba(col, 0.55); c.lineWidth = 0.8; c.beginPath(); c.moveTo(cx - 26, cy + 8); c.lineTo(cx + 26, cy + 8); c.stroke();
   } else {
-    c.strokeStyle = rgba(col, 0.85); c.lineWidth = S.id === 'C' ? 1.8 : 1; c.beginPath(); if (S.id === 'B') c.rect(cx - 13, cy - 13, 26, 26); else c.arc(cx, cy, 13, 0, TAU); c.stroke();
+    c.strokeStyle = rgba(col, 0.85); c.lineWidth = S.id === 'C' ? 1.8 : 1; c.beginPath(); if (S.b) c.rect(cx - 13, cy - 13, 26, 26); else c.arc(cx, cy, 13, 0, TAU); c.stroke();
     T_(c, g, cx, cy + 5.5, 15, col, 'center', S.id === 'C' ? 800 : 600, 0);
   }
   T_(c, 'BEST', cx, cy + 25, 6.5, rgba(p.dim, 0.9), 'center', 600, 1.2);
@@ -631,7 +635,7 @@ function drawCard(c, r) {
   const id = r.id, lb = LB[id], lk = bodyLocked(id), cl = bodyCleared(id), hl = hover && hover.id === id, sel = selected === id;
   c.save();
   const accent = BCOL[id];
-  if (S.id === 'B') {
+  if (S.b) {
     c.fillStyle = hl || sel ? 'rgba(255,181,71,0.07)' : 'rgba(99,216,201,0.04)'; c.fillRect(x, y, w, h);
     c.strokeStyle = rgba(sel || hl ? p.warn : p.mid, sel || hl ? 0.9 : 0.3); c.lineWidth = 0.8; const L = 7;
     [[x, y, 1, 1], [x + w, y, -1, 1], [x + w, y + h, -1, -1], [x, y + h, 1, -1]].forEach(([bx, by, sx, sy]) => { c.beginPath(); c.moveTo(bx + sx * L, by); c.lineTo(bx, by); c.lineTo(bx, by + sy * L); c.stroke(); });
@@ -640,14 +644,14 @@ function drawCard(c, r) {
     c.strokeStyle = S.id === 'C' ? rgba(accent, sel || hl ? 0.9 : 0.4) : rgba(sel || hl ? p.mid : p.fg, sel || hl ? 0.7 : 0.13); c.lineWidth = S.id === 'C' ? 1.4 : 0.8; c.stroke();
   }
   c.globalAlpha *= lk ? 0.62 : 1;
-  const bob = (S.id === 'C' && !reduce && !lk) ? Math.sin(NOW * 2 + y) * 1.2 : 0;
+  const bob = (S.cute && !reduce && !lk) ? Math.sin(NOW * 2 + y) * 1.2 * S.cute : 0;
   drawBody(c, id, x + 30, cy + bob, 15, T, { pers: false, halo: false });
   if (cl) { c.strokeStyle = rgba(p.warn, 0.9); c.lineWidth = 1; c.beginPath(); c.arc(x + 30, cy + bob, 19, 0, TAU); c.stroke(); }
-  T_(c, lb.name, x + 58, cy - 6, 13, lk ? rgba(p.fg, 0.7) : p.fg, 'left', S.id === 'C' ? 800 : 600, S.id === 'B' ? 1.6 : 1);
+  T_(c, lb.name, x + 58, cy - 6, 13, lk ? rgba(p.fg, 0.7) : p.fg, 'left', S.id === 'C' ? 800 : 600, S.b ? 1.6 : 1);
   T_(c, lb.tag, x + 58, cy + 10, 8.5, rgba(p.dim, 1), 'left', 500, 0.6);
   for (let i = 0; i < 2; i++) {
     const px = 178 + i * 46, py = cy - 21, d = data[id][i], done = d.s === 'done' && (stAt[id + ':' + i] === undefined || NOW >= stAt[id + ':' + i]);
-    if (S.id === 'B') { c.strokeStyle = d.s === 'open' ? rgba(p.warn, 0.5 + (reduce ? 0.3 : 0.3 * Math.sin(NOW * 3))) : rgba(done ? p.mid : p.dim, done ? 0.7 : 0.5); c.lineWidth = 0.8; c.strokeRect(px + 0.5, py + 0.5, 40, 41); }
+    if (S.b) { c.strokeStyle = d.s === 'open' ? rgba(p.warn, 0.5 + (reduce ? 0.3 : 0.3 * Math.sin(NOW * 3))) : rgba(done ? p.mid : p.dim, done ? 0.7 : 0.5); c.lineWidth = 0.8; c.strokeRect(px + 0.5, py + 0.5, 40, 41); }
     else { rrect(c, px, py, 40, 42, S.id === 'C' ? 14 : 9); c.fillStyle = done ? (S.id === 'C' ? rgba(accent, 0.22) : rgba(p.mid, 0.1)) : 'rgba(255,255,255,0.02)'; c.fill(); c.strokeStyle = d.s === 'open' ? rgba(p.warn, 0.6 + (reduce ? 0.2 : 0.3 * Math.sin(NOW * 3))) : rgba(done ? (S.id === 'C' ? accent : p.mid) : p.dim, done ? 0.7 : 0.5); c.lineWidth = d.s === 'open' ? 1.2 : 0.8; c.stroke(); }
     T_(c, 'S' + (i + 1), px + 5, py + 11, 7.5, rgba(p.dim, 1), 'left', 600, 0.6);
     if (d.s === 'locked') lockGlyph(c, px + 20, py + 25, 10, rgba(p.dim, 0.9));
@@ -664,14 +668,14 @@ function drawZoomUI(c, a) {
   const p = P(), sys = camSys, pg = sysProgress(sys);
   c.save(); c.globalAlpha *= a;
   const hb = hover && hover.kind === 'back';
-  if (S.id === 'B') { c.strokeStyle = rgba(hb ? p.warn : p.mid, 0.7); c.lineWidth = 0.8; c.strokeRect(10.5, 10.5, 72, 36); }
+  if (S.b) { c.strokeStyle = rgba(hb ? p.warn : p.mid, 0.7); c.lineWidth = 0.8; c.strokeRect(10.5, 10.5, 72, 36); }
   else { rrect(c, 10, 10, 72, 36, S.id === 'C' ? 18 : 10); c.fillStyle = hb ? 'rgba(255,255,255,.12)' : 'rgba(255,255,255,.05)'; c.fill(); c.strokeStyle = rgba(p.fg, 0.18); c.lineWidth = 0.7; c.stroke(); }
   c.strokeStyle = p.fg; c.lineWidth = 1.5; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); c.moveTo(30, 20); c.lineTo(23, 28); c.lineTo(30, 36); c.stroke();
   T_(c, 'BACK', 38, 32, 10.5, p.fg, 'left', 600, 1.4);
   T_(c, SYS[sys].name, W - 16, 28, 13, p.fg, 'right', S.id === 'C' ? 800 : 600, 3);
   T_(c, `★ ${pg.st}/${pg.mx}   ${SYS[sys].bodies.length} SITE${SYS[sys].bodies.length > 1 ? 'S' : ''}`, W - 16, 44, 9, rgba(p.fg, 0.65), 'right', 500, 0.6);
   cardRects(sys).forEach((r) => drawCard(c, r));
-  T_(c, S.id === 'B' ? 'SELECT SITE  /  TAP BODY OR CARD' : 'Tap a site to set course', W / 2, 628, 8.5, rgba(p.dim, 1), 'center', 500, S.id === 'B' ? 1.5 : 0.4);
+  T_(c, S.b ? 'SELECT SITE  /  TAP BODY OR CARD' : 'Tap a site to set course', W / 2, 628, 8.5, rgba(p.dim, 1), 'center', 500, S.b ? 1.5 : 0.4);
   c.restore();
 }
 
@@ -700,7 +704,7 @@ function render() {
   if (z > 0.001) drawZoomUI(c, clamp((z - 0.4) / 0.6));
   if (toast) {
     const age = NOW - toast.t0;
-    if (age < 2.6) { const al = clamp(Math.min(age / 0.2, (2.6 - age) / 0.5)), ty = z > 0.5 ? 586 : 482; c.save(); c.globalAlpha = al; setFont(c, 10, 600); const tw = c.measureText(toast.text).width + 30; rrect(c, W / 2 - tw / 2, ty - 16, tw, 26, S.id === 'B' ? 3 : 13); c.fillStyle = 'rgba(13,17,27,0.95)'; c.fill(); c.strokeStyle = rgba(S.id === 'B' ? p.warn : p.mid, 0.7); c.lineWidth = 0.8; c.stroke(); T_(c, toast.text, W / 2, ty + 1, 10, p.fg, 'center', 600, 1); c.restore(); } else toast = null;
+    if (age < 2.6) { const al = clamp(Math.min(age / 0.2, (2.6 - age) / 0.5)), ty = z > 0.5 ? 586 : 482; c.save(); c.globalAlpha = al; setFont(c, 10, 600); const tw = c.measureText(toast.text).width + 30; rrect(c, W / 2 - tw / 2, ty - 16, tw, 26, S.b ? 3 : 13); c.fillStyle = 'rgba(13,17,27,0.95)'; c.fill(); c.strokeStyle = rgba(S.b ? p.warn : p.mid, 0.7); c.lineWidth = 0.8; c.stroke(); T_(c, toast.text, W / 2, ty + 1, 10, p.fg, 'center', 600, 1); c.restore(); } else toast = null;
   }
   if (S.scan) {   // B: 走査線 + ゆっくり流れる明暗帯
     c.fillStyle = 'rgba(99,216,201,0.035)'; c.beginPath(); for (let y = 0; y < H; y += 3) c.rect(0, y, W, 1); c.fill();
