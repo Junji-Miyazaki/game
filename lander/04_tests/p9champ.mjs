@@ -73,7 +73,7 @@ const reset = () => { calls.fetch = 0; calls.submit.length = 0; calls.setTitle.l
   let { ctx, rec } = makeCtx();
   let t = new TitleScene(makeEngine(mkStore(), ctx), noop, { launch: true });
   t.enter(); await flush(); t.update(0.016); t.render(ctx);
-  ok(t.top1 === null && !rec.texts.some((x) => x.s === 'WORLD #1'), 'hidden when nothing is known (offline, no cache)');
+  ok(t.top1 === null && !rec.texts.some((x) => x.s === 'WORLD CHAMPION'), 'hidden when nothing is known (offline, no cache)');
   // 取得成功 -> 表示 + キャッシュ更新
   topResp = [{ name: 'みや', score: 4095, stage: 12, date: 'x', title: '初代ランダーチャンピオン' }, { name: 'B', score: 100, stage: 2 }];
   const store = mkStore('B');
@@ -81,7 +81,7 @@ const reset = () => { calls.fetch = 0; calls.submit.length = 0; calls.setTitle.l
   t = new TitleScene(makeEngine(store, ctx), noop, { launch: true });
   t.enter(); await flush(); t.update(0.016); t.render(ctx);
   ok(t.top1 && t.top1.name === 'みや' && t.top1.score === 4095, 'top1 from fetch');
-  ok(rec.texts.some((x) => x.s === 'WORLD #1') && rec.texts.some((x) => x.s === '4095') && rec.texts.some((x) => x.s === 'みや'), 'banner row 1 rendered');
+  ok(rec.texts.some((x) => x.s === 'WORLD CHAMPION') && rec.texts.some((x) => x.s === '4095') && rec.texts.some((x) => x.s === 'みや'), 'banner row 1 rendered');
   ok(rec.texts.some((x) => x.s === '「初代ランダーチャンピオン」'), 'banner row 2 shows the epithet in corner brackets');
   const c = loadTop1(store.get('worldTop1') ? t.engine.storage : null);
   ok(c && c.name === 'みや' && c.score === 4095 && c.title === '初代ランダーチャンピオン' && c.at > 0, 'cache updated on fetch');
@@ -90,7 +90,7 @@ const reset = () => { calls.fetch = 0; calls.submit.length = 0; calls.setTitle.l
   topResp = [{ name: 'みや', score: 4095, stage: 12 }];
   ({ ctx, rec } = makeCtx());
   t = new TitleScene(makeEngine(mkStore('B'), ctx), noop, { launch: true }); t.enter(); await flush(); t.update(0.016); t.render(ctx);
-  ok(rec.texts.some((x) => x.s === 'WORLD #1') && !rec.texts.some((x) => x.s.startsWith('「')), 'no epithet -> single line');
+  ok(rec.texts.some((x) => x.s === 'WORLD CHAMPION') && !rec.texts.some((x) => x.s.startsWith('「')), 'no epithet -> single line');
   // オフライン(null) -> キャッシュ表示。空配列 -> 消える
   const st2 = mkStore('B', [['worldTop1', JSON.stringify({ name: 'みや', score: 777, title: 'X', at: 1 })]]);
   topResp = null;
@@ -276,14 +276,15 @@ async function runGameOver({ name = 'みや', score = 5000, top, debug = false, 
     try { t.enter(); await flush(); t.update(0.016); t.render(ctx); } catch (e) { threw = e; }
     ok(!threw, 'render with long JP name/title (champ=' + asChamp + ', cp=' + withCp + ') does not throw: ' + (threw && threw.message));
     ok(t._isChampion() === asChamp, 'champion detection (' + asChamp + ')');
-    const bn = rec.texts.filter((x) => x.y >= 130 && x.y <= 170 && x.s !== 'SET TITLE' && x.s !== 'PUBLIC BETA');
+    const bn = rec.texts.filter((x) => x.y >= 120 && x.y <= 170 && x.s !== 'SET TITLE' && x.s !== 'PUBLIC BETA');
     const wb = t.worldBox;
     // 描画された文字の外接（幅=7px/文字。sp 無視の下限）が画面内、バナー帯内
     ok(bn.length >= 3, 'banner texts drawn');
     ok(bn.every((x) => x.y >= wb.y - 1 && x.y + 10 <= wb.y + wb.h + 1), 'banner texts within the banner band y');
     const wOfT = (x) => x.s.length * 7 + (x.s.length - 1) * 1;   // 7px/字 + 字間(最小1px)
-    const xs = bn.map((x) => x.align === 'center' ? x.x - wOfT(x) / 2 : x.x), xe = bn.map((x) => (x.align === 'center' ? x.x - wOfT(x) / 2 : x.x) + wOfT(x));
-    ok(Math.min(...xs) >= wb.x - 4 && Math.max(...xe) <= (asChamp ? t.titleBtn.x : wb.x + wb.w) + 8, 'banner texts do not run into SET TITLE / screen edge (champ=' + asChamp + ')');
+    const x0 = (x) => x.align === 'center' ? x.x - wOfT(x) / 2 : x.align === 'right' ? x.x - wOfT(x) : x.x;
+    const xs = bn.map(x0), xe = bn.map((x) => x0(x) + wOfT(x));
+    ok(Math.min(...xs) >= wb.x - 4 && Math.max(...xe) <= wb.x + wb.w + 2, 'plaque texts stay inside the plaque / screen edge (champ=' + asChamp + ')');
     const others = { logo: t.logoBox, beta: t.betaBox, mute: t.muteBtn, pilots: t.changeBtn, rank: t.rankBtn, start: withCp ? t.continueBtn : t.startBtn, newBtn: t.newBtn };
     for (const [k, r] of Object.entries(others)) {
       ok(!overlap(wb, r), 'worldBox does not overlap ' + k);
@@ -294,7 +295,98 @@ async function runGameOver({ name = 'みや', score = 5000, top, debug = false, 
     ok(!overlap(wb, rocket) && !overlap(wb, tower), 'worldBox clear of rocket and tower');
     if (asChamp) ok(!overlap(t.titleBtn, rocket) && !overlap(t.titleBtn, tower), 'SET TITLE clear of rocket/tower');
     ok(wb.y >= t.betaBox.y + t.betaBox.h && wb.y + wb.h <= 164, 'banner sits between BETA and the rocket tip');
+    if (asChamp) ok(t.titleBtn.h >= 32 && t.titleBtn.y >= wb.y + wb.h && !overlap(t.titleBtn, wb), 'SET TITLE hit box >=32px tall and below the plaque (no overlap)');
+    ok(asChamp === rec.texts.some((x) => x.s === 'YOU'), 'YOU tag only for the champion');
+    ok(rec.texts.some((x) => x.s === 'WORLD CHAMPION'), 'plaque label drawn');
+    // 光の走り(t=0..1.4s)と通常時の両方で描画が落ちない
+    let thr2 = null; try { for (const tt of [0, 0.5, 3, 7.3]) { t.t = tt; t.render(ctx); } } catch (e) { thr2 = e; }
+    ok(!thr2, 'plaque animation frames render');
   }
+}
+
+// ===== 7b. plaque tap opens WORLD ranking, consumes the tap =====
+{
+  reset();
+  topResp = [{ name: 'Zed', score: 5000, stage: 9, title: 'x' }];
+  const store = mkStore('B');
+  const { ctx } = makeCtx();
+  let started = 0;
+  const t = new TitleScene(makeEngine(store, ctx), noop, { launch: true });
+  t.enter(); await flush(); t.update(0.016);
+  const wb = t.worldBox;
+  t.onInput('tap', { x: wb.x + wb.w / 2, y: wb.y + wb.h / 2, now: 1000 });
+  ok(t.showRank === true && t.tabs && t.tabs.mode === 'world', 'plaque tap opens ranking on WORLD tab');
+  ok(!t.launch, 'plaque tap does not start the game');
+  t.onInput('tap', { x: 20, y: 300, now: 2000 });
+  ok(t.showRank === false && !t.launch, 'next tap only closes the ranking');
+  // 本人でなければ SET TITLE 領域のタップは何もしない（開始もしない）
+  t.onInput('tap', { x: t.titleBtn.x + 10, y: t.titleBtn.y + 10, now: 3000 });
+  ok(!championEntryOpen(), 'non-champion cannot open title entry from plaque area');
+}
+
+// ===== 7c. HALL OF FAME (WORLD TOP 5) between Boot and Title =====
+{
+  const { BootScene, HallOfFameScene, hallHasData, HALL_SECS } = await import('../02_src/title.js');
+  const { saveWorldList, loadWorldList, worldTop5View } = await import('../02_src/ranking.js');
+  const mk = (n) => Array.from({ length: n }, (_, i) => ({ name: 'P' + (i + 1), score: 9000 - i * 100, stage: 5, title: i === 0 ? 'T' : '' }));
+  const st = { m: new Map(), get(k, d = null) { return this.m.has(k) ? this.m.get(k) : d; }, set(k, v) { this.m.set(k, String(v)); } };
+  ok(loadWorldList(st) === null, 'no cache -> null');
+  ok(saveWorldList(st, mk(150)) && loadWorldList(st).length === 100, 'cache keeps at most 100 rows');
+  ok(loadWorldList(st)[0].title === 'T', 'cache keeps title');
+  st.set('worldTop5', '{broken'); ok(loadWorldList(st) === null, 'corrupt cache -> null (no throw)');
+  const L = mk(12);
+  let v = worldTop5View(L, 'P3'); ok(v.rows.length === 5 && v.rows[2].you && !v.extra, 'YOU marked inside top5');
+  v = worldTop5View(L, 'P9'); ok(!v.rows.some((r) => r.you) && v.extra && v.extra.rank === 9 && v.extra.score === 8200, 'YOU #N extra row outside top5');
+  v = worldTop5View(L, 'nobody'); ok(!v.extra && !v.rows.some((r) => r.you), 'absent -> no YOU');
+  ok(worldTop5View([], 'x') === null && worldTop5View(null, 'x') === null, 'empty -> null');
+
+  const mkEng = (store, ctx, ev) => { const e = makeEngine(store, ctx); e.music = { ...music, playFanfare: () => { ev.push('fan'); }, stopFanfare: () => { ev.push('stopfan'); }, playTitle: () => { ev.push('title'); } }; return e; };
+  const setup = async (cache, resp, me) => {
+    reset(); topResp = resp;
+    const store = mkStore(me); if (cache) store.set('worldTop5', JSON.stringify({ at: 1, rows: cache }));
+    const { ctx, rec } = makeCtx(); const ev = [];
+    const eng = mkEng(store, ctx, ev);
+    return { store, ctx, rec, ev, eng };
+  };
+  // no data -> hallHasData false (main.js skips the scene)
+  let S = await setup(null, null, 'B');
+  ok(hallHasData(S.eng) === false, 'no cache -> hall skipped');
+  // flow: Boot tap -> hall (not title, game not started)
+  const long = mk(8); long[0].name = 'あいうえおかきくけこさしすせそた'; long[0].title = 'とてもながいにほんごのしょうごうです'; long[7].name = 'B';
+  S = await setup(long, null, 'B');
+  ok(hallHasData(S.eng) === true, 'cache -> hall shown');
+  const order = [];
+  const boot = new BootScene(S.eng, () => order.push('hall'));
+  boot.onInput('tap', { x: 1, y: 1, now: 0 }); boot.onInput('tap', { x: 1, y: 1, now: 0 });
+  ok(order.join() === 'hall', 'boot tap goes to hall exactly once');
+  let hall = new HallOfFameScene(S.eng, () => order.push('title'));
+  hall.enter(); await flush();
+  ok(S.ev.join() === 'fan', 'fanfare starts once on hall enter; title music not started by hall');
+  let thr = null; try { for (let i = 0; i < 150; i++) { hall.update(1 / 60); hall.render(S.ctx); } } catch (e) { thr = e; }
+  ok(!thr && S.rec.texts.some((x) => x.s === 'HALL OF FAME') && S.rec.texts.some((x) => x.s === 'WORLD CHAMPION') && S.rec.texts.some((x) => x.s === 'YOU  #8'), 'hall renders plaque + YOU #N row (long names)');
+  ok(order.join() === 'hall', 'no auto-advance at 2.5s');
+  hall.onInput('tap', { x: 180, y: 300, now: 1 });
+  ok(order.join() === 'hall,title' && S.ev.includes('stopfan'), 'tap skips to title once and stops the fanfare');
+  hall.onInput('tap', { x: 180, y: 300, now: 2 }); hall.update(10);
+  ok(order.length === 2, 'no double advance after skip');
+  // auto advance
+  S = await setup(long, null, 'B'); const o2 = [];
+  hall = new HallOfFameScene(S.eng, () => o2.push('title')); hall.enter();
+  for (let i = 0; i < Math.floor(HALL_SECS * 60) - 10; i++) hall.update(1 / 60);
+  ok(o2.length === 0, 'still showing just before the deadline');
+  for (let i = 0; i < 20; i++) hall.update(1 / 60);
+  ok(o2.length === 1, 'auto-advances after ~' + HALL_SECS + 's, once');
+  // refresh swaps view + saves cache
+  S = await setup(long, mk(3), 'P2'); hall = new HallOfFameScene(S.eng, noop); hall.enter(); await flush();
+  for (let i = 0; i < 60; i++) { hall.update(1 / 60); hall.render(S.ctx); }
+  ok(S.store.get('worldTop5').includes('P3') && S.rec.texts.some((x) => x.s === 'YOU'), 'fetch refreshes cache and shows YOU tag');
+  // the real Music: mute -> no jingle / no crash without audio; title music starts only in Title
+  const { Music } = await import('../02_src/music.js');
+  Music.setMuted(true);
+  ok(!Music.playFanfare(), 'muted -> fanfare is a no-op'); Music.stopFanfare(0.1);
+  const noMusic = { ...S.eng, music: music }; // music mock without playFanfare
+  let thr2 = null; try { const h2 = new HallOfFameScene(noMusic, noop); h2.enter(); h2.update(1); h2.render(S.ctx); } catch (e) { thr2 = e; }
+  ok(!thr2, 'music without fanfare support does not crash the hall');
 }
 
 // ===== 8. fake DOM: input clamp, Enter, removal =====

@@ -1741,27 +1741,108 @@ export function drawStartPanel(ctx, d) {
 export function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
-  txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+  txt(ctx, 'PUBLIC BETA', r.x + r.w / 2, r.y + 3, 6, p.dim, 'center', { sp: 2, w: 500, a });
 }
 
-// タイトルの WORLD #1 バナー。box={x,y,w,h}（2行: y+0 と y+14）。d={name,score,title}。maxW1=1行目の最大幅
-export function drawWorldBanner(ctx, box, d, a, maxW1) {
+// タイトルの WORLD CHAMPION プレート。box={x,y,w,h}。d={name,score,title}。o={t:経過秒, you:閲覧者が本人}
+export function drawWorldBanner(ctx, box, d, a, o) {
+  o = o || {};
   const p = P();
-  const cx = box.x + box.w / 2;
-  const lim = Math.min(maxW1 || box.w, box.w);
-  const SZ = 10, SP = 2;
-  const lab = 'WORLD #1', sc = String(d.score);
-  const wOf = (str, size, sp) => { ctx.save(); ctx.font = fontStr(400, size); const w = ctx.measureText(str).width; ctx.restore(); return (w >= 0 ? w : 0) + sp * Math.max(0, Array.from(str).length - 1); };
-  const gap = 10;
-  const wl = wOf(lab, 8, 3), ws = wOf(sc, SZ, 1);
-  const name = ellipsize(ctx, d.name, SZ, 400, SP, Math.max(24, lim - wl - ws - gap * 2));
-  const wn = wOf(name, SZ, SP);
-  const total = wl + gap + wn + gap + ws;
-  let x = cx - total / 2;
-  txt(ctx, lab, x, box.y + 2, 8, p.dim, 'left', { sp: 3, w: 500, a });
-  x += wl + gap;
-  txt(ctx, name, x, box.y, SZ, p.fg, 'left', { sp: SP, w: 400, a });
-  x += wn + gap;
-  txt(ctx, sc, x, box.y, SZ, p.warn, 'left', { sp: 1, w: 500, a });
-  if (d.title) txt(ctx, '\u300c' + ellipsize(ctx, d.title, 8, 400, 1, lim - 20) + '\u300d', cx, box.y + 16, 8, p.mid, 'center', { sp: 1, w: 400, a: a * 0.95 });
+  const { x, y, w, h } = box;
+  const t = o.t || 0;
+  const breath = 0.5 + 0.5 * Math.sin(t * 1.6);
+  // 面（暗い半透明）と、ゆっくり呼吸する外側の淡い縁
+  ctx.save();
+  rr(ctx, x, y, w, h, 3); ctx.fillStyle = rgba('#05070d', 0.62 * a); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = rgba(p.warn, (0.05 + 0.07 * breath) * a);
+  rr(ctx, x - 1, y - 1, w + 2, h + 2, 4); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.warn, 0.85 * a);
+  rr(ctx, x, y, w, h, 3); ctx.stroke();
+  // 7秒周期の光の走り（上下の縁に沿って左→右）
+  const ph = (t % 7) / 1.4;
+  if (ph < 1) {
+    const sx = x - 30 + (w + 60) * ph;
+    const g = ctx.createLinearGradient(sx - 28, 0, sx + 28, 0);
+    g.addColorStop(0, rgba(p.hi, 0)); g.addColorStop(0.5, rgba(p.hi, 0.95 * a)); g.addColorStop(1, rgba(p.hi, 0));
+    ctx.strokeStyle = g; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x + 4, y); ctx.lineTo(x + w - 4, y); ctx.moveTo(x + 4, y + h); ctx.lineTo(x + w - 4, y + h); ctx.stroke();
+  }
+  // 角のティック
+  ctx.strokeStyle = rgba(p.warn, a); ctx.lineWidth = 1.5; ctx.beginPath();
+  for (const [cx, cy, dx, dy] of [[x - 2, y - 2, 1, 1], [x + w + 2, y - 2, -1, 1], [x - 2, y + h + 2, 1, -1], [x + w + 2, y + h + 2, -1, -1]]) {
+    ctx.moveTo(cx + dx * 6, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy * 6);
+  }
+  ctx.stroke();
+  // 王冠（ベクター）
+  const ix = x + 24, iy = y + h / 2 + 1;
+  ctx.strokeStyle = rgba(p.warn, a); ctx.fillStyle = rgba(p.warn, 0.16 * a); ctx.lineWidth = 1.4; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ix - 11, iy + 7); ctx.lineTo(ix - 12, iy - 5); ctx.lineTo(ix - 5, iy + 1); ctx.lineTo(ix, iy - 8);
+  ctx.lineTo(ix + 5, iy + 1); ctx.lineTo(ix + 12, iy - 5); ctx.lineTo(ix + 11, iy + 7); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ix - 10, iy + 10.5); ctx.lineTo(ix + 10, iy + 10.5); ctx.stroke();
+  ctx.fillStyle = rgba(p.hi, a);
+  for (const [dx, dy] of [[-12, -5], [0, -8], [12, -5]]) { ctx.beginPath(); ctx.arc(ix + dx, iy + dy, 1.4, 0, 6.2832); ctx.fill(); }
+  ctx.restore();
+  const tx = x + 48, rx = x + w - 12, avail = rx - tx;
+  txt(ctx, 'WORLD CHAMPION', tx, y + 5, 7, p.warn, 'left', { sp: 3, w: 500, a });
+  if (o.you) {
+    const yw = 26; pill(ctx, rx - yw, y + 3, yw, 12, rgba(p.warn, 0.22 * a), rgba(p.warn, 0.8 * a));
+    txt(ctx, 'YOU', rx - yw / 2, y + 5.5, 7, p.hi, 'center', { sp: 2, w: 600, a });
+  }
+  const sc = String(d.score);
+  ctx.save(); ctx.font = fontStr(500, 13); const ws = ctx.measureText(sc).width + sc.length; ctx.restore();
+  txt(ctx, sc, rx, y + 15, 13, p.warn, 'right', { sp: 1, w: 500, a });
+  const name = ellipsize(ctx, d.name, 13, 500, 1, Math.max(24, avail - ws - 10));
+  txt(ctx, name, tx, y + 15, 13, p.hi, 'left', { sp: 1, w: 500, a });
+  if (d.title) txt(ctx, '\u300c' + ellipsize(ctx, d.title, 9, 400, 1, avail - 14) + '\u300d', tx, y + 30, 9, p.mid, 'left', { sp: 1, w: 400, a: a * 0.95 });
+}
+
+// HALL OF FAME の WORLD TOP 5。view={rows,extra}。y0=見出しの y。e=入場アニメの経過秒（99=完了）。#5→#2 が順にスライドイン、最後に #1（小さなフラッシュ）
+export function drawWorldTop5(ctx, view, t, a, y0, e) {
+  const p = P();
+  const x = 55, w = 250;
+  e = e === undefined ? 99 : e;
+  const prog = (s) => Math.max(0, Math.min(1, (e - s) / 0.35));
+  const ease = (v) => 1 - (1 - v) * (1 - v);
+  txt(ctx, 'WORLD TOP 5', AW / 2, y0, 8, p.dim, 'center', { sp: 6, w: 500, a: a * 0.85 * prog(0.1) });
+  const r1 = view.rows[0];
+  const n = view.rows.length;
+  const s1 = 0.3 + 0.17 * Math.max(0, n - 1) + 0.15;   // #1 は最後
+  const v1 = prog(s1);
+  if (v1 > 0) {
+    ctx.save(); ctx.translate(0, (1 - ease(v1)) * 8);
+    drawWorldBanner(ctx, { x, y: y0 + 18, w, h: 40 }, r1, a * 0.95 * v1, { t, you: r1.you });
+    const fl = e - s1 - 0.25;   // 着地の小フラッシュ
+    if (fl > 0 && fl < 0.35) { rr(ctx, x, y0 + 18, w, 40, 3); ctx.fillStyle = rgba(p.hi, 0.35 * (1 - fl / 0.35) * a); ctx.fill(); }
+    ctx.restore();
+  }
+  let y = y0 + 66;
+  const rest = view.rows.slice(1);
+  rest.forEach((r, idx) => {
+    const al = ease(prog(0.3 + 0.17 * (rest.length - 1 - idx)));   // 下位から順に
+    if (al <= 0) { y += 16; return; }
+    const A = a * al;
+    ctx.save(); ctx.translate((1 - al) * -16, 0);
+    txt(ctx, String(r.rank), x + 4, y, 8, p.dim, 'left', { w: 500, a: A });
+    const sc = String(r.score), wsc = sc.length * 6 + 4;
+    const nm = ellipsize(ctx, r.name, 9, 400, 1, Math.max(20, w - 22 - wsc - (r.you ? 30 : 6) - 8));
+    txt(ctx, nm, x + 20, y - 0.5, 9, r.you ? p.hi : p.mid, 'left', { sp: 1, w: 400, a: A });
+    if (r.you) {
+      ctx.save(); ctx.font = fontStr(400, 9); const nw = ctx.measureText(nm).width + Math.max(0, Array.from(nm).length - 1); ctx.restore();
+      const yx = Math.min(x + 20 + nw + 6, x + w - wsc - 34);
+      pill(ctx, yx, y - 1, 24, 11, rgba(p.warn, 0.2 * A), rgba(p.warn, 0.7 * A));
+      txt(ctx, 'YOU', yx + 12, y + 1, 6, p.hi, 'center', { sp: 1.5, w: 600, a: A });
+    }
+    txt(ctx, sc, x + w - 4, y, 9, r.you ? p.warn : p.mid, 'right', { sp: 1, w: 500, a: A });
+    ctx.restore();
+    y += 16;
+  });
+  if (view.extra) {
+    const A = a * ease(prog(s1 + 0.3));
+    hair(ctx, x + 4, y + 1, x + w - 4, y + 1, p.fg, 0.14 * A);
+    y += 8;
+    txt(ctx, 'YOU  #' + view.extra.rank, x + 4, y, 9, p.warn, 'left', { sp: 2, w: 500, a: A });
+    txt(ctx, String(view.extra.score), x + w - 4, y, 9, p.warn, 'right', { sp: 1, w: 500, a: A });
+  }
 }

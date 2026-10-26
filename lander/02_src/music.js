@@ -747,6 +747,32 @@ export const Music = {
     const E = 60 / tempo;
     _musS.jingle = { tier, perfect: !!o.perfect, bus, E, tempo, t0: now + 0.03, next: now + 0.03, n: 0, log: [] };
   },
+  // HALL OF FAME 用ファンファーレ（約2秒、7/8＝2+2+3、F リディアン・ドミナント）。ミュート/音声無効/ctx無しは何もしない。タイトル曲とは別系統（stopFanfare で止める）
+  playFanfare() {
+    if (!_musEnsure()) return false;
+    if (_musS.muted || (_musS.audio && _musS.audio.enabled === false)) return false;
+    _musSweep();
+    Music.stopFanfare(0.05);
+    const ctx = _musS.ctx; const now = ctx.currentTime;
+    const bus = ctx.createGain(); bus.gain.value = 1; bus.connect(_musS.jbus);
+    const sc = { bus, send: null };
+    const E = 60 / 200, t0 = now + 0.05, hz = (s) => _musHz(_MUS_J_ROOT, s);
+    // 2+2+3: 群頭 e0,e2,e4。F-A-C と上行、#4(18)を経て b7(22)から主音の上のオクターブ(24)へ。最後は F-A-C の和音
+    _musBell(sc, t0, hz(-12), 1.0, 0.16, 2, true);
+    for (const [e, s, d, v] of [[0, 12, 0.5, 0.13], [2, 16, 0.5, 0.13], [4, 19, 0.45, 0.14], [5, 18, 0.45, 0.11], [6, 22, 0.35, 0.13]]) _musBell(sc, t0 + e * E, hz(s), d, v, 2, true);
+    const tf = t0 + 7 * E;   // 次小節の頭に着地（約2.1秒）
+    for (const [s, v] of [[12, 0.13], [16, 0.11], [19, 0.11], [24, 0.15], [-12, 0.15]]) _musBell(sc, tf, hz(s), 1.0, v, 2, true);
+    _musS.fanfare = { bus, endAt: tf + 1.1 };
+    _musS.dying.push({ nodes: [bus], killAt: tf + 1.4 });
+    return true;
+  },
+  stopFanfare(fadeSec = 0.2) {
+    const F = _musS.fanfare;
+    if (!F || !_musS.ctx) return;
+    _musS.fanfare = null;
+    const now = _musS.ctx.currentTime, f = Math.max(0.05, +fadeSec || 0);
+    try { F.bus.gain.cancelScheduledValues(now); F.bus.gain.setValueAtTime(F.bus.gain.value, now); F.bus.gain.linearRampToValueAtTime(0, now + f); } catch (_) { /* ignore */ }
+  },
   stopJingle(fadeSec = 0.3) {
     if (!_musS.ctx || !_musEnsure()) return;
     _musJStop(fadeSec);

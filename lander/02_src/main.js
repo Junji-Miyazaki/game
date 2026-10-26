@@ -1,6 +1,6 @@
 // LANDER — エントリポイント（単独ゲーム）
 import { Engine } from './core/engine.js';
-import { BootScene, TitleScene, restoreMute, fadeInScene } from './title.js';
+import { BootScene, HallOfFameScene, hallHasData, TitleScene, restoreMute, fadeInScene } from './title.js';
 import { Game } from './game.js';
 import { Music } from './music.js';
 
@@ -19,5 +19,7 @@ window.addEventListener('load', () => {
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。
-  engine.start(new BootScene(engine, toTitle));
+  // Boot → (データがあれば) HALL OF FAME（起動ごとに1回）→ Title
+  const toHall = () => engine.changeScene(hallHasData(engine) ? new HallOfFameScene(engine, toTitle) : new TitleScene(engine, startGame, { launch: true }));
+  engine.start(new BootScene(engine, toHall));
 });
