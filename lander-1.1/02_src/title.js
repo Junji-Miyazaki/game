@@ -7,7 +7,7 @@ import { APP_LABEL, APP_BUILD_TEXT } from './version.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner } from './art.js';
+import { txt, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner } from './art.js';
 
 import { stageInfo } from './bodies.js';
 import { WHATSNEW } from './whatsnew.js';
@@ -334,7 +334,7 @@ export class BootScene extends Scene {
   newsLayout() {
     const y0 = 470, n = WHATSNEW.lines.length;
     return { head: { x: W / 2 - 60, y: y0, w: 120, h: 9 }, pill: { x: W / 2 + 66, y: y0 - 2, w: 28, h: 13 },
-      lines: WHATSNEW.lines.map((_, i) => ({ x: 28, y: y0 + 18 + i * 15, w: W - 56, h: 9 })), bottom: y0 + 18 + (n - 1) * 15 + 9 };
+      lines: WHATSNEW.lines.map((_, i) => ({ x: 20, y: y0 + 18 + i * 18, w: W - 40, h: 12 })), bottom: y0 + 18 + (n - 1) * 18 + 12 };   // 日本語は 11px・行間18
   }
   isNewVersion() {
     let seen = null; try { seen = this.engine.storage.get('seenVersion', null); } catch (_) { /* ignore */ }
@@ -365,7 +365,7 @@ export class BootScene extends Scene {
       txt(ctx, 'NEW', nw.pill.x + nw.pill.w / 2, nw.pill.y + 3.5, 6, p.warn, 'center', { sp: 2, w: 600 }); ctx.restore();
     }
     for (let i = 0; i < WHATSNEW.lines.length; i++) {
-      txt(ctx, WHATSNEW.lines[i], W / 2, nw.lines[i].y, 8, p.fg, 'center', { sp: 2, w: 400, a: (fresh ? 0.8 : 0.5) * nf });
+      txt(ctx, ellipsize(ctx, WHATSNEW.lines[i], 11, 400, 0.5, nw.lines[i].w), W / 2, nw.lines[i].y, 11, p.fg, 'center', { sp: 0.5, w: 400, a: (fresh ? 0.85 : 0.6) * nf });
     }
     txt(ctx, APP_BUILD_TEXT, W / 2, nw.bottom + 16, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
   }

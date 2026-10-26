@@ -479,7 +479,7 @@ function landAndClear(extra = [], opts = {}) {
 // ---------- 12. WHAT'S NEW ----------
 {
   ok(WHATSNEW.version === '1.1.0-beta' && WHATSNEW.lines.length >= 3 && WHATSNEW.lines.length <= 5, 'whatsnew: version + 3-5 lines');
-  ok(WHATSNEW.lines.every(l => l.length <= 34 && /^[\x20-\x7e·]+$/.test(l)), 'lines <= 34 chars, English/ASCII: ' + WHATSNEW.lines.map(l => l.length).join(','));
+  ok(WHATSNEW.lines.every(l => l.length <= 24 && /[\u3040-\u30ff]/.test(l)), 'lines <= 24 chars, Japanese (user decision): ' + WHATSNEW.lines.map(l => l.length).join(','));
   const mk = (extra = []) => { const e = makeEngine(extra); const b = new BootScene(e, () => { e.started = true; }); return { e, b }; };
   const draw = (b, t = 5) => { b.t = t; const rec = { texts: [], tr: [] }; b.render(makeCtx(rec)); return rec.texts; };
   let { e, b } = mk();
