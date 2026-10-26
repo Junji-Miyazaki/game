@@ -2,12 +2,12 @@
 // 上位3件を表示し、RANKING ターゲットで上位10件の一覧を開閉する。
 import { Scene, W, H } from './core/engine.js';
 import { P } from './core/palette.js';
-import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts, WorldNet, sanitizeTitle, titleResultMessage, loadTop1, top1FromList, saveTop1, graphemes, TITLE_MAX, PIN_RE, pinLoginAndAdopt, pinSetFor, pinClearFor } from './ranking.js';
+import { loadRanking, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, setPlayerName, sanitizeName, loadCheckpoint, clearCheckpoint, loadProfiles, getActiveProfile, setActiveProfile, addProfile, removeProfile, PROFILE_MAX, getMaxStage, unlockedStarts, WorldNet, sanitizeTitle, titleResultMessage, loadTop1, top1FromList, saveWorldList, loadWorldList, worldTop5View, loadWorld, saveTop1, graphemes, TITLE_MAX, PIN_RE, pinLoginAndAdopt, pinSetFor, pinClearFor } from './ranking.js';
 import { APP_LABEL, APP_BUILD_TEXT } from './version.js';
 import { relayEnabled, checkName, deleteName } from './net.js';
 import { isDebug, debugLogoTap } from './debug.js';
 import { Music } from './music.js';
-import { txt, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner } from './art.js';
+import { txt, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawStartPanel, drawBetaTag, drawWorldBanner, drawWorldTop5 } from './art.js';
 
 import { stageInfo } from './bodies.js';
 import { WHATSNEW } from './whatsnew.js';
@@ -372,6 +372,77 @@ export class BootScene extends Scene {
   }
 }
 
+// 起動画面とタイトルの間に1回だけ挟む HALL OF FAME（WORLD TOP 5、v1.1 ボードのキャッシュ/取得のみ）。タップ/決定で即タイトルへ（タップは消費）。約4秒で自動遷移。
+export const HALL_SECS = 4;
+export function hallHasData(engine) {
+  try { return !!(engine && engine.storage && loadWorldList(engine.storage)); } catch (_) { return false; }
+}
+export class HallOfFameScene extends Scene {
+  constructor(engine, next) {
+    super(engine);
+    this.next = next;
+    this.isRoot = true;
+    this.t = 0; this.done = false; this._fan = false;
+    this.stars = [];
+    for (let i = 0; i < 46; i++) this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.15 ? 1.3 : 0.7, tw: Math.random() * 6.28 });
+    this.view = null; this.prevView = null; this.swapT = 1; this._sig = '';
+    try {
+      const st = engine && engine.storage; this.me = '';
+      if (st) {
+        const ap = getActiveProfile(st); this.me = ap ? ap.name : (getPlayerName(st) || '');
+        this.view = worldTop5View(loadWorldList(st), this.me); this._sig = JSON.stringify(this.view);
+        let pr = null; try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { pr = null; }
+        if (pr) pr.then((l) => {
+          if (this.done || !Array.isArray(l)) return;
+          saveWorldList(st, l);
+          const v = worldTop5View(loadWorldList(st), this.me), sig = JSON.stringify(v);
+          if (!v || sig === this._sig) return;
+          this.prevView = this.view; this.view = v; this._sig = sig; this.swapT = 0;
+        }, () => {});
+      }
+    } catch (_) { /* ignore */ }
+  }
+  enter() {
+    const m = musicOf(this.engine);
+    try { if (typeof m.playFanfare === 'function') { m.playFanfare(); this._fan = true; } } catch (_) { /* ignore */ }
+  }
+  _go() {
+    if (this.done) return;
+    this.done = true;
+    try { const m = musicOf(this.engine); if (this._fan && typeof m.stopFanfare === 'function') m.stopFanfare(0.15); } catch (_) { /* ignore */ }
+    if (typeof this.next === 'function') this.next();
+  }
+  onInput(action, data) {
+    if (this.done) return;
+    if (data && data.repeat) return;
+    if (action === 'tap' || action === 'confirm' || action === 'back') this._go();   // 消費してタイトルへ（ゲームは始めない）
+  }
+  update(dt) {
+    const d = dt > 0 ? dt : 0.016;
+    this.t += d;
+    if (this.swapT < 1) this.swapT = Math.min(1, this.swapT + d / 0.6);
+    if (this.t >= HALL_SECS) this._go();
+  }
+  render(ctx) {
+    const p = P();
+    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
+    for (const s of this.stars) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.18 + 0.32 * Math.abs(Math.sin(this.t * 0.6 + s.tw))));
+      ctx.fillStyle = p.fg; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const fi = Math.min(1, this.t / 0.5);
+    const outA = Math.min(1, Math.max(0, (HALL_SECS - this.t) / 0.4));   // 末尾でフェードアウト
+    txt(ctx, 'HALL OF FAME', W / 2, 150, 18, p.hi, 'center', { sp: 9, w: 300, a: 0.9 * fi * outA });
+    if (this.view) {
+      const k = this.swapT;
+      drawWorldTop5(ctx, this.view, this.t, outA * (this.prevView ? k : 1), 214, this.prevView ? 99 : this.t);
+      if (this.prevView && k < 1) drawWorldTop5(ctx, this.prevView, this.t, outA * (1 - k), 214, 99);
+    }
+    txt(ctx, 'TAP TO CONTINUE', W / 2, 560, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.55 * fi * outA });
+  }
+}
+
 export class TitleScene extends Scene {
   // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
   constructor(engine, startGame, opts) {
@@ -393,13 +464,13 @@ export class TitleScene extends Scene {
     // タップ対象（互いに重ならない。8pxグリッド）
     this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
     this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
-    this.betaBox = { x: W / 2 - 44, y: 114, w: 88, h: 16 };        // PUBLIC BETA（タップはロゴタップ扱い）
+    this.betaBox = { x: W / 2 - 38, y: 110, w: 76, h: 12 };        // BETA v1.1 ラベル（タップはロゴタップ扱い）
     this.changeBtn = { x: W / 2 - 40, y: 436, w: 80, h: 20 };      // PILOTS（旧 CHANGE。プロフィール一覧を開く）
     this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
     this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
     this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
-    this.worldBox = { x: 40, y: 134, w: 280, h: 28 };               // WORLD #1 バナー（1行目 y134、称号 y150。ロゴ/BETA(〜130)とロケット先端(164)の間）
-    this.titleBtn = { x: 284, y: 132, w: 68, h: 22 };               // SET TITLE（現チャンピオンのみ。バナー右端）
+    this.worldBox = { x: 55, y: 124, w: 250, h: 40 };               // WORLD CHAMPION プレート（タップで WORLD ランキング。ロゴ/BETA(〜122)とロケット先端(164)の間）
+    this.titleBtn = { x: 224, y: 164, w: 84, h: 32 };               // SET TITLE（現チャンピオンのみ。プレート直下の右寄り。当たり判定 h32、見た目はその上部 14px）
     this.top1 = null;       // { name, score, title, at } 既知の WORLD #1
     this._topTok = 0; this._champ = null;
     this.cp = null;
@@ -429,7 +500,8 @@ export class TitleScene extends Scene {
     try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { return Promise.resolve(); }
     return pr.then((list) => {
       if (tk !== this._topTok) return;
-      if (!Array.isArray(list)) { if (WorldNet.updating) this.top1 = null; return; }   // ボード未対応の間は別の版の #1 を出さない
+      if (!Array.isArray(list)) return;   // 未対応/不明の間は v1.1 のキャッシュ(あれば)のまま。v1.0 の #1 は loadTop1 が弾く
+      saveWorldList(this.engine.storage, list);
       this.top1 = top1FromList(this.engine.storage, list);
     }, () => {});
   }
@@ -694,10 +766,16 @@ export class TitleScene extends Scene {
         return;
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
-      if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
+      if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64, this.engine.storage)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
       if (this.showRank) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; return; }
       if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
+      if (this.top1 && this._hit(this.worldBox, data) && !this.launch) {   // プレート: WORLD タブでランキングを開く（ゲームは開始しない）
+        musicOf(this.engine).sfx.uiTap();
+        this.showRank = true; this.tabs = createRankTabs(); this.tabs.mode = 'world';
+        if (relayEnabled()) loadWorld(this.tabs, this.engine.storage);
+        return;
+      }
       if (this._hit(this.logoBox, data) || this._hit(this.betaBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
@@ -806,11 +884,11 @@ export class TitleScene extends Scene {
     }
     if (ui > 0 && this.top1) {
       const champ = this._isChampion();
-      drawWorldBanner(ctx, this.worldBox, this.top1, ui * 0.9, champ ? 2 * (this.titleBtn.x - 8 - (this.worldBox.x + this.worldBox.w / 2)) : this.worldBox.w);   // 中央揃えのまま SET TITLE に食い込まない幅
+      drawWorldBanner(ctx, this.worldBox, this.top1, ui * 0.95, { t: this.t, you: champ });
       if (champ) {
         const tb = this.titleBtn;
-        pill(ctx, tb.x, tb.y + 2, tb.w, 18, rgba(p.warn, 0.06 * ui), rgba(p.warn, 0.4 * ui));
-        txt(ctx, 'SET TITLE', tb.x + tb.w / 2, tb.y + 7, 7, p.warn, 'center', { sp: 2, w: 500, a: ui });
+        pill(ctx, tb.x, tb.y + 3, tb.w, 14, rgba('#05070d', 0.62 * ui), rgba(p.warn, 0.6 * ui));
+        txt(ctx, 'SET TITLE', tb.x + tb.w / 2, tb.y + 6.5, 7, p.warn, 'center', { sp: 2, w: 500, a: ui });
       }
     }
     if (ui > 0) {

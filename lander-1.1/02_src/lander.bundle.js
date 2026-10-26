@@ -1296,12 +1296,13 @@ function loadTop1(storage) {
     const raw = storage.get(TOP1_KEY, null);
     if (!raw) return null;
     const o = JSON.parse(raw);
-    if (!o || typeof o.name !== 'string' || !o.name || !Number.isFinite(o.score)) return null;
+    if (!o || o.board !== APP_BOARD) return null;   // v1.1 の取得で書いたものだけ。印の無い値（v1.0 から引き継いだ旧 #1 など）は無視
+    if (typeof o.name !== 'string' || !o.name || !Number.isFinite(o.score)) return null;
     return { name: o.name, score: o.score, title: cleanTitleField(o.title), at: Number.isFinite(o.at) ? o.at : 0 };
   } catch (_) { return null; }
 }
 function saveTop1(storage, row) {
-  try { storage.set(TOP1_KEY, row ? JSON.stringify({ name: row.name, score: row.score, title: row.title || '', at: row.at || Date.now() }) : ''); return true; } catch (_) { return false; }
+  try { storage.set(TOP1_KEY, row ? JSON.stringify({ name: row.name, score: row.score, title: row.title || '', at: row.at || Date.now(), board: APP_BOARD }) : ''); return true; } catch (_) { return false; }
 }
 // 取得した上位から #1 を取り出してキャッシュ更新。空配列=サーバー上に記録なし→消去。返り値は新しい #1 または null
 function top1FromList(storage, list) {
@@ -1309,6 +1310,39 @@ function top1FromList(storage, list) {
   const row = r ? { name: String(r.name), score: r.score, title: cleanTitleField(r.title), at: Date.now() } : null;
   saveTop1(storage, row);
   return row;
+}
+
+// ---- WORLD TOP のキャッシュ（HALL OF FAME で即表示／YOU #N 用に上位~100件）。v1.1 ボードの取得結果だけ（board 印つき）----
+const LIST_KEY = 'worldTop5', LIST_MAX = 100;
+function saveWorldList(storage, list) {
+  try {
+    if (!storage || !Array.isArray(list)) return false;
+    const rows = list.filter(validEntry).slice(0, LIST_MAX).map((e) => ({ name: String(e.name), score: e.score, title: cleanTitleField(e.title) }));
+    storage.set(LIST_KEY, JSON.stringify({ at: Date.now(), board: APP_BOARD, rows }));
+    return true;
+  } catch (_) { return false; }
+}
+function loadWorldList(storage) {
+  try {
+    const raw = storage && storage.get(LIST_KEY, null);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || o.board !== APP_BOARD || !Array.isArray(o.rows)) return null;
+    const rows = o.rows.filter((e) => e && typeof e.name === 'string' && e.name && Number.isFinite(e.score)).slice(0, LIST_MAX)
+      .map((e) => ({ name: e.name, score: e.score, title: cleanTitleField(e.title) }));
+    return rows.length ? rows : null;
+  } catch (_) { return null; }
+}
+// 表示用: { rows:[{rank,name,score,title,you}] (最大5), extra:{rank,score}|null (5位圏外の自分) }。list 空なら null
+function worldTop5View(list, myName) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const rows = list.slice(0, 5).map((e, i) => ({ rank: i + 1, name: e.name, score: e.score, title: e.title || '', you: !!myName && e.name === myName }));
+  let extra = null;
+  if (myName && !rows.some((r) => r.you)) {
+    const i = list.findIndex((e) => e.name === myName);
+    if (i >= 5) extra = { rank: i + 1, score: list[i].score };
+  }
+  return { rows, extra };
 }
 const RANK_KEY = 'ranking';
 
@@ -1383,24 +1417,24 @@ function rankTabRects(x, y, w) {
 const inRect = (r, px, py) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 
 // タップがタブに当たったか処理する。当たったら true（WORLD 選択時は取得を開始）
-function rankTabsTap(tabs, x, y, px, py, w) {
+function rankTabsTap(tabs, x, y, px, py, w, storage) {
   if (!relayEnabled()) return false;
   const r = rankTabRects(x, y, w);
   if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
   if (inRect(r.world, px, py)) {
     tabs.mode = 'world';
-    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs);
+    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
     return true;
   }
   return false;
 }
 
-function loadWorld(tabs) {
+function loadWorld(tabs, storage) {
   tabs.status = 'loading';
   const tk = ++tabs.token;
   return WorldNet.fetchTop().then((list) => {
     if (tk !== tabs.token) return;
-    if (list) { tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
+    if (list) { if (storage) saveWorldList(storage, list); tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
     else tabs.status = WorldNet.updating ? 'updating' : 'offline';
   });
 }
@@ -3594,29 +3628,110 @@ function drawStartPanel(ctx, d) {
 function drawBetaTag(ctx, r, a) {
   const p = P();
   pill(ctx, r.x, r.y, r.w, r.h, null, rgba(p.fg, 0.16 * a));
-  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 4, 7, p.dim, 'center', { sp: 3, w: 500, a });
+  txt(ctx, APP_LABEL, r.x + r.w / 2, r.y + 3, 6, p.dim, 'center', { sp: 2, w: 500, a });
 }
 
-// タイトルの WORLD #1 バナー。box={x,y,w,h}（2行: y+0 と y+14）。d={name,score,title}。maxW1=1行目の最大幅
-function drawWorldBanner(ctx, box, d, a, maxW1) {
+// タイトルの WORLD CHAMPION プレート。box={x,y,w,h}。d={name,score,title}。o={t:経過秒, you:閲覧者が本人}
+function drawWorldBanner(ctx, box, d, a, o) {
+  o = o || {};
   const p = P();
-  const cx = box.x + box.w / 2;
-  const lim = Math.min(maxW1 || box.w, box.w);
-  const SZ = 10, SP = 2;
-  const lab = 'WORLD #1', sc = String(d.score);
-  const wOf = (str, size, sp) => { ctx.save(); ctx.font = fontStr(400, size); const w = ctx.measureText(str).width; ctx.restore(); return (w >= 0 ? w : 0) + sp * Math.max(0, Array.from(str).length - 1); };
-  const gap = 10;
-  const wl = wOf(lab, 8, 3), ws = wOf(sc, SZ, 1);
-  const name = ellipsize(ctx, d.name, SZ, 400, SP, Math.max(24, lim - wl - ws - gap * 2));
-  const wn = wOf(name, SZ, SP);
-  const total = wl + gap + wn + gap + ws;
-  let x = cx - total / 2;
-  txt(ctx, lab, x, box.y + 2, 8, p.dim, 'left', { sp: 3, w: 500, a });
-  x += wl + gap;
-  txt(ctx, name, x, box.y, SZ, p.fg, 'left', { sp: SP, w: 400, a });
-  x += wn + gap;
-  txt(ctx, sc, x, box.y, SZ, p.warn, 'left', { sp: 1, w: 500, a });
-  if (d.title) txt(ctx, '\u300c' + ellipsize(ctx, d.title, 8, 400, 1, lim - 20) + '\u300d', cx, box.y + 16, 8, p.mid, 'center', { sp: 1, w: 400, a: a * 0.95 });
+  const { x, y, w, h } = box;
+  const t = o.t || 0;
+  const breath = 0.5 + 0.5 * Math.sin(t * 1.6);
+  // 面（暗い半透明）と、ゆっくり呼吸する外側の淡い縁
+  ctx.save();
+  rr(ctx, x, y, w, h, 3); ctx.fillStyle = rgba('#05070d', 0.62 * a); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = rgba(p.warn, (0.05 + 0.07 * breath) * a);
+  rr(ctx, x - 1, y - 1, w + 2, h + 2, 4); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.warn, 0.85 * a);
+  rr(ctx, x, y, w, h, 3); ctx.stroke();
+  // 7秒周期の光の走り（上下の縁に沿って左→右）
+  const ph = (t % 7) / 1.4;
+  if (ph < 1) {
+    const sx = x - 30 + (w + 60) * ph;
+    const g = ctx.createLinearGradient(sx - 28, 0, sx + 28, 0);
+    g.addColorStop(0, rgba(p.hi, 0)); g.addColorStop(0.5, rgba(p.hi, 0.95 * a)); g.addColorStop(1, rgba(p.hi, 0));
+    ctx.strokeStyle = g; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x + 4, y); ctx.lineTo(x + w - 4, y); ctx.moveTo(x + 4, y + h); ctx.lineTo(x + w - 4, y + h); ctx.stroke();
+  }
+  // 角のティック
+  ctx.strokeStyle = rgba(p.warn, a); ctx.lineWidth = 1.5; ctx.beginPath();
+  for (const [cx, cy, dx, dy] of [[x - 2, y - 2, 1, 1], [x + w + 2, y - 2, -1, 1], [x - 2, y + h + 2, 1, -1], [x + w + 2, y + h + 2, -1, -1]]) {
+    ctx.moveTo(cx + dx * 6, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy * 6);
+  }
+  ctx.stroke();
+  // 王冠（ベクター）
+  const ix = x + 24, iy = y + h / 2 + 1;
+  ctx.strokeStyle = rgba(p.warn, a); ctx.fillStyle = rgba(p.warn, 0.16 * a); ctx.lineWidth = 1.4; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ix - 11, iy + 7); ctx.lineTo(ix - 12, iy - 5); ctx.lineTo(ix - 5, iy + 1); ctx.lineTo(ix, iy - 8);
+  ctx.lineTo(ix + 5, iy + 1); ctx.lineTo(ix + 12, iy - 5); ctx.lineTo(ix + 11, iy + 7); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ix - 10, iy + 10.5); ctx.lineTo(ix + 10, iy + 10.5); ctx.stroke();
+  ctx.fillStyle = rgba(p.hi, a);
+  for (const [dx, dy] of [[-12, -5], [0, -8], [12, -5]]) { ctx.beginPath(); ctx.arc(ix + dx, iy + dy, 1.4, 0, 6.2832); ctx.fill(); }
+  ctx.restore();
+  const tx = x + 48, rx = x + w - 12, avail = rx - tx;
+  txt(ctx, 'WORLD CHAMPION', tx, y + 5, 7, p.warn, 'left', { sp: 3, w: 500, a });
+  if (o.you) {
+    const yw = 26; pill(ctx, rx - yw, y + 3, yw, 12, rgba(p.warn, 0.22 * a), rgba(p.warn, 0.8 * a));
+    txt(ctx, 'YOU', rx - yw / 2, y + 5.5, 7, p.hi, 'center', { sp: 2, w: 600, a });
+  }
+  const sc = String(d.score);
+  ctx.save(); ctx.font = fontStr(500, 13); const ws = ctx.measureText(sc).width + sc.length; ctx.restore();
+  txt(ctx, sc, rx, y + 15, 13, p.warn, 'right', { sp: 1, w: 500, a });
+  const name = ellipsize(ctx, d.name, 13, 500, 1, Math.max(24, avail - ws - 10));
+  txt(ctx, name, tx, y + 15, 13, p.hi, 'left', { sp: 1, w: 500, a });
+  if (d.title) txt(ctx, '\u300c' + ellipsize(ctx, d.title, 9, 400, 1, avail - 14) + '\u300d', tx, y + 30, 9, p.mid, 'left', { sp: 1, w: 400, a: a * 0.95 });
+}
+
+// HALL OF FAME の WORLD TOP 5。view={rows,extra}。y0=見出しの y。e=入場アニメの経過秒（99=完了）。#5→#2 が順にスライドイン、最後に #1（小さなフラッシュ）
+function drawWorldTop5(ctx, view, t, a, y0, e) {
+  const p = P();
+  const x = 55, w = 250;
+  e = e === undefined ? 99 : e;
+  const prog = (s) => Math.max(0, Math.min(1, (e - s) / 0.35));
+  const ease = (v) => 1 - (1 - v) * (1 - v);
+  txt(ctx, 'WORLD TOP 5', AW / 2, y0, 8, p.dim, 'center', { sp: 6, w: 500, a: a * 0.85 * prog(0.1) });
+  const r1 = view.rows[0];
+  const n = view.rows.length;
+  const s1 = 0.3 + 0.17 * Math.max(0, n - 1) + 0.15;   // #1 は最後
+  const v1 = prog(s1);
+  if (v1 > 0) {
+    ctx.save(); ctx.translate(0, (1 - ease(v1)) * 8);
+    drawWorldBanner(ctx, { x, y: y0 + 18, w, h: 40 }, r1, a * 0.95 * v1, { t, you: r1.you });
+    const fl = e - s1 - 0.25;   // 着地の小フラッシュ
+    if (fl > 0 && fl < 0.35) { rr(ctx, x, y0 + 18, w, 40, 3); ctx.fillStyle = rgba(p.hi, 0.35 * (1 - fl / 0.35) * a); ctx.fill(); }
+    ctx.restore();
+  }
+  let y = y0 + 66;
+  const rest = view.rows.slice(1);
+  rest.forEach((r, idx) => {
+    const al = ease(prog(0.3 + 0.17 * (rest.length - 1 - idx)));   // 下位から順に
+    if (al <= 0) { y += 16; return; }
+    const A = a * al;
+    ctx.save(); ctx.translate((1 - al) * -16, 0);
+    txt(ctx, String(r.rank), x + 4, y, 8, p.dim, 'left', { w: 500, a: A });
+    const sc = String(r.score), wsc = sc.length * 6 + 4;
+    const nm = ellipsize(ctx, r.name, 9, 400, 1, Math.max(20, w - 22 - wsc - (r.you ? 30 : 6) - 8));
+    txt(ctx, nm, x + 20, y - 0.5, 9, r.you ? p.hi : p.mid, 'left', { sp: 1, w: 400, a: A });
+    if (r.you) {
+      ctx.save(); ctx.font = fontStr(400, 9); const nw = ctx.measureText(nm).width + Math.max(0, Array.from(nm).length - 1); ctx.restore();
+      const yx = Math.min(x + 20 + nw + 6, x + w - wsc - 34);
+      pill(ctx, yx, y - 1, 24, 11, rgba(p.warn, 0.2 * A), rgba(p.warn, 0.7 * A));
+      txt(ctx, 'YOU', yx + 12, y + 1, 6, p.hi, 'center', { sp: 1.5, w: 600, a: A });
+    }
+    txt(ctx, sc, x + w - 4, y, 9, r.you ? p.warn : p.mid, 'right', { sp: 1, w: 500, a: A });
+    ctx.restore();
+    y += 16;
+  });
+  if (view.extra) {
+    const A = a * ease(prog(s1 + 0.3));
+    hair(ctx, x + 4, y + 1, x + w - 4, y + 1, p.fg, 0.14 * A);
+    y += 8;
+    txt(ctx, 'YOU  #' + view.extra.rank, x + 4, y, 9, p.warn, 'left', { sp: 2, w: 500, a: A });
+    txt(ctx, String(view.extra.score), x + w - 4, y, 9, p.warn, 'right', { sp: 1, w: 500, a: A });
+  }
 }
 
 
@@ -3642,7 +3757,7 @@ const _musS = {
   voices: [],   // 一過性ボイス {nodes, end, kind}
   scenes: [],   // 稼働中/フェードアウト中のシーン
   cur: null, curId: null,
-  jingle: null, dying: [], jbus: null, pulse: null,
+  jingle: null, dying: [], jbus: null, pulse: null, fanfare: null,
 };
 
 const _musHas = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(_musSCENES, id);
@@ -3657,7 +3772,7 @@ function _musEnsure() {
   if (_musS.ctx === ctx) return true;
   // 新しいctx（または初回）: グラフを作り直す
   _musS.ctx = ctx; _musS.voices = []; _musS.scenes = []; _musS.cur = null; _musS.curId = null;
-  _musS.jingle = null; _musS.dying = []; _musS.pulse = null;
+  _musS.jingle = null; _musS.dying = []; _musS.pulse = null; _musS.fanfare = null;
   const master = ctx.createGain();
   master.gain.value = _musS.muted ? 0 : 1;
   master.connect(ctx.destination);
@@ -4381,6 +4496,32 @@ const Music = {
     const E = 60 / tempo;
     _musS.jingle = { tier, perfect: !!o.perfect, bus, E, tempo, t0: now + 0.03, next: now + 0.03, n: 0, log: [] };
   },
+  // HALL OF FAME 用ファンファーレ（約2秒、7/8＝2+2+3、F リディアン・ドミナント）。ミュート/音声無効/ctx無しは何もしない。タイトル曲とは別系統（stopFanfare で止める）
+  playFanfare() {
+    if (!_musEnsure()) return false;
+    if (_musS.muted || (_musS.audio && _musS.audio.enabled === false)) return false;
+    _musSweep();
+    Music.stopFanfare(0.05);
+    const ctx = _musS.ctx; const now = ctx.currentTime;
+    const bus = ctx.createGain(); bus.gain.value = 1; bus.connect(_musS.jbus);
+    const sc = { bus, send: null };
+    const E = 60 / 200, t0 = now + 0.05, hz = (s) => _musHz(_MUS_J_ROOT, s);
+    // 2+2+3: 群頭 e0,e2,e4。F-A-C と上行、#4(18)を経て b7(22)から主音の上のオクターブ(24)へ。最後は F-A-C の和音
+    _musBell(sc, t0, hz(-12), 1.0, 0.16, 2, true);
+    for (const [e, s, d, v] of [[0, 12, 0.5, 0.13], [2, 16, 0.5, 0.13], [4, 19, 0.45, 0.14], [5, 18, 0.45, 0.11], [6, 22, 0.35, 0.13]]) _musBell(sc, t0 + e * E, hz(s), d, v, 2, true);
+    const tf = t0 + 7 * E;   // 次小節の頭に着地（約2.1秒）
+    for (const [s, v] of [[12, 0.13], [16, 0.11], [19, 0.11], [24, 0.15], [-12, 0.15]]) _musBell(sc, tf, hz(s), 1.0, v, 2, true);
+    _musS.fanfare = { bus, endAt: tf + 1.1 };
+    _musS.dying.push({ nodes: [bus], killAt: tf + 1.4 });
+    return true;
+  },
+  stopFanfare(fadeSec = 0.2) {
+    const F = _musS.fanfare;
+    if (!F || !_musS.ctx) return;
+    _musS.fanfare = null;
+    const now = _musS.ctx.currentTime, f = Math.max(0.05, +fadeSec || 0);
+    try { F.bus.gain.cancelScheduledValues(now); F.bus.gain.setValueAtTime(F.bus.gain.value, now); F.bus.gain.linearRampToValueAtTime(0, now + f); } catch (_) { /* ignore */ }
+  },
   stopJingle(fadeSec = 0.3) {
     if (!_musS.ctx || !_musEnsure()) return;
     _musJStop(fadeSec);
@@ -4935,6 +5076,77 @@ class BootScene extends Scene {
   }
 }
 
+// 起動画面とタイトルの間に1回だけ挟む HALL OF FAME（WORLD TOP 5、v1.1 ボードのキャッシュ/取得のみ）。タップ/決定で即タイトルへ（タップは消費）。約4秒で自動遷移。
+const HALL_SECS = 4;
+function hallHasData(engine) {
+  try { return !!(engine && engine.storage && loadWorldList(engine.storage)); } catch (_) { return false; }
+}
+class HallOfFameScene extends Scene {
+  constructor(engine, next) {
+    super(engine);
+    this.next = next;
+    this.isRoot = true;
+    this.t = 0; this.done = false; this._fan = false;
+    this.stars = [];
+    for (let i = 0; i < 46; i++) this.stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() < 0.15 ? 1.3 : 0.7, tw: Math.random() * 6.28 });
+    this.view = null; this.prevView = null; this.swapT = 1; this._sig = '';
+    try {
+      const st = engine && engine.storage; this.me = '';
+      if (st) {
+        const ap = getActiveProfile(st); this.me = ap ? ap.name : (getPlayerName(st) || '');
+        this.view = worldTop5View(loadWorldList(st), this.me); this._sig = JSON.stringify(this.view);
+        let pr = null; try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { pr = null; }
+        if (pr) pr.then((l) => {
+          if (this.done || !Array.isArray(l)) return;
+          saveWorldList(st, l);
+          const v = worldTop5View(loadWorldList(st), this.me), sig = JSON.stringify(v);
+          if (!v || sig === this._sig) return;
+          this.prevView = this.view; this.view = v; this._sig = sig; this.swapT = 0;
+        }, () => {});
+      }
+    } catch (_) { /* ignore */ }
+  }
+  enter() {
+    const m = musicOf(this.engine);
+    try { if (typeof m.playFanfare === 'function') { m.playFanfare(); this._fan = true; } } catch (_) { /* ignore */ }
+  }
+  _go() {
+    if (this.done) return;
+    this.done = true;
+    try { const m = musicOf(this.engine); if (this._fan && typeof m.stopFanfare === 'function') m.stopFanfare(0.15); } catch (_) { /* ignore */ }
+    if (typeof this.next === 'function') this.next();
+  }
+  onInput(action, data) {
+    if (this.done) return;
+    if (data && data.repeat) return;
+    if (action === 'tap' || action === 'confirm' || action === 'back') this._go();   // 消費してタイトルへ（ゲームは始めない）
+  }
+  update(dt) {
+    const d = dt > 0 ? dt : 0.016;
+    this.t += d;
+    if (this.swapT < 1) this.swapT = Math.min(1, this.swapT + d / 0.6);
+    if (this.t >= HALL_SECS) this._go();
+  }
+  render(ctx) {
+    const p = P();
+    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
+    for (const s of this.stars) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, 0.18 + 0.32 * Math.abs(Math.sin(this.t * 0.6 + s.tw))));
+      ctx.fillStyle = p.fg; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const fi = Math.min(1, this.t / 0.5);
+    const outA = Math.min(1, Math.max(0, (HALL_SECS - this.t) / 0.4));   // 末尾でフェードアウト
+    txt(ctx, 'HALL OF FAME', W / 2, 150, 18, p.hi, 'center', { sp: 9, w: 300, a: 0.9 * fi * outA });
+    if (this.view) {
+      const k = this.swapT;
+      drawWorldTop5(ctx, this.view, this.t, outA * (this.prevView ? k : 1), 214, this.prevView ? 99 : this.t);
+      if (this.prevView && k < 1) drawWorldTop5(ctx, this.prevView, this.t, outA * (1 - k), 214, 99);
+    }
+    txt(ctx, 'TAP TO CONTINUE', W / 2, 560, 7, p.dim, 'center', { sp: 5, w: 400, a: 0.55 * fi * outA });
+  }
+}
+
 class TitleScene extends Scene {
   // opts.launch=true で START 後に約3.5秒の発射シーケンスを挟む（main.js が指定）。省略時は即開始（従来動作）。
   constructor(engine, startGame, opts) {
@@ -4956,13 +5168,13 @@ class TitleScene extends Scene {
     // タップ対象（互いに重ならない。8pxグリッド）
     this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
     this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
-    this.betaBox = { x: W / 2 - 44, y: 114, w: 88, h: 16 };        // PUBLIC BETA（タップはロゴタップ扱い）
+    this.betaBox = { x: W / 2 - 38, y: 110, w: 76, h: 12 };        // BETA v1.1 ラベル（タップはロゴタップ扱い）
     this.changeBtn = { x: W / 2 - 40, y: 436, w: 80, h: 20 };      // PILOTS（旧 CHANGE。プロフィール一覧を開く）
     this.startBtn = { x: W / 2 - 90, y: 472, w: 180, h: 44 };
     this.continueBtn = { x: W / 2 - 110, y: 464, w: 220, h: 48 };  // チェックポイントがある時、START の代わり
     this.newBtn = { x: W / 2 - 70, y: 520, w: 140, h: 32 };
-    this.worldBox = { x: 40, y: 134, w: 280, h: 28 };               // WORLD #1 バナー（1行目 y134、称号 y150。ロゴ/BETA(〜130)とロケット先端(164)の間）
-    this.titleBtn = { x: 284, y: 132, w: 68, h: 22 };               // SET TITLE（現チャンピオンのみ。バナー右端）
+    this.worldBox = { x: 55, y: 124, w: 250, h: 40 };               // WORLD CHAMPION プレート（タップで WORLD ランキング。ロゴ/BETA(〜122)とロケット先端(164)の間）
+    this.titleBtn = { x: 224, y: 164, w: 84, h: 32 };               // SET TITLE（現チャンピオンのみ。プレート直下の右寄り。当たり判定 h32、見た目はその上部 14px）
     this.top1 = null;       // { name, score, title, at } 既知の WORLD #1
     this._topTok = 0; this._champ = null;
     this.cp = null;
@@ -4992,7 +5204,8 @@ class TitleScene extends Scene {
     try { pr = Promise.resolve(WorldNet.fetchTop()); } catch (_) { return Promise.resolve(); }
     return pr.then((list) => {
       if (tk !== this._topTok) return;
-      if (!Array.isArray(list)) { if (WorldNet.updating) this.top1 = null; return; }   // ボード未対応の間は別の版の #1 を出さない
+      if (!Array.isArray(list)) return;   // 未対応/不明の間は v1.1 のキャッシュ(あれば)のまま。v1.0 の #1 は loadTop1 が弾く
+      saveWorldList(this.engine.storage, list);
       this.top1 = top1FromList(this.engine.storage, list);
     }, () => {});
   }
@@ -5257,10 +5470,16 @@ class TitleScene extends Scene {
         return;
       }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
-      if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64)) return;
+      if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64, this.engine.storage)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
       if (this.showRank) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; return; }
       if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
+      if (this.top1 && this._hit(this.worldBox, data) && !this.launch) {   // プレート: WORLD タブでランキングを開く（ゲームは開始しない）
+        musicOf(this.engine).sfx.uiTap();
+        this.showRank = true; this.tabs = createRankTabs(); this.tabs.mode = 'world';
+        if (relayEnabled()) loadWorld(this.tabs, this.engine.storage);
+        return;
+      }
       if (this._hit(this.logoBox, data) || this._hit(this.betaBox, data)) {
         // ロゴ5連打（2秒以内）でデバッグ有効化。ロゴタップではゲームを開始しない
         if (debugLogoTap(data.now)) this.toastT = 2;
@@ -5369,11 +5588,11 @@ class TitleScene extends Scene {
     }
     if (ui > 0 && this.top1) {
       const champ = this._isChampion();
-      drawWorldBanner(ctx, this.worldBox, this.top1, ui * 0.9, champ ? 2 * (this.titleBtn.x - 8 - (this.worldBox.x + this.worldBox.w / 2)) : this.worldBox.w);   // 中央揃えのまま SET TITLE に食い込まない幅
+      drawWorldBanner(ctx, this.worldBox, this.top1, ui * 0.95, { t: this.t, you: champ });
       if (champ) {
         const tb = this.titleBtn;
-        pill(ctx, tb.x, tb.y + 2, tb.w, 18, rgba(p.warn, 0.06 * ui), rgba(p.warn, 0.4 * ui));
-        txt(ctx, 'SET TITLE', tb.x + tb.w / 2, tb.y + 7, 7, p.warn, 'center', { sp: 2, w: 500, a: ui });
+        pill(ctx, tb.x, tb.y + 3, tb.w, 14, rgba('#05070d', 0.62 * ui), rgba(p.warn, 0.6 * ui));
+        txt(ctx, 'SET TITLE', tb.x + tb.w / 2, tb.y + 6.5, 7, p.warn, 'center', { sp: 2, w: 500, a: ui });
       }
     }
     if (ui > 0) {
@@ -5446,7 +5665,8 @@ class TitleScene extends Scene {
 // 引き継ぐのは「パイロットの身元」だけ：プロフィール（名前＋所有キー）・選択中の名前・チャンピオン称号のキャッシュ・ミュート。
 // 進行(progress)・チェックポイント・ステージ開始・ローカルランキング・stageBest・ハイスコアは、ルールが違うので引き継がない。
 
-const IMPORT_KEYS = ['profiles', 'activeProfile', 'lastName', 'worldTop1', 'muted'];   // 'lander.'+key → 'lander11.'+key
+const IMPORT_KEYS = ['profiles', 'activeProfile', 'lastName', 'muted'];   // worldTop1 は v1.0 ボードの #1 なので引き継がない（v1.1 のチャンピオンは v1.1 の取得だけで決める）
+//   // 'lander.'+key → 'lander11.'+key
 const MIGRATION_KEY = 'migration';   // 'lander11.migration' = 'imported' | 'fresh' | 'none'（一度だけ尋ねる印）
 
 const rawGet = (raw, k) => { try { return raw.getItem(k); } catch (_) { return null; } };
@@ -7537,7 +7757,9 @@ window.addEventListener('load', () => {
   // v1.0 と同一オリジンのため、初回(v1.1 のデータ無し)に v1.0 のパイロットがあれば引き継ぎを尋ねる。BootScene が書き込む前に判定する
   const raw = (() => { try { return window.localStorage; } catch (_) { return null; } })();
   const plan = raw ? migrationPlan(raw) : 'skip';
-  const afterBoot = plan === 'ask' ? () => engine.changeScene(new MigrateScene(engine, toTitle, raw, legacyPilotNames(raw))) : toTitle;
+  // Boot → [引き継ぎ選択] → (v1.1 のデータがあれば) HALL OF FAME（起動ごとに1回）→ Title
+  const toHall = () => engine.changeScene(hallHasData(engine) ? new HallOfFameScene(engine, toTitle) : new TitleScene(engine, startGame, { launch: true }));
+  const afterBoot = plan === 'ask' ? () => engine.changeScene(new MigrateScene(engine, toHall, raw, legacyPilotNames(raw))) : toHall;
   engine.start(new BootScene(engine, afterBoot));
 });
 

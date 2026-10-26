@@ -1,6 +1,6 @@
 // LANDER — エントリポイント（単独ゲーム）
 import { Engine } from './core/engine.js';
-import { BootScene, TitleScene, restoreMute, fadeInScene } from './title.js';
+import { BootScene, HallOfFameScene, hallHasData, TitleScene, restoreMute, fadeInScene } from './title.js';
 import { Game } from './game.js';
 import { Music } from './music.js';
 import { MigrateScene, migrationPlan, legacyPilotNames } from './migrate.js';
@@ -23,6 +23,8 @@ window.addEventListener('load', () => {
   // v1.0 と同一オリジンのため、初回(v1.1 のデータ無し)に v1.0 のパイロットがあれば引き継ぎを尋ねる。BootScene が書き込む前に判定する
   const raw = (() => { try { return window.localStorage; } catch (_) { return null; } })();
   const plan = raw ? migrationPlan(raw) : 'skip';
-  const afterBoot = plan === 'ask' ? () => engine.changeScene(new MigrateScene(engine, toTitle, raw, legacyPilotNames(raw))) : toTitle;
+  // Boot → [引き継ぎ選択] → (v1.1 のデータがあれば) HALL OF FAME（起動ごとに1回）→ Title
+  const toHall = () => engine.changeScene(hallHasData(engine) ? new HallOfFameScene(engine, toTitle) : new TitleScene(engine, startGame, { launch: true }));
+  const afterBoot = plan === 'ask' ? () => engine.changeScene(new MigrateScene(engine, toHall, raw, legacyPilotNames(raw))) : toHall;
   engine.start(new BootScene(engine, afterBoot));
 });

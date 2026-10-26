@@ -6,7 +6,8 @@ import { P } from './core/palette.js';
 import { txt, pill, rgba } from './art.js';
 import { STORAGE_PREFIX, LEGACY_PREFIX, APP_LABEL } from './version.js';
 
-export const IMPORT_KEYS = ['profiles', 'activeProfile', 'lastName', 'worldTop1', 'muted'];   // 'lander.'+key → 'lander11.'+key
+export const IMPORT_KEYS = ['profiles', 'activeProfile', 'lastName', 'muted'];   // worldTop1 は v1.0 ボードの #1 なので引き継がない（v1.1 のチャンピオンは v1.1 の取得だけで決める）
+//   // 'lander.'+key → 'lander11.'+key
 export const MIGRATION_KEY = 'migration';   // 'lander11.migration' = 'imported' | 'fresh' | 'none'（一度だけ尋ねる印）
 
 const rawGet = (raw, k) => { try { return raw.getItem(k); } catch (_) { return null; } };

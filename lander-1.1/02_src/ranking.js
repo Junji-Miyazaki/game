@@ -5,6 +5,7 @@ import { relayEnabled, fetchWorldTop, submitScore, makeNameKey, relayBoardState,
 import * as NetNS from './net.js';
 import { txt, rgba, hair, pill, ellipsize } from './art.js';
 import { stageInfo, STAGES_PER_BODY, bodyGravity } from './bodies.js';
+import { APP_BOARD } from './version.js';
 
 export const RANK_MAX = 10;
 
@@ -127,12 +128,13 @@ export function loadTop1(storage) {
     const raw = storage.get(TOP1_KEY, null);
     if (!raw) return null;
     const o = JSON.parse(raw);
-    if (!o || typeof o.name !== 'string' || !o.name || !Number.isFinite(o.score)) return null;
+    if (!o || o.board !== APP_BOARD) return null;   // v1.1 の取得で書いたものだけ。印の無い値（v1.0 から引き継いだ旧 #1 など）は無視
+    if (typeof o.name !== 'string' || !o.name || !Number.isFinite(o.score)) return null;
     return { name: o.name, score: o.score, title: cleanTitleField(o.title), at: Number.isFinite(o.at) ? o.at : 0 };
   } catch (_) { return null; }
 }
 export function saveTop1(storage, row) {
-  try { storage.set(TOP1_KEY, row ? JSON.stringify({ name: row.name, score: row.score, title: row.title || '', at: row.at || Date.now() }) : ''); return true; } catch (_) { return false; }
+  try { storage.set(TOP1_KEY, row ? JSON.stringify({ name: row.name, score: row.score, title: row.title || '', at: row.at || Date.now(), board: APP_BOARD }) : ''); return true; } catch (_) { return false; }
 }
 // 取得した上位から #1 を取り出してキャッシュ更新。空配列=サーバー上に記録なし→消去。返り値は新しい #1 または null
 export function top1FromList(storage, list) {
@@ -140,6 +142,39 @@ export function top1FromList(storage, list) {
   const row = r ? { name: String(r.name), score: r.score, title: cleanTitleField(r.title), at: Date.now() } : null;
   saveTop1(storage, row);
   return row;
+}
+
+// ---- WORLD TOP のキャッシュ（HALL OF FAME で即表示／YOU #N 用に上位~100件）。v1.1 ボードの取得結果だけ（board 印つき）----
+const LIST_KEY = 'worldTop5', LIST_MAX = 100;
+export function saveWorldList(storage, list) {
+  try {
+    if (!storage || !Array.isArray(list)) return false;
+    const rows = list.filter(validEntry).slice(0, LIST_MAX).map((e) => ({ name: String(e.name), score: e.score, title: cleanTitleField(e.title) }));
+    storage.set(LIST_KEY, JSON.stringify({ at: Date.now(), board: APP_BOARD, rows }));
+    return true;
+  } catch (_) { return false; }
+}
+export function loadWorldList(storage) {
+  try {
+    const raw = storage && storage.get(LIST_KEY, null);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || o.board !== APP_BOARD || !Array.isArray(o.rows)) return null;
+    const rows = o.rows.filter((e) => e && typeof e.name === 'string' && e.name && Number.isFinite(e.score)).slice(0, LIST_MAX)
+      .map((e) => ({ name: e.name, score: e.score, title: cleanTitleField(e.title) }));
+    return rows.length ? rows : null;
+  } catch (_) { return null; }
+}
+// 表示用: { rows:[{rank,name,score,title,you}] (最大5), extra:{rank,score}|null (5位圏外の自分) }。list 空なら null
+export function worldTop5View(list, myName) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const rows = list.slice(0, 5).map((e, i) => ({ rank: i + 1, name: e.name, score: e.score, title: e.title || '', you: !!myName && e.name === myName }));
+  let extra = null;
+  if (myName && !rows.some((r) => r.you)) {
+    const i = list.findIndex((e) => e.name === myName);
+    if (i >= 5) extra = { rank: i + 1, score: list[i].score };
+  }
+  return { rows, extra };
 }
 const RANK_KEY = 'ranking';
 
@@ -214,24 +249,24 @@ export function rankTabRects(x, y, w) {
 const inRect = (r, px, py) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 
 // タップがタブに当たったか処理する。当たったら true（WORLD 選択時は取得を開始）
-export function rankTabsTap(tabs, x, y, px, py, w) {
+export function rankTabsTap(tabs, x, y, px, py, w, storage) {
   if (!relayEnabled()) return false;
   const r = rankTabRects(x, y, w);
   if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
   if (inRect(r.world, px, py)) {
     tabs.mode = 'world';
-    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs);
+    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
     return true;
   }
   return false;
 }
 
-export function loadWorld(tabs) {
+export function loadWorld(tabs, storage) {
   tabs.status = 'loading';
   const tk = ++tabs.token;
   return WorldNet.fetchTop().then((list) => {
     if (tk !== tabs.token) return;
-    if (list) { tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
+    if (list) { if (storage) saveWorldList(storage, list); tabs.world = list.filter(validEntry).slice(0, RANK_MAX); tabs.status = 'ok'; }
     else tabs.status = WorldNet.updating ? 'updating' : 'offline';
   });
 }
