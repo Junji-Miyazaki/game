@@ -4,6 +4,7 @@
 import { P } from './core/palette.js';
 import { drawShip, drawAstronaut, drawFlag, rgba, mixHex } from './art.js';
 import { BODIES, BODY_COUNT, STAGES_PER_BODY, stageInfo } from './bodies.js';
+import { drawMissionPatch, patchCount } from './patches.js';
 
 const SM_W = 360, SM_H = 640, SM_TAU = Math.PI * 2;
 const SM_MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -212,6 +213,8 @@ export class SolarMap {
     this.sum = o.summary || { totalStars: 0, maxStars: 0, bodies: [] };
     this.sfx = typeof o.sfx === 'function' ? o.sfx : () => {};
     this.reduce = !!o.reduce;
+    this.patches = Array.isArray(o.patches) ? o.patches : [];   // patchesSummary(): [{ id, name, earned }]
+    this.PT = Object.create(null); for (const x of this.patches) if (x && x.id) this.PT[x.id] = !!x.earned;
     this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）
     let mx = 1; for (const e of this.list) if (e.stage > mx) mx = e.stage;
     this.maxStage = mx;
@@ -263,6 +266,8 @@ export class SolarMap {
     if (!bs.length || bs.some((b) => !b.ring)) return 'none';
     return bs.every((b) => b.gold) ? 'gold' : 'ring';
   }
+  hasPatch(id) { return this.PT[id] === true; }
+  patchTotal() { return { n: patchCount(this.patches), of: this.patches.length || BODY_COUNT }; }
   flagged(id) { const ids = SM_SYS[id] ? SM_SYS[id].bodies : [id]; return ids.some((i) => this.B[i].any); }
   sysLocked(sys) { return SM_SYS[sys].bodies.every((i) => this.B[i].locked); }
   sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } return { st, mx }; }
@@ -668,6 +673,8 @@ export class SolarMap {
         const ly = q.y + r + (id === 'saturn' ? 14 : 10), hl = kf || selSys === id;
         c.save(); c.globalAlpha *= uiA * (hl ? 1 : 0.9);
         SM_T(c, SM_SYS[id].name, SM_clamp(q.x, 24, SM_W - 24), SM_clamp(ly, 20, 470), 8, hl ? p.warn : rgba(p.fg, 0.75), 'center', 500, 1.2);
+        const got = SM_SYS[id].bodies.filter((b) => this.hasPatch(b));   // 取得済みパッチを名前の下に小さく並べる
+        got.forEach((b, j) => drawMissionPatch(c, b, SM_clamp(q.x, 24, SM_W - 24) + (j - (got.length - 1) / 2) * 11, SM_clamp(ly, 20, 470) + 17, 4.6, {}));
         c.restore();
       }
       if (kf) {
@@ -692,6 +699,7 @@ export class SolarMap {
     SM_T(c, 'BETA v1.1', SM_W - 16, 28, 9, p.warn, 'right', 700, 1.5);
     SM_T(c, 'SELECT DESTINATION', 96, 45, 9.5, p.dim, 'left', 500, 1.5);
     SM_T(c, '★ ' + sum.totalStars + ' / ' + sum.maxStars, SM_W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6);
+    { const pt = this.patchTotal(); SM_T(c, 'PATCH ' + pt.n + '/' + pt.of, SM_W - 16, 62, 8, pt.n >= pt.of && pt.of > 0 ? p.warn : rgba(p.fg, 0.6), 'right', 500, 0.8); }
     const mm = Math.floor(this.T / 60) % 60, ss = Math.floor(this.T) % 60;
     SM_T(c, 'T+ 00:' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 16, 62, 8, rgba(p.mid, 0.7), 'left', 500, 1);
     c.strokeStyle = rgba(p.mid, 0.3); c.lineWidth = 0.6; c.beginPath(); c.moveTo(16, 68); c.lineTo(SM_W - 16, 68); c.stroke();
@@ -796,6 +804,7 @@ export class SolarMap {
     const bob = (!this.reduce && !lk) ? Math.sin(this.NOW * 2 + y) * 0.7 : 0;
     SM_body(c, id, x + 30, cy + bob, 15, this.T, this.reduce, { pers: false, halo: false });
     this._ring(c, x + 30, cy + bob, 19, this.ringState(id), 1);
+    drawMissionPatch(c, id, x + 138, cy - 17, 9, { earned: this.hasPatch(id), q: false, a: lk ? 0.5 : 1 });
     SM_T(c, B.name, x + 58, cy - 6, 13, lk ? rgba(p.fg, 0.7) : p.fg, 'left', 600, 1.6);
     if (B.loops > 0) {   // 周回の切り替え（2周目以降が解放されたとき）
       const st = this.stepRects(card);

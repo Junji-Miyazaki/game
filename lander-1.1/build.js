@@ -25,6 +25,7 @@ const FILES = [
   '02_src/autopilot.js',
   '02_src/ranking.js',
   '02_src/art.js',
+  '02_src/patches.js',
   '02_src/bootfx.js',
   '02_src/music.js',
   '02_src/whatsnew.js',

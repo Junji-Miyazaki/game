@@ -918,6 +918,13 @@ export const Music = {
       _musSfxTone('triangle', f, t, 0.28, 0.32, 2.0);
       _musSfxTone('sine', f * 1.5, t + 0.06, 0.22, 0.2, 0);
     },
+    // ミッションパッチ獲得: 高く短い2音のチャイム + きらめき（ミュート時は _musSfxReady で無音）
+    patch() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      [[0, 0], [7, 0.1], [12, 0.2]].forEach(([s, d]) => _musSfxTone('sine', _musHz(783.99, s), t + d, 0.5, 0.3, 2.0));
+      _musSfxTone('triangle', _musHz(783.99, 24), t + 0.2, 0.35, 0.12, 0);
+    },
     // 特典の輪: 上昇する短いアルペジオ
     power() {
       if (!_musSfxReady()) return;

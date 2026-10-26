@@ -4,6 +4,7 @@
 // 性能: 静的な背景・地形は画面外キャンバス(layer)へ1回だけ描いてキャッシュ。グラデーションもキーでキャッシュ。
 import { P } from './core/palette.js';
 import { APP_LABEL } from './version.js';
+import { drawMissionPatch } from './patches.js';
 
 export const ART_VERSION = 1;
 const AW = 360;
@@ -1478,7 +1479,11 @@ export function drawClearPanel(ctx, r, d) {
   hair(ctx, r.x + 24, r.y + 190 + dy, r.x + r.w - 24, r.y + 190 + dy, p.fg, 0.14);
   let ny = r.y + 197 + dy;
   if (d.stars) { drawClearStars(ctx, cx, r.y + 207 + dy, d.stars); ny = r.y + 236 + dy; }
+  // パッチ獲得の行の場所（d.patchRoom px）を空けて、その矩形を返す（描くのは patches.js の drawPatchAward）
+  let slot = null;
+  if (d.patchRoom) { slot = { x: r.x, y: ny - 2, w: r.w, h: d.patchRoom }; ny += d.patchRoom; }
   txt(ctx, d.next, cx, ny, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
+  return slot;
 }
 export function drawCrashPanel(ctx, d) {
   const p = P();
@@ -1953,6 +1958,24 @@ export function drawProfilePanel(ctx, d) {
     if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, d.ok ? p.mid : p.bad, 'center', { sp: 2, w: 500 });
     return;
   }
+  if (d.mode === 'patches' && d.cases) {   // パッチケース: 7枚（取得済みは明るく、未取得は暗い輪郭と ?）
+    const c = d.cases;
+    txt(ctx, 'PATCHES', AW / 2, 154, 10, p.mid, 'center', { sp: 6, w: 500 });
+    txt(ctx, ellipsize(ctx, c.name, 12, 500, 3, AW - 140), AW / 2, 172, 12, p.hi, 'center', { sp: 3, w: 500 });
+    txt(ctx, c.n + ' / ' + c.of, AW / 2 + 110, 176, 9, c.n >= c.of ? p.warn : p.dim, 'center', { sp: 1.5, w: 600 });
+    for (const x of c.list) {
+      const b = x.rect, cx = b.x + b.w / 2, on = c.sel === x.id;
+      if (on) pill(ctx, b.x + 2, b.y, b.w - 4, b.h, rgba(p.mid, 0.07), rgba(p.mid, 0.4));
+      drawMissionPatch(ctx, x.id, cx, b.y + 33, 26, { earned: x.earned, rim: true });
+      txt(ctx, x.name, cx, b.y + 69, 7.5, x.earned ? p.fg : p.dim, 'center', { sp: 1.5, w: 500 });
+    }
+    const sel = c.list.find((x) => x.id === c.sel);
+    txt(ctx, sel ? (sel.earned ? sel.name + ' \u00b7 PERFECT LANDING DONE' : 'PERFECT LANDING ON ANY ' + sel.name + ' STAGE') : 'TAP A PATCH', AW / 2, 398, 8, sel && sel.earned ? p.warn : p.dim, 'center', { sp: 1.5, w: 500 });
+    const bk = d.cases.back;
+    pill(ctx, bk.x, bk.y, bk.w, bk.h, null, rgba(p.fg, 0.22));
+    txt(ctx, 'BACK', bk.x + bk.w / 2, bk.y + bk.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+    return;
+  }
   if (d.mode === 'confirm') {
     txt(ctx, d.confirm.l1, AW / 2, 196, 12, p.fg, 'center', { sp: 2, w: 500 });
     txt(ctx, d.confirm.l2, AW / 2, 220, 8, p.warn, 'center', { sp: 2, w: 500 });
@@ -1967,6 +1990,10 @@ export function drawProfilePanel(ctx, d) {
   for (const r of d.rows) {
     pill(ctx, r.sel.x, r.sel.y, r.sel.w, r.sel.h, r.active ? rgba(p.mid, 0.10) : null, rgba(r.active ? p.mid : p.fg, r.active ? 0.6 : 0.2));
     txt(ctx, ellipsize(ctx, r.name, 13, 500, 3, r.sel.w - 30), r.sel.x + 14, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    if (r.patch) {
+      pill(ctx, r.patch.x, r.patch.y, r.patch.w, r.patch.h, null, rgba(p.mid, 0.4));
+      txt(ctx, 'PATCH', r.patch.x + r.patch.w / 2, r.patch.y + r.patch.h / 2 - 4, 8, p.mid, 'center', { sp: 1, w: 500 });
+    }
     if (r.pin) {
       pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.55 : 0.3));
       txt(ctx, 'PIN', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 9, p.warn, 'center', { sp: 2, w: 500 });

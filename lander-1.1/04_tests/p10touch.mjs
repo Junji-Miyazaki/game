@@ -479,7 +479,7 @@ function landAndClear(extra = [], opts = {}) {
 // ---------- 12. WHAT'S NEW ----------
 {
   const ENT = WHATSNEW.entries;
-  ok(WHATSNEW.version === '1.1.0-beta.2' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
+  ok(WHATSNEW.version === '1.1.0-beta.3' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
   ok(ENT.every(en => /^\d{4}\.\d\d\.\d\d$/.test(en.date) && en.items.length >= 3 && en.items.length <= 6), 'each entry: date + 3-6 items');
   ok(ENT.every(en => en.items.every(l => l.length <= 22 && /[\u3040-\u30ff]/.test(l))), 'items <= 22 chars, Japanese (user decision)');
   const ITEMS = ENT.flatMap(en => en.items);

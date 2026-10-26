@@ -3,11 +3,14 @@
 import { APP_VERSION } from './version.js';
 export const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.10.26', items: [
-    '降下ルートの輪をくぐってコンボ',
-    '特別な輪で短時間の特典',
+    'PERFECT で天体ごとのパッチ',
+    'タイトルの MAP から太陽系マップ',
+    '隕石スローを 1/4 の速さに強化',
+  ] },
+  { version: '1.1.0-beta.2', date: '2026.10.26', items: [
+    '輪でコンボ・特別な輪で特典',
     'ステージごとに★3つを集めよう',
     '新天体：水星（暗闇のクレーター）',
-    'タイトルの MAP から太陽系マップ',
     '起動時に世界ランキング TOP 5',
   ] },
   { version: '1.1.0-beta', date: '2026.10.26', items: [

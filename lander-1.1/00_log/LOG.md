@@ -129,3 +129,15 @@ v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/
 - テスト: 新規 `04_tests/p16mapbtn.mjs`（46）。配置・44px・非重複(cp 有無)・1開始で閲覧専用(START なし・タップ/確定で開始せず・cp 保持)・名前なし・>1開始で開始パラメータが `_startAt` と一致・開閉で cp 保持。既存の配置系テスト(p2b/p7title/p9champ)は rankBtn を中心タップ/非重複で見ており変更不要で通過。全スイート PASS、`node build.js`・`node --check` OK。
 - 目視(375x812): チャンピオンプレート付きタイトルに RANKING/MAP が並ぶ、名前なしで MAP→太陽系→Earth ズームで START バーなし＋ヒント表示を確認。ストレージとビューポートは復元済み。
 - 未確認: 実機タッチ、>1開始の MAP 実画面（テストのみ）。
+
+## 2026-10-26 ミッションパッチ（PERFECT で天体ごと）
+- 実施:
+  - 新規 `02_src/patches.js`（build.js の FILES に art.js の後で追加）: `patchesSummary(storage,name)`=[{id,name,earned}]（stageBest から導出。どの周回・どのステージでも PERFECT のグレード/★ビットがあれば獲得。保存キーなし）、`patchIsNew`、`patchAwardView`（演出の位相）、`drawMissionPatch`（7天体のベクター紋章・未獲得は暗い輪郭＋?）、`drawPatchAward`（クリア画面の行）。非公開名は PT_ 接頭辞。
+  - game.js: `_recordStageBest` で記録前に before を取り新規なら `_patchInfo`。クリア画面は★の後 0.25 秒でパッチが飛来→閃光→`PATCH EARNED — IO`、飛来が終わる瞬間に `sfx.patch`（music.js に追加、ミュート時は _sfx で止まる）。パネルは新規のときだけ +46px。タップはパッチ演出中は終状態へ進めるだけ（次の1回で次ステージ）。art.js の drawClearPanel は `patchRoom` を受けて空きの矩形を返す。
+  - solarmap.js: `patches` を受け、概観のヘッダ右に `PATCH n/7`（★合計の真下）、獲得済みを惑星名の下に小バッジ、系の拡大のカードに名前の右へパッチ（未獲得は暗い輪郭）。
+  - title.js/art.js: PILOTS の行に PATCH ボタン（46x44、行の幅配分を sel126/46/46/46 に変更）→パッチケース（7枚の格子・タップで説明・BACK で一覧、back キーも）。
+  - whatsnew.js: 輪の2項目を統合して `PERFECT で天体ごとのパッチ` を追加（6項目のまま）。
+- テスト: 新規 `04_tests/p17patch.mjs`（98）。既存の変更は p13rings の1行のみ（パッチを取る場面のパネル高さの期待値 +46）。全スイート PASS（smoke 2, p1 107, p15 408, p2a 30, p2m 85, p2b 100, p2j 54, p3fix 104, p4hold 72, p4save 81, p4net 132, p5hud 1511, p6bonus 383, p7title 14, p8start 87, p9net 80, p9champ 194, p10touch 260, p11net 185, p12v11 119, p13rings 247, p14boot 42, p15map 122, p16mapbtn 46, p17patch 98）。
+- 目視（preview lander-1.1, 375x812）: 一時ハーネスでクリア画面（飛来の途中・最終状態）、7枚の紋章の拡大シート（取得/未取得/各サイズ）、シード済みストレージでマップ概観（PATCH 4/7・バッジ）・木星/土星のカード・PILOTS 行の PATCH ボタン・パッチケースを確認。ハーネスと localStorage は片付け済み、ビューポートも復元。
+- 判断: 「タップで進める」はパッチ演出中は終状態へ（元は★の押印中でも即次へ進んだが、パッチがあるときだけ見せ切るため）。ヘッダは `SELECT DESTINATION` と幅が衝突するので ★ の真下の行に置いた。内部版は上げていない（NEW の再表示なし）。
+- 未確認: 実機のチャイムの音色、実機タッチ、パッチ絵の小サイズ（バッジ r4.6・カード r9）の見え方、複数系（地球=MOON のみ・土星=TITAN）の概観バッジの重なり、PERFECT 実プレイでの演出（テストは _doSuccess 直接＋ハーネス）。

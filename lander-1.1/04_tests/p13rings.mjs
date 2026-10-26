@@ -275,12 +275,12 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   ok(g4._slowT > 7 && g4._slowT <= SLOWMO_S, 'SLOW-MO timer started: ' + g4._slowT.toFixed(2));
   g4.obstacles[0].x = 100; g4.obstacles[0].vx = 40; g4.x = 30; g4.y = 80; g4.vx = 0; g4.vy = 0;
   const xa = g4.obstacles[0].x; g4.update(0.05); const dxSlow = (g4.obstacles[0].x - xa) / 0.05;
-  ok(near(dxSlow, 40 * SLOWMO_FACTOR, 1.5) && dx0 > 0, 'obstacles move at 50% speed while SLOW-MO: ' + dxSlow.toFixed(1) + ' px/s (normal 40)');
+  ok(near(dxSlow, 40 * SLOWMO_FACTOR, 1.5) && dx0 > 0, 'obstacles move at SLOWMO_FACTOR speed while SLOW-MO: ' + dxSlow.toFixed(1) + ' px/s (normal 40)');
   ok(g4._activePower().kind === 'slowmo' && g4._activePower().remain > 0, 'HUD power info during SLOW-MO');
   g4._slowT = 0.05; g4.obstacles[0].x = 100; g4.obstacles[0].vx = 40; g4.x = 30; g4.y = 80; g4.vx = 0; g4.vy = 0;
   run(g4, 0.2); g4.obstacles[0].x = 100; g4.x = 30; g4.y = 80; g4.vx = 0; g4.vy = 0; const xb = g4.obstacles[0].x; g4.update(0.05);
   ok(near((g4.obstacles[0].x - xb) / 0.05, 40, 1.5) && g4._slowT === 0 && !g4._activePower(), 'SLOW-MO ends: obstacles back to full speed');
-  ok(SLOWMO_S === 8 && SLOWMO_FACTOR === 0.5 && ASSIST_S === 6 && POWER_FUEL_FRAC === 0.15, 'spec constants: 8s / 50% / 6s / 15%');
+  ok(SLOWMO_S === 8 && SLOWMO_FACTOR === 0.25 && ASSIST_S === 6 && POWER_FUEL_FRAC === 0.15, 'spec constants: 8s / 25% / 6s / 15%');
   // ATTITUDE ASSIST: 6秒間 自動で水平へ
   const r5 = stageGame(6); const g5 = r5.g; g5.obstacles = []; setRings(g5, [[100, 150]], [220, 200, 'attitude']);
   g5.angle = 40; g5.omega = 0; g5.vx = 0; g5.vy = 0; g5._gravity = 0.1; g5.x = 220; g5.y = 170;
@@ -378,7 +378,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   run(v.g, 0.2); const cv1 = v.g._clearView(); run(v.g, 1.2); const cv2 = v.g._clearView();
   ok(cv1.stars.k[0] > 0 && cv1.stars.k[2] < cv1.stars.k[0], 'stars pop one after another: ' + cv1.stars.k.map((x) => x.toFixed(2)).join('/'));
   ok(cv2.stars.k.filter((x, i) => cv2.stars.fresh & (1 << i)).every((x) => x === 1) && v.g._clearT >= v.g._clearEnd(), 'all stars popped ~1.4 s after the count');
-  const R = v.g._clearPanelRect(); ok(R.h === 216 + 10 + 42 && R.y + R.h < 455, 'panel with RINGS line + stars row fits above the pads: h=' + R.h);
+  const R = v.g._clearPanelRect(); ok(R.h === 216 + 10 + 42 + (v.g._patchInfo ? 46 : 0) && R.y + R.h < 455, 'panel with RINGS line + stars row (+patch row if earned) fits above the pads: h=' + R.h);
   // タップで集計を最後まで飛ばすと★も完了
   const v2 = stageGame(3, pf); v2.g.obstacles = []; onPad(v2.g); v2.g.vy = 1; v2.g._doSuccess(0, 0); run(v2.g, 2.7); v2.g._inputLock = 0; v2.g._skipClear();
   { const cs = v2.g._clearView().stars; ok(cs.k.filter((x, i) => cs.fresh & (1 << i)).every((x) => x === 1) && cs.fresh > 0, 'skip completes the star animation'); }
@@ -482,11 +482,11 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 
 // ---------- 11. WHAT'S NEW / 版 ----------
 {
-  ok(APP_VERSION === '1.1.0-beta.2' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.2', 'version 1.1.0-beta.2, label unchanged');
+  ok(APP_VERSION === '1.1.0-beta.3' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.3', 'version 1.1.0-beta.3, label unchanged');
   const E0 = WHATSNEW.entries[0];
-  ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 4 && E0.items.length <= 6, 'whatsnew newest entry: 4-6 items');
+  ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 1 && E0.items.length <= 6, 'whatsnew newest entry: 1-6 items');
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
-  const joined = E0.items.join('|');
+  const joined = WHATSNEW.entries.flatMap((en) => en.items).join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
   ok(E0.items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
 }

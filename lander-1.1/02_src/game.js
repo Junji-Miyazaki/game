@@ -12,6 +12,7 @@ import { autopilotKeys } from './autopilot.js';
 import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose, TERRA, BONUS_ALT, missionOf, bonusBody, bonusScoreFor } from './bodies.js';
 import { buildRings, newRingState, ringStep, allRingsGot, POWER_DEFS, POWER_FUEL_FRAC, SLOWMO_S, SLOWMO_FACTOR, ASSIST_S } from './rings.js';
 import { recordStage, STAR_LANDED, STAR_RINGS, STAR_PERFECT } from './stars.js';
+import { patchesSummary, patchIsNew, drawPatchAward, PATCH_AWARD_S, PATCH_CHIME_S } from './patches.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
 import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
@@ -106,6 +107,7 @@ const SHAKE_S = 0.25, SHAKE_PX = 3;
 const CLEAR_SLOT_S = 0.2;        // クリア画面の集計：1行あたりの秒数
 const CLEAR_STAMP_S = 0.18;      // グレードのスタンプが押される秒数
 const STAR_POP_DELAY = 0.12, STAR_POP_STEP = 0.24, STAR_POP_S = 0.2;   // クリア画面: 新しく取った★が順に押される（グレードのスタンプの後）
+const PATCH_ROOM = 46, PATCH_GAP = 0.25;   // クリア画面: PATCH EARNED の行の高さ / ★の後の間（秒）
 const POWER_BANNER_S = 2.4;      // 特典取得のバナー秒数
 const ASSIST_MAX_OMEGA = 35;     // ATTITUDE ASSIST: 戻す角速度の上限(度/s)
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
@@ -494,7 +496,7 @@ export class Game extends Scene {
     this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
     // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/ATTITUDE ASSIST/RADAR）の状態もここで初期化
-    this._floats = []; this._slowT = 0; this._assistT = 0; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._starT = 0; this._starSnd = 0;
+    this._floats = []; this._slowT = 0; this._assistT = 0; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
     this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
 
     // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
@@ -561,7 +563,7 @@ export class Game extends Scene {
       return;
     }
     if (this.state === 'cleared') {
-      if (confirm && this._inputLock <= 0) { if (this._clearT != null && this._clearT < this._clearEnd()) this._skipClear(); else this._nextAfterClear(); }   // 集計中のタップは最後まで進めるだけ
+      if (confirm && this._inputLock <= 0) { if (this._clearT != null && this._clearT < this._clearEnd()) this._skipClear(); else if (this._patchBusy()) this._starT = 99; else this._nextAfterClear(); }   // 集計中・パッチ演出中のタップは最後まで進めるだけ
       if (action === 'back') this.engine.toMenu();
       return;
     }
@@ -1519,13 +1521,20 @@ export class Game extends Scene {
 
   // 通常ステージの最良グレードと★（stars.js）をパイロット別に保存（'stageBest'）。デバッグ操作のランとボーナスは対象外（★も出さない）
   _recordStageBest(grade) {
-    this._starsInfo = null; this._starT = 0; this._starSnd = 0;
+    this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
     if (this.bonus || this._isDebugRun()) return;
     const mask = STAR_LANDED | (allRingsGot(this._rg) ? STAR_RINGS : 0) | (grade === 'PERFECT' ? STAR_PERFECT : 0);
     const pr = getActiveProfile(this.engine.storage);
+    const before = (pr && pr.name) ? patchesSummary(this.engine.storage, pr.name) : null;   // 記録の前に確かめる（新しいパッチか）
     const rec = recordStage(this.engine.storage, pr && pr.name, this.stage, grade, mask);
     this._starsInfo = { mask: rec.stars, fresh: rec.fresh, run: mask };
+    const bd = this._info.body;
+    if (before && patchIsNew(before, bd.id, grade)) {
+      const nf = [1, 2, 4].filter((b) => rec.fresh & b).length;
+      this._patchInfo = { id: bd.id, name: bd.name, t0: (nf ? STAR_POP_DELAY + STAR_POP_STEP * (nf - 1) + STAR_POP_S : 0) + PATCH_GAP };
+    }
   }
+  _patchBusy() { return !!(this._patchInfo && this._starT < this._patchInfo.t0 + PATCH_AWARD_S); }
 
   // ---- クリア画面の集計（行が順に数え上がり、最後にグレードのスタンプ）----
   _clearEnd() { return ((this._breakdown ? this._breakdown.length : 0) + 1) * CLEAR_SLOT_S + 0.05 + CLEAR_STAMP_S; }
@@ -1533,12 +1542,16 @@ export class Game extends Scene {
     if (this._clearT == null) return;
     const n = this._breakdown ? this._breakdown.length : 0, end = this._clearEnd();
     if (this._clearT >= end) {   // 集計が終わったら、新しく取った★が順に押される
-      if (this._starsInfo && this._starsInfo.fresh) {
+      if (this._starsInfo && (this._starsInfo.fresh || this._patchInfo)) {
         const prevS = this._starT; this._starT += dt;
         let j = 0;
         for (let i = 0; i < 3; i++) if (this._starsInfo.fresh & (1 << i)) {
           const t0 = STAR_POP_DELAY + STAR_POP_STEP * j; j++;
           if (prevS <= t0 && this._starT > t0) this._sfx('ring', 3 + j);
+        }
+        if (this._patchInfo) {   // パッチが枠に収まる瞬間（飛来が終わるとき）にチャイム
+          const tc = this._patchInfo.t0 + PATCH_CHIME_S;
+          if (prevS <= tc && this._starT > tc) this._sfx('patch');
         }
       }
       return;
@@ -1565,7 +1578,8 @@ export class Game extends Scene {
       for (let i = 0; i < 3; i++) if (this._starsInfo.fresh & (1 << i)) { k[i] = c01((this._starT - STAR_POP_DELAY - STAR_POP_STEP * j) / STAR_POP_S); j++; }
       stars = { mask: this._starsInfo.mask, fresh: this._starsInfo.fresh, k };
     }
-    return { prog, tot: c01((t - n * CLEAR_SLOT_S) / CLEAR_SLOT_S), stamp: t >= ts ? Math.max(0.001, c01((t - ts) / CLEAR_STAMP_S)) : 0, stars };
+    const patch = this._patchInfo ? { id: this._patchInfo.id, name: this._patchInfo.name, pt: this._starT - this._patchInfo.t0 } : null;
+    return { patch, prog, tot: c01((t - n * CLEAR_SLOT_S) / CLEAR_SLOT_S), stamp: t >= ts ? Math.max(0.001, c01((t - ts) / CLEAR_STAMP_S)) : 0, stars };
   }
 
   // ---- クラッシュ処理 ----
@@ -1942,7 +1956,7 @@ export class Game extends Scene {
 
   // ---- Stage Clear overlay ----
   // パネルは y 128..344 に固定（パッド面は y>=455 なので下端は111px以上上。宇宙飛行士・旗・機体に重ならない）
-  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 + ((this._breakdown && this._breakdown.length > 4) ? 10 : 0) + (this._starsInfo ? 42 : 0) }; }
+  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 + ((this._breakdown && this._breakdown.length > 4) ? 10 : 0) + (this._starsInfo ? 42 : 0) + (this._patchInfo ? PATCH_ROOM : 0) }; }
 
   _drawClearScreen(ctx) {
     const b = this.bonus;
@@ -1954,12 +1968,14 @@ export class Game extends Scene {
       ? [['CONTINUE', this._bonusGrant ? '+1' : '\u2013', this._bonusGrant ? P().mid : P().dim], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]]
       : [['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]];
     const cv = this._clearView();
-    drawClearPanel(ctx, this._clearPanelRect(), {
+    const slot = drawClearPanel(ctx, this._clearPanelRect(), {
+      patchRoom: this._patchInfo ? PATCH_ROOM : 0,
       bonus: !!b, perfect: !!this._perfect,
       sub: b ? missionOf(b.type).name + '  ·  \u00d7' + missionOf(b.type).mult : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
       score: (b ? this._bonusScore : this._stageScore) || 0, cols, next, t: this._clock || 0,
       lines: this._breakdown || [], prog: cv.prog, tot: cv.tot, stamp: cv.stamp, grade: this._grade || '', stars: cv.stars,
     });
+    if (slot && cv.patch) drawPatchAward(ctx, slot, cv.patch.id, cv.patch.name, cv.patch.pt);
   }
 
   // ---- Crashed (continue available) ----

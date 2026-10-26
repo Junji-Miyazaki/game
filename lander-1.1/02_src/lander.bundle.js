@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.2';
+const APP_VERSION = '1.1.0-beta.3';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -655,11 +655,11 @@ const RING_START_ARC = 64;             // 出現位置から最初の輪まで�
 const POWER_RING_GAP = 2 * RING_R + 8;   // 特典の輪と通常の輪の中心間の最小距離
 const POWER_CHANCE = 0.35;      // ステージ2以降、1ステージにつき最大1個。この確率で出る（短く・まれに）
 const POWER_MIN_STAGE = 2;
-const SLOWMO_S = 8, SLOWMO_FACTOR = 0.5;   // SLOW-MO: 隕石(障害物)が8秒間 50%速度
+const SLOWMO_S = 8, SLOWMO_FACTOR = 0.25;  // SLOW-MO: 隕石(障害物)が8秒間 25%速度（ユーザー要望で 50%→25%）
 const ASSIST_S = 6;                         // ATTITUDE ASSIST: 6秒間 自動で水平に戻す
 const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
 const POWER_DEFS = {
-  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT HALF SPEED · 8 S', dur: SLOWMO_S },
+  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', dur: SLOWMO_S },
   radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
   attitude: { id: 'attitude', name: 'ATTITUDE ASSIST', note: 'AUTO-LEVEL · 6 S',            dur: ASSIST_S },
   fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
@@ -3128,7 +3128,11 @@ function drawClearPanel(ctx, r, d) {
   hair(ctx, r.x + 24, r.y + 190 + dy, r.x + r.w - 24, r.y + 190 + dy, p.fg, 0.14);
   let ny = r.y + 197 + dy;
   if (d.stars) { drawClearStars(ctx, cx, r.y + 207 + dy, d.stars); ny = r.y + 236 + dy; }
+  // パッチ獲得の行の場所（d.patchRoom px）を空けて、その矩形を返す（描くのは patches.js の drawPatchAward）
+  let slot = null;
+  if (d.patchRoom) { slot = { x: r.x, y: ny - 2, w: r.w, h: d.patchRoom }; ny += d.patchRoom; }
   txt(ctx, d.next, cx, ny, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
+  return slot;
 }
 function drawCrashPanel(ctx, d) {
   const p = P();
@@ -3603,6 +3607,24 @@ function drawProfilePanel(ctx, d) {
     if (d.msg) txt(ctx, d.msg, AW / 2, 440, 8, d.ok ? p.mid : p.bad, 'center', { sp: 2, w: 500 });
     return;
   }
+  if (d.mode === 'patches' && d.cases) {   // パッチケース: 7枚（取得済みは明るく、未取得は暗い輪郭と ?）
+    const c = d.cases;
+    txt(ctx, 'PATCHES', AW / 2, 154, 10, p.mid, 'center', { sp: 6, w: 500 });
+    txt(ctx, ellipsize(ctx, c.name, 12, 500, 3, AW - 140), AW / 2, 172, 12, p.hi, 'center', { sp: 3, w: 500 });
+    txt(ctx, c.n + ' / ' + c.of, AW / 2 + 110, 176, 9, c.n >= c.of ? p.warn : p.dim, 'center', { sp: 1.5, w: 600 });
+    for (const x of c.list) {
+      const b = x.rect, cx = b.x + b.w / 2, on = c.sel === x.id;
+      if (on) pill(ctx, b.x + 2, b.y, b.w - 4, b.h, rgba(p.mid, 0.07), rgba(p.mid, 0.4));
+      drawMissionPatch(ctx, x.id, cx, b.y + 33, 26, { earned: x.earned, rim: true });
+      txt(ctx, x.name, cx, b.y + 69, 7.5, x.earned ? p.fg : p.dim, 'center', { sp: 1.5, w: 500 });
+    }
+    const sel = c.list.find((x) => x.id === c.sel);
+    txt(ctx, sel ? (sel.earned ? sel.name + ' \u00b7 PERFECT LANDING DONE' : 'PERFECT LANDING ON ANY ' + sel.name + ' STAGE') : 'TAP A PATCH', AW / 2, 398, 8, sel && sel.earned ? p.warn : p.dim, 'center', { sp: 1.5, w: 500 });
+    const bk = d.cases.back;
+    pill(ctx, bk.x, bk.y, bk.w, bk.h, null, rgba(p.fg, 0.22));
+    txt(ctx, 'BACK', bk.x + bk.w / 2, bk.y + bk.h / 2 - 4, 9, p.fg, 'center', { sp: 4, w: 500 });
+    return;
+  }
   if (d.mode === 'confirm') {
     txt(ctx, d.confirm.l1, AW / 2, 196, 12, p.fg, 'center', { sp: 2, w: 500 });
     txt(ctx, d.confirm.l2, AW / 2, 220, 8, p.warn, 'center', { sp: 2, w: 500 });
@@ -3617,6 +3639,10 @@ function drawProfilePanel(ctx, d) {
   for (const r of d.rows) {
     pill(ctx, r.sel.x, r.sel.y, r.sel.w, r.sel.h, r.active ? rgba(p.mid, 0.10) : null, rgba(r.active ? p.mid : p.fg, r.active ? 0.6 : 0.2));
     txt(ctx, ellipsize(ctx, r.name, 13, 500, 3, r.sel.w - 30), r.sel.x + 14, r.sel.y + r.sel.h / 2 - 7, 13, r.active ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
+    if (r.patch) {
+      pill(ctx, r.patch.x, r.patch.y, r.patch.w, r.patch.h, null, rgba(p.mid, 0.4));
+      txt(ctx, 'PATCH', r.patch.x + r.patch.w / 2, r.patch.y + r.patch.h / 2 - 4, 8, p.mid, 'center', { sp: 1, w: 500 });
+    }
     if (r.pin) {
       pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.55 : 0.3));
       txt(ctx, 'PIN', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 9, p.warn, 'center', { sp: 2, w: 500 });
@@ -3770,6 +3796,174 @@ function drawWorldTop5(ctx, view, t, a, y0, e) {
     y += 8;
     txt(ctx, 'YOU  #' + view.extra.rank, x + 4, y, 9, p.warn, 'left', { sp: 2, w: 500, a: A });
     txt(ctx, String(view.extra.score), x + w - 4, y, 9, p.warn, 'right', { sp: 1, w: 500, a: A });
+  }
+}
+
+
+// ---- 02_src/patches.js ----
+// LANDER BETA v1.1 — ミッションパッチ。天体ごとに1枚、その天体のどのステージ（どの周回でも）でも PERFECT で着陸すると手に入る。
+// 取得状況は保存せず、'stageBest'（stars.js が正）から毎回導く。デバッグ・ボーナスは記録されないので対象外（★と同じ）。パイロット別。
+// 絵は全部コードで描くベクター（NASA のミッションパッチ風：丸い紋章・細い縁・天体ごとの小さな絵・縁の名前）。
+// バンドルは1つのスコープなので、非公開のトップレベル名は PT_ で始める。
+
+const PT_TAU = Math.PI * 2;
+const PATCH_COUNT = BODIES.length;
+const PATCH_AWARD_S = 1.3;       // クリア画面でパッチが飛んでくる演出の長さ
+const PATCH_CHIME_S = 0.7;       // 飛来が終わって枠に収まる瞬間（チャイム）
+const PT_FLY_S = PATCH_CHIME_S;         // 飛来（回転しながら）の長さ。そのあと一瞬フラッシュして文字が出る
+const PT_INK = '#06080E';
+
+// パイロットの全パッチ [{ id, name, earned }]（天体の順）。earned = その天体のどれかのステージで PERFECT の記録がある。
+// firstAt（初取得の時刻）は保存していないので付けない（v1.2 で天体が増えても同じ関数で足りる）。
+function patchesSummary(storage, name) {
+  const sum = starsSummary(storage, name);
+  return sum.bodies.map((b) => ({ id: b.id, name: b.name, earned: b.stages.some((s) => s.grade === 'PERFECT' || (s.mask & STAR_PERFECT) !== 0) }));
+}
+function patchCount(list) { let n = 0; for (const x of list || []) if (x && x.earned) n++; return n; }
+// 今回の着陸で新しく手に入る（その天体で初めての PERFECT）か。before = 記録前の patchesSummary
+function patchIsNew(before, bodyId, grade) {
+  if (grade !== 'PERFECT') return false;
+  const e = (before || []).find((x) => x.id === bodyId);
+  return !!e && !e.earned;
+}
+// 演出の位相。pt = 開始からの秒数 → { fly:0..1, flash:0..1, text:0..1, done }
+function patchAwardView(pt) {
+  const c = (v) => Math.max(0, Math.min(1, v));
+  const t = pt == null ? 99 : pt;
+  return { fly: c(t / PT_FLY_S), flash: c((t - PT_FLY_S) / 0.4), text: c((t - PT_FLY_S) / 0.45), done: t >= PATCH_AWARD_S };
+}
+
+// ---- 天体ごとの絵（単位円：半径1。pictogram は半径 0.76 の内側に収める）----
+const PT_ART = {
+  moon(c, u, k) {   // 三日月 + 足跡（地平線の下）
+    c.fillStyle = '#4a4d58'; c.fillRect(-1, 0.2, 2, 1);
+    c.strokeStyle = rgba('#b4bac8', 0.8); c.lineWidth = u; c.beginPath(); c.moveTo(-1, 0.2); c.lineTo(1, 0.2); c.stroke();
+    c.save(); c.beginPath(); c.arc(-0.12, -0.28, 0.36, 0, PT_TAU); c.clip();
+    c.fillStyle = '#e4eaf4'; c.fillRect(-1, -1, 2, 2);
+    c.fillStyle = k.sky; c.beginPath(); c.arc(0.02, -0.38, 0.31, 0, PT_TAU); c.fill(); c.restore();
+    c.fillStyle = '#d8dce6'; for (const [x, y, r] of [[0.42, -0.5, 0.025], [0.55, -0.22, 0.018], [-0.5, -0.6, 0.02]]) { c.beginPath(); c.arc(x, y, r, 0, PT_TAU); c.fill(); }
+    c.fillStyle = '#272a32';
+    c.beginPath(); c.ellipse(0.12, 0.46, 0.1, 0.15, -0.12, 0, PT_TAU); c.fill();   // 靴底
+    c.beginPath(); c.ellipse(0.1, 0.66, 0.07, 0.06, -0.12, 0, PT_TAU); c.fill();   // かかと
+  },
+  europa(c, u, k) {   // 氷の球とひび割れ
+    c.save(); c.beginPath(); c.arc(0, 0, 0.52, 0, PT_TAU); c.clip();
+    c.fillStyle = '#d6e8f2'; c.fillRect(-1, -1, 2, 2);
+    c.strokeStyle = '#5f98b8'; c.lineWidth = 1.3 * u; c.lineJoin = 'round'; c.lineCap = 'round';
+    const L = [[[-0.55, 0.06], [-0.3, -0.06], [-0.1, 0.08], [0.14, -0.1], [0.55, 0.0]], [[-0.1, 0.08], [-0.2, 0.3], [-0.08, 0.55]], [[0.14, -0.1], [0.22, -0.3], [0.1, -0.55]], [[0.04, 0.0], [0.3, 0.2], [0.42, 0.38]], [[-0.3, -0.06], [-0.4, -0.25]]];
+    for (const pl of L) { c.beginPath(); pl.forEach((q, i) => { if (i) c.lineTo(q[0], q[1]); else c.moveTo(q[0], q[1]); }); c.stroke(); }
+    c.fillStyle = 'rgba(8,14,28,0.35)'; c.beginPath(); c.arc(0.2, 0.18, 0.56, 0, PT_TAU); c.arc(0, 0, 0.52, 0, PT_TAU, true); c.fill();   // 欠け（影）
+    c.restore();
+    c.strokeStyle = rgba('#f2fbff', 0.8); c.lineWidth = 1.2 * u; c.beginPath(); c.arc(0, 0, 0.52, 0, PT_TAU); c.stroke();
+  },
+  io(c, u, k) {   // 火山の噴煙
+    c.fillStyle = '#a98424'; c.fillRect(-1, 0.36, 2, 1);
+    c.fillStyle = '#6f4e14'; c.beginPath(); c.moveTo(-0.5, 0.4); c.lineTo(-0.09, -0.02); c.lineTo(0.09, -0.02); c.lineTo(0.5, 0.4); c.closePath(); c.fill();
+    c.fillStyle = k.accent; c.beginPath(); c.ellipse(0, -0.02, 0.09, 0.03, 0, 0, PT_TAU); c.fill();
+    c.strokeStyle = '#ffd96a'; c.lineWidth = 2 * u; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(0, -0.04); c.lineTo(0, -0.34); c.stroke();
+    c.beginPath(); c.moveTo(0, -0.34); c.quadraticCurveTo(-0.3, -0.36, -0.36, -0.12); c.moveTo(0, -0.34); c.quadraticCurveTo(0.3, -0.36, 0.36, -0.12); c.stroke();
+    c.beginPath(); c.moveTo(0, -0.34); c.quadraticCurveTo(-0.16, -0.58, -0.3, -0.5); c.moveTo(0, -0.34); c.quadraticCurveTo(0.16, -0.58, 0.3, -0.5); c.stroke();
+    c.fillStyle = k.accent; for (const [x, y] of [[-0.42, 0.0], [0.42, 0.0], [-0.2, -0.64], [0.2, -0.64]]) { c.beginPath(); c.arc(x, y, 0.028, 0, PT_TAU); c.fill(); }
+  },
+  mars(c, u, k) {   // つむじ風とフォボス
+    c.fillStyle = '#8a3b1e'; c.fillRect(-1, 0.34, 2, 1);
+    c.strokeStyle = rgba('#eaa070', 0.7); c.lineWidth = u; c.beginPath(); c.moveTo(-1, 0.34); c.lineTo(1, 0.34); c.stroke();
+    c.strokeStyle = '#f2c79a'; c.lineWidth = 1.6 * u; c.lineCap = 'round';
+    for (let i = 0; i < 5; i++) { const y = 0.34 - i * 0.14, rx = 0.05 + i * 0.045, ox = Math.sin(i * 1.3) * 0.05; c.beginPath(); c.ellipse(ox, y, rx, rx * 0.28, 0, 0, PT_TAU); c.stroke(); }
+    c.fillStyle = '#6d5648'; c.beginPath(); c.ellipse(0.42, -0.44, 0.13, 0.095, -0.4, 0, PT_TAU); c.fill();
+    c.fillStyle = '#4b3a30'; c.beginPath(); c.arc(0.44, -0.46, 0.03, 0, PT_TAU); c.fill();
+  },
+  titan(c, u, k) {   // もやの層と土星
+    c.fillStyle = '#4a3519'; c.fillRect(-1, 0.42, 2, 1);
+    c.lineCap = 'round'; c.lineWidth = 3.2 * u;
+    for (let i = 0; i < 3; i++) {
+      const y = -0.06 + i * 0.17; c.strokeStyle = rgba('#ffc04a', 0.85 - i * 0.22);
+      c.beginPath(); c.moveTo(-0.8, y); c.quadraticCurveTo(-0.4, y - 0.07, 0, y); c.quadraticCurveTo(0.4, y + 0.07, 0.8, y); c.stroke();
+    }
+    c.fillStyle = '#e3c88a'; c.beginPath(); c.arc(0.3, -0.4, 0.15, 0, PT_TAU); c.fill();
+    c.strokeStyle = '#f4e2b4'; c.lineWidth = 1.5 * u; c.beginPath(); c.ellipse(0.3, -0.4, 0.3, 0.075, -0.35, 0, PT_TAU); c.stroke();
+  },
+  venus(c, u, k) {   // 雲の渦と熱のゆらぎ
+    c.strokeStyle = '#ffd09a'; c.lineWidth = 2 * u; c.lineCap = 'round'; c.beginPath();
+    for (let a = 0; a <= 4.6 * Math.PI; a += 0.2) { const r = 0.03 + 0.06 * a / 1.3; const x = Math.cos(a) * r, y = -0.14 + Math.sin(a) * r * 0.9; if (a === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.stroke();
+    c.strokeStyle = rgba('#ff5a1a', 0.85); c.lineWidth = 1.5 * u;
+    for (let i = -1; i <= 1; i++) { const x = i * 0.26; c.beginPath(); c.moveTo(x, 0.7); c.bezierCurveTo(x - 0.1, 0.56, x + 0.1, 0.44, x, 0.32); c.stroke(); }
+  },
+  mercury(c, u, k) {   // 影のクレーターと巨大な太陽
+    c.fillStyle = rgba('#ffb878', 0.12); c.beginPath(); c.arc(0.05, 0.2, 0.7, 0, PT_TAU); c.fill();
+    c.fillStyle = rgba('#ffb878', 0.22); c.beginPath(); c.arc(0.05, 0.2, 0.55, 0, PT_TAU); c.fill();
+    c.fillStyle = '#ffd29a'; c.beginPath(); c.arc(0.05, 0.2, 0.42, 0, PT_TAU); c.fill();
+    c.fillStyle = '#141214'; c.fillRect(-1, 0.2, 2, 1);
+    c.strokeStyle = rgba('#ffd29a', 0.7); c.lineWidth = u; c.beginPath(); c.moveTo(-1, 0.2); c.lineTo(1, 0.2); c.stroke();
+    c.fillStyle = '#000'; c.beginPath(); c.ellipse(-0.02, 0.5, 0.5, 0.15, 0, 0, PT_TAU); c.fill();
+    c.strokeStyle = rgba('#ffb878', 0.85); c.lineWidth = 1.4 * u; c.beginPath(); c.ellipse(-0.02, 0.5, 0.5, 0.15, 0, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
+  },
+};
+const PT_SKY = { moon: '#0b0f1a', europa: '#0b1426', io: '#2a1208', mars: '#b4683c', titan: '#8a5c1a', venus: '#a8501a', mercury: '#050405' };
+
+// 名前を下側の縁に沿って1字ずつ描く（縁の帯の中。小さいパッチでは描かない）
+function PT_rimText(c, name, rad, px, color) {
+  const font = '700 ' + px + 'px ' + FONT;
+  c.save(); c.font = font; c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const gap = px * 0.18, ws = Array.from(name).map((ch) => { const w = c.measureText(ch).width; return (w >= 0 ? w : px * 0.6) + gap; });
+  const total = ws.reduce((a, b) => a + b, 0);
+  let cum = 0;
+  Array.from(name).forEach((ch, i) => {
+    const mid = cum + ws[i] / 2; cum += ws[i];
+    const a = Math.PI / 2 + (total / 2 - mid) / rad;
+    c.save(); c.translate(Math.cos(a) * rad, Math.sin(a) * rad); c.rotate(a - Math.PI / 2); c.fillText(ch, 0, 0); c.restore();
+  });
+  c.restore();
+}
+
+// パッチを描く。(cx,cy)=中心、r=半径px。o: { earned=true, rim=false(縁に名前), q=true(未取得に「?」), a=1 }
+function drawMissionPatch(ctx, id, cx, cy, r, o) {
+  o = o || {};
+  const earned = o.earned !== false, p = P();
+  const body = BODIES.find((b) => b.id === id) || BODIES[0], acc = body.visual.accent;
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(r, r);
+  if (o.a != null) ctx.globalAlpha = (typeof ctx.globalAlpha === 'number' ? ctx.globalAlpha : 1) * Math.max(0, Math.min(1, o.a));
+  const u = 1 / r;   // 1px
+  if (!earned) {   // 未取得: 暗い輪郭だけ（縁・内側の輪・?）
+    ctx.fillStyle = rgba(p.dim, 0.07); ctx.beginPath(); ctx.arc(0, 0, 1, 0, PT_TAU); ctx.fill();
+    ctx.strokeStyle = rgba(p.dim, 0.55); ctx.lineWidth = 1.4 * u; ctx.beginPath(); ctx.arc(0, 0, 0.97, 0, PT_TAU); ctx.stroke();
+    ctx.strokeStyle = rgba(p.dim, 0.3); ctx.lineWidth = 0.8 * u; ctx.setLineDash([2 * u, 2.4 * u]); ctx.beginPath(); ctx.arc(0, 0, 0.74, 0, PT_TAU); ctx.stroke(); ctx.setLineDash([]);
+    if (o.q !== false) { ctx.fillStyle = rgba(p.dim, 0.85); ctx.font = '500 ' + (r * 0.75) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.save(); ctx.scale(1 / r, 1 / r); ctx.fillText('?', 0, 0); ctx.restore(); }
+    ctx.restore(); return;
+  }
+  const sky = PT_SKY[id] || '#0b0f1a';
+  ctx.fillStyle = mixHex(acc, PT_INK, 0.82); ctx.beginPath(); ctx.arc(0, 0, 1, 0, PT_TAU); ctx.fill();   // 縁の帯
+  ctx.save(); ctx.beginPath(); ctx.arc(0, 0, 0.76, 0, PT_TAU); ctx.clip();
+  ctx.fillStyle = sky; ctx.fillRect(-1, -1, 2, 2);
+  if (PT_ART[id]) PT_ART[id](ctx, u, { sky, accent: acc });
+  ctx.restore();
+  ctx.strokeStyle = rgba(acc, 0.9); ctx.lineWidth = 2 * u + 0.02; ctx.beginPath(); ctx.arc(0, 0, 0.96, 0, PT_TAU); ctx.stroke();   // 外の縁
+  ctx.strokeStyle = rgba(acc, 0.5); ctx.lineWidth = 1 * u; ctx.beginPath(); ctx.arc(0, 0, 0.76, 0, PT_TAU); ctx.stroke();   // 内の細い輪
+  if (o.rim && r >= 18) { ctx.save(); ctx.scale(u, u); PT_rimText(ctx, body.name, 0.87 * r, Math.max(3.6, r * 0.15), rgba(acc, 0.95)); ctx.restore(); }
+  ctx.restore();
+}
+
+// クリア画面の「PATCH EARNED」行。slot = drawClearPanel が返す { x, y, w, h }、pt = 開始からの秒数（null/大きい値=完了後）
+function drawPatchAward(ctx, slot, id, name, pt) {
+  const p = P(), v = patchAwardView(pt);
+  const R = 17, cx = slot.x + 58, cy = slot.y + slot.h / 2 - 1;
+  // 飛来: 画面上方から回転しながら、小さな過ぎ越し（1.45倍→1倍）で収まる
+  const e = 1 - Math.pow(1 - v.fly, 3), fx = cx + (1 - e) * 70, fy = cy - (1 - e) * 120, sc = 1 + 0.45 * (1 - e) * (1 - e);
+  drawMissionPatch(ctx, id, cx, cy, R, { earned: false, q: false, a: 0.9 * (1 - v.fly) });   // 空の枠（飛んでくる前の置き場）
+  ctx.save(); ctx.translate(fx, fy); ctx.rotate((1 - e) * PT_TAU * 2); ctx.scale(sc, sc);
+  drawMissionPatch(ctx, id, 0, 0, R, { rim: false, a: Math.min(1, v.fly * 2.5) });
+  ctx.restore();
+  if (v.flash > 0 && v.flash < 1) {   // 着地の小さな閃光（輪が広がって消える）
+    ctx.save(); ctx.strokeStyle = rgba(p.hi, 0.8 * (1 - v.flash)); ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 2 + v.flash * 14, 0, PT_TAU); ctx.stroke();
+    ctx.fillStyle = rgba('#ffffff', 0.35 * (1 - v.flash)); ctx.beginPath(); ctx.arc(cx, cy, R, 0, PT_TAU); ctx.fill(); ctx.restore();
+  }
+  if (v.text > 0) {
+    txt(ctx, 'PATCH EARNED — ' + String(name).toUpperCase(), slot.x + 86, cy - 11, 9, p.warn, 'left', { sp: 1.5, w: 600, a: v.text });
+    txt(ctx, 'FIRST PERFECT LANDING ON ' + String(name).toUpperCase(), slot.x + 86, cy + 4, 6.5, p.dim, 'left', { sp: 1.2, w: 500, a: v.text * 0.9 });
   }
 }
 
@@ -4775,6 +4969,13 @@ const Music = {
       _musSfxTone('triangle', f, t, 0.28, 0.32, 2.0);
       _musSfxTone('sine', f * 1.5, t + 0.06, 0.22, 0.2, 0);
     },
+    // ミッションパッチ獲得: 高く短い2音のチャイム + きらめき（ミュート時は _musSfxReady で無音）
+    patch() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      [[0, 0], [7, 0.1], [12, 0.2]].forEach(([s, d]) => _musSfxTone('sine', _musHz(783.99, s), t + d, 0.5, 0.3, 2.0));
+      _musSfxTone('triangle', _musHz(783.99, 24), t + 0.2, 0.35, 0.12, 0);
+    },
     // 特典の輪: 上昇する短いアルペジオ
     power() {
       if (!_musSfxReady()) return;
@@ -4822,11 +5023,14 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // 項目は日本語の短文（22字まで）。他の表示（英語）と違う見た目にして読んでもらうため日本語にする（ユーザー決定）。
 const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.10.26', items: [
-    '降下ルートの輪をくぐってコンボ',
-    '特別な輪で短時間の特典',
+    'PERFECT で天体ごとのパッチ',
+    'タイトルの MAP から太陽系マップ',
+    '隕石スローを 1/4 の速さに強化',
+  ] },
+  { version: '1.1.0-beta.2', date: '2026.10.26', items: [
+    '輪でコンボ・特別な輪で特典',
     'ステージごとに★3つを集めよう',
     '新天体：水星（暗闇のクレーター）',
-    'タイトルの MAP から太陽系マップ',
     '起動時に世界ランキング TOP 5',
   ] },
   { version: '1.1.0-beta', date: '2026.10.26', items: [
@@ -5052,6 +5256,8 @@ class SolarMap {
     this.sum = o.summary || { totalStars: 0, maxStars: 0, bodies: [] };
     this.sfx = typeof o.sfx === 'function' ? o.sfx : () => {};
     this.reduce = !!o.reduce;
+    this.patches = Array.isArray(o.patches) ? o.patches : [];   // patchesSummary(): [{ id, name, earned }]
+    this.PT = Object.create(null); for (const x of this.patches) if (x && x.id) this.PT[x.id] = !!x.earned;
     this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）
     let mx = 1; for (const e of this.list) if (e.stage > mx) mx = e.stage;
     this.maxStage = mx;
@@ -5103,6 +5309,8 @@ class SolarMap {
     if (!bs.length || bs.some((b) => !b.ring)) return 'none';
     return bs.every((b) => b.gold) ? 'gold' : 'ring';
   }
+  hasPatch(id) { return this.PT[id] === true; }
+  patchTotal() { return { n: patchCount(this.patches), of: this.patches.length || BODY_COUNT }; }
   flagged(id) { const ids = SM_SYS[id] ? SM_SYS[id].bodies : [id]; return ids.some((i) => this.B[i].any); }
   sysLocked(sys) { return SM_SYS[sys].bodies.every((i) => this.B[i].locked); }
   sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } return { st, mx }; }
@@ -5508,6 +5716,8 @@ class SolarMap {
         const ly = q.y + r + (id === 'saturn' ? 14 : 10), hl = kf || selSys === id;
         c.save(); c.globalAlpha *= uiA * (hl ? 1 : 0.9);
         SM_T(c, SM_SYS[id].name, SM_clamp(q.x, 24, SM_W - 24), SM_clamp(ly, 20, 470), 8, hl ? p.warn : rgba(p.fg, 0.75), 'center', 500, 1.2);
+        const got = SM_SYS[id].bodies.filter((b) => this.hasPatch(b));   // 取得済みパッチを名前の下に小さく並べる
+        got.forEach((b, j) => drawMissionPatch(c, b, SM_clamp(q.x, 24, SM_W - 24) + (j - (got.length - 1) / 2) * 11, SM_clamp(ly, 20, 470) + 17, 4.6, {}));
         c.restore();
       }
       if (kf) {
@@ -5532,6 +5742,7 @@ class SolarMap {
     SM_T(c, 'BETA v1.1', SM_W - 16, 28, 9, p.warn, 'right', 700, 1.5);
     SM_T(c, 'SELECT DESTINATION', 96, 45, 9.5, p.dim, 'left', 500, 1.5);
     SM_T(c, '★ ' + sum.totalStars + ' / ' + sum.maxStars, SM_W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6);
+    { const pt = this.patchTotal(); SM_T(c, 'PATCH ' + pt.n + '/' + pt.of, SM_W - 16, 62, 8, pt.n >= pt.of && pt.of > 0 ? p.warn : rgba(p.fg, 0.6), 'right', 500, 0.8); }
     const mm = Math.floor(this.T / 60) % 60, ss = Math.floor(this.T) % 60;
     SM_T(c, 'T+ 00:' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 16, 62, 8, rgba(p.mid, 0.7), 'left', 500, 1);
     c.strokeStyle = rgba(p.mid, 0.3); c.lineWidth = 0.6; c.beginPath(); c.moveTo(16, 68); c.lineTo(SM_W - 16, 68); c.stroke();
@@ -5636,6 +5847,7 @@ class SolarMap {
     const bob = (!this.reduce && !lk) ? Math.sin(this.NOW * 2 + y) * 0.7 : 0;
     SM_body(c, id, x + 30, cy + bob, 15, this.T, this.reduce, { pers: false, halo: false });
     this._ring(c, x + 30, cy + bob, 19, this.ringState(id), 1);
+    drawMissionPatch(c, id, x + 138, cy - 17, 9, { earned: this.hasPatch(id), q: false, a: lk ? 0.5 : 1 });
     SM_T(c, B.name, x + 58, cy - 6, 13, lk ? rgba(p.fg, 0.7) : p.fg, 'left', 600, 1.6);
     if (B.loops > 0) {   // 周回の切り替え（2周目以降が解放されたとき）
       const st = this.stepRects(card);
@@ -6349,16 +6561,23 @@ class TitleScene extends Scene {
     const list = loadProfiles(this.engine.storage);
     const act = getActiveProfile(this.engine.storage);
     const rows = list.map((p, i) => ({ name: p.name, active: !!act && act.name === p.name,
-      sel: { x: 36, y: 164 + i * 56, w: 148, h: 44 }, pin: { x: 192, y: 164 + i * 56, w: 52, h: 44 }, del: { x: 252, y: 164 + i * 56, w: 52, h: 44 } }));
+      sel: { x: 36, y: 164 + i * 56, w: 126, h: 44 }, patch: { x: 166, y: 164 + i * 56, w: 46, h: 44 }, pin: { x: 216, y: 164 + i * 56, w: 46, h: 44 }, del: { x: 266, y: 164 + i * 56, w: 46, h: 44 } }));
     const pf = this.prof, hp = pf && pf.hasPin === true;
-    return { rows, pset: { x: 60, y: 250, w: W - 120, h: 44, label: hp ? 'CHANGE PIN' : 'SET PIN' }, prem: hp ? { x: 60, y: 302, w: W - 120, h: 44, label: 'REMOVE PIN', danger: true } : null, pback: { x: W / 2 - 50, y: 366, w: 100, h: 36 }, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
+    const cells = []; for (let i = 0; i < PATCH_COUNT; i++) cells.push({ x: 28 + (i % 4) * 76, y: 206 + Math.floor(i / 4) * 92, w: 76, h: 88 });
+    return { rows, cells, pbk: { x: W / 2 - 50, y: 414, w: 100, h: 44 }, pset: { x: 60, y: 250, w: W - 120, h: 44, label: hp ? 'CHANGE PIN' : 'SET PIN' }, prem: hp ? { x: 60, y: 302, w: W - 120, h: 44, label: 'REMOVE PIN', danger: true } : null, pback: { x: W / 2 - 50, y: 366, w: 100, h: 36 }, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
       yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 356, w: W - 120, h: 44, label: 'CANCEL' } };
   }
   _profInput(action, data) {
     const pf = this.prof;
-    if (action === 'back') { if (pf.mode === 'confirm' || pf.mode === 'pin') { pf.mode = 'list'; pf.msg = ''; pf.ok = false; } else this.prof = null; return; }
+    if (action === 'back') { if (pf.mode === 'confirm' || pf.mode === 'pin' || pf.mode === 'patches') { pf.mode = 'list'; pf.msg = ''; pf.ok = false; } else this.prof = null; return; }
     if (action !== 'tap' || !data || pf.busy) return;
     const R = this._profRects();
+    if (pf.mode === 'patches') {   // パッチケース（タップはすべてここで消費。セルをタップすると詳しい説明、BACK で一覧へ）
+      if (this._hit(R.pbk, data)) { pf.mode = 'list'; pf.msg = ''; pf.sel = null; return; }
+      const sm = patchesSummary(this.engine.storage, pf.target);
+      R.cells.forEach((cell, i) => { if (i < sm.length && this._hit(cell, data)) { pf.sel = sm[i].id; musicOf(this.engine).sfx.uiTap(); } });
+      return;
+    }
     if (pf.mode === 'pin') {
       if (this._hit(R.pback, data)) { pf.mode = 'list'; pf.msg = ''; pf.ok = false; }
       else if (this._hit(R.pset, data)) this._pinSet(pf.target);
@@ -6373,6 +6592,7 @@ class TitleScene extends Scene {
     if (this._hit(R.close, data)) { this.prof = null; return; }
     if (this._hit(R.add, data)) { if (!R.add.off) { this.prof = null; this._openName(false); } else pf.msg = 'MAX ' + PROFILE_MAX + ' PILOTS'; return; }
     for (const r of R.rows) {
+      if (this._hit(r.patch, data)) { musicOf(this.engine).sfx.uiTap(); pf.mode = 'patches'; pf.target = r.name; pf.sel = null; pf.msg = ''; return; }
       if (this._hit(r.pin, data)) { this._openPinMenu(r.name); return; }
       if (this._hit(r.del, data)) { pf.mode = 'confirm'; pf.target = r.name; pf.msg = ''; return; }
       if (this._hit(r.sel, data)) { setActiveProfile(this.engine.storage, r.name); this.name = r.name; return; }
@@ -6467,7 +6687,7 @@ class TitleScene extends Scene {
     if (list.length > 1) {
       this.showRank = false;
       let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
       return;
     }
     this._startAt(1);
@@ -6477,7 +6697,7 @@ class TitleScene extends Scene {
     const list = this._startOptions();
     this.showRank = false;
     let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
   }
   _startAt(stage) {
     this.map = null;
@@ -6705,7 +6925,9 @@ class TitleScene extends Scene {
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;
       const pinBtns = pf.mode === 'pin' ? [R.pset].concat(R.prem ? [R.prem] : []) : [];
-      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg, ok: !!pf.ok,
+      let cases = null;
+      if (pf.mode === 'patches') { const sm = patchesSummary(this.engine.storage, pf.target); cases = { name: pf.target, n: patchCount(sm), of: sm.length, sel: pf.sel || '', back: R.pbk, list: sm.map((x, i) => Object.assign({ rect: R.cells[i] }, x)) }; }
+      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg, ok: !!pf.ok, cases,
         pin: pf.mode === 'pin' ? { name: pf.target, buttons: pinBtns, back: R.pback,
           note: ['PIN LETS YOU USE THIS NAME ON OTHER DEVICES.', "DON'T REUSE A PASSWORD FROM OTHER SERVICES.", 'OPTIONAL \u00b7 4-6 DIGITS \u00b7 6 RECOMMENDED'] } : null,
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
@@ -6909,6 +7131,7 @@ const SHAKE_S = 0.25, SHAKE_PX = 3;
 const CLEAR_SLOT_S = 0.2;        // クリア画面の集計：1行あたりの秒数
 const CLEAR_STAMP_S = 0.18;      // グレードのスタンプが押される秒数
 const STAR_POP_DELAY = 0.12, STAR_POP_STEP = 0.24, STAR_POP_S = 0.2;   // クリア画面: 新しく取った★が順に押される（グレードのスタンプの後）
+const PATCH_ROOM = 46, PATCH_GAP = 0.25;   // クリア画面: PATCH EARNED の行の高さ / ★の後の間（秒）
 const POWER_BANNER_S = 2.4;      // 特典取得のバナー秒数
 const ASSIST_MAX_OMEGA = 35;     // ATTITUDE ASSIST: 戻す角速度の上限(度/s)
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
@@ -7297,7 +7520,7 @@ class Game extends Scene {
     this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
     // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/ATTITUDE ASSIST/RADAR）の状態もここで初期化
-    this._floats = []; this._slowT = 0; this._assistT = 0; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._starT = 0; this._starSnd = 0;
+    this._floats = []; this._slowT = 0; this._assistT = 0; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
     this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
 
     // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
@@ -7364,7 +7587,7 @@ class Game extends Scene {
       return;
     }
     if (this.state === 'cleared') {
-      if (confirm && this._inputLock <= 0) { if (this._clearT != null && this._clearT < this._clearEnd()) this._skipClear(); else this._nextAfterClear(); }   // 集計中のタップは最後まで進めるだけ
+      if (confirm && this._inputLock <= 0) { if (this._clearT != null && this._clearT < this._clearEnd()) this._skipClear(); else if (this._patchBusy()) this._starT = 99; else this._nextAfterClear(); }   // 集計中・パッチ演出中のタップは最後まで進めるだけ
       if (action === 'back') this.engine.toMenu();
       return;
     }
@@ -8322,13 +8545,20 @@ class Game extends Scene {
 
   // 通常ステージの最良グレードと★（stars.js）をパイロット別に保存（'stageBest'）。デバッグ操作のランとボーナスは対象外（★も出さない）
   _recordStageBest(grade) {
-    this._starsInfo = null; this._starT = 0; this._starSnd = 0;
+    this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
     if (this.bonus || this._isDebugRun()) return;
     const mask = STAR_LANDED | (allRingsGot(this._rg) ? STAR_RINGS : 0) | (grade === 'PERFECT' ? STAR_PERFECT : 0);
     const pr = getActiveProfile(this.engine.storage);
+    const before = (pr && pr.name) ? patchesSummary(this.engine.storage, pr.name) : null;   // 記録の前に確かめる（新しいパッチか）
     const rec = recordStage(this.engine.storage, pr && pr.name, this.stage, grade, mask);
     this._starsInfo = { mask: rec.stars, fresh: rec.fresh, run: mask };
+    const bd = this._info.body;
+    if (before && patchIsNew(before, bd.id, grade)) {
+      const nf = [1, 2, 4].filter((b) => rec.fresh & b).length;
+      this._patchInfo = { id: bd.id, name: bd.name, t0: (nf ? STAR_POP_DELAY + STAR_POP_STEP * (nf - 1) + STAR_POP_S : 0) + PATCH_GAP };
+    }
   }
+  _patchBusy() { return !!(this._patchInfo && this._starT < this._patchInfo.t0 + PATCH_AWARD_S); }
 
   // ---- クリア画面の集計（行が順に数え上がり、最後にグレードのスタンプ）----
   _clearEnd() { return ((this._breakdown ? this._breakdown.length : 0) + 1) * CLEAR_SLOT_S + 0.05 + CLEAR_STAMP_S; }
@@ -8336,12 +8566,16 @@ class Game extends Scene {
     if (this._clearT == null) return;
     const n = this._breakdown ? this._breakdown.length : 0, end = this._clearEnd();
     if (this._clearT >= end) {   // 集計が終わったら、新しく取った★が順に押される
-      if (this._starsInfo && this._starsInfo.fresh) {
+      if (this._starsInfo && (this._starsInfo.fresh || this._patchInfo)) {
         const prevS = this._starT; this._starT += dt;
         let j = 0;
         for (let i = 0; i < 3; i++) if (this._starsInfo.fresh & (1 << i)) {
           const t0 = STAR_POP_DELAY + STAR_POP_STEP * j; j++;
           if (prevS <= t0 && this._starT > t0) this._sfx('ring', 3 + j);
+        }
+        if (this._patchInfo) {   // パッチが枠に収まる瞬間（飛来が終わるとき）にチャイム
+          const tc = this._patchInfo.t0 + PATCH_CHIME_S;
+          if (prevS <= tc && this._starT > tc) this._sfx('patch');
         }
       }
       return;
@@ -8368,7 +8602,8 @@ class Game extends Scene {
       for (let i = 0; i < 3; i++) if (this._starsInfo.fresh & (1 << i)) { k[i] = c01((this._starT - STAR_POP_DELAY - STAR_POP_STEP * j) / STAR_POP_S); j++; }
       stars = { mask: this._starsInfo.mask, fresh: this._starsInfo.fresh, k };
     }
-    return { prog, tot: c01((t - n * CLEAR_SLOT_S) / CLEAR_SLOT_S), stamp: t >= ts ? Math.max(0.001, c01((t - ts) / CLEAR_STAMP_S)) : 0, stars };
+    const patch = this._patchInfo ? { id: this._patchInfo.id, name: this._patchInfo.name, pt: this._starT - this._patchInfo.t0 } : null;
+    return { patch, prog, tot: c01((t - n * CLEAR_SLOT_S) / CLEAR_SLOT_S), stamp: t >= ts ? Math.max(0.001, c01((t - ts) / CLEAR_STAMP_S)) : 0, stars };
   }
 
   // ---- クラッシュ処理 ----
@@ -8745,7 +8980,7 @@ class Game extends Scene {
 
   // ---- Stage Clear overlay ----
   // パネルは y 128..344 に固定（パッド面は y>=455 なので下端は111px以上上。宇宙飛行士・旗・機体に重ならない）
-  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 + ((this._breakdown && this._breakdown.length > 4) ? 10 : 0) + (this._starsInfo ? 42 : 0) }; }
+  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 + ((this._breakdown && this._breakdown.length > 4) ? 10 : 0) + (this._starsInfo ? 42 : 0) + (this._patchInfo ? PATCH_ROOM : 0) }; }
 
   _drawClearScreen(ctx) {
     const b = this.bonus;
@@ -8757,12 +8992,14 @@ class Game extends Scene {
       ? [['CONTINUE', this._bonusGrant ? '+1' : '\u2013', this._bonusGrant ? P().mid : P().dim], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]]
       : [['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]];
     const cv = this._clearView();
-    drawClearPanel(ctx, this._clearPanelRect(), {
+    const slot = drawClearPanel(ctx, this._clearPanelRect(), {
+      patchRoom: this._patchInfo ? PATCH_ROOM : 0,
       bonus: !!b, perfect: !!this._perfect,
       sub: b ? missionOf(b.type).name + '  ·  \u00d7' + missionOf(b.type).mult : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
       score: (b ? this._bonusScore : this._stageScore) || 0, cols, next, t: this._clock || 0,
       lines: this._breakdown || [], prog: cv.prog, tot: cv.tot, stamp: cv.stamp, grade: this._grade || '', stars: cv.stars,
     });
+    if (slot && cv.patch) drawPatchAward(ctx, slot, cv.patch.id, cv.patch.name, cv.patch.pt);
   }
 
   // ---- Crashed (continue available) ----

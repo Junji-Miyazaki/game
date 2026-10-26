@@ -13,6 +13,7 @@ import { stageInfo } from './bodies.js';
 import { WHATSNEW } from './whatsnew.js';
 import { BootFx } from './bootfx.js';
 import { starsSummary } from './stars.js';
+import { patchesSummary, patchCount, PATCH_COUNT } from './patches.js';
 import { SolarMap } from './solarmap.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
@@ -632,16 +633,23 @@ export class TitleScene extends Scene {
     const list = loadProfiles(this.engine.storage);
     const act = getActiveProfile(this.engine.storage);
     const rows = list.map((p, i) => ({ name: p.name, active: !!act && act.name === p.name,
-      sel: { x: 36, y: 164 + i * 56, w: 148, h: 44 }, pin: { x: 192, y: 164 + i * 56, w: 52, h: 44 }, del: { x: 252, y: 164 + i * 56, w: 52, h: 44 } }));
+      sel: { x: 36, y: 164 + i * 56, w: 126, h: 44 }, patch: { x: 166, y: 164 + i * 56, w: 46, h: 44 }, pin: { x: 216, y: 164 + i * 56, w: 46, h: 44 }, del: { x: 266, y: 164 + i * 56, w: 46, h: 44 } }));
     const pf = this.prof, hp = pf && pf.hasPin === true;
-    return { rows, pset: { x: 60, y: 250, w: W - 120, h: 44, label: hp ? 'CHANGE PIN' : 'SET PIN' }, prem: hp ? { x: 60, y: 302, w: W - 120, h: 44, label: 'REMOVE PIN', danger: true } : null, pback: { x: W / 2 - 50, y: 366, w: 100, h: 36 }, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
+    const cells = []; for (let i = 0; i < PATCH_COUNT; i++) cells.push({ x: 28 + (i % 4) * 76, y: 206 + Math.floor(i / 4) * 92, w: 76, h: 88 });
+    return { rows, cells, pbk: { x: W / 2 - 50, y: 414, w: 100, h: 44 }, pset: { x: 60, y: 250, w: W - 120, h: 44, label: hp ? 'CHANGE PIN' : 'SET PIN' }, prem: hp ? { x: 60, y: 302, w: W - 120, h: 44, label: 'REMOVE PIN', danger: true } : null, pback: { x: W / 2 - 50, y: 366, w: 100, h: 36 }, add: { x: 60, y: 340, w: W - 120, h: 44, off: list.length >= PROFILE_MAX }, close: { x: W / 2 - 50, y: 400, w: 100, h: 36 },
       yes: { x: 60, y: 300, w: W - 120, h: 44, label: 'CONFIRM DELETE' }, no: { x: 60, y: 356, w: W - 120, h: 44, label: 'CANCEL' } };
   }
   _profInput(action, data) {
     const pf = this.prof;
-    if (action === 'back') { if (pf.mode === 'confirm' || pf.mode === 'pin') { pf.mode = 'list'; pf.msg = ''; pf.ok = false; } else this.prof = null; return; }
+    if (action === 'back') { if (pf.mode === 'confirm' || pf.mode === 'pin' || pf.mode === 'patches') { pf.mode = 'list'; pf.msg = ''; pf.ok = false; } else this.prof = null; return; }
     if (action !== 'tap' || !data || pf.busy) return;
     const R = this._profRects();
+    if (pf.mode === 'patches') {   // パッチケース（タップはすべてここで消費。セルをタップすると詳しい説明、BACK で一覧へ）
+      if (this._hit(R.pbk, data)) { pf.mode = 'list'; pf.msg = ''; pf.sel = null; return; }
+      const sm = patchesSummary(this.engine.storage, pf.target);
+      R.cells.forEach((cell, i) => { if (i < sm.length && this._hit(cell, data)) { pf.sel = sm[i].id; musicOf(this.engine).sfx.uiTap(); } });
+      return;
+    }
     if (pf.mode === 'pin') {
       if (this._hit(R.pback, data)) { pf.mode = 'list'; pf.msg = ''; pf.ok = false; }
       else if (this._hit(R.pset, data)) this._pinSet(pf.target);
@@ -656,6 +664,7 @@ export class TitleScene extends Scene {
     if (this._hit(R.close, data)) { this.prof = null; return; }
     if (this._hit(R.add, data)) { if (!R.add.off) { this.prof = null; this._openName(false); } else pf.msg = 'MAX ' + PROFILE_MAX + ' PILOTS'; return; }
     for (const r of R.rows) {
+      if (this._hit(r.patch, data)) { musicOf(this.engine).sfx.uiTap(); pf.mode = 'patches'; pf.target = r.name; pf.sel = null; pf.msg = ''; return; }
       if (this._hit(r.pin, data)) { this._openPinMenu(r.name); return; }
       if (this._hit(r.del, data)) { pf.mode = 'confirm'; pf.target = r.name; pf.msg = ''; return; }
       if (this._hit(r.sel, data)) { setActiveProfile(this.engine.storage, r.name); this.name = r.name; return; }
@@ -750,7 +759,7 @@ export class TitleScene extends Scene {
     if (list.length > 1) {
       this.showRank = false;
       let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
       return;
     }
     this._startAt(1);
@@ -760,7 +769,7 @@ export class TitleScene extends Scene {
     const list = this._startOptions();
     this.showRank = false;
     let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
   }
   _startAt(stage) {
     this.map = null;
@@ -988,7 +997,9 @@ export class TitleScene extends Scene {
     if (this.prof) {
       const R = this._profRects(), pf = this.prof;
       const pinBtns = pf.mode === 'pin' ? [R.pset].concat(R.prem ? [R.prem] : []) : [];
-      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg, ok: !!pf.ok,
+      let cases = null;
+      if (pf.mode === 'patches') { const sm = patchesSummary(this.engine.storage, pf.target); cases = { name: pf.target, n: patchCount(sm), of: sm.length, sel: pf.sel || '', back: R.pbk, list: sm.map((x, i) => Object.assign({ rect: R.cells[i] }, x)) }; }
+      drawProfilePanel(ctx, { mode: pf.mode, rows: R.rows, add: R.add, close: R.close, msg: pf.msg, ok: !!pf.ok, cases,
         pin: pf.mode === 'pin' ? { name: pf.target, buttons: pinBtns, back: R.pback,
           note: ['PIN LETS YOU USE THIS NAME ON OTHER DEVICES.', "DON'T REUSE A PASSWORD FROM OTHER SERVICES.", 'OPTIONAL \u00b7 4-6 DIGITS \u00b7 6 RECOMMENDED'] } : null,
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });

@@ -14,11 +14,11 @@ const RING_START_ARC = 64;             // 出現位置から最初の輪まで�
 export const POWER_RING_GAP = 2 * RING_R + 8;   // 特典の輪と通常の輪の中心間の最小距離
 export const POWER_CHANCE = 0.35;      // ステージ2以降、1ステージにつき最大1個。この確率で出る（短く・まれに）
 export const POWER_MIN_STAGE = 2;
-export const SLOWMO_S = 8, SLOWMO_FACTOR = 0.5;   // SLOW-MO: 隕石(障害物)が8秒間 50%速度
+export const SLOWMO_S = 8, SLOWMO_FACTOR = 0.25;  // SLOW-MO: 隕石(障害物)が8秒間 25%速度（ユーザー要望で 50%→25%）
 export const ASSIST_S = 6;                         // ATTITUDE ASSIST: 6秒間 自動で水平に戻す
 export const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
 export const POWER_DEFS = {
-  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT HALF SPEED · 8 S', dur: SLOWMO_S },
+  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', dur: SLOWMO_S },
   radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
   attitude: { id: 'attitude', name: 'ATTITUDE ASSIST', note: 'AUTO-LEVEL · 6 S',            dur: ASSIST_S },
   fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
