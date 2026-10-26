@@ -11,6 +11,7 @@ import { txt, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, d
 
 import { stageInfo } from './bodies.js';
 import { WHATSNEW } from './whatsnew.js';
+import { stageRecord } from './stars.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
 // ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
@@ -619,7 +620,12 @@ export class TitleScene extends Scene {
   _startOptions() { return unlockedStarts(getMaxStage(this.engine.storage, this.name)); }
   _startOrChoose() {
     const list = this._startOptions();
-    if (list.length > 1) { this.showRank = false; this.pick = { list, sel: 0, page: 0 }; return; }
+    if (list.length > 1) {
+      this.showRank = false;
+      const recs = Object.create(null);   // L2: ステージごとの★と最高グレード（開いた時に1回だけ読む）
+      for (const o of list) recs[o.stage] = stageRecord(this.engine.storage, this.name, o.stage);
+      this.pick = { list, sel: 0, page: 0, recs }; return;
+    }
     this._startAt(1);
   }
   _startAt(stage) {
@@ -637,7 +643,7 @@ export class TitleScene extends Scene {
     for (let i = page * PER; i < Math.min(pk.list.length, (page + 1) * PER); i++) {
       const o = pk.list[i];
       rows.push({ i, o, rect: { x: 36, y: 124 + (i - page * PER) * 52, w: W - 72, h: 44 }, cursor: i === pk.sel, best: i === 0,
-        label: o.label, stage: o.stage, g: o.realG.toFixed(2) });
+        label: o.label, stage: o.stage, g: o.realG.toFixed(2), mask: pk.recs && pk.recs[o.stage] ? pk.recs[o.stage].stars : 0, grade: pk.recs && pk.recs[o.stage] ? pk.recs[o.stage].grade : '' });
     }
     return { rows, page, pages, prev: { x: 36, y: 446, w: 56, h: 32 }, next: { x: W - 92, y: 446, w: 56, h: 32 }, cancel: { x: W / 2 - 60, y: 510, w: 120, h: 36 } };
   }

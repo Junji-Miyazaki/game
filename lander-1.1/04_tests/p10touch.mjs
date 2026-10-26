@@ -359,7 +359,7 @@ function landAndClear(extra = [], opts = {}) {
   let ov = 0; for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (overlap(boxes[i], boxes[j])) { ov++; console.log('  overlap', boxes[i].s, '/', boxes[j].s); }
   ok(ov === 0, 'panel texts do not overlap each other (full count)');
   ok(rec.texts.some(t => t.s === 'PERFECT') && rec.texts.some(t => t.s === '+' + g._stageScore), 'stamp + total shown');
-  ok(R.x === 20 && R.y === 128 && R.w === 320 && R.h === 216, 'panel rect unchanged');
+  ok(R.x === 20 && R.y === 128 && R.w === 320 && R.h >= 216 && R.h <= 216 + 10 + 42, 'panel rect: same origin/width; height grows only for the RINGS line / stars row (L2): ' + R.h);
 }
 {   // 途中のタップ: 最後まで進めるだけ。次のタップで次へ
   const { e, g } = landAndClear(); run(g, 2.7);
@@ -462,7 +462,7 @@ function landAndClear(extra = [], opts = {}) {
     h._touchHintT = 2; renderOK(h) && n++; h._shakeT = 0.2; h._shakeAmp = 3; renderOK(h) && n++;
     h.state = 'hold'; h._holdPrev = 'grounded'; renderOK(h) && n++;
   }
-  ok(n === 7 * 6 * 4, 'render never throws: all new states x 7 bodies x 4 seeds (' + n + ')');
+  ok(n === 8 * 6 * 4, 'render never throws: all new states x 8 bodies (7 + TERRA) x 4 seeds (' + n + ')');
   // 全グレードのスタンプ
   for (const gr of ['C', 'B', 'A', 'S', 'PERFECT']) for (const t of [0, 0.3, 0.7, 1.0, 1.22, 5]) {
     const { g: h } = newGame(); flatWorld(h); h.x = 305; h.y = 484; h.vy = 4; h.state = 'play'; run(h, 0.05); h._grade = gr; h._clearT = t; h.state = 'cleared'; h.landingSeq = { t: 3 };
@@ -478,7 +478,7 @@ function landAndClear(extra = [], opts = {}) {
 
 // ---------- 12. WHAT'S NEW ----------
 {
-  ok(WHATSNEW.version === '1.1.0-beta' && WHATSNEW.lines.length >= 3 && WHATSNEW.lines.length <= 5, 'whatsnew: version + 3-5 lines');
+  ok(WHATSNEW.version === '1.1.0-beta.2' && WHATSNEW.lines.length >= 3 && WHATSNEW.lines.length <= 5, 'whatsnew: version + 3-5 lines');
   ok(WHATSNEW.lines.every(l => l.length <= 24 && /[\u3040-\u30ff]/.test(l)), 'lines <= 24 chars, Japanese (user decision): ' + WHATSNEW.lines.map(l => l.length).join(','));
   const mk = (extra = []) => { const e = makeEngine(extra); const b = new BootScene(e, () => { e.started = true; }); return { e, b }; };
   const draw = (b, t = 5) => { b.t = t; const rec = { texts: [], tr: [] }; b.render(makeCtx(rec)); return rec.texts; };
@@ -518,19 +518,22 @@ function landAndClear(extra = [], opts = {}) {
 
 // ---------- 13. fuzz ----------
 {
-  seeded(7777);
+  seeded(5);
   const seenStates = new Set(); let lifts = 0, grounded = 0, finite = true, threw = 0;
   const { e, g } = newGame();
   const reset = () => {
     g.stage = 1 + Math.floor(Math.random() * 14); g.bonus = null; g.continues = 3; g._initStage(); g.obstacles = Math.random() < 0.2 ? g.obstacles : [];
     if (Math.random() < 0.6) flatWorld(g);   // 平地の多い地形（接地・離陸を確実に踏ませる）
-    if (Math.random() < 0.7) { g.x = 30 + Math.random() * 300; g.y = 330 + Math.random() * 100; g.vy = Math.random() * 25; g.vx = (Math.random() - 0.5) * 20; g.angle = (Math.random() - 0.5) * 30; }
+    if (Math.random() < 0.6) { flatWorld(g); g.x = 30 + Math.random() * 170; g.y = 462 + Math.random() * 12; g.vy = 1 + Math.random() * 4; g.vx = (Math.random() - 0.5) * 6; g.angle = (Math.random() - 0.5) * 10; }   // 平地の上空からの穏やかな降下（接地・離陸を確実に踏ませる）
+    else if (Math.random() < 0.7) { g.x = 30 + Math.random() * 300; g.y = 330 + Math.random() * 100; g.vy = Math.random() * 25; g.vx = (Math.random() - 0.5) * 20; g.angle = (Math.random() - 0.5) * 30; }
   };
   reset(); let prev = 'play';
   for (let f = 0; f < 5000; f++) {
+    if (f % 600 === 599) { g.state = 'play'; reset(); }   // 定期的に仕切り直す（乱数の流れが変わっても接地・離陸を踏む）
     const r = Math.random();
     if (g.state === 'play' || g.state === 'grounded') {
-      if (g._keys) { if (r < 0.3) g._keys.up = true; if (r > 0.9) g._keys.left = true; if (r > 0.93) g._keys.right = true; }
+      // L2: 降下を緩めるだけの推力にする（毎回上昇してしまうと接地に届かない）
+      if (g._keys) { if (r < 0.3 && (g.vy > 5 || g.state === 'grounded' && r < 0.08)) g._keys.up = true; if (r > 0.9) g._keys.left = true; if (r > 0.93) g._keys.right = true; }
       if (Math.random() < 0.01 && g.state === 'grounded') g.fuel = Math.random() < 0.5 ? 0 : 50;
     }
     try { g.update(DT); clock += 16; if (f % 7 === 0) g.render(makeCtx(null)); } catch (err) { threw++; if (threw < 3) console.log(err); }

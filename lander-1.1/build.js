@@ -18,6 +18,8 @@ const FILES = [
   '02_src/core/engine.js',
   '02_src/bodies.js',
   '02_src/modules.js',
+  '02_src/rings.js',
+  '02_src/stars.js',
   '02_src/net.js',
   '02_src/debug.js',
   '02_src/autopilot.js',

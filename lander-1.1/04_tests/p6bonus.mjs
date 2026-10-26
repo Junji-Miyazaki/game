@@ -170,7 +170,7 @@ function toCleared(g, s) {
     ok(BONUS_MISSIONS.STORM.padW < BONUS_MISSIONS.ROVER.padW, 'STORM pad smaller than the others');
   }
   ok(near(bodyGravity(TERRA, 0), 0.6151, 0.0005), 'TERRA gravity value ~0.615: ' + bodyGravity(TERRA, 0).toFixed(4));
-  ok(!BODIES.some((b) => b.id === 'terra') && BODIES.length === 6, 'TERRA is not part of the 6-body tour');
+  ok(!BODIES.some((b) => b.id === 'terra') && BODIES.length === 7, 'TERRA is not part of the 7-body tour');
   // 台地上のパッドが実際に動く
   g.stage = 3; g.bonus = { type: 'ROVER', afterStage: 3 }; g._initStage();
   const x0 = g.pad.x; run(g, 2); ok(Math.abs(g.pad.x - x0) > 5, 'ROVER pad moves: ' + (g.pad.x - x0).toFixed(1));

@@ -311,6 +311,7 @@ const SKYOBJ = {
   phobos:   { x: 268, y: 160, r: 9 },
   saturn:   { x: 248, y: 182, r: 22 },
   'sun-glow': { x: 208, y: 168, r: 150 },
+  'sun-low': { x: 330, y: 452, r: 330 },   // 水星: 地平線の縁すれすれの巨大な太陽
 };
 function skyObjFor(body) {
   const k = body.visual.skyObject;
@@ -410,6 +411,13 @@ function paintSunGlow(c, o) {
   c.fillStyle = 'rgba(70,24,6,0.16)';                         // 雲の筋
   for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
 }
+// 水星: 低く巨大な太陽の光が地平線の縁に溜まる（空は黒のまま。地形は逆光のシルエットになる）
+function paintSunLow(c, o) {
+  const { x, y, r } = o;
+  const g = mkR(c, x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(255,244,214,0.95)'); g.addColorStop(0.1, 'rgba(255,214,150,0.62)'); g.addColorStop(0.35, 'rgba(255,170,90,0.22)'); g.addColorStop(1, 'rgba(255,140,60,0)');
+  c.fillStyle = g; c.fillRect(0, 0, AW, AH);
+}
 // TERRA（ボーナス専用）の昼空: 柔らかい青のグラデーション + やさしい太陽光 + 遠い海の水平線。雲は drawBackdrop が毎フレーム流す。
 function paintDaySky(c, body) {
   const v = body.visual;
@@ -466,6 +474,7 @@ function paintSky(c, body) {
     case 'saturn': paintSaturn(c, o); break;
     case 'phobos': paintPhobos(c, o); break;
     case 'sun-glow': paintSunGlow(c, o); break;
+    case 'sun-low': paintSunLow(c, o); break;
     default: break;
   }
 }
@@ -542,11 +551,12 @@ function paintTerrain(c, body, pts) {
       for (let s = 0; s < 4; s++) { x += (T() - 0.5) * 34; y += (T() - 0.3) * 16; c.lineTo(x, y); }
       c.stroke();
     }
-  } else if (body.id === 'moon') {                               // クレーター
+  } else if (body.id === 'moon' || body.id === 'mercury') {      // クレーター（水星は縁が鋭く、影が濃い）
+    const hard = body.id === 'mercury';
     for (let k = 0; k < 9; k++) {
       const x = T() * AW, y = 470 + T() * 130, rx = 7 + T() * 18;
-      c.fillStyle = 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
-      c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
+      c.fillStyle = hard ? 'rgba(0,0,0,0.42)' : 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
+      c.strokeStyle = hard ? 'rgba(255,214,160,0.20)' : 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
     }
   } else if (body.id === 'terra') {                              // TERRA: 畑の帯と木々
     for (let k = 0; k < 8; k++) {
@@ -1001,6 +1011,82 @@ export function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
   ctx.restore();
 }
 
+// ================================================================ L2: 輪 / 特典の輪
+// 特典のピクトグラム（金色の線画）。kind: slowmo | radar | attitude | fuel
+export function drawPowerGlyph(ctx, kind, cx, cy, s, color) {
+  ctx.save(); strokeStyleSet(ctx, color, 1.4);
+  ctx.beginPath();
+  if (kind === 'slowmo') {            // 時計: 円 + 針 + 上のつまみ
+    ctx.arc(cx, cy + s * 0.1, s * 0.82, 0, TAU);
+    ctx.moveTo(cx, cy + s * 0.1); ctx.lineTo(cx, cy - s * 0.4); ctx.moveTo(cx, cy + s * 0.1); ctx.lineTo(cx + s * 0.35, cy + s * 0.3);
+    ctx.moveTo(cx - s * 0.25, cy - s * 0.95); ctx.lineTo(cx + s * 0.25, cy - s * 0.95);
+  } else if (kind === 'radar') {
+    drawModuleGlyph(ctx, 'radar', cx, cy, s, color);
+  } else if (kind === 'attitude') {   // 水平バー + 両端の小さな矢じり
+    ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
+    ctx.moveTo(cx - s * 0.55, cy - s * 0.45); ctx.lineTo(cx - s, cy); ctx.lineTo(cx - s * 0.55, cy + s * 0.45);
+    ctx.moveTo(cx + s * 0.55, cy - s * 0.45); ctx.lineTo(cx + s, cy); ctx.lineTo(cx + s * 0.55, cy + s * 0.45);
+    ctx.moveTo(cx, cy - s * 0.7); ctx.lineTo(cx, cy - s * 0.3);
+  } else {                            // fuel: しずく
+    drawModuleGlyph(ctx, 'fuel', cx, cy, s, color);
+  }
+  ctx.stroke(); ctx.restore();
+}
+// 通常の輪。state: 'next'（次に通る輪=少し明るく脈動）| 'idle' | 'missed'（通り過ぎた=薄く）
+export function drawRing(ctx, x, y, r, t, state) {
+  const p = P();
+  const next = state === 'next', missed = state === 'missed';
+  const pulse = next ? 0.75 + 0.25 * Math.sin(t * 5) : 1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalAlpha = missed ? 0.22 : (next ? 0.95 : 0.62) * pulse;
+  ctx.fillStyle = rgba(p.mid, missed ? 0.02 : 0.07); ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+  ctx.lineWidth = next ? 2.2 : 1.6; ctx.strokeStyle = next ? p.hi : p.mid;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 0.8; ctx.strokeStyle = rgba(p.mid, 0.5);
+  ctx.beginPath(); ctx.arc(0, 0, r + 3.5, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+// 特典の輪（金色の二重輪 + 回転する破線 + ピクトグラム）
+export function drawPowerRing(ctx, x, y, r, t, kind) {
+  const p = P();
+  ctx.save();
+  ctx.translate(x, y);
+  const pulse = 0.8 + 0.2 * Math.sin(t * 4);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = rgba(p.warn, 0.10); ctx.beginPath(); ctx.arc(0, 0, r + 2, 0, TAU); ctx.fill();
+  ctx.lineWidth = 2.4; ctx.strokeStyle = p.warn; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.warn, 0.7);
+  ctx.setLineDash([3, 4]); ctx.lineDashOffset = -t * 14;
+  ctx.beginPath(); ctx.arc(0, 0, r + 5, 0, TAU); ctx.stroke();
+  ctx.setLineDash(DASH_NONE); ctx.lineDashOffset = 0;
+  ctx.restore();
+  drawPowerGlyph(ctx, kind, x, y, 6.5, p.warn);
+}
+// 取得時の「+50 ×N」。f = { x, y, text, age, life, big }
+export function drawFloat(ctx, f) {
+  const u = Math.max(0, Math.min(1, f.age / f.life));
+  txt(ctx, f.text, f.x, f.y - 16 - 22 * u, f.big ? 13 : 11, f.big ? P().warn : P().hi, 'center', { sp: 1, w: 600, a: 1 - u * u, sh: 1 });
+}
+// 特典取得のバナー（ピクトグラム付き）。k: 0..1（フェード）。def = { name, note }
+export function drawPowerBanner(ctx, kind, def, k) {
+  const p = P(), a = Math.max(0, Math.min(1, k));
+  ctx.save(); ctx.globalAlpha = a;
+  panel(ctx, 60, 118, AW - 120, 56, { a: 0.78, border: p.warn, ba: 0.4 });
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = a;
+  drawPowerGlyph(ctx, kind, 88, 146, 10, p.warn);
+  ctx.restore();
+  txt(ctx, 'POWER UP', 112, 126, 7, p.warn, 'left', { sp: 3, w: 500, a });
+  txt(ctx, def.name, 112, 138, 13, p.hi, 'left', { sp: 2, w: 600, a });
+  txt(ctx, def.note, 112, 157, 7, p.fg, 'left', { sp: 1.5, w: 500, a: a * 0.85 });
+}
+// 水星の地平線の光（暗闇の上に重ねる。霧に隠れない）
+export function drawHorizonGlare(ctx) {
+  const g = gRad(ctx, 'glare', 340, 468, 0, 340, 468, 250, [[0, 'rgba(255,226,170,0.34)'], [0.4, 'rgba(255,190,120,0.13)'], [1, 'rgba(255,160,80,0)']]);
+  ctx.save(); ctx.fillStyle = g; ctx.fillRect(60, 200, AW - 60, 340); ctx.restore();   // 円(中心 340,468 / 半径250)を丸ごと覆う矩形（端で切れない）
+}
+
 // ================================================================ HUD
 // h: { stage, bodyName, atmoTag, realG, bonus, total, high, fuel(0..1), continues, modDefs, mods, debug, play,
 //      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t, pilot(string|''), atmoLabel }
@@ -1030,6 +1116,7 @@ export const HUD_LAYOUT = {
   labelY: 67, labelSize: 7,
   info: { x: 14, y: 94, maxW: 176, size: 7 },
   wind: { x: 200, y: 94 },
+  rings: { y: 106 },
   pilot: { right: AW - 12, y: 40, maxW: 112, size: 7 },
   tip: { x: 20, y: 124, w: AW - 40, h: 84 },
 };
@@ -1047,7 +1134,8 @@ export function drawHUD(ctx, h) {
   const L = HUD_LAYOUT;
   // 行A: ステージ/天体名 と スコア
   txt(ctx, (h.bonus ? 'BONUS  ·  ' : '') + 'STAGE ' + h.stage, 52, 8, 8, h.bonus ? p.warn : p.dim, 'left', { sp: 2.5, w: 500 });
-  txt(ctx, h.bodyName, 52, 19, 15, p.fg, 'left', { sp: 4, w: 300 });
+  { const long = String(h.bodyName || '').length > 6;   // MERCURY など7文字以上はミュートボタン(x>=140)に掛からないよう少し詰める
+    txt(ctx, h.bodyName, 52, long ? 20 : 19, long ? 13 : 15, p.fg, 'left', { sp: long ? 2.5 : 4, w: 300 }); }
   num(ctx, h.total, AW - 12, 7, 20, p.fg, { w: 200 });
   txt(ctx, 'BEST ' + (h.high || 0), AW - 12, 31, 8, p.dim, 'right', { sp: 2, w: 500 });
   // パイロット名（BEST の下。ラベルは dim、名前は少し明るく。長い名前は省略）
@@ -1107,6 +1195,19 @@ export function drawHUD(ctx, h) {
     const len = Math.min(34, 8 + Math.abs(wa) * 60);
     txt(ctx, 'WIND', L.wind.x, L.wind.y, 7, p.dim, 'left', { sp: 1.6, w: 500 });
     icoWind(ctx, L.wind.x + 62, L.wind.y + 4, len, dir, p.mid);
+  }
+  // 行E: 輪の数（控えめに）と、有効な特典
+  if (h.rings && h.rings.total > 0) {
+    const all = h.rings.got >= h.rings.total;
+    ctx.save(); ctx.globalAlpha = 0.7; ctx.strokeStyle = all ? p.warn : p.mid; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(18, L.rings.y + 4, 3.6, 0, TAU); ctx.stroke(); ctx.restore();
+    txt(ctx, h.rings.got + '/' + h.rings.total + (h.rings.score > 0 ? '  +' + h.rings.score : ''), 26, L.rings.y, 7, all ? p.warn : rgba(p.fg, 0.7), 'left', { sp: 1.6, w: 500 });
+  }
+  if (h.power) {
+    const lab = h.power.name + (h.power.remain != null ? ' ' + Math.ceil(h.power.remain) + 's' : '');
+    const w = textW(ctx, lab, 7, 1.6, 500);
+    txt(ctx, lab, AW - 12, L.rings.y, 7, p.warn, 'right', { sp: 1.6, w: 500 });
+    drawPowerGlyph(ctx, h.power.kind, AW - 12 - w - 10, L.rings.y + 4, 4, p.warn);
   }
 }
 // 初回のみ表示する計器ヒント。行C を指す小さなキャレット付きの静かなパネル。k: 0..1（フェード）
@@ -1305,6 +1406,35 @@ export function drawGradeStamp(ctx, cx, cy, grade, k) {
   ctx.restore();
 }
 // クリア画面。d.lines=[[ラベル,値]]、d.prog=各行のカウント進行(0..1)、d.tot=合計の進行、d.stamp=スタンプ進行(0=未、>0 で押印)、d.grade
+// 星1つ（塗り or 輪郭）。scale/alpha は押印の演出用
+function starAt(ctx, cx, cy, r, on, scale, alpha) {
+  const p = P();
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(cx, cy); ctx.scale(scale, scale);
+  if (on) star(ctx, 0, 0, r, p.warn);
+  else {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr_ = i % 2 ? r * 0.42 : r; const x = Math.cos(a) * rr_, y = Math.sin(a) * rr_; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.closePath(); ctx.strokeStyle = rgba(p.fg, 0.28); ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+export const CLEAR_STAR_LABELS = ['LANDED', 'RINGS', 'PERFECT'];
+// クリア画面の★3つ。d = { mask(累積), fresh(今回あらたに取った★のマスク), k:[0..1 x3](freshの押印進行) }
+export function drawClearStars(ctx, cx, y, d) {
+  const p = P();
+  for (let i = 0; i < 3; i++) {
+    const x = cx + (i - 1) * 84, bit = 1 << i;
+    const on = !!(d.mask & bit), fresh = !!(d.fresh & bit);
+    const k = fresh ? Math.max(0, Math.min(1, d.k && d.k[i] != null ? d.k[i] : 1)) : 1;
+    const sc = fresh ? 1 + 0.9 * (1 - k) * (1 - k) : 1;
+    starAt(ctx, x, y, 7.5, on && (!fresh || k > 0), sc, fresh ? (k > 0 ? Math.min(1, k * 2.2) : 0) : 1);
+    if (fresh && k <= 0) starAt(ctx, x, y, 7.5, false, 1, 1);
+    txt(ctx, CLEAR_STAR_LABELS[i], x, y + 11, 6, on ? p.warn : p.dim, 'center', { sp: 2, w: 500, a: on ? 0.9 : 0.6 });
+  }
+}
+// クリア画面。d.lines=[[ラベル,値]]、d.prog=各行のカウント進行(0..1)、d.tot=合計の進行、d.stamp=スタンプ進行(0=未、>0 で押印)、d.grade、
+// d.stars = { mask, fresh, k:[..] } | null（ボーナス/デバッグは null）。行が5本になる（輪の得点つき）と全体を少し下へ送る。
 export function drawClearPanel(ctx, r, d) {
   const p = P();
   const cx = r.x + r.w / 2;
@@ -1314,28 +1444,31 @@ export function drawClearPanel(ctx, r, d) {
   txt(ctx, d.sub, cx, r.y + 30, 9, d.perfect ? p.warn : p.dim, 'center', { sp: 2.5, w: 400 });
   hair(ctx, r.x + 24, r.y + 46, r.x + r.w - 24, r.y + 46, p.fg, 0.14);
   const lines = d.lines || [], prog = d.prog || [];
+  const step = lines.length > 4 ? 12.5 : 14, dy = lines.length > 4 ? 10 : 0;
   let shown = 0;
   for (let i = 0; i < lines.length; i++) {
     const k = Math.max(0, Math.min(1, prog[i] == null ? 1 : prog[i]));
-    const y = r.y + 54 + i * 14;
+    const y = r.y + 54 + i * step;
     const v = Math.round(lines[i][1] * (1 - (1 - k) * (1 - k)));
     shown += v;
     txt(ctx, lines[i][0], r.x + 24, y, 9, p.dim, 'left', { sp: 2, w: 500, a: k > 0 ? 1 : 0.35 });
     txt(ctx, k > 0 ? '+' + v : '', r.x + 176, y, 9, p.fg, 'right', { w: 400 });
   }
-  if (d.grade) drawGradeStamp(ctx, r.x + r.w - 76, r.y + 78, d.grade, d.stamp || 0);
-  hair(ctx, r.x + 24, r.y + 110, r.x + r.w - 24, r.y + 110, p.fg, 0.14);
-  txt(ctx, d.bonus ? 'BONUS SCORE' : 'STAGE SCORE', cx, r.y + 116, 8, p.dim, 'center', { sp: 3, w: 500 });
+  if (d.grade) drawGradeStamp(ctx, r.x + r.w - 76, r.y + 78 + dy / 2, d.grade, d.stamp || 0);
+  hair(ctx, r.x + 24, r.y + 110 + dy, r.x + r.w - 24, r.y + 110 + dy, p.fg, 0.14);
+  txt(ctx, d.bonus ? 'BONUS SCORE' : 'STAGE SCORE', cx, r.y + 116 + dy, 8, p.dim, 'center', { sp: 3, w: 500 });
   const total = d.tot >= 1 ? d.score : shown;
-  txt(ctx, '+' + total, cx, r.y + 127, 28, p.hi, 'center', { w: 200 });
+  txt(ctx, '+' + total, cx, r.y + 127 + dy, 28, p.hi, 'center', { w: 200 });
   const cols = d.cols, cwid = (r.w - 48) / cols.length;
   for (let i = 0; i < cols.length; i++) {
     const x = r.x + 24 + cwid * (i + 0.5);
-    txt(ctx, cols[i][0], x, r.y + 160, 8, p.dim, 'center', { sp: 2.5, w: 500 });
-    txt(ctx, cols[i][1], x, r.y + 171, 15, cols[i][2] || p.fg, 'center', { w: 300 });
+    txt(ctx, cols[i][0], x, r.y + 160 + dy, 8, p.dim, 'center', { sp: 2.5, w: 500 });
+    txt(ctx, cols[i][1], x, r.y + 171 + dy, 15, cols[i][2] || p.fg, 'center', { w: 300 });
   }
-  hair(ctx, r.x + 24, r.y + 190, r.x + r.w - 24, r.y + 190, p.fg, 0.14);
-  txt(ctx, d.next, cx, r.y + 197, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
+  hair(ctx, r.x + 24, r.y + 190 + dy, r.x + r.w - 24, r.y + 190 + dy, p.fg, 0.14);
+  let ny = r.y + 197 + dy;
+  if (d.stars) { drawClearStars(ctx, cx, r.y + 207 + dy, d.stars); ny = r.y + 236 + dy; }
+  txt(ctx, d.next, cx, ny, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
 }
 export function drawCrashPanel(ctx, d) {
   const p = P();
@@ -1852,6 +1985,11 @@ export function drawStartPanel(ctx, d) {
     pill(ctx, b.x, b.y, b.w, b.h, r.cursor ? rgba(p.mid, 0.10) : null, rgba(r.cursor ? p.mid : p.fg, r.cursor ? 0.6 : 0.2));
     txt(ctx, r.label, b.x + 16, b.y + 9, 12, r.cursor ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
     txt(ctx, 'g ' + r.g, b.x + 16, b.y + 28, 8, p.dim, 'left', { sp: 2, w: 500 });
+    { // ★3つ（取得済みは塗り）と最高グレード
+      const m = r.mask | 0;
+      for (let k = 0; k < 3; k++) starAt(ctx, b.x + 104 + k * 14, b.y + 32, 4.6, !!(m & (1 << k)), 1, (m & (1 << k)) ? 1 : 0.9);
+      if (r.grade) txt(ctx, r.grade === 'PERFECT' ? 'P' : r.grade, b.x + 104 + 3 * 14 + 4, b.y + 28, 8, gradeColor(r.grade), 'left', { sp: 1, w: 600 });
+    }
     txt(ctx, 'ST.' + r.stage, b.x + b.w - 14, b.y + 10, 11, r.cursor ? p.hi : p.mid, 'right', { sp: 2, w: 500 });
     if (r.best) txt(ctx, 'FURTHEST', b.x + b.w - 14, b.y + 28, 7, p.warn, 'right', { sp: 3, w: 500 });
   }

@@ -55,6 +55,7 @@ export function autopilotKeys(g) {
     vyCmd = h / Math.max(0.4, tE - tNow);
     if (h < 140 && Math.abs(padCx - g.x) > 10) vyCmd = Math.min(vyCmd, 1.5);   // 横位置が合うまで降りない
   }
+  if (g._apWayX != null && !g.pad.moving) padCx = g._apWayX;   // 任意: 経由点のX（テスト用。輪をたどる飛行）。未設定なら従来どおりパッドへ
   const far = h > FAR_H && tg > 6;
   const tiltLim = clampN((tg - 4) * 10, 15, 68);     // 接地が近いほど傾きを制限（直立で降りるため）
 

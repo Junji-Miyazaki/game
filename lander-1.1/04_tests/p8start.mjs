@@ -40,8 +40,10 @@ const renderOK = (s) => { try { s.render(ctx); return true; } catch (e) { consol
   ok(L(6) === seq(6) && L(12) === seq(12) && L(13) === seq(13), 'every reached stage is unlocked');
   ok(L(25) === seq(25), 'maxStage 25 -> 25 entries');
   const l = unlockedStarts(25);
-  ok(l[0].label === 'ORBIT 3 · MOON' && l[0].stage === 25, 'loop 2 label');
-  ok(l[1].label === 'ORBIT 2 · VENUS 2' && l[2].label === 'ORBIT 2 · VENUS', 'second stage of a body gets a " 2" suffix: ' + l[1].label);
+  ok(l[0].label === 'ORBIT 2 · VENUS' && l[0].stage === 25, 'loop 1 label (7-body tour, 14 stages per loop): ' + l[0].label);
+  ok(l[1].label === 'ORBIT 2 · TITAN 2' && l[2].label === 'ORBIT 2 · TITAN', 'second stage of a body gets a " 2" suffix: ' + l[1].label);
+  const l2 = unlockedStarts(29);
+  ok(l2[0].label === 'ORBIT 3 · MOON' && l2[0].stage === 29 && l2[1].label === 'ORBIT 2 · MERCURY 2', 'loop 2 label + Mercury is last in the tour: ' + l2[0].label + ' / ' + l2[1].label);
   ok(l[l.length - 1].label === 'MOON' && l[l.length - 2].label === 'MOON 2' && l[l.length - 5].label === 'IO', 'loop 0 labels have no prefix');
   { const ti = unlockedStarts(12).find((o) => o.stage === 9); ok(ti && ti.label === 'TITAN' && Math.abs(ti.realG - 1.35) < 1e-9, 'realG carried'); }
   ok(unlockedStarts(NaN).length === 1 && unlockedStarts(-5).length === 1, 'bad maxStage -> 1 option');

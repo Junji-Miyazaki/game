@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta';
+const APP_VERSION = '1.1.0-beta.2';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -395,7 +395,7 @@ class Engine {
 
 
 // ---- 02_src/bodies.js ----
-// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星、12ステージで1周）。
+// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星→水星、14ステージで1周）。
 // ゲーム性に関わる数値（重力・大気）と、P2が描画に使う見た目トークンを1か所に集約する。
 // 真空の天体（moon/europa/io）は風・抗力・視界制限なし（ユーザー指摘どおり）。
 const GRAVITY_BASE = 0.25;   // 月(1.62 m/s^2)でのステージ1重力 px/s^2
@@ -433,6 +433,12 @@ const BODIES = [
        visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
     visual: { sky: ['#7a3410', '#c26a1c'], ground: '#33180a', rim: '#ff8a2a', accent: '#ff9a3c',
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
+  // MERCURY（v1.1 L2）: ツアーの最後。大気なし（風・抗力なし）。永久影の極域クレーター＝暗闇（visibility: 機体のライトの届く範囲だけ地形が見える。
+  // パッドのビーコンと誘導線は暗闇の上に描く＝guideAboveFog）。日照側の高温＝受動的な燃料消費（金星より軽い）。重力は火星とほぼ同じ。
+  { id: 'mercury', celebTier: 2, name: 'MERCURY', atmoTag: 'NONE', realG: 3.70, atmoLabel: 'NONE \u00b7 DARK CRATER', atmoType: 'none',
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: 130, heat: { fuelDrain: 0.3, mainFuelMul: 1.0 }, guideAboveFog: true, obstacleStyle: 'rock',
+    visual: { sky: ['#000000', '#0b0809'], ground: '#2d2b2e', rim: '#ffd29a', accent: '#ffb878', fog: '#000000', haze: null,
+      skyObject: 'sun-low', mood: 'permanently shadowed crater, near-black regolith, huge low sun glare on the horizon' } },
 ];
 
 
@@ -601,6 +607,257 @@ function rollOffers(mods, rnd = Math.random, count = 2) {
     out.push(pool.splice(i, 1)[0]);
   }
   return out;
+}
+
+
+// ---- 02_src/rings.js ----
+// L2: 降下ルートの輪（リング）と特典の輪。ゲームロジックの純粋部分（配置・通過判定・コンボ得点・特典の定義）。描画は art.js、状態の保持は game.js。
+// 輪は誘導線（出現位置からパッドへの放物線）に沿って置く＝プレイヤーが実際に通れる経路。通常ステージのみ（ボーナスは輪なし）。
+const RW = 360;
+const RING_R = 17;              // 通過判定の半径(px)。機体の中心がこの内側を通ると取得（フレーム間は線分で判定）
+const RING_SCORE = 50;          // 得点 = 50 × コンボ
+const RING_MIN = 4, RING_MAX = 6;
+const RING_GAP_MIN = 46;        // 輪どうしの中心間の最小距離(px)
+const RING_Y_MAX = 392;         // 輪の中心の最大Y（地形の最高点440より輪の下端が十分上）
+const RING_TERRAIN_MARGIN = 24; // 輪の下端と地形のすきま(px)
+const RING_OBS_MARGIN = 10;     // 輪の中心と障害物の縁のすきま(px。障害物は横にだけ動く＝縦位置は固定)
+const RING_START_ARC = 64;             // 出現位置から最初の輪までの経路長(px)
+
+// ---- 特典の輪 ----
+const POWER_RING_GAP = 2 * RING_R + 8;   // 特典の輪と通常の輪の中心間の最小距離
+const POWER_CHANCE = 0.35;      // ステージ2以降、1ステージにつき最大1個。この確率で出る（短く・まれに）
+const POWER_MIN_STAGE = 2;
+const SLOWMO_S = 8, SLOWMO_FACTOR = 0.5;   // SLOW-MO: 隕石(障害物)が8秒間 50%速度
+const ASSIST_S = 6;                         // ATTITUDE ASSIST: 6秒間 自動で水平に戻す
+const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
+const POWER_DEFS = {
+  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT HALF SPEED · 8 S', dur: SLOWMO_S },
+  radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
+  attitude: { id: 'attitude', name: 'ATTITUDE ASSIST', note: 'AUTO-LEVEL · 6 S',            dur: ASSIST_S },
+  fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
+};
+const POWER_IDS = ['slowmo', 'radar', 'attitude', 'fuel'];
+
+// 経路上の点（誘導線と同じ式）
+function pathPoint(sx, sy, tx, ty, t) { return { x: sx + (tx - sx) * t, y: sy + (ty - sy) * t * t }; }
+
+// 点 (px,py) と線分 (x0,y0)-(x1,y1) の最短距離
+function segDist(x0, y0, x1, y1, px, py) {
+  const dx = x1 - x0, dy = y1 - y0, L2 = dx * dx + dy * dy;
+  let t = L2 > 0 ? ((px - x0) * dx + (py - y0) * dy) / L2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x0 + t * dx), py - (y0 + t * dy));
+}
+
+// 地形折れ線の x0..x1 での最小Y（=最も高い点）
+function terrainTopIn(pts, x0, x1) {
+  const at = (x) => {
+    for (let i = 0; i < pts.length - 1; i++) if (x >= pts[i].x && x <= pts[i + 1].x) { const t = (x - pts[i].x) / (pts[i + 1].x - pts[i].x); return pts[i].y + t * (pts[i + 1].y - pts[i].y); }
+    return 9999;
+  };
+  let m = Math.min(at(Math.max(0, x0)), at(Math.min(RW, x1)));
+  for (const q of pts) if (q.x > x0 && q.x < x1 && q.y < m) m = q.y;
+  return m;
+}
+
+// 輪の候補位置が地形から離れているか
+function clearOfTerrain(pts, x, y, r = RING_R) { return y + r + RING_TERRAIN_MARGIN <= terrainTopIn(pts, x - r, x + r); }
+
+// 障害物の縁までの縦のすきま（正=重ならない）。障害物は横方向にしか動かないので、縦が離れていれば輪の中心を通れる
+function obsClear(obs, y) {
+  let m = 99;
+  for (const o of obs || []) m = Math.min(m, Math.abs(y - o.y) - o.r);
+  return m;
+}
+
+// 輪の配置。opts: { stage, startX, startY, pad, terrainPts, obstacles, radarOwned, rnd }
+// 戻り値: { rings: [{x,y,r,i}], power: {x,y,r,kind}|null }
+function buildRings(opts) {
+  const rnd = opts.rnd || Math.random;
+  const { startX: sx, startY: sy, pad, terrainPts: pts, obstacles } = opts;
+  const tx = pad.x + pad.w / 2, ty = pad.y;
+  // 経路を細かくサンプルして累積長を持つ
+  const N = 240, PTS = [];
+  let acc = 0;
+  for (let k = 0; k <= N; k++) {
+    const q = pathPoint(sx, sy, tx, ty, k / N);
+    if (k > 0) acc += Math.hypot(q.x - PTS[k - 1].x, q.y - PTS[k - 1].y);
+    PTS.push({ x: q.x, y: q.y, s: acc });
+  }
+  const at = (s) => {
+    s = Math.max(0, Math.min(acc, s));
+    let lo = 0, hi = N;
+    while (lo < hi - 1) { const m = (lo + hi) >> 1; if (PTS[m].s <= s) lo = m; else hi = m; }
+    const a = PTS[lo], b = PTS[hi], u = b.s > a.s ? (s - a.s) / (b.s - a.s) : 0;
+    return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+  };
+  // 輪を置ける経路の終端 = 中心Yが RING_Y_MAX（かつ地形から離れている）を超える直前
+  let sMax = acc * 0.95;
+  for (let k = 0; k <= N; k++) { if (PTS[k].y > RING_Y_MAX || !clearOfTerrain(pts, PTS[k].x, PTS[k].y)) { sMax = Math.min(sMax, PTS[Math.max(0, k - 1)].s); break; } }
+  const sMin = RING_START_ARC;
+  let n = RING_MIN + Math.floor(rnd() * (RING_MAX - RING_MIN + 1));
+  while (n > RING_MIN && (sMax - sMin) / (n - 1) < RING_GAP_MIN + 3) n--;
+  const rings = [];
+  let prevS = -1e9;
+  for (let i = 0; i < n; i++) {
+    const base = sMin + (sMax - sMin) * (n > 1 ? i / (n - 1) : 0);
+    let best = null;
+    for (let d = -20; d <= 20; d += 2) {
+      const s = base + d;
+      if (s < sMin - 1e-6 || s > sMax + 1e-6 || s < prevS + RING_GAP_MIN + 2) continue;
+      // 後ろの輪のために、残りの輪が入る余地を残す
+      if (sMax - s < (n - 1 - i) * (RING_GAP_MIN + 2) - 1e-6) continue;
+      const q = at(s);
+      const x = Math.max(RING_R + 8, Math.min(RW - RING_R - 8, q.x));
+      if (!clearOfTerrain(pts, x, q.y)) continue;
+      const oc = obsClear(obstacles, q.y);
+      const score = Math.min(oc, RING_OBS_MARGIN + 6) * 10 - Math.abs(d) * 0.15;
+      if (!best || score > best.score) best = { score, s, x, y: q.y };
+    }
+    if (!best) { // 余地がなければ基準位置（制約を満たす最も近い s）
+      const s = Math.max(base, prevS + RING_GAP_MIN + 2); const q = at(s);
+      best = { s, x: Math.max(RING_R + 8, Math.min(RW - RING_R - 8, q.x)), y: q.y };
+      // 地形に埋まる・経路外なら置かない（取れない輪を作らない＝★2 が必ず取れる）
+      if (s > sMax + 1e-6 || best.y > RING_Y_MAX || !clearOfTerrain(pts, best.x, best.y)) break;
+    }
+    prevS = best.s;
+    rings.push({ x: best.x, y: best.y, r: RING_R, i: rings.length });
+  }
+  // 特典の輪: ステージ2以降、確率で1個。2つの輪の中間から経路の脇（左右どちらか空いている側）へ少し外す
+  let power = null;
+  if (opts.stage >= POWER_MIN_STAGE && rnd() < POWER_CHANCE && rings.length >= 2) {
+    const pool = POWER_IDS.filter((k) => !(k === 'radar' && opts.radarOwned));
+    const kind = pool[Math.min(pool.length - 1, Math.floor(rnd() * pool.length))];
+    const gaps = []; for (let j = 0; j < rings.length - 1; j++) gaps.push(j);
+    for (let a = gaps.length - 1; a > 0; a--) { const b = Math.floor(rnd() * (a + 1)); const t = gaps[a]; gaps[a] = gaps[b]; gaps[b] = t; }
+    search: for (const j of gaps) {
+      const A = rings[j], B = rings[j + 1];
+      const dirs = rnd() < 0.5 ? [1, -1] : [-1, 1];
+      for (const sgn of dirs) for (const off of [36, 42, 50, 58]) for (const fr of [0.5, 0.4, 0.6]) {   // 脇への寄り道は小さめ（輪から 2R+8 以上離す）
+        const x = A.x + (B.x - A.x) * fr + sgn * off, y = A.y + (B.y - A.y) * fr;
+        if (x < RING_R + 12 || x > RW - RING_R - 12 || y > RING_Y_MAX) continue;
+        if (!clearOfTerrain(pts, x, y)) continue;
+        if (rings.some((q) => Math.hypot(q.x - x, q.y - y) < POWER_RING_GAP)) continue;
+        if (obsClear(obstacles, y) < 4) continue;
+        power = { x, y, r: RING_R, kind };
+        break search;
+      }
+    }
+  }
+  return { rings, power };
+}
+
+// ---- 取得状態（1ステージ分）----
+function newRingState(layout) {
+  return {
+    rings: layout.rings.map((r) => ({ x: r.x, y: r.y, r: r.r, i: r.i, got: false, missed: false })),
+    power: layout.power ? { x: layout.power.x, y: layout.power.y, r: layout.power.r, kind: layout.power.kind, got: false } : null,
+    combo: 0, last: -1, collected: 0, score: 0,
+  };
+}
+// 輪 idx を取得した時のコンボ処理（直前に取った輪の次なら連続=+1、それ以外はリセットして1）。戻り値: この輪の得点
+function ringCollect(st, idx) {
+  st.combo = (idx === st.last + 1) ? st.combo + 1 : 1;
+  st.last = idx;
+  st.collected += 1;
+  const pts = RING_SCORE * st.combo;
+  st.score += pts;
+  return pts;
+}
+// 1フレームの移動 (x0,y0)->(x1,y1) で通過した輪を処理する。戻り値: { hits: [{idx, pts, combo, x, y}], power: 特典の輪 or null }
+function ringStep(st, x0, y0, x1, y1) {
+  const out = { hits: [], power: null };
+  if (!st) return out;
+  for (const r of st.rings) {
+    if (r.got) continue;
+    if (segDist(x0, y0, x1, y1, r.x, r.y) <= r.r) {
+      r.got = true; r.missed = false;
+      const pts = ringCollect(st, r.i);
+      out.hits.push({ idx: r.i, pts, combo: st.combo, x: r.x, y: r.y });
+    } else if (y1 > r.y + r.r + 6) {
+      r.missed = true;   // 通り過ぎた（上に戻れば取れる）
+    } else r.missed = false;
+  }
+  const p = st.power;
+  if (p && !p.got && segDist(x0, y0, x1, y1, p.x, p.y) <= p.r) { p.got = true; out.power = p; }
+  return out;
+}
+const allRingsGot = (st) => !!st && st.rings.length > 0 && st.rings.every((r) => r.got);
+// 1ステージの輪の最大得点 = 50 × (1+2+…+n)
+const maxRingScore = (n) => RING_SCORE * n * (n + 1) / 2;
+
+
+// ---- 02_src/stars.js ----
+// L2: ステージごとの★3つ（パイロット別・累積）と最高グレードの保存・読み出し。
+// 保存先は L1 の 'stageBest' = { パイロット名: { ステージ: { grade, stars } } }（stars はビットマスク）。通常ステージのみ・デバッグ操作のランは呼び出し側で除外。
+// ★1 パッドに着陸 / ★2 そのステージの輪を全部取って着陸 / ★3 PERFECT。別の挑戦で取った★も累積（OR）。
+
+const STAR_LANDED = 1, STAR_RINGS = 2, STAR_PERFECT = 4;
+const STAR_LABELS = ['LANDED', 'RINGS', 'PERFECT'];
+const GRADES = ['C', 'B', 'A', 'S', 'PERFECT'];
+const rankOf = (g) => GRADES.indexOf(g);
+const starCount = (mask) => ((mask & 1) ? 1 : 0) + ((mask & 2) ? 1 : 0) + ((mask & 4) ? 1 : 0);
+
+// 保存値を安全に読む（壊れていれば空）。戻り値は prototype を持たない { 名前: { ステージ: {grade, stars} } }
+function readStageBest(storage) {
+  const o = Object.create(null);
+  try {
+    const raw = storage.get('stageBest', null);
+    const j = raw ? JSON.parse(raw) : null;
+    if (j && typeof j === 'object' && !Array.isArray(j)) for (const k of Object.keys(j)) if (k !== '__proto__' && j[k] && typeof j[k] === 'object') o[k] = j[k];
+  } catch (_) { /* 壊れていれば作り直す */ }
+  return o;
+}
+const cleanRec = (r) => ({ grade: (r && GRADES.indexOf(r.grade) >= 0) ? r.grade : '', stars: ((r && Number(r.stars)) | 0) & 7 });
+
+// このステージの記録を返す（無ければ { grade:'', stars:0 }）
+function stageRecord(storage, name, stage) {
+  const all = readStageBest(storage);
+  const mine = name && all[name];
+  return cleanRec(mine && typeof mine === 'object' ? mine[String(stage)] : null);
+}
+
+// 記録を更新する（グレードは良い方、★は OR で累積）。戻り値: { grade, stars(累積), fresh(今回あらたに増えた★のマスク) }
+function recordStage(storage, name, stage, grade, mask) {
+  const prev = { grade: '', stars: 0 };
+  if (!name || name === '__proto__') return { grade, stars: mask & 7, fresh: mask & 7, saved: false };
+  const o = readStageBest(storage);
+  const mine = Object.create(null);
+  if (o[name]) for (const k of Object.keys(o[name])) if (k !== '__proto__') mine[k] = o[name][k];
+  const key = String(stage);
+  const cur = cleanRec(mine[key]);
+  prev.grade = cur.grade; prev.stars = cur.stars;
+  const g = (cur.grade && rankOf(cur.grade) >= rankOf(grade)) ? cur.grade : grade;
+  const stars = cur.stars | (mask & 7);
+  mine[key] = { grade: g, stars }; o[name] = mine;
+  let saved = true;
+  try { storage.set('stageBest', JSON.stringify(o)); } catch (_) { saved = false; }
+  return { grade: g, stars, fresh: stars & ~prev.stars, saved };
+}
+
+// L3（太陽系マップ）が使う集計: 天体ごと・ステージごとの★と最高グレード。
+// 戻り値: { totalStars, maxStars, bodies: [{ id, name, stars, max, grade(最高), stages: [{ stage, loop, part, mask, stars, grade }] }] }
+// 各天体に、1周目の2ステージ（記録がなくても）と、記録のある2周目以降のステージを含める。
+function starsSummary(storage, name) {
+  const all = readStageBest(storage);
+  const mine = (name && all[name] && typeof all[name] === 'object') ? all[name] : {};
+  const recs = new Map();
+  for (const k of Object.keys(mine)) { const s = Number(k); if (Number.isInteger(s) && s >= 1 && s <= 9999 && k !== '__proto__') recs.set(s, cleanRec(mine[k])); }
+  const bodies = BODIES.map((b) => ({ id: b.id, name: b.name, stars: 0, max: 0, grade: '', stages: [] }));
+  const add = (s) => {
+    const info = stageInfo(s), B = bodies[info.index], r = recs.get(s) || { grade: '', stars: 0 };
+    if (B.stages.some((x) => x.stage === s)) return;
+    B.stages.push({ stage: s, loop: info.loop, part: ((s - 1) % STAGES_PER_BODY) + 1, mask: r.stars, stars: starCount(r.stars), grade: r.grade });
+  };
+  for (let s = 1; s <= STAGES_PER_BODY * BODIES.length; s++) add(s);
+  for (const s of recs.keys()) add(s);
+  let total = 0, maxT = 0;
+  for (const B of bodies) {
+    B.stages.sort((a, b) => a.stage - b.stage);
+    for (const st of B.stages) { B.stars += st.stars; B.max += 3; if (st.grade && rankOf(st.grade) > rankOf(B.grade)) B.grade = st.grade; }
+    total += B.stars; maxT += B.max;
+  }
+  return { totalStars: total, maxStars: maxT, bodies };
 }
 
 
@@ -878,6 +1135,7 @@ function autopilotKeys(g) {
     vyCmd = h / Math.max(0.4, tE - tNow);
     if (h < 140 && Math.abs(padCx - g.x) > 10) vyCmd = Math.min(vyCmd, 1.5);   // 横位置が合うまで降りない
   }
+  if (g._apWayX != null && !g.pad.moving) padCx = g._apWayX;   // 任意: 経由点のX（テスト用。輪をたどる飛行）。未設定なら従来どおりパッドへ
   const far = h > FAR_H && tg > 6;
   const tiltLim = clampN((tg - 4) * 10, 15, 68);     // 接地が近いほど傾きを制限（直立で降りるため）
 
@@ -1640,6 +1898,7 @@ const SKYOBJ = {
   phobos:   { x: 268, y: 160, r: 9 },
   saturn:   { x: 248, y: 182, r: 22 },
   'sun-glow': { x: 208, y: 168, r: 150 },
+  'sun-low': { x: 330, y: 452, r: 330 },   // 水星: 地平線の縁すれすれの巨大な太陽
 };
 function skyObjFor(body) {
   const k = body.visual.skyObject;
@@ -1739,6 +1998,13 @@ function paintSunGlow(c, o) {
   c.fillStyle = 'rgba(70,24,6,0.16)';                         // 雲の筋
   for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
 }
+// 水星: 低く巨大な太陽の光が地平線の縁に溜まる（空は黒のまま。地形は逆光のシルエットになる）
+function paintSunLow(c, o) {
+  const { x, y, r } = o;
+  const g = mkR(c, x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(255,244,214,0.95)'); g.addColorStop(0.1, 'rgba(255,214,150,0.62)'); g.addColorStop(0.35, 'rgba(255,170,90,0.22)'); g.addColorStop(1, 'rgba(255,140,60,0)');
+  c.fillStyle = g; c.fillRect(0, 0, AW, AH);
+}
 // TERRA（ボーナス専用）の昼空: 柔らかい青のグラデーション + やさしい太陽光 + 遠い海の水平線。雲は drawBackdrop が毎フレーム流す。
 function paintDaySky(c, body) {
   const v = body.visual;
@@ -1795,6 +2061,7 @@ function paintSky(c, body) {
     case 'saturn': paintSaturn(c, o); break;
     case 'phobos': paintPhobos(c, o); break;
     case 'sun-glow': paintSunGlow(c, o); break;
+    case 'sun-low': paintSunLow(c, o); break;
     default: break;
   }
 }
@@ -1871,11 +2138,12 @@ function paintTerrain(c, body, pts) {
       for (let s = 0; s < 4; s++) { x += (T() - 0.5) * 34; y += (T() - 0.3) * 16; c.lineTo(x, y); }
       c.stroke();
     }
-  } else if (body.id === 'moon') {                               // クレーター
+  } else if (body.id === 'moon' || body.id === 'mercury') {      // クレーター（水星は縁が鋭く、影が濃い）
+    const hard = body.id === 'mercury';
     for (let k = 0; k < 9; k++) {
       const x = T() * AW, y = 470 + T() * 130, rx = 7 + T() * 18;
-      c.fillStyle = 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
-      c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
+      c.fillStyle = hard ? 'rgba(0,0,0,0.42)' : 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
+      c.strokeStyle = hard ? 'rgba(255,214,160,0.20)' : 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
     }
   } else if (body.id === 'terra') {                              // TERRA: 畑の帯と木々
     for (let k = 0; k < 8; k++) {
@@ -2330,6 +2598,82 @@ function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
   ctx.restore();
 }
 
+// ================================================================ L2: 輪 / 特典の輪
+// 特典のピクトグラム（金色の線画）。kind: slowmo | radar | attitude | fuel
+function drawPowerGlyph(ctx, kind, cx, cy, s, color) {
+  ctx.save(); strokeStyleSet(ctx, color, 1.4);
+  ctx.beginPath();
+  if (kind === 'slowmo') {            // 時計: 円 + 針 + 上のつまみ
+    ctx.arc(cx, cy + s * 0.1, s * 0.82, 0, TAU);
+    ctx.moveTo(cx, cy + s * 0.1); ctx.lineTo(cx, cy - s * 0.4); ctx.moveTo(cx, cy + s * 0.1); ctx.lineTo(cx + s * 0.35, cy + s * 0.3);
+    ctx.moveTo(cx - s * 0.25, cy - s * 0.95); ctx.lineTo(cx + s * 0.25, cy - s * 0.95);
+  } else if (kind === 'radar') {
+    drawModuleGlyph(ctx, 'radar', cx, cy, s, color);
+  } else if (kind === 'attitude') {   // 水平バー + 両端の小さな矢じり
+    ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
+    ctx.moveTo(cx - s * 0.55, cy - s * 0.45); ctx.lineTo(cx - s, cy); ctx.lineTo(cx - s * 0.55, cy + s * 0.45);
+    ctx.moveTo(cx + s * 0.55, cy - s * 0.45); ctx.lineTo(cx + s, cy); ctx.lineTo(cx + s * 0.55, cy + s * 0.45);
+    ctx.moveTo(cx, cy - s * 0.7); ctx.lineTo(cx, cy - s * 0.3);
+  } else {                            // fuel: しずく
+    drawModuleGlyph(ctx, 'fuel', cx, cy, s, color);
+  }
+  ctx.stroke(); ctx.restore();
+}
+// 通常の輪。state: 'next'（次に通る輪=少し明るく脈動）| 'idle' | 'missed'（通り過ぎた=薄く）
+function drawRing(ctx, x, y, r, t, state) {
+  const p = P();
+  const next = state === 'next', missed = state === 'missed';
+  const pulse = next ? 0.75 + 0.25 * Math.sin(t * 5) : 1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalAlpha = missed ? 0.22 : (next ? 0.95 : 0.62) * pulse;
+  ctx.fillStyle = rgba(p.mid, missed ? 0.02 : 0.07); ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+  ctx.lineWidth = next ? 2.2 : 1.6; ctx.strokeStyle = next ? p.hi : p.mid;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 0.8; ctx.strokeStyle = rgba(p.mid, 0.5);
+  ctx.beginPath(); ctx.arc(0, 0, r + 3.5, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+// 特典の輪（金色の二重輪 + 回転する破線 + ピクトグラム）
+function drawPowerRing(ctx, x, y, r, t, kind) {
+  const p = P();
+  ctx.save();
+  ctx.translate(x, y);
+  const pulse = 0.8 + 0.2 * Math.sin(t * 4);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = rgba(p.warn, 0.10); ctx.beginPath(); ctx.arc(0, 0, r + 2, 0, TAU); ctx.fill();
+  ctx.lineWidth = 2.4; ctx.strokeStyle = p.warn; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.warn, 0.7);
+  ctx.setLineDash([3, 4]); ctx.lineDashOffset = -t * 14;
+  ctx.beginPath(); ctx.arc(0, 0, r + 5, 0, TAU); ctx.stroke();
+  ctx.setLineDash(DASH_NONE); ctx.lineDashOffset = 0;
+  ctx.restore();
+  drawPowerGlyph(ctx, kind, x, y, 6.5, p.warn);
+}
+// 取得時の「+50 ×N」。f = { x, y, text, age, life, big }
+function drawFloat(ctx, f) {
+  const u = Math.max(0, Math.min(1, f.age / f.life));
+  txt(ctx, f.text, f.x, f.y - 16 - 22 * u, f.big ? 13 : 11, f.big ? P().warn : P().hi, 'center', { sp: 1, w: 600, a: 1 - u * u, sh: 1 });
+}
+// 特典取得のバナー（ピクトグラム付き）。k: 0..1（フェード）。def = { name, note }
+function drawPowerBanner(ctx, kind, def, k) {
+  const p = P(), a = Math.max(0, Math.min(1, k));
+  ctx.save(); ctx.globalAlpha = a;
+  panel(ctx, 60, 118, AW - 120, 56, { a: 0.78, border: p.warn, ba: 0.4 });
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = a;
+  drawPowerGlyph(ctx, kind, 88, 146, 10, p.warn);
+  ctx.restore();
+  txt(ctx, 'POWER UP', 112, 126, 7, p.warn, 'left', { sp: 3, w: 500, a });
+  txt(ctx, def.name, 112, 138, 13, p.hi, 'left', { sp: 2, w: 600, a });
+  txt(ctx, def.note, 112, 157, 7, p.fg, 'left', { sp: 1.5, w: 500, a: a * 0.85 });
+}
+// 水星の地平線の光（暗闇の上に重ねる。霧に隠れない）
+function drawHorizonGlare(ctx) {
+  const g = gRad(ctx, 'glare', 340, 468, 0, 340, 468, 250, [[0, 'rgba(255,226,170,0.34)'], [0.4, 'rgba(255,190,120,0.13)'], [1, 'rgba(255,160,80,0)']]);
+  ctx.save(); ctx.fillStyle = g; ctx.fillRect(60, 200, AW - 60, 340); ctx.restore();   // 円(中心 340,468 / 半径250)を丸ごと覆う矩形（端で切れない）
+}
+
 // ================================================================ HUD
 // h: { stage, bodyName, atmoTag, realG, bonus, total, high, fuel(0..1), continues, modDefs, mods, debug, play,
 //      wind(bool), windAccel, vy, vx, ang, om, sVy, sVx, sAng, sOm (0|1|2), t, pilot(string|''), atmoLabel }
@@ -2359,6 +2703,7 @@ const HUD_LAYOUT = {
   labelY: 67, labelSize: 7,
   info: { x: 14, y: 94, maxW: 176, size: 7 },
   wind: { x: 200, y: 94 },
+  rings: { y: 106 },
   pilot: { right: AW - 12, y: 40, maxW: 112, size: 7 },
   tip: { x: 20, y: 124, w: AW - 40, h: 84 },
 };
@@ -2376,7 +2721,8 @@ function drawHUD(ctx, h) {
   const L = HUD_LAYOUT;
   // 行A: ステージ/天体名 と スコア
   txt(ctx, (h.bonus ? 'BONUS  ·  ' : '') + 'STAGE ' + h.stage, 52, 8, 8, h.bonus ? p.warn : p.dim, 'left', { sp: 2.5, w: 500 });
-  txt(ctx, h.bodyName, 52, 19, 15, p.fg, 'left', { sp: 4, w: 300 });
+  { const long = String(h.bodyName || '').length > 6;   // MERCURY など7文字以上はミュートボタン(x>=140)に掛からないよう少し詰める
+    txt(ctx, h.bodyName, 52, long ? 20 : 19, long ? 13 : 15, p.fg, 'left', { sp: long ? 2.5 : 4, w: 300 }); }
   num(ctx, h.total, AW - 12, 7, 20, p.fg, { w: 200 });
   txt(ctx, 'BEST ' + (h.high || 0), AW - 12, 31, 8, p.dim, 'right', { sp: 2, w: 500 });
   // パイロット名（BEST の下。ラベルは dim、名前は少し明るく。長い名前は省略）
@@ -2436,6 +2782,19 @@ function drawHUD(ctx, h) {
     const len = Math.min(34, 8 + Math.abs(wa) * 60);
     txt(ctx, 'WIND', L.wind.x, L.wind.y, 7, p.dim, 'left', { sp: 1.6, w: 500 });
     icoWind(ctx, L.wind.x + 62, L.wind.y + 4, len, dir, p.mid);
+  }
+  // 行E: 輪の数（控えめに）と、有効な特典
+  if (h.rings && h.rings.total > 0) {
+    const all = h.rings.got >= h.rings.total;
+    ctx.save(); ctx.globalAlpha = 0.7; ctx.strokeStyle = all ? p.warn : p.mid; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(18, L.rings.y + 4, 3.6, 0, TAU); ctx.stroke(); ctx.restore();
+    txt(ctx, h.rings.got + '/' + h.rings.total + (h.rings.score > 0 ? '  +' + h.rings.score : ''), 26, L.rings.y, 7, all ? p.warn : rgba(p.fg, 0.7), 'left', { sp: 1.6, w: 500 });
+  }
+  if (h.power) {
+    const lab = h.power.name + (h.power.remain != null ? ' ' + Math.ceil(h.power.remain) + 's' : '');
+    const w = textW(ctx, lab, 7, 1.6, 500);
+    txt(ctx, lab, AW - 12, L.rings.y, 7, p.warn, 'right', { sp: 1.6, w: 500 });
+    drawPowerGlyph(ctx, h.power.kind, AW - 12 - w - 10, L.rings.y + 4, 4, p.warn);
   }
 }
 // 初回のみ表示する計器ヒント。行C を指す小さなキャレット付きの静かなパネル。k: 0..1（フェード）
@@ -2634,6 +2993,35 @@ function drawGradeStamp(ctx, cx, cy, grade, k) {
   ctx.restore();
 }
 // クリア画面。d.lines=[[ラベル,値]]、d.prog=各行のカウント進行(0..1)、d.tot=合計の進行、d.stamp=スタンプ進行(0=未、>0 で押印)、d.grade
+// 星1つ（塗り or 輪郭）。scale/alpha は押印の演出用
+function starAt(ctx, cx, cy, r, on, scale, alpha) {
+  const p = P();
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(cx, cy); ctx.scale(scale, scale);
+  if (on) star(ctx, 0, 0, r, p.warn);
+  else {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr_ = i % 2 ? r * 0.42 : r; const x = Math.cos(a) * rr_, y = Math.sin(a) * rr_; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.closePath(); ctx.strokeStyle = rgba(p.fg, 0.28); ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+const CLEAR_STAR_LABELS = ['LANDED', 'RINGS', 'PERFECT'];
+// クリア画面の★3つ。d = { mask(累積), fresh(今回あらたに取った★のマスク), k:[0..1 x3](freshの押印進行) }
+function drawClearStars(ctx, cx, y, d) {
+  const p = P();
+  for (let i = 0; i < 3; i++) {
+    const x = cx + (i - 1) * 84, bit = 1 << i;
+    const on = !!(d.mask & bit), fresh = !!(d.fresh & bit);
+    const k = fresh ? Math.max(0, Math.min(1, d.k && d.k[i] != null ? d.k[i] : 1)) : 1;
+    const sc = fresh ? 1 + 0.9 * (1 - k) * (1 - k) : 1;
+    starAt(ctx, x, y, 7.5, on && (!fresh || k > 0), sc, fresh ? (k > 0 ? Math.min(1, k * 2.2) : 0) : 1);
+    if (fresh && k <= 0) starAt(ctx, x, y, 7.5, false, 1, 1);
+    txt(ctx, CLEAR_STAR_LABELS[i], x, y + 11, 6, on ? p.warn : p.dim, 'center', { sp: 2, w: 500, a: on ? 0.9 : 0.6 });
+  }
+}
+// クリア画面。d.lines=[[ラベル,値]]、d.prog=各行のカウント進行(0..1)、d.tot=合計の進行、d.stamp=スタンプ進行(0=未、>0 で押印)、d.grade、
+// d.stars = { mask, fresh, k:[..] } | null（ボーナス/デバッグは null）。行が5本になる（輪の得点つき）と全体を少し下へ送る。
 function drawClearPanel(ctx, r, d) {
   const p = P();
   const cx = r.x + r.w / 2;
@@ -2643,28 +3031,31 @@ function drawClearPanel(ctx, r, d) {
   txt(ctx, d.sub, cx, r.y + 30, 9, d.perfect ? p.warn : p.dim, 'center', { sp: 2.5, w: 400 });
   hair(ctx, r.x + 24, r.y + 46, r.x + r.w - 24, r.y + 46, p.fg, 0.14);
   const lines = d.lines || [], prog = d.prog || [];
+  const step = lines.length > 4 ? 12.5 : 14, dy = lines.length > 4 ? 10 : 0;
   let shown = 0;
   for (let i = 0; i < lines.length; i++) {
     const k = Math.max(0, Math.min(1, prog[i] == null ? 1 : prog[i]));
-    const y = r.y + 54 + i * 14;
+    const y = r.y + 54 + i * step;
     const v = Math.round(lines[i][1] * (1 - (1 - k) * (1 - k)));
     shown += v;
     txt(ctx, lines[i][0], r.x + 24, y, 9, p.dim, 'left', { sp: 2, w: 500, a: k > 0 ? 1 : 0.35 });
     txt(ctx, k > 0 ? '+' + v : '', r.x + 176, y, 9, p.fg, 'right', { w: 400 });
   }
-  if (d.grade) drawGradeStamp(ctx, r.x + r.w - 76, r.y + 78, d.grade, d.stamp || 0);
-  hair(ctx, r.x + 24, r.y + 110, r.x + r.w - 24, r.y + 110, p.fg, 0.14);
-  txt(ctx, d.bonus ? 'BONUS SCORE' : 'STAGE SCORE', cx, r.y + 116, 8, p.dim, 'center', { sp: 3, w: 500 });
+  if (d.grade) drawGradeStamp(ctx, r.x + r.w - 76, r.y + 78 + dy / 2, d.grade, d.stamp || 0);
+  hair(ctx, r.x + 24, r.y + 110 + dy, r.x + r.w - 24, r.y + 110 + dy, p.fg, 0.14);
+  txt(ctx, d.bonus ? 'BONUS SCORE' : 'STAGE SCORE', cx, r.y + 116 + dy, 8, p.dim, 'center', { sp: 3, w: 500 });
   const total = d.tot >= 1 ? d.score : shown;
-  txt(ctx, '+' + total, cx, r.y + 127, 28, p.hi, 'center', { w: 200 });
+  txt(ctx, '+' + total, cx, r.y + 127 + dy, 28, p.hi, 'center', { w: 200 });
   const cols = d.cols, cwid = (r.w - 48) / cols.length;
   for (let i = 0; i < cols.length; i++) {
     const x = r.x + 24 + cwid * (i + 0.5);
-    txt(ctx, cols[i][0], x, r.y + 160, 8, p.dim, 'center', { sp: 2.5, w: 500 });
-    txt(ctx, cols[i][1], x, r.y + 171, 15, cols[i][2] || p.fg, 'center', { w: 300 });
+    txt(ctx, cols[i][0], x, r.y + 160 + dy, 8, p.dim, 'center', { sp: 2.5, w: 500 });
+    txt(ctx, cols[i][1], x, r.y + 171 + dy, 15, cols[i][2] || p.fg, 'center', { w: 300 });
   }
-  hair(ctx, r.x + 24, r.y + 190, r.x + r.w - 24, r.y + 190, p.fg, 0.14);
-  txt(ctx, d.next, cx, r.y + 197, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
+  hair(ctx, r.x + 24, r.y + 190 + dy, r.x + r.w - 24, r.y + 190 + dy, p.fg, 0.14);
+  let ny = r.y + 197 + dy;
+  if (d.stars) { drawClearStars(ctx, cx, r.y + 207 + dy, d.stars); ny = r.y + 236 + dy; }
+  txt(ctx, d.next, cx, ny, 10, p.fg, 'center', { sp: 3, w: 500, a: 0.7 + 0.3 * Math.sin((d.t || 0) * 3) });
 }
 function drawCrashPanel(ctx, d) {
   const p = P();
@@ -3181,6 +3572,11 @@ function drawStartPanel(ctx, d) {
     pill(ctx, b.x, b.y, b.w, b.h, r.cursor ? rgba(p.mid, 0.10) : null, rgba(r.cursor ? p.mid : p.fg, r.cursor ? 0.6 : 0.2));
     txt(ctx, r.label, b.x + 16, b.y + 9, 12, r.cursor ? p.hi : p.fg, 'left', { sp: 3, w: 500 });
     txt(ctx, 'g ' + r.g, b.x + 16, b.y + 28, 8, p.dim, 'left', { sp: 2, w: 500 });
+    { // ★3つ（取得済みは塗り）と最高グレード
+      const m = r.mask | 0;
+      for (let k = 0; k < 3; k++) starAt(ctx, b.x + 104 + k * 14, b.y + 32, 4.6, !!(m & (1 << k)), 1, (m & (1 << k)) ? 1 : 0.9);
+      if (r.grade) txt(ctx, r.grade === 'PERFECT' ? 'P' : r.grade, b.x + 104 + 3 * 14 + 4, b.y + 28, 8, gradeColor(r.grade), 'left', { sp: 1, w: 600 });
+    }
     txt(ctx, 'ST.' + r.stage, b.x + b.w - 14, b.y + 10, 11, r.cursor ? p.hi : p.mid, 'right', { sp: 2, w: 500 });
     if (r.best) txt(ctx, 'FURTHEST', b.x + b.w - 14, b.y + 28, 7, p.warn, 'right', { sp: 3, w: 500 });
   }
@@ -3778,6 +4174,17 @@ const _musSCENES = {
     },
     step() { return 5; },
   },
+  mercury: {   // 水星: 永久影のクレーター。月の曲より低く暗く、鐘はさらにまばら（月のアンビエントの軽い変種）
+    build(sc) {
+      _musDelay(sc, 0.9, 0.5, 0.45);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 55 }, { type: 'sine', f: 82.4, det: 3 }, { type: 'triangle', f: 110, det: -4 }], lp: 240, gain: 0.1, lfoRate: 0.04, lfoDepth: 50 });
+      _musAir(sc, 'highpass', 5200, 0.6, 0.006, 0.02);
+    },
+    step(t, sc) {
+      _musBell(sc, t, _musHz(220, _musPick([0, 3, 7, 10]) + _musPick([0, 12])), 5, 0.08, 2.76);
+      return _musRand(11, 22);
+    },
+  },
   terra: {   // ボーナス専用の昼の惑星: 明るい長調のやわらかいパッド + やさしい風 + 稀なやわらかいベル（ハーモニック）
     build(sc) {
       _musDelay(sc, 0.6, 0.4, 0.35);
@@ -4099,6 +4506,21 @@ const Music = {
       src.connect(lp); lp.connect(e2); e2.connect(_musS.sfxBus);
       _musReg('s', [o, e1, src, lp, e2], end + 0.05);
     },
+    // 輪の取得: コンボが上がるほど音程が上がるチャイム（whole-tone で最大10段）。ミュート時は _musSfxReady で無音
+    ring(combo) {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      const st = Math.max(0, Math.min(9, (combo | 0) - 1)) * 2;
+      const f = _musHz(659.25, st);
+      _musSfxTone('triangle', f, t, 0.28, 0.32, 2.0);
+      _musSfxTone('sine', f * 1.5, t + 0.06, 0.22, 0.2, 0);
+    },
+    // 特典の輪: 上昇する短いアルペジオ
+    power() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      [0, 7, 12, 19].forEach((s, i) => _musSfxTone('sine', _musHz(523.25, s), t + i * 0.07, 0.3, 0.3, 2.0));
+    },
     // クリア画面の集計の「カチ」。step が増えるほどわずかに高く
     tick(step) {
       if (!_musSfxReady()) return;
@@ -4141,11 +4563,11 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 const WHATSNEW = {
   version: APP_VERSION,
   lines: [
-    '平らな地面ならどこでも着地できる（得点なし）',
-    '着地後も再噴射で飛び立ち、パッドを目指せる',
-    '着陸の評価：C・B・A・S・PERFECT',
-    'PINを設定すると別の端末でも同じ名前で遊べる',
-    'ランキングは v1.0 とは別に集計',
+    '降下ルートの輪をくぐってコンボ',
+    '特別な輪で短時間の特典',
+    'ステージごとに★3つを集めよう',
+    '新天体：水星（暗闇のクレーター）',
+    '平らな地面ならどこでも着地できる',
   ],
 };
 
@@ -4761,7 +5183,12 @@ class TitleScene extends Scene {
   _startOptions() { return unlockedStarts(getMaxStage(this.engine.storage, this.name)); }
   _startOrChoose() {
     const list = this._startOptions();
-    if (list.length > 1) { this.showRank = false; this.pick = { list, sel: 0, page: 0 }; return; }
+    if (list.length > 1) {
+      this.showRank = false;
+      const recs = Object.create(null);   // L2: ステージごとの★と最高グレード（開いた時に1回だけ読む）
+      for (const o of list) recs[o.stage] = stageRecord(this.engine.storage, this.name, o.stage);
+      this.pick = { list, sel: 0, page: 0, recs }; return;
+    }
     this._startAt(1);
   }
   _startAt(stage) {
@@ -4779,7 +5206,7 @@ class TitleScene extends Scene {
     for (let i = page * PER; i < Math.min(pk.list.length, (page + 1) * PER); i++) {
       const o = pk.list[i];
       rows.push({ i, o, rect: { x: 36, y: 124 + (i - page * PER) * 52, w: W - 72, h: 44 }, cursor: i === pk.sel, best: i === 0,
-        label: o.label, stage: o.stage, g: o.realG.toFixed(2) });
+        label: o.label, stage: o.stage, g: o.realG.toFixed(2), mask: pk.recs && pk.recs[o.stage] ? pk.recs[o.stage].stars : 0, grade: pk.recs && pk.recs[o.stage] ? pk.recs[o.stage].grade : '' });
     }
     return { rows, page, pages, prev: { x: 36, y: 446, w: 56, h: 32 }, next: { x: W - 92, y: 446, w: 56, h: 32 }, cancel: { x: W / 2 - 60, y: 510, w: 120, h: 36 } };
   }
@@ -5206,6 +5633,9 @@ const LIFTOFF_MIN_S     = 0.2;   // 接地直後にこの秒数は離陸しな�
 const SHAKE_S = 0.25, SHAKE_PX = 3;
 const CLEAR_SLOT_S = 0.2;        // クリア画面の集計：1行あたりの秒数
 const CLEAR_STAMP_S = 0.18;      // グレードのスタンプが押される秒数
+const STAR_POP_DELAY = 0.12, STAR_POP_STEP = 0.24, STAR_POP_S = 0.2;   // クリア画面: 新しく取った★が順に押される（グレードのスタンプの後）
+const POWER_BANNER_S = 2.4;      // 特典取得のバナー秒数
+const ASSIST_MAX_OMEGA = 35;     // ATTITUDE ASSIST: 戻す角速度の上限(度/s)
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
 const GRADE_TABLE = [
   { g: 'PERFECT', vy: 8,  vx: 3,  ang: 5,  om: 6,  dist: 0.25 },
@@ -5511,6 +5941,7 @@ class Game extends Scene {
   _angDamp() { return angDampFor(this._lvl('stab')); }
   _safeVy() { return SAFE_VY + SAFE_VY_PER_LEVEL * this._lvl('shock'); }
   _bounceVy() { return BOUNCE_VY + BOUNCE_VY_PER_LEVEL * this._lvl('shock'); }
+  _hasRadar() { return this._lvl('radar') > 0 || !!this._powerRadar; }   // RADAR モジュール、または特典の輪の RADAR（そのステージ中）
 
   // ---- Initialize one stage ----
   // this.stage / this.bonus から再構築する。Continue 時も同じステージ番号（＝同じパラメータ）で呼ぶ。
@@ -5589,6 +6020,10 @@ class Game extends Scene {
 
     // Floating obstacles (stage 2+)。ボーナスミッションは障害物なし（穏やかな特別ステージ。難度は重力・パッド・風・抗力で作る）
     this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
+
+    // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/ATTITUDE ASSIST/RADAR）の状態もここで初期化
+    this._floats = []; this._slowT = 0; this._assistT = 0; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._starT = 0; this._starSnd = 0;
+    this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
 
     // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
     if (!this.bonus && !this._isDebugRun()) {
@@ -6109,6 +6544,10 @@ class Game extends Scene {
     if (this._bannerT > 0) this._bannerT = Math.max(0, this._bannerT - dt);
     if (this._introT > 0) this._introT = Math.max(0, this._introT - dt);
     if (this._shieldFlash > 0) this._shieldFlash = Math.max(0, this._shieldFlash - dt);
+    if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
+    if (this._assistT > 0) this._assistT = Math.max(0, this._assistT - dt);
+    if (this._pbT > 0) this._pbT = Math.max(0, this._pbT - dt);
+    const ringPx = this.x, ringPy = this.y;   // 輪の通過判定用に、このフレームの移動の始点
 
     // ---- Moving pad (ROVER DOCK / STORM): パッドは台地上を往復。着地判定は常に現在位置を使う ----
     if (this.pad && this.pad.moving) {
@@ -6175,6 +6614,12 @@ class Game extends Scene {
         this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
       }
 
+      // ---- ATTITUDE ASSIST（特典・6秒）: 燃料を使わず水平へ戻す。操縦入力は上に重なる ----
+      if (this._assistT > 0) {
+        const want = Math.max(-ASSIST_MAX_OMEGA, Math.min(ASSIST_MAX_OMEGA, -this.angle * 1.6));
+        this.omega += Math.max(-ANG_ACCEL * 1.5, Math.min(ANG_ACCEL * 1.5, (want - this.omega) * 5)) * dt;
+      }
+
       // ---- Angular damping (mild drag so craft can be stabilized) ----
       this.omega *= Math.pow(this._angDamp(), dt);
 
@@ -6233,6 +6678,9 @@ class Game extends Scene {
       this._guideDevCount += 1;
     }
 
+    // ---- L2: 輪の通過 ----
+    if (this.state === 'play' && this._rg) this._stepRings(ringPx, ringPy);
+
     // ---- ON COURSE pulse timer update ----
     if (guideDist <= GUIDE_THRESHOLD && this.state === 'play') {
       this._onCourseTime  += dt;
@@ -6246,7 +6694,7 @@ class Game extends Scene {
     // ---- Update floating obstacles (stages 2+) ----
     if (this.obstacles && this.obstacles.length > 0) {
       for (const ob of this.obstacles) {
-        ob.x += ob.vx * dt;
+        ob.x += ob.vx * dt * (this._slowT > 0 ? SLOWMO_FACTOR : 1);   // SLOW-MO: 隕石は半分の速さ
         // Bounce off walls
         if (ob.x - ob.r < 0)     { ob.x = ob.r;     ob.vx = Math.abs(ob.vx); }
         if (ob.x + ob.r > W)     { ob.x = W - ob.r; ob.vx = -Math.abs(ob.vx); }
@@ -6289,6 +6737,46 @@ class Game extends Scene {
         if (this._bounceTime > BOUNCE_RESOLVE_S) this._resolveBounce();
       }
     }
+  }
+
+  // ---- L2: 輪 ----
+  _stepRings(px, py) {
+    const r = ringStep(this._rg, px, py, this.x, this.y);
+    for (const h of r.hits) {
+      this._ringBurst(h.x, h.y, h.combo, false);
+      this._floats.push({ x: h.x, y: h.y, text: '+50 \u00d7' + h.combo, age: 0, life: 1.1, big: h.combo >= 4 });
+      this._sfx('ring', h.combo);
+    }
+    if (r.power) this._collectPower(r.power);
+  }
+  _ringBurst(x, y, combo, gold) {
+    const parts = this.particles || (this.particles = []);
+    const col = gold ? '#FFB547' : '#63D8C9';
+    const n = gold ? 18 : 10 + Math.min(8, combo * 2);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.3, sp = 22 + Math.random() * 30;
+      parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 6, life: 0.45 + Math.random() * 0.35, max: 0.8, col, r: 1.4 + Math.random() * 1.2 });
+    }
+    if (parts.length > 160) parts.splice(0, parts.length - 160);
+  }
+  // 特典の輪を取った: 種類ごとの効果（自動操縦は出さない。短時間・1ステージ1個まで）
+  _collectPower(p) {
+    const kind = p.kind, def = POWER_DEFS[kind]; if (!def) return;
+    if (kind === 'slowmo') this._slowT = SLOWMO_S;
+    else if (kind === 'attitude') this._assistT = ASSIST_S;
+    else if (kind === 'radar') this._powerRadar = true;
+    else if (kind === 'fuel') this.fuel = Math.min(this._fuelMax(), this.fuel + POWER_FUEL_FRAC * this._fuelMax());
+    this._pbT = POWER_BANNER_S; this._pbKind = kind;
+    this._ringBurst(p.x, p.y, 1, true);
+    this._floats.push({ x: p.x, y: p.y, text: def.name, age: 0, life: 1.4, big: true });
+    this._sfx('power');
+  }
+  // HUD 用: 有効な特典（時間制限つきは残り秒）
+  _activePower() {
+    if (this._slowT > 0) return { kind: 'slowmo', name: POWER_DEFS.slowmo.name, remain: this._slowT };
+    if (this._assistT > 0) return { kind: 'attitude', name: POWER_DEFS.attitude.name, remain: this._assistT };
+    if (this._powerRadar) return { kind: 'radar', name: POWER_DEFS.radar.name, remain: null };
+    return null;
   }
 
   _resolveBounce() {
@@ -6527,8 +7015,10 @@ class Game extends Scene {
         guideBonus = Math.round(Math.max(0, 400 - avgDev * (400 / 60)));
       }
       this._guideBonus  = guideBonus;
-      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus;
+      const ringScore = this._rg ? this._rg.score : 0;   // L2: 輪の得点（50×コンボ）は着陸した時に加算（墜落して Continue しても稼げない）
+      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus + ringScore;
       this._breakdown = [['FUEL BONUS', fuelBonus], ['LANDING', softBonus + horzBonus + uprBonus + omgBonus], ['GUIDE BONUS', guideBonus], ['STAGE BONUS', sp.stageBonus]];
+      if (ringScore > 0) this._breakdown.push(['RINGS', ringScore]);
     }
     this.totalScore  += this._stageScore;
     // グレード: 最初の接触の速度・姿勢（バウンスしても最初の衝撃で評価）とパッド中心からの距離。PERFECT は祝福に星のバーストが付く
@@ -6555,26 +7045,14 @@ class Game extends Scene {
     this._setOverlayState('landing');
   }
 
-  // 通常ステージの最良グレードをパイロット別に保存（'stageBest' = {パイロット名: {ステージ: {grade}}}）。デバッグ操作のランとボーナスは対象外
+  // 通常ステージの最良グレードと★（stars.js）をパイロット別に保存（'stageBest'）。デバッグ操作のランとボーナスは対象外（★も出さない）
   _recordStageBest(grade) {
+    this._starsInfo = null; this._starT = 0; this._starSnd = 0;
     if (this.bonus || this._isDebugRun()) return;
-    const st = this.engine.storage;
-    const pr = getActiveProfile(st);
-    const name = pr && pr.name;
-    if (!name || name === '__proto__') return;
-    const o = Object.create(null);
-    try {
-      const raw = st.get('stageBest', null);
-      const j = raw ? JSON.parse(raw) : null;
-      if (j && typeof j === 'object' && !Array.isArray(j)) for (const k of Object.keys(j)) if (k !== '__proto__' && j[k] && typeof j[k] === 'object') o[k] = j[k];
-    } catch (_) { /* 壊れていれば作り直す */ }
-    const mine = Object.create(null);
-    if (o[name]) for (const k of Object.keys(o[name])) if (k !== '__proto__') mine[k] = o[name][k];
-    const key = String(this.stage);
-    const cur = mine[key] && mine[key].grade;
-    if (cur && gradeRank(cur) >= gradeRank(grade)) return;
-    mine[key] = { grade }; o[name] = mine;
-    try { st.set('stageBest', JSON.stringify(o)); } catch (_) { /* ignore */ }
+    const mask = STAR_LANDED | (allRingsGot(this._rg) ? STAR_RINGS : 0) | (grade === 'PERFECT' ? STAR_PERFECT : 0);
+    const pr = getActiveProfile(this.engine.storage);
+    const rec = recordStage(this.engine.storage, pr && pr.name, this.stage, grade, mask);
+    this._starsInfo = { mask: rec.stars, fresh: rec.fresh, run: mask };
   }
 
   // ---- クリア画面の集計（行が順に数え上がり、最後にグレードのスタンプ）----
@@ -6582,7 +7060,17 @@ class Game extends Scene {
   _tickClear(dt) {
     if (this._clearT == null) return;
     const n = this._breakdown ? this._breakdown.length : 0, end = this._clearEnd();
-    if (this._clearT >= end) return;
+    if (this._clearT >= end) {   // 集計が終わったら、新しく取った★が順に押される
+      if (this._starsInfo && this._starsInfo.fresh) {
+        const prevS = this._starT; this._starT += dt;
+        let j = 0;
+        for (let i = 0; i < 3; i++) if (this._starsInfo.fresh & (1 << i)) {
+          const t0 = STAR_POP_DELAY + STAR_POP_STEP * j; j++;
+          if (prevS <= t0 && this._starT > t0) this._sfx('ring', 3 + j);
+        }
+      }
+      return;
+    }
     const prev = this._clearT, cur = Math.min(end, prev + dt);
     this._clearT = cur;
     for (let i = 0; i <= n; i++) {   // 各行の開始と合計の開始で「カチ」
@@ -6592,14 +7080,20 @@ class Game extends Scene {
     const ts = (n + 1) * CLEAR_SLOT_S + 0.05;
     if (prev <= ts && cur > ts) this._sfx('thud', 0.8);
   }
-  _skipClear() { if (this._clearT != null) this._clearT = this._clearEnd(); }
+  _skipClear() { if (this._clearT != null) { this._clearT = this._clearEnd(); this._starT = 99; } }
   _clearView() {
     const n = this._breakdown ? this._breakdown.length : 0;
     const t = this._clearT == null ? Infinity : this._clearT;
     const c01 = (v) => Math.max(0, Math.min(1, v));
     const prog = []; for (let i = 0; i < n; i++) prog.push(c01((t - i * CLEAR_SLOT_S) / CLEAR_SLOT_S));
     const ts = (n + 1) * CLEAR_SLOT_S + 0.05;
-    return { prog, tot: c01((t - n * CLEAR_SLOT_S) / CLEAR_SLOT_S), stamp: t >= ts ? Math.max(0.001, c01((t - ts) / CLEAR_STAMP_S)) : 0 };
+    let stars = null;
+    if (this._starsInfo) {
+      const k = [0, 0, 0]; let j = 0;
+      for (let i = 0; i < 3; i++) if (this._starsInfo.fresh & (1 << i)) { k[i] = c01((this._starT - STAR_POP_DELAY - STAR_POP_STEP * j) / STAR_POP_S); j++; }
+      stars = { mask: this._starsInfo.mask, fresh: this._starsInfo.fresh, k };
+    }
+    return { prog, tot: c01((t - n * CLEAR_SLOT_S) / CLEAR_SLOT_S), stamp: t >= ts ? Math.max(0.001, c01((t - ts) / CLEAR_STAMP_S)) : 0, stars };
   }
 
   // ---- クラッシュ処理 ----
@@ -6637,6 +7131,7 @@ class Game extends Scene {
   }
 
   _updateParticles(dt) {
+    if (this._floats && this._floats.length) { for (const f of this._floats) f.age += dt; this._floats = this._floats.filter((f) => f.age < f.life); }
     if (!this.particles) return;
     for (const pt of this.particles) {
       pt.x    += pt.vx * dt;
@@ -6718,7 +7213,7 @@ class Game extends Scene {
     }
 
     // Descent trajectory guide（常に描画）— 地形・パッドより手前に描き、山に隠れずパッドまで繋がって見えるようにする
-    if (!sel) this._drawGuide(ctx);
+    if (!sel) this._drawGuide(ctx, false);
 
     // 機体下の地面マーカー（teal=着地可 / amber=平地だが速い・傾き / red=急斜面）
     { const gi = this._groundIndicator(); if (gi) drawGroundShadow(ctx, gi.x, gi.y, gi.kind, Math.min(1, (SHADOW_ALT - gi.alt) / 100) * 0.9, 9 + 9 * (1 - gi.alt / SHADOW_ALT)); }
@@ -6727,7 +7222,7 @@ class Game extends Scene {
     drawParticles(ctx, this.particles);
 
     // RADAR: 予測着地点と速度ベクトル
-    if (this.state === 'play' && this._lvl('radar') > 0) this._drawRadar(ctx);
+    if (this.state === 'play' && this._hasRadar()) this._drawRadar(ctx);
 
     // Lander craft
     if (this._live() || this.state === 'landing' || this.state === 'cleared') {
@@ -6744,6 +7239,9 @@ class Game extends Scene {
 
     // 大気の見た目: 火星の砂塵(視覚のみ) / タイタン・金星の視界制限
     if (this._live()) this._drawAtmosphere(ctx);
+    if (!sel) this._drawGuide(ctx, true);   // 暗闇の天体(水星)は誘導線を暗闇の上に描く（フェアにする）
+    if (body && body.id === 'mercury') drawHorizonGlare(ctx);
+    if (!sel && this._rg && (this.state === 'play' || this.state === 'grounded')) this._drawRings(ctx);
 
     // 着陸パッドのビーコン（霧の上に常に描く）
     this._drawBeacon(ctx);
@@ -6760,6 +7258,9 @@ class Game extends Scene {
     // 接地中のバナー / 初回ヒント（非停止のトースト）
     if (this.state === 'grounded' && !this._tipOn) drawGroundedBanner(ctx, !(this.fuel > 0), Math.min(1, (this._groundedT || 0) / 0.25));
     if (this._live() && !this._tipOn && this._touchHintT > 0) drawTouchHint(ctx, Math.min(1, this._touchHintT / 0.4, (TOUCH_HINT_S - this._touchHintT) / 0.3));
+
+    // 特典の輪のバナー
+    if (this.state === 'play' && !this._tipOn && this._pbT > 0 && this._pbKind && POWER_DEFS[this._pbKind]) drawPowerBanner(ctx, this._pbKind, POWER_DEFS[this._pbKind], Math.min(1, this._pbT / 0.4, (POWER_BANNER_S - this._pbT) / 0.25));
 
     // Bonus mission banner
     if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, (this._mission || missionOf(this.bonus.type)).name, this._bannerT, (this._mission || missionOf(this.bonus.type)).stars);
@@ -6798,6 +7299,15 @@ class Game extends Scene {
     const v = b.visual || {};
     if (v.haze) drawHaze(ctx, v.haze.color, v.haze.alpha);
     if (b.visibility) drawFog(ctx, v.fog || '#000000', this.x, this.y, b.visibility);
+  }
+
+  _drawRings(ctx) {
+    const t = this._clock || 0, rg = this._rg;
+    let nextIdx = -1;
+    for (const r of rg.rings) if (!r.got && !r.missed) { nextIdx = r.i; break; }
+    for (const r of rg.rings) if (!r.got) drawRing(ctx, r.x, r.y, r.r, t, r.missed ? 'missed' : (r.i === nextIdx ? 'next' : 'idle'));
+    if (rg.power && !rg.power.got) drawPowerRing(ctx, rg.power.x, rg.power.y, rg.power.r, t, rg.power.kind);
+    if (this._floats) for (const f of this._floats) drawFloat(ctx, f);
   }
 
   _drawBeacon(ctx) {
@@ -6897,7 +7407,8 @@ class Game extends Scene {
 
   // ---- Descent trajectory guide ----
   // 常に描画（OFF COURSE は薄く、ON COURSE は明るく脈動）。
-  _drawGuide(ctx) {
+  _drawGuide(ctx, late) {
+    if (!!(this._body && this._body.guideAboveFog) !== !!late) return;   // 通常は地形の手前(霧の下)、guideAboveFog の天体は霧の上
     const pts = this.guidePts;
     if (!pts || pts.length < 2) return;
     const dist     = (this.state === 'play') ? this._distToGuide(this.x, this.y) : Infinity;
@@ -6937,6 +7448,8 @@ class Game extends Scene {
     h.realG = b ? b.realG : null; h.atmoTag = b ? b.atmoTag : '';
     if (this._pilotFor !== this.runId) { this._pilotFor = this.runId; const pr = getActiveProfile(this.engine.storage); this._pilotName = (pr && pr.name) || ''; }
     h.pilot = this._pilotName || '';
+    h.rings = (this._rg && !this.bonus) ? { got: this._rg.collected, total: this._rg.rings.length, score: this._rg.score } : null;
+    h.power = this._activePower();
     h.wind = !!this._windSpec; h.windAccel = this._windAccel || 0;
     const vy = this.vy || 0, vx = this.vx || 0, ang = this.angle || 0, om = this.omega || 0;
     const absAng = Math.abs(((ang + 180) % 360 + 360) % 360 - 180);
@@ -6957,7 +7470,7 @@ class Game extends Scene {
 
   // ---- Stage Clear overlay ----
   // パネルは y 128..344 に固定（パッド面は y>=455 なので下端は111px以上上。宇宙飛行士・旗・機体に重ならない）
-  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 }; }
+  _clearPanelRect() { return { x: 20, y: 128, w: W - 40, h: 216 + ((this._breakdown && this._breakdown.length > 4) ? 10 : 0) + (this._starsInfo ? 42 : 0) }; }
 
   _drawClearScreen(ctx) {
     const b = this.bonus;
@@ -6973,7 +7486,7 @@ class Game extends Scene {
       bonus: !!b, perfect: !!this._perfect,
       sub: b ? missionOf(b.type).name + '  ·  \u00d7' + missionOf(b.type).mult : 'STAGE ' + this.stage + ' COMPLETE' + (this._perfect ? '  ·  PERFECT' : ''),
       score: (b ? this._bonusScore : this._stageScore) || 0, cols, next, t: this._clock || 0,
-      lines: this._breakdown || [], prog: cv.prog, tot: cv.tot, stamp: cv.stamp, grade: this._grade || '',
+      lines: this._breakdown || [], prog: cv.prog, tot: cv.tot, stamp: cv.stamp, grade: this._grade || '', stars: cv.stars,
     });
   }
 

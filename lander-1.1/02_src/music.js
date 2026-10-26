@@ -551,6 +551,17 @@ const _musSCENES = {
     },
     step() { return 5; },
   },
+  mercury: {   // 水星: 永久影のクレーター。月の曲より低く暗く、鐘はさらにまばら（月のアンビエントの軽い変種）
+    build(sc) {
+      _musDelay(sc, 0.9, 0.5, 0.45);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 55 }, { type: 'sine', f: 82.4, det: 3 }, { type: 'triangle', f: 110, det: -4 }], lp: 240, gain: 0.1, lfoRate: 0.04, lfoDepth: 50 });
+      _musAir(sc, 'highpass', 5200, 0.6, 0.006, 0.02);
+    },
+    step(t, sc) {
+      _musBell(sc, t, _musHz(220, _musPick([0, 3, 7, 10]) + _musPick([0, 12])), 5, 0.08, 2.76);
+      return _musRand(11, 22);
+    },
+  },
   terra: {   // ボーナス専用の昼の惑星: 明るい長調のやわらかいパッド + やさしい風 + 稀なやわらかいベル（ハーモニック）
     build(sc) {
       _musDelay(sc, 0.6, 0.4, 0.35);
@@ -871,6 +882,21 @@ export const Music = {
       e2.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
       src.connect(lp); lp.connect(e2); e2.connect(_musS.sfxBus);
       _musReg('s', [o, e1, src, lp, e2], end + 0.05);
+    },
+    // 輪の取得: コンボが上がるほど音程が上がるチャイム（whole-tone で最大10段）。ミュート時は _musSfxReady で無音
+    ring(combo) {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      const st = Math.max(0, Math.min(9, (combo | 0) - 1)) * 2;
+      const f = _musHz(659.25, st);
+      _musSfxTone('triangle', f, t, 0.28, 0.32, 2.0);
+      _musSfxTone('sine', f * 1.5, t + 0.06, 0.22, 0.2, 0);
+    },
+    // 特典の輪: 上昇する短いアルペジオ
+    power() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      [0, 7, 12, 19].forEach((s, i) => _musSfxTone('sine', _musHz(523.25, s), t + i * 0.07, 0.3, 0.3, 2.0));
     },
     // クリア画面の集計の「カチ」。step が増えるほどわずかに高く
     tick(step) {

@@ -1,4 +1,4 @@
-// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星、12ステージで1周）。
+// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星→水星、14ステージで1周）。
 // ゲーム性に関わる数値（重力・大気）と、P2が描画に使う見た目トークンを1か所に集約する。
 // 真空の天体（moon/europa/io）は風・抗力・視界制限なし（ユーザー指摘どおり）。
 export const GRAVITY_BASE = 0.25;   // 月(1.62 m/s^2)でのステージ1重力 px/s^2
@@ -36,6 +36,12 @@ export const BODIES = [
        visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
     visual: { sky: ['#7a3410', '#c26a1c'], ground: '#33180a', rim: '#ff8a2a', accent: '#ff9a3c',
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
+  // MERCURY（v1.1 L2）: ツアーの最後。大気なし（風・抗力なし）。永久影の極域クレーター＝暗闇（visibility: 機体のライトの届く範囲だけ地形が見える。
+  // パッドのビーコンと誘導線は暗闇の上に描く＝guideAboveFog）。日照側の高温＝受動的な燃料消費（金星より軽い）。重力は火星とほぼ同じ。
+  { id: 'mercury', celebTier: 2, name: 'MERCURY', atmoTag: 'NONE', realG: 3.70, atmoLabel: 'NONE \u00b7 DARK CRATER', atmoType: 'none',
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: 130, heat: { fuelDrain: 0.3, mainFuelMul: 1.0 }, guideAboveFog: true, obstacleStyle: 'rock',
+    visual: { sky: ['#000000', '#0b0809'], ground: '#2d2b2e', rim: '#ffd29a', accent: '#ffb878', fog: '#000000', haze: null,
+      skyObject: 'sun-low', mood: 'permanently shadowed crater, near-black regolith, huge low sun glare on the horizon' } },
 ];
 
 
