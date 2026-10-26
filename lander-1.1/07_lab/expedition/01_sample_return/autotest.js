@@ -28,9 +28,10 @@ export function install(lab) {
       return o;
     };
   };
-  const run = (opt = {}) => {
+  const run = (opt = {}) => {   // opt.mode 指定でメニュー経由と同じ begin()、なければ現状のモードで reset
     if (opt.ph0 != null) lab.params.ph0 = opt.ph0;
-    lab.reset(); const ctl = makeCtl(opt); const log = []; let last = '';
+    if (opt.mode) window.__flow.begin(opt.mode, opt); else lab.reset();
+    const ctl = makeCtl(opt); const log = []; let last = '';
     for (let i = 0; i < 60 * 150; i++) {
       lab.script = ctl; lab.step(1 / 60);
       const ph = lab.m.result || (lab.m.docked ? 'docked' : lab.m.sampled ? 'return' : lab.state === 'grounded' ? (lab.m.gauge > 0 ? 'sampling' : 'grounded') : 'descent');
@@ -50,17 +51,58 @@ export function install(lab) {
     for (let i = 0; i < 180; i++) { lab.step(1 / 60); minDy = Math.min(minDy, s.y - 130); maxDy = Math.max(maxDy, s.y - 130); if (m.result) break; }
     return { bumps: m.bumps, result: m.result, reason: m.reason, state: lab.state, minDy: +minDy.toFixed(1), vy: +s.vy.toFixed(1) };
   };
-  // スコア式と永続化: 試行カウンタは解放で+1、reset/再読込で戻らない。★は累積（和集合）
+  // メニュー → MISSION/PRACTICE、スコア式（ライフ倍率）、ライフ喪失 → MISSION FAILED、練習は保存しない、★和集合・最高スコア
   const score = () => {
-    const A = window.__score, ok = [];
-    ok.push(A.mult(1) === 1, Math.abs(A.mult(7) - 0.262144) < 1e-9, A.mult(30) === 0.1, A.score(100, 'PERFECT', 1) === 2300, A.score(50, 'GOOD', 3) === Math.round(1600 * 0.64));
-    localStorage.removeItem(A.KEY_A); localStorage.removeItem(A.KEY_B);
-    run({ ph0: -1.2 }); const a1 = lab.m.final, k1 = localStorage.getItem(A.KEY_A);
-    run({ ph0: -1.2 }); const a2 = lab.m.final, k2 = localStorage.getItem(A.KEY_A), best = JSON.parse(localStorage.getItem(A.KEY_B));
-    ok.push(a1.attempt === 1 && k1 === '1', a2.attempt === 2 && k2 === '2', Math.abs(a2.mult - 0.8) < 1e-9, a2.score === A.score(a2.fuel, a2.grade, 2), best.score === Math.max(a1.score, a2.score), a2.newStars[0] === false);
-    lab.reset(); ok.push(lab.m.attempt === 2 && localStorage.getItem(A.KEY_A) === '2');   // reset では戻らない
-    localStorage.removeItem(A.KEY_A); localStorage.removeItem(A.KEY_B);
-    return { ok, pass: ok.every(Boolean) };
+    const A = window.__score, F = window.__flow, B = F.BTN, ok = {}, K = A.KEY_B;
+    const get = () => localStorage.getItem(K), step = (sec) => { for (let i = 0; i < sec * 60; i++) lab.step(1 / 60); };
+    const center = (b) => [b.x + b.w / 2, b.y + b.h / 2];
+    const kill = () => { for (let i = 0; i < 200 && lab.m.docked; i++) lab.step(1 / 60); lab.m.result || lab.crash('TEST', 'forced'); };   // 解放後に墜落させる
+    const wipe = () => { localStorage.removeItem(K); localStorage.removeItem('lander11.exp.sample_return.attempts'); };
+    wipe(); const sv = { ...F.sess };
+    // 式
+    ok.formula = [A.mult(3) === 1, A.mult(2) === 0.8, A.mult(1) === 0.6, A.score(100, 'PERFECT', 3) === 2300, A.score(50, 'GOOD', 2) === Math.round(1600 * 0.8), A.score(0, null, 1) === 600];
+    // メニュー: ボタン 44px 以上、PRACTICE タップで練習へ、MENU で戻る
+    F.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44, B.site.h >= 44, B.near.h >= 44];
+    F.tap(...center(B.site)); ok.toggle = [F.sess.atSite === true]; F.tap(...center(B.site));
+    F.tap(...center(B.practice)); ok.menu.push(F.sess.mode === 'practice' && !lab.m.menu && lab.m.docked);
+    // 練習: 失敗は何度でも・ライフ不変・保存なし
+    kill(); step(1); ok.pracFail = [lab.m.result === 'lose', lab.m.lifeLost === false, lab.m.failed === false, F.sess.lives === 3];
+    lab.reset(); ok.pracRetry = [F.sess.mode === 'practice', lab.m.docked && !lab.m.result];
+    const pw = run({ mode: 'practice' }); ok.pracWin = [pw.result === 'win', pw.final.practice === true, get() === null];
+    // 練習の局面スキップ
+    F.begin('practice', { atSite: true, nearDock: false }); ok.atSite = [lab.state === 'grounded', !lab.m.sampled, !lab.m.docked]; step(2.2); ok.atSite.push(lab.m.sampled === true);
+    F.begin('practice', { atSite: false, nearDock: true }); ok.nearDock = [lab.m.sampled === true, lab.state === 'play', !lab.m.docked];
+    const nw = run({ mode: 'practice', nearDock: true }); ok.nearDock.push(nw.result === 'win', get() === null);
+    F.begin('practice', { atSite: false, nearDock: false });
+    // ミッション勝利: 3 ライフ ×1.0
+    const w1 = run({ mode: 'mission', ph0: -1.2 }), f1 = lab.m.final;
+    ok.win3 = [w1.result === 'win', f1.lives === 3, f1.mult === 1, f1.score === A.score(f1.fuel, f1.grade, 3), f1.newStars[0] === true, JSON.parse(get()).score === f1.score, JSON.parse(get()).stars[0] === true];
+    // ライフ喪失 → 自動で係留スタートへ → 勝利は ×0.8
+    lab.reset(); kill(); ok.lose1 = [lab.m.lifeLost === true, F.sess.lives === 2, lab.m.result === 'lose']; step(F.LIFE_LOST_S + 0.1);
+    ok.lose1.push(!lab.m.result && lab.m.docked && F.sess.lives === 2 && F.sess.mode === 'mission');
+    // この回は手動で 3 ライフ前提を崩さずに勝つ
+    const w2 = run({}), f2 = lab.m.final;
+    ok.win2 = [w2.result === 'win', f2.lives === 2, Math.abs(f2.mult - 0.8) < 1e-9, f2.score === A.score(f2.fuel, f2.grade, 2), JSON.parse(get()).score === Math.max(f1.score, f2.score), f2.newStars[0] === false];
+    // 0 ライフ → MISSION FAILED → RETRY MISSION（新しい3ライフ）→ MENU
+    F.begin('mission'); kill(); step(F.LIFE_LOST_S + 0.1); kill(); step(F.LIFE_LOST_S + 0.1); kill(); step(1);
+    ok.failed = [lab.m.failed === true, lab.m.lifeLost === false, F.sess.lives === 0, lab.m.result === 'lose'];
+    F.tap(...center(B.res1).map((v, i) => (i ? v + 330 : v))); ok.failed.push(F.sess.mode === 'mission' && F.sess.lives === 3 && lab.m.docked && !lab.m.result);
+    kill(); step(F.LIFE_LOST_S + 0.1); kill(); step(F.LIFE_LOST_S + 0.1); kill(); step(1);
+    F.tap(...center(B.res2).map((v, i) => (i ? v + 330 : v))); ok.failed.push(F.sess.mode === 'menu' && lab.m.menu === true);
+    // 永続化: ★の和集合・最高スコアは下がらない
+    localStorage.setItem(K, JSON.stringify({ score: 99999, stars: [true, false, true] }));
+    const w3 = run({ mode: 'mission', ph0: -1.2 }), f3 = lab.m.final, b3 = JSON.parse(get());
+    ok.persist = [w3.result === 'win', b3.score === 99999, f3.newBest === false, b3.stars[0] && b3.stars[2], b3.stars[1] === f3.s2, f3.newStars[2] === false];
+    localStorage.setItem(K, '{broken'); F.begin('menu'); ok.persist.push(lab.m.menu === true);   // 壊れた保存でも落ちない
+    wipe(); Object.assign(F.sess, sv); F.begin('menu');
+    const flat = Object.entries(ok).map(([k, v]) => [k, v.every(Boolean), v.map((x) => (x ? 1 : 0)).join('')]);
+    return { pass: flat.every((x) => x[1]), detail: flat.map((x) => x[0] + ':' + x[2]).join(' ') };
   };
-  window.__auto = { makeCtl, run, bump, score };
+  // 通常クリア 5 本（ミッションモード、母船の開始位相を変える）
+  const five = () => {
+    const out = [-1.2, -2.6, 0, 1.4, 2.6].map((ph0) => { const r = run({ mode: 'mission', ph0 }); return r.result === 'win' && r.final.lives === 3; });
+    localStorage.removeItem(window.__score.KEY_B); window.__flow.begin('menu'); lab.params.ph0 = -1.2;
+    return { out, pass: out.every(Boolean) };
+  };
+  window.__auto = { makeCtl, run, bump, score, five };
 }
