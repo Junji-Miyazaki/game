@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.3';
+const APP_VERSION = '1.1.0-beta.4';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -522,7 +522,9 @@ function padWidth(stage) {
 }
 function obstacleCount(stage) {
   if (stage <= 1) return 0;
-  return Math.min(2 + Math.floor(inLoop(stage) / 2), 7) + 2 * stageInfo(stage).loop;
+  const cur = Math.min(2 + Math.floor(inLoop(stage) / 2), 7) + 2 * stageInfo(stage).loop;
+  // 1周目だけ序盤をなだらかに（s1 0, s2 1, s3 2, s4 3, s5 4、以降は従来どおり）。2周目以降は不変
+  return stageInfo(stage).loop === 0 ? Math.min(cur, inLoop(stage)) : cur;
 }
 function obstacleSpeed(stage) {
   return 12 + 3 * inLoop(stage) + 6 * stageInfo(stage).loop;
@@ -656,15 +658,16 @@ const POWER_RING_GAP = 2 * RING_R + 8;   // 特典の輪と通常の輪の中心
 const POWER_CHANCE = 0.35;      // ステージ2以降、1ステージにつき最大1個。この確率で出る（短く・まれに）
 const POWER_MIN_STAGE = 2;
 const SLOWMO_S = 8, SLOWMO_FACTOR = 0.25;  // SLOW-MO: 隕石(障害物)が8秒間 25%速度（ユーザー要望で 50%→25%）
-const ASSIST_S = 6;                         // ATTITUDE ASSIST: 6秒間 自動で水平に戻す
+const SIDE_S = 8;                           // SIDE THRUST: 8秒間 機体を水平に保ち、左右ボタンで真横に移動（回転入力は無効）
+const SIDE_ACCEL = 12;                      // SIDE THRUST の横加速度(px/s^2)。主推力 5.2・通常RCSのドリフト 2.5 に対し「はっきり効く」値。燃料は通常のRCSと同じ率
 const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
 const POWER_DEFS = {
   slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', dur: SLOWMO_S },
   radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
-  attitude: { id: 'attitude', name: 'ATTITUDE ASSIST', note: 'AUTO-LEVEL · 6 S',            dur: ASSIST_S },
+  side:     { id: 'side',     name: 'SIDE THRUST',     note: 'SIDE BUTTONS MOVE SIDEWAYS · 8 S', dur: SIDE_S },
   fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
 };
-const POWER_IDS = ['slowmo', 'radar', 'attitude', 'fuel'];
+const POWER_IDS = ['slowmo', 'radar', 'side', 'fuel'];
 
 // 経路上の点（誘導線と同じ式）
 function pathPoint(sx, sy, tx, ty, t) { return { x: sx + (tx - sx) * t, y: sy + (ty - sy) * t * t }; }
@@ -2361,19 +2364,51 @@ function polyVerts(n, r, seed, rot, lo) {
   for (let i = 0; i < n; i++) { const a = (i / n) * TAU + rot, rr_ = r * (lo + (1 - lo) * R()); out.push(Math.cos(a) * rr_, Math.sin(a) * rr_, a); }
   return out;
 }
-function drawObstacles(ctx, obs, t, body) {
+// 進行方向と逆向きの短い尾の幾何（描画と試験で共有）。長さ = 速度 x 0.35 秒の移動距離を 6..40px にクランプ。
+// 戻り値: { len, dir(進行方向 +1/-1), x0, x1 }（x0=尾の付け根=障害物の後縁の少し内側、x1=尾の先端）。speedMul は SLOW-MO 等の実効倍率。
+const OBS_TAIL_SEC = 0.35, OBS_TAIL_MIN = 6, OBS_TAIL_MAX = 40;
+function obstacleTail(ob, speedMul = 1) {
+  const sp = Math.abs(ob.vx * speedMul), dir = ob.vx >= 0 ? 1 : -1;
+  const len = Math.max(OBS_TAIL_MIN, Math.min(OBS_TAIL_MAX, sp * OBS_TAIL_SEC));
+  const x0 = ob.x - dir * ob.r * 0.7;
+  return { len, dir, x0, x1: x0 - dir * len };
+}
+const TAIL_COL = { rock: '#9aa0b0', ice: '#bfeaff', lava: '#ff8a3a' };
+function drawTail(ctx, ob, speedMul) {
+  const tl = obstacleTail(ob, speedMul);
+  const col = TAIL_COL[ob.style] || TAIL_COL.rock;
+  const SL = 4, hw = ob.r * 0.62;
+  ctx.save();
+  for (let i = 0; i < SL; i++) {   // 付け根ほど濃く先端ほど薄い（4分割の台形。グラデーションを使わず軽量に）
+    const a0 = i / SL, a1 = (i + 1) / SL;
+    const xa = tl.x0 - tl.dir * tl.len * a0, xb = tl.x0 - tl.dir * tl.len * a1;
+    const ha = hw * (1 - a0), hb = hw * (1 - a1);
+    ctx.fillStyle = rgba(col, 0.20 * (1 - a0 * 0.85));
+    ctx.beginPath(); ctx.moveTo(xa, ob.y - ha); ctx.lineTo(xb, ob.y - hb); ctx.lineTo(xb, ob.y + hb); ctx.lineTo(xa, ob.y + ha); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// opts: { speedMul: 実効速度の倍率(SLOW-MO など), threats: 障害物ごとの衝突コース警告 [bool] }
+function drawObstacles(ctx, obs, t, body, opts) {
   if (!obs || !obs.length) return;
   const v = (body && body.visual) || { ground: '#4a4d58' };
+  const sm = (opts && opts.speedMul) || 1, th = opts && opts.threats;
   for (let k = 0; k < obs.length; k++) {
     const ob = obs[k];
     const seed = Math.floor(ob.r * 131 + k * 17);
     const dir = ob.vx >= 0 ? 1 : -1;
     const rot = t * 0.22 * dir + seed;
+    if (!ob.spent) drawTail(ctx, ob, sm);
     ctx.save();
     ctx.translate(ob.x, ob.y);
     if (ob.style === 'ice') paintIce(ctx, ob.r, rot, seed);
     else if (ob.style === 'lava') paintLava(ctx, ob.r, rot, seed, t);
     else paintRock(ctx, ob.r, rot, seed, v.ground);
+    if (th && th[k] && !ob.spent) {   // 衝突コース: 輪郭を赤く脈動させる（その障害物だけ）
+      const pu = 0.55 + 0.45 * Math.sin(t * 9);
+      ctx.strokeStyle = rgba(P().bad, 0.45 + 0.5 * pu); ctx.lineWidth = 1.6 + pu;
+      ctx.beginPath(); ctx.arc(0, 0, ob.r + 2.5, 0, TAU); ctx.stroke();
+    }
     ctx.restore();
   }
 }
@@ -2672,7 +2707,7 @@ function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
 }
 
 // ================================================================ L2: 輪 / 特典の輪
-// 特典のピクトグラム（金色の線画）。kind: slowmo | radar | attitude | fuel
+// 特典のピクトグラム（金色の線画）。kind: slowmo | radar | side | fuel
 function drawPowerGlyph(ctx, kind, cx, cy, s, color) {
   ctx.save(); strokeStyleSet(ctx, color, 1.4);
   ctx.beginPath();
@@ -2682,7 +2717,7 @@ function drawPowerGlyph(ctx, kind, cx, cy, s, color) {
     ctx.moveTo(cx - s * 0.25, cy - s * 0.95); ctx.lineTo(cx + s * 0.25, cy - s * 0.95);
   } else if (kind === 'radar') {
     drawModuleGlyph(ctx, 'radar', cx, cy, s, color);
-  } else if (kind === 'attitude') {   // 水平バー + 両端の小さな矢じり
+  } else if (kind === 'side') {   // 水平バー + 両端の矢じり（左右へ動く）
     ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
     ctx.moveTo(cx - s * 0.55, cy - s * 0.45); ctx.lineTo(cx - s, cy); ctx.lineTo(cx - s * 0.55, cy + s * 0.45);
     ctx.moveTo(cx + s * 0.55, cy - s * 0.45); ctx.lineTo(cx + s, cy); ctx.lineTo(cx + s * 0.55, cy + s * 0.45);
@@ -2902,7 +2937,8 @@ function rotArrow(ctx, cx, cy, r, cw) {
   ctx.stroke();
   ctx.restore();
 }
-function drawControls(ctx, left, mid, right) {
+// side: SIDE THRUST 中の残り秒（>0 で左右ボタンに ⇦ ⇨ を光らせる。押下の向きはそのまま=左ボタンで左へ移動）
+function drawControls(ctx, left, mid, right, side, t) {
   const p = P();
   ctx.save();
   // 下部の薄いベール（地形の上でもボタンを読めるように）
@@ -2928,6 +2964,16 @@ function drawControls(ctx, left, mid, right) {
       ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
       ctx.globalAlpha = 1;
+    } else if (side > 0) {   // SIDE THRUST: 金色の光る横矢印（⇦ / ⇨）
+      const pu = 0.75 + 0.25 * Math.sin((t || 0) * 6), d = i === 0 ? -1 : 1;
+      rr(ctx, bx, by, bw, bh, 22);
+      ctx.fillStyle = rgba(p.warn, on ? 0.22 : 0.08 * pu + 0.04); ctx.fill();
+      ctx.lineWidth = on ? 1.8 : 1.2; ctx.strokeStyle = rgba(p.warn, on ? 0.95 : 0.5 * pu + 0.25); ctx.stroke();
+      ctx.save(); ctx.shadowColor = p.warn; ctx.shadowBlur = on ? 10 : 6 * pu;
+      ctx.strokeStyle = on ? p.hi : p.warn; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(cx - d * 13, cy); ctx.lineTo(cx + d * 13, cy);
+      ctx.moveTo(cx + d * 5, cy - 8); ctx.lineTo(cx + d * 13, cy); ctx.lineTo(cx + d * 5, cy + 8); ctx.stroke();
+      ctx.restore();
     } else {
       rotArrow(ctx, cx, cy, 11, i === 0);   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)
     }
@@ -2998,6 +3044,24 @@ function drawLandableSpots(ctx, spots, t) {
     ctx.stroke();
   }
   ctx.restore();
+}
+// 平地の真上を飛んでいるときだけ出す小さな LANDABLE の文字。alphas[i] = i 番目の平地のフェード(0..1)
+function drawLandableLabels(ctx, spots, alphas) {
+  if (!spots || !alphas) return;
+  for (let i = 0; i < spots.length; i++) {
+    const a = alphas[i] || 0; if (a <= 0.01) continue;
+    const s = spots[i];
+    txt(ctx, 'LANDABLE', (s.x0 + s.x1) / 2, s.y - 24, 7, '#7fd0c2', 'center', { sp: 2.2, w: 500, a: a * 0.9, sh: 1 });
+  }
+}
+// 緊急シールド（同じステージで隕石に2回墜落した次の挑戦）のバナー。a: 0..1
+function drawEmergencyBanner(ctx, a) {
+  const p = P();
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  panel(ctx, 70, 186, AW - 140, 44, { a: 0.78, border: p.mid, ba: 0.5 });
+  ctx.restore();
+  txt(ctx, 'EMERGENCY SHIELD', AW / 2, 202, 11, p.hi, 'center', { sp: 3, w: 600, a });
+  txt(ctx, '+1 SHIELD CHARGE', AW / 2, 218, 7, p.mid, 'center', { sp: 2.5, w: 500, a: a * 0.9 });
 }
 // 機体の真下の地面マーカー。kind: 'ok'(ティール=この速度で着地可) / 'caution'(琥珀=平地だが速い/傾き) / 'bad'(赤=急斜面)
 function groundShadowColor(kind) {
@@ -5023,6 +5087,13 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // 項目は日本語の短文（22字まで）。他の表示（英語）と違う見た目にして読んでもらうため日本語にする（ユーザー決定）。
 const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.10.26', items: [
+    'SIDE THRUST：左右で真横に移動',
+    '平地の上に LANDABLE を表示',
+    '隕石に進行方向の尾と危険表示',
+    '隕石で2回墜落すると緊急シールド',
+    '序盤の隕石を少しずつ増やす',
+  ] },
+  { version: '1.1.0-beta.3', date: '2026.10.26', items: [
     'PERFECT で天体ごとのパッチ',
     'タイトルの MAP から太陽系マップ',
     '隕石スローを 1/4 の速さに強化',
@@ -7133,7 +7204,11 @@ const CLEAR_STAMP_S = 0.18;      // グレードのスタンプが押される�
 const STAR_POP_DELAY = 0.12, STAR_POP_STEP = 0.24, STAR_POP_S = 0.2;   // クリア画面: 新しく取った★が順に押される（グレードのスタンプの後）
 const PATCH_ROOM = 46, PATCH_GAP = 0.25;   // クリア画面: PATCH EARNED の行の高さ / ★の後の間（秒）
 const POWER_BANNER_S = 2.4;      // 特典取得のバナー秒数
-const ASSIST_MAX_OMEGA = 35;     // ATTITUDE ASSIST: 戻す角速度の上限(度/s)
+const SIDE_LEVEL_K = 8;          // SIDE THRUST: 機体を水平に保つ強さ（角度が指数的に 0 へ。1/K 秒の時定数。角速度は 0 に固定）
+const LABEL_ALT = 150;           // LANDABLE の文字を出す、平地の上の高度(px)未満
+const LABEL_FADE = 6;            // LANDABLE のフェード速度(1/秒)
+const THREAT_T = 1.5, THREAT_STEPS = 15, THREAT_PAD = 6, SHIP_R = 14;   // 衝突コース警告: 先読み秒数・分割数・余白・機体の半径（当たり判定と同じ 14）
+const ES_CRASHES = 2, ES_BANNER_S = 2.6;   // 緊急シールド: 同じステージで隕石に墜落した回数のしきい値 / バナー秒数
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
 const GRADE_TABLE = [
   { g: 'PERFECT', vy: 8,  vx: 3,  ang: 5,  om: 6,  dist: 0.25 },
@@ -7191,6 +7266,47 @@ function landableSpots(pts, pad) {
   const z1 = pad ? (pad.moving ? pad.maxX + pad.w : pad.x + pad.w) : 0;
   return flatRuns(pts).filter(r => !pad || r.x1 <= z0 + 1e-6 || r.x0 >= z1 - 1e-6);
 }
+// ---- 見やすさ（純粋関数。描画と試験で共有）----
+// 機体が平地の真上（水平位置が区間内）かつ平地面からの高度が LABEL_ALT 未満・面より上にいる平地の番号。無ければ -1
+function landableLabelIndex(spots, x, y) {
+  if (!spots) return -1;
+  const fy = y + 16;
+  for (let i = 0; i < spots.length; i++) {
+    const sp = spots[i];
+    if (x >= sp.x0 && x <= sp.x1) { const alt = sp.y - fy; if (alt > -10 && alt < LABEL_ALT) return i; }
+  }
+  return -1;
+}
+// 衝突コース予測: 機体（現在の速度+重力）と各障害物（速度+壁の反射。slowT>0 の間は factor 倍）を THREAT_T 秒先まで進め、
+// 最接近距離が 障害物の半径+機体の半径+THREAT_PAD 未満なら true。サンプル間は相対運動を線分で結んで最接近を求める（すり抜けを見逃さない）。
+// ship: {x,y,vx,vy}、戻り値: obs と同じ並びの bool 配列。spent（シールドで無効化済み）の障害物は常に false。
+function obstacleThreats(ship, obs, gravity, wallW, slowT, factor) {
+  const out = [];
+  if (!obs || !obs.length) return out;
+  const n = THREAT_STEPS, dt = THREAT_T / n;
+  for (let k = 0; k < obs.length; k++) {
+    const ob = obs[k];
+    if (ob.spent) { out.push(false); continue; }
+    let ox = ob.x, ovx = ob.vx;
+    let px = ox - ship.x, py = ob.y - ship.y;   // 相対位置（障害物 - 機体）
+    const lim = ob.r + SHIP_R + THREAT_PAD;
+    let hit = Math.hypot(px, py) < lim;
+    for (let i = 1; i <= n && !hit; i++) {
+      const t0 = (i - 1) * dt, t1 = i * dt;
+      const f = (slowT > t0 + dt / 2) ? factor : 1;   // SLOW-MO の残り時間を反映
+      ox += ovx * dt * f;
+      if (ox - ob.r < 0) { ox = ob.r; ovx = Math.abs(ovx); }
+      if (ox + ob.r > wallW) { ox = wallW - ob.r; ovx = -Math.abs(ovx); }
+      const sx = ship.x + ship.vx * t1, sy = ship.y + ship.vy * t1 + 0.5 * gravity * t1 * t1;
+      const qx = ox - sx, qy = ob.y - sy;
+      if (segDist(px, py, qx, qy, 0, 0) < lim) hit = true;
+      px = qx; py = qy;
+    }
+    out.push(hit);
+  }
+  return out;
+}
+
 const HUD_TIP_S        = 4;     // 初回ヒントの表示秒数
 const HUD_TIP_LOCK_S   = 0.3;   // 表示直後のタップ無視
 const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン無視（誤タップ防止）
@@ -7441,6 +7557,11 @@ class Game extends Scene {
   _bounceVy() { return BOUNCE_VY + BOUNCE_VY_PER_LEVEL * this._lvl('shock'); }
   _hasRadar() { return this._lvl('radar') > 0 || !!this._powerRadar; }   // RADAR モジュール、または特典の輪の RADAR（そのステージ中）
 
+  // 緊急シールド用の墜落カウンタ（エンジンに保持＝新しいラン/Continue をまたぐ。保存しない）
+  _obsCrashes(stage) { const m = this.engine._obsCrash; return (m && m[stage]) | 0; }
+  _countObsCrash() { const m = this.engine._obsCrash || (this.engine._obsCrash = {}); m[this.stage] = (m[this.stage] | 0) + 1; }
+  _clearObsCrash() { if (this.engine._obsCrash) delete this.engine._obsCrash[this.stage]; }
+
   // ---- Initialize one stage ----
   // this.stage / this.bonus から再構築する。Continue 時も同じステージ番号（＝同じパラメータ）で呼ぶ。
   _initStage() {
@@ -7473,6 +7594,10 @@ class Game extends Scene {
     this._windT    = 0;
     this._windAccel = 0;
     this._shieldCharges = this._lvl('shield');          // SHIELD: レベル＝このステージで吸収できる被弾回数
+    // 緊急シールド: 同じステージで 'HIT AN OBSTACLE' の墜落が2回以上（セッション内・エンジン保持。クリアで0に戻る）→ 次の挑戦は +1 回。モジュール分に重なる（最大 max+1）。ボーナスは対象外
+    this._emerg = !mission && this._obsCrashes(this.stage) >= ES_CRASHES;
+    if (this._emerg) this._shieldCharges += 1;
+    this._esT = this._emerg ? ES_BANNER_S : 0;
     this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
     // 天体の最初のステージ、またはランの開始ステージ（天体の途中から始めた場合も）で天体紹介を出す
@@ -7519,8 +7644,8 @@ class Game extends Scene {
     // Floating obstacles (stage 2+)。ボーナスミッションは障害物なし（穏やかな特別ステージ。難度は重力・パッド・風・抗力で作る）
     this.obstacles = mission ? [] : buildObstacles(sp.obstacleCount, sp.obstacleSpeed, this._body.obstacleStyle);
 
-    // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/ATTITUDE ASSIST/RADAR）の状態もここで初期化
-    this._floats = []; this._slowT = 0; this._assistT = 0; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
+    // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/SIDE THRUST/RADAR）の状態もここで初期化
+    this._floats = []; this._slowT = 0; this._sideT = 0; this._lblA = []; this._threats = []; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
     this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
 
     // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
@@ -8043,7 +8168,8 @@ class Game extends Scene {
     if (this._introT > 0) this._introT = Math.max(0, this._introT - dt);
     if (this._shieldFlash > 0) this._shieldFlash = Math.max(0, this._shieldFlash - dt);
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
-    if (this._assistT > 0) this._assistT = Math.max(0, this._assistT - dt);
+    if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
+    if (this._esT > 0) this._esT = Math.max(0, this._esT - dt);
     if (this._pbT > 0) this._pbT = Math.max(0, this._pbT - dt);
     const ringPx = this.x, ringPy = this.y;   // 輪の通過判定用に、このフレームの移動の始点
 
@@ -8101,25 +8227,31 @@ class Game extends Scene {
       //
       // Keyboard: ArrowLeft maps to _thrustRcsL (same CW convention).
       //           ArrowRight maps to _thrustRcsR (same CCW convention).
-      if (this._thrustRcsL && this.fuel > 0) {
-        this.omega += ANG_ACCEL * dt;         // CW: nose tilts RIGHT
-        this.vx    += RCS_DRIFT * dt;         // 左ノズル排気反作用 -> 右ドリフト
-        this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
-      }
-      if (this._thrustRcsR && this.fuel > 0) {
-        this.omega -= ANG_ACCEL * dt;         // CCW: nose tilts LEFT
-        this.vx    -= RCS_DRIFT * dt;         // 右ノズル排気反作用 -> 左ドリフト
-        this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
-      }
-
-      // ---- ATTITUDE ASSIST（特典・6秒）: 燃料を使わず水平へ戻す。操縦入力は上に重なる ----
-      if (this._assistT > 0) {
-        const want = Math.max(-ASSIST_MAX_OMEGA, Math.min(ASSIST_MAX_OMEGA, -this.angle * 1.6));
-        this.omega += Math.max(-ANG_ACCEL * 1.5, Math.min(ANG_ACCEL * 1.5, (want - this.omega) * 5)) * dt;
+      const sideOn = this._sideT > 0 && !this._auto;   // SIDE THRUST（自動操縦は従来の回転制御のまま）
+      if (sideOn) {
+        // 左右ボタン = 真横に移動（左ボタン→左、右ボタン→右）。回転入力は無効、機体は強く水平に保たれる。燃料は通常のRCSと同じ率
+        const dir = (this._thrustRcsR ? 1 : 0) - (this._thrustRcsL ? 1 : 0);
+        if (dir !== 0 && this.fuel > 0) {
+          this.vx   += dir * SIDE_ACCEL * dt;
+          this.fuel  = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
+        }
+        this.omega = 0;                                   // 終了時にガクッと回らないよう角速度は常に 0
+        this.angle *= Math.exp(-SIDE_LEVEL_K * dt);       // 水平へ（指数減衰）
+      } else {
+        if (this._thrustRcsL && this.fuel > 0) {
+          this.omega += ANG_ACCEL * dt;         // CW: nose tilts RIGHT
+          this.vx    += RCS_DRIFT * dt;         // 左ノズル排気反作用 -> 右ドリフト
+          this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
+        }
+        if (this._thrustRcsR && this.fuel > 0) {
+          this.omega -= ANG_ACCEL * dt;         // CCW: nose tilts LEFT
+          this.vx    -= RCS_DRIFT * dt;         // 右ノズル排気反作用 -> 左ドリフト
+          this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
+        }
       }
 
       // ---- Angular damping (mild drag so craft can be stabilized) ----
-      this.omega *= Math.pow(this._angDamp(), dt);
+      if (!sideOn) this.omega *= Math.pow(this._angDamp(), dt);
 
       // ---- Integrate omega -> angle ----
       this.angle += this.omega * dt;
@@ -8219,6 +8351,9 @@ class Game extends Scene {
       }
     }
 
+    // ---- 見やすさ: LANDABLE ラベルのフェード / 隕石の衝突コース警告（描画用の状態。物理には影響しない）----
+    this._updateReadability(dt);
+
     // ---- Terrain collision ----
     if (this.state === 'play') this._checkCollision();
     if (this.state === 'play') this._maybeTouchHint();
@@ -8235,6 +8370,19 @@ class Game extends Scene {
         if (this._bounceTime > BOUNCE_RESOLVE_S) this._resolveBounce();
       }
     }
+  }
+
+  _updateReadability(dt) {
+    const sp = this._spots, n = sp ? sp.length : 0;
+    const A = this._lblA || (this._lblA = []);
+    const cur = this.state === 'play' ? landableLabelIndex(sp, this.x, this.y) : -1;
+    for (let i = 0; i < n; i++) {
+      const tgt = i === cur ? 1 : 0, a = A[i] || 0;
+      A[i] = tgt > a ? Math.min(1, a + dt * LABEL_FADE) : Math.max(0, a - dt * LABEL_FADE);
+    }
+    this._threats = (this._live() && !this._auto && this.obstacles && this.obstacles.length)
+      ? obstacleThreats({ x: this.x, y: this.y, vx: this.vx, vy: this.state === 'grounded' ? 0 : this.vy }, this.obstacles, this.state === 'grounded' ? 0 : this._gravity, W, this._slowT, SLOWMO_FACTOR)
+      : [];
   }
 
   // ---- L2: 輪 ----
@@ -8261,7 +8409,7 @@ class Game extends Scene {
   _collectPower(p) {
     const kind = p.kind, def = POWER_DEFS[kind]; if (!def) return;
     if (kind === 'slowmo') this._slowT = SLOWMO_S;
-    else if (kind === 'attitude') this._assistT = ASSIST_S;
+    else if (kind === 'side') this._sideT = SIDE_S;
     else if (kind === 'radar') this._powerRadar = true;
     else if (kind === 'fuel') this.fuel = Math.min(this._fuelMax(), this.fuel + POWER_FUEL_FRAC * this._fuelMax());
     this._pbT = POWER_BANNER_S; this._pbKind = kind;
@@ -8272,7 +8420,7 @@ class Game extends Scene {
   // HUD 用: 有効な特典（時間制限つきは残り秒）
   _activePower() {
     if (this._slowT > 0) return { kind: 'slowmo', name: POWER_DEFS.slowmo.name, remain: this._slowT };
-    if (this._assistT > 0) return { kind: 'attitude', name: POWER_DEFS.attitude.name, remain: this._assistT };
+    if (this._sideT > 0) return { kind: 'side', name: POWER_DEFS.side.name, remain: this._sideT };
     if (this._powerRadar) return { kind: 'radar', name: POWER_DEFS.radar.name, remain: null };
     return null;
   }
@@ -8485,6 +8633,7 @@ class Game extends Scene {
 
     const sp        = stageParams(this.stage);
     const fuelBonus = Math.round((this.fuel || 0) * 10);
+    if (!this.bonus) this._clearObsCrash();   // ステージをクリアしたので緊急シールドのカウンタを戻す
 
     if (this.bonus) {
       // ボーナスミッション: round((600 + 残燃料*10) * 倍率)。通常のステージ得点・誘導線ボーナスは付かない。
@@ -8614,6 +8763,7 @@ class Game extends Scene {
     this.engine.audio.bad();
     musicOf(this.engine).stopAll(0.4); this._bgmOn = false;   // クラッシュ: BGM無音（再開は _initStage で）
     this._crashReason = reason || 'CRASHED';
+    if (reason === 'HIT AN OBSTACLE' && !this.bonus && !this._isDebugRun()) this._countObsCrash();   // 緊急シールド用（同じステージで2回）
     this._contact0 = null;
     this._bouncing = false;
     this._bounceTime = 0;
@@ -8719,7 +8869,7 @@ class Game extends Scene {
     else {
       if (body && this.terrainPts && this.terrainPts.length > 0) drawTerrain(ctx, body, this.terrainPts, this.pad, t);
       if (this.pad) drawPad(ctx, this.pad, t);
-      if (this._spots && this._spots.length && this.state !== 'module') drawLandableSpots(ctx, this._spots, t);   // 着陸可能な平地の目印（地形の手前）
+      if (this._spots && this._spots.length && this.state !== 'module') { drawLandableSpots(ctx, this._spots, t); drawLandableLabels(ctx, this._spots, this._lblA); }   // 着陸可能な平地の目印（地形の手前）＋ 真上にいる間だけ LANDABLE
     }
 
     // Descent trajectory guide（常に描画）— 地形・パッドより手前に描き、山に隠れずパッドまで繋がって見えるようにする
@@ -8740,7 +8890,7 @@ class Game extends Scene {
     }
 
     // SHIELD: 準備完了のリング / 吸収時のフラッシュ
-    if (this._live() && this._lvl('shield') > 0 && (this._shieldReady || this._shieldFlash > 0)) {
+    if (this._live() && (this._shieldReady || this._shieldFlash > 0)) {
       drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady, this._shieldCharges);
     }
 
@@ -8771,6 +8921,9 @@ class Game extends Scene {
 
     // 特典の輪のバナー
     if (this.state === 'play' && !this._tipOn && this._pbT > 0 && this._pbKind && POWER_DEFS[this._pbKind]) drawPowerBanner(ctx, this._pbKind, POWER_DEFS[this._pbKind], Math.min(1, this._pbT / 0.4, (POWER_BANNER_S - this._pbT) / 0.25));
+
+    // 緊急シールドのバナー
+    if (this.state === 'play' && !this._tipOn && this._esT > 0) drawEmergencyBanner(ctx, Math.min(1, this._esT / 0.4, (ES_BANNER_S - this._esT) / 0.25));
 
     // Bonus mission banner
     if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, (this._mission || missionOf(this.bonus.type)).name, this._bannerT, (this._mission || missionOf(this.bonus.type)).stars);
@@ -8912,7 +9065,7 @@ class Game extends Scene {
   // ---- Floating obstacles ----
   _drawObstacles(ctx) {
     if (!this.obstacles || this.obstacles.length === 0) return;
-    drawObstacles(ctx, this.obstacles, this._clock || 0, this._body);
+    drawObstacles(ctx, this.obstacles, this._clock || 0, this._body, { speedMul: this._slowT > 0 ? SLOWMO_FACTOR : 1, threats: this._threats });
   }
 
   // ---- Descent trajectory guide ----
@@ -8940,7 +9093,9 @@ class Game extends Scene {
   _drawLander(ctx, x, y, angleDeg) {
     if (typeof x !== 'number' || typeof y !== 'number') return;
     const fuelOk = this.fuel > 0;
-    drawShip(ctx, x, y, angleDeg, !!(this._thrustMain && fuelOk), !!(this._thrustRcsL && fuelOk), !!(this._thrustRcsR && fuelOk), this._clock || 0);
+    // SIDE THRUST 中は左ボタン=左へ移動＝排気は右ノズルから出る（炎を左右入れ替えて描く）
+    const sw = this._sideT > 0 && !this._auto;
+    drawShip(ctx, x, y, angleDeg, !!(this._thrustMain && fuelOk), !!((sw ? this._thrustRcsR : this._thrustRcsL) && fuelOk), !!((sw ? this._thrustRcsL : this._thrustRcsR) && fuelOk), this._clock || 0);
   }
 
   // ---- HUD（データを集めて art.drawHUD に渡す。x>=52 は BACK ボタンを避ける）----
@@ -8975,7 +9130,7 @@ class Game extends Scene {
   // ---- Bottom button bar（入力ゾーンは update 側の ZONE_* のまま）----
   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)。見た目は機首の回転方向を示す。
   _drawButtons(ctx) {
-    drawControls(ctx, this._thrustRcsL, this._thrustMain, this._thrustRcsR);
+    drawControls(ctx, this._thrustRcsL, this._thrustMain, this._thrustRcsR, (this._sideT > 0 && !this._auto && this._live()) ? this._sideT : 0, this._clock || 0);
   }
 
   // ---- Stage Clear overlay ----

@@ -3,6 +3,20 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-10-26 beta.4: SIDE THRUST・見やすさ・緊急シールド・序盤の隕石（1.1.0-beta.4）
+- 実施（`lander-1.1/` のみ。`../lander/` は不変。方針は PLAN §7o）:
+  - SIDE THRUST が ATTITUDE ASSIST を置換（種類 id `side`、`attitude` は全箇所から削除。rings.js: `SIDE_S=8`・`SIDE_ACCEL=12`）。有効中は角度が時定数 1/8 秒で水平へ・角速度 0 固定（回転入力は効かない）、左ボタン/左キー→左、右→右へ 12 px/s²、燃料は RCS と同じ 1.5/s、主推力は不変、同時押しは打ち消し、自動操縦（デバッグ）は従来どおり。終了時は omega 0 で通常操作へ。UI: 左右ボタンに金の ⇦ ⇨・HUD・バナー・炎の左右入れ替え。
+  - LANDABLE: 平地の真上＋高度 150px 未満でフェード表示（`landableLabelIndex`、art.js `drawLandableLabels`）。
+  - 隕石: 尾（art.js `obstacleTail`/`drawObstacles`）と衝突コース警告（game.js `obstacleThreats`、1.5 秒・15 ステップ・サンプル間は線分で判定・壁反射と SLOW-MO 残り時間を反映）。危険なものだけ赤く脈動。
+  - 緊急シールド: `engine._obsCrash[stage]`（セッションのみ）。2 回目以降は +1 シールド＋バナー。クリアで消去。ボーナス/デバッグ除外。
+  - `obstacleCount`（1周目）= min(従来式, inLoop) → 0,1,2,3,4,4,5,5,6,6,7,7,7,7。
+  - 版 1.1.0-beta.4、UPDATE INFORMATION に新 entry（5項目）。
+- 仕様の補足（リーダー確認希望）: 指示の `inLoop(stage) - 1` では s2=0 になり表（s2=1, s3=2, s4=3, s5=4）と合わないため、表どおり `min(従来式, inLoop(stage))`（inLoop は 0 始まり）で実装。横加速度 12 は風（最大でも約 0.9 px/s²）よりずっと大きく、「風を簡単に打ち消せない」という条件は実質成立しない（風はもともと弱い）。代わりに長押しで着陸速度（SAFE_VX 13）を超えるため、使い方に技量が要る。緊急シールドは「2 回以降クリアまで毎回」付与。
+- テスト: 新規 `p18assist.mjs`（110: 方向・加速度・水平保持・燃料・同時押し・タッチ・失効・自動操縦・バナー/HUD/矢印、LANDABLE 境界・パッド除外・無音、尾の長さ/向き/クランプ/SLOW-MO/spent、衝突予測の真偽（壁反射・SLOW-MO・余白・サンプル間すり抜け・複数）、緊急シールドのカウンタ/新ラン/別ステージ/クリア/モジュール併用/ボーナス/非保存、obstacleCount 1〜30、版・UPDATE INFORMATION）。
+- 既存テストの変更: p13rings（ATTITUDE→SIDE の特典ブロック、定数、版、WHAT'S NEW の MAP 項目は entries[1]）、p15（obstacleCount の期待値 s2=1, s3=2）、p17patch（パッチ項目は全 entry から探す）、p10touch/p12v11（版の文字列）。自動操縦・ファジング系は変更なしで通過。
+- 目視（375x812、`?debug` なしの一時ハーネスで Game を直接駆動）: SIDE THRUST 中の ⇦ ⇨ とHUD、LANDABLE（フェード途中）、尾と赤い警告（危険な1個のみ）、EMERGENCY SHIELD、SIDE THRUST バナー。ハーネスは削除、localStorage の仕込みは削除、ビューポート復帰済み。
+- 未確認: 実機の操作感（12 px/s² の強さ、水平固定の硬さ）、60fps、実機での尾・赤い輪郭の見やすさ、SIDE THRUST の音（新規の効果音なし・既存の特典音のみ）。
+
 ## 2026-10-26 プレイヤーの反応（ユーザー伝聞）
 - 本番 v1.1 ボード：uematsu2 18,588（ステージ8、称号「uematsu」）、Tom2 4,791、みや 2,270。版別ボード・称号設定が本番で動作。
 - Tom2「よくなった」。uematsu「アイテム（特典の輪）の使い方も慣れてきた」。

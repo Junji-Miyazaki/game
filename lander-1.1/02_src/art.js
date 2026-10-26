@@ -712,19 +712,51 @@ function polyVerts(n, r, seed, rot, lo) {
   for (let i = 0; i < n; i++) { const a = (i / n) * TAU + rot, rr_ = r * (lo + (1 - lo) * R()); out.push(Math.cos(a) * rr_, Math.sin(a) * rr_, a); }
   return out;
 }
-export function drawObstacles(ctx, obs, t, body) {
+// 進行方向と逆向きの短い尾の幾何（描画と試験で共有）。長さ = 速度 x 0.35 秒の移動距離を 6..40px にクランプ。
+// 戻り値: { len, dir(進行方向 +1/-1), x0, x1 }（x0=尾の付け根=障害物の後縁の少し内側、x1=尾の先端）。speedMul は SLOW-MO 等の実効倍率。
+export const OBS_TAIL_SEC = 0.35, OBS_TAIL_MIN = 6, OBS_TAIL_MAX = 40;
+export function obstacleTail(ob, speedMul = 1) {
+  const sp = Math.abs(ob.vx * speedMul), dir = ob.vx >= 0 ? 1 : -1;
+  const len = Math.max(OBS_TAIL_MIN, Math.min(OBS_TAIL_MAX, sp * OBS_TAIL_SEC));
+  const x0 = ob.x - dir * ob.r * 0.7;
+  return { len, dir, x0, x1: x0 - dir * len };
+}
+const TAIL_COL = { rock: '#9aa0b0', ice: '#bfeaff', lava: '#ff8a3a' };
+function drawTail(ctx, ob, speedMul) {
+  const tl = obstacleTail(ob, speedMul);
+  const col = TAIL_COL[ob.style] || TAIL_COL.rock;
+  const SL = 4, hw = ob.r * 0.62;
+  ctx.save();
+  for (let i = 0; i < SL; i++) {   // 付け根ほど濃く先端ほど薄い（4分割の台形。グラデーションを使わず軽量に）
+    const a0 = i / SL, a1 = (i + 1) / SL;
+    const xa = tl.x0 - tl.dir * tl.len * a0, xb = tl.x0 - tl.dir * tl.len * a1;
+    const ha = hw * (1 - a0), hb = hw * (1 - a1);
+    ctx.fillStyle = rgba(col, 0.20 * (1 - a0 * 0.85));
+    ctx.beginPath(); ctx.moveTo(xa, ob.y - ha); ctx.lineTo(xb, ob.y - hb); ctx.lineTo(xb, ob.y + hb); ctx.lineTo(xa, ob.y + ha); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// opts: { speedMul: 実効速度の倍率(SLOW-MO など), threats: 障害物ごとの衝突コース警告 [bool] }
+export function drawObstacles(ctx, obs, t, body, opts) {
   if (!obs || !obs.length) return;
   const v = (body && body.visual) || { ground: '#4a4d58' };
+  const sm = (opts && opts.speedMul) || 1, th = opts && opts.threats;
   for (let k = 0; k < obs.length; k++) {
     const ob = obs[k];
     const seed = Math.floor(ob.r * 131 + k * 17);
     const dir = ob.vx >= 0 ? 1 : -1;
     const rot = t * 0.22 * dir + seed;
+    if (!ob.spent) drawTail(ctx, ob, sm);
     ctx.save();
     ctx.translate(ob.x, ob.y);
     if (ob.style === 'ice') paintIce(ctx, ob.r, rot, seed);
     else if (ob.style === 'lava') paintLava(ctx, ob.r, rot, seed, t);
     else paintRock(ctx, ob.r, rot, seed, v.ground);
+    if (th && th[k] && !ob.spent) {   // 衝突コース: 輪郭を赤く脈動させる（その障害物だけ）
+      const pu = 0.55 + 0.45 * Math.sin(t * 9);
+      ctx.strokeStyle = rgba(P().bad, 0.45 + 0.5 * pu); ctx.lineWidth = 1.6 + pu;
+      ctx.beginPath(); ctx.arc(0, 0, ob.r + 2.5, 0, TAU); ctx.stroke();
+    }
     ctx.restore();
   }
 }
@@ -1023,7 +1055,7 @@ export function drawRadar(ctx, hit, px, py, x, y, vx, vy) {
 }
 
 // ================================================================ L2: 輪 / 特典の輪
-// 特典のピクトグラム（金色の線画）。kind: slowmo | radar | attitude | fuel
+// 特典のピクトグラム（金色の線画）。kind: slowmo | radar | side | fuel
 export function drawPowerGlyph(ctx, kind, cx, cy, s, color) {
   ctx.save(); strokeStyleSet(ctx, color, 1.4);
   ctx.beginPath();
@@ -1033,7 +1065,7 @@ export function drawPowerGlyph(ctx, kind, cx, cy, s, color) {
     ctx.moveTo(cx - s * 0.25, cy - s * 0.95); ctx.lineTo(cx + s * 0.25, cy - s * 0.95);
   } else if (kind === 'radar') {
     drawModuleGlyph(ctx, 'radar', cx, cy, s, color);
-  } else if (kind === 'attitude') {   // 水平バー + 両端の小さな矢じり
+  } else if (kind === 'side') {   // 水平バー + 両端の矢じり（左右へ動く）
     ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
     ctx.moveTo(cx - s * 0.55, cy - s * 0.45); ctx.lineTo(cx - s, cy); ctx.lineTo(cx - s * 0.55, cy + s * 0.45);
     ctx.moveTo(cx + s * 0.55, cy - s * 0.45); ctx.lineTo(cx + s, cy); ctx.lineTo(cx + s * 0.55, cy + s * 0.45);
@@ -1253,7 +1285,8 @@ function rotArrow(ctx, cx, cy, r, cw) {
   ctx.stroke();
   ctx.restore();
 }
-export function drawControls(ctx, left, mid, right) {
+// side: SIDE THRUST 中の残り秒（>0 で左右ボタンに ⇦ ⇨ を光らせる。押下の向きはそのまま=左ボタンで左へ移動）
+export function drawControls(ctx, left, mid, right, side, t) {
   const p = P();
   ctx.save();
   // 下部の薄いベール（地形の上でもボタンを読めるように）
@@ -1279,6 +1312,16 @@ export function drawControls(ctx, left, mid, right) {
       ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
       ctx.globalAlpha = 1;
+    } else if (side > 0) {   // SIDE THRUST: 金色の光る横矢印（⇦ / ⇨）
+      const pu = 0.75 + 0.25 * Math.sin((t || 0) * 6), d = i === 0 ? -1 : 1;
+      rr(ctx, bx, by, bw, bh, 22);
+      ctx.fillStyle = rgba(p.warn, on ? 0.22 : 0.08 * pu + 0.04); ctx.fill();
+      ctx.lineWidth = on ? 1.8 : 1.2; ctx.strokeStyle = rgba(p.warn, on ? 0.95 : 0.5 * pu + 0.25); ctx.stroke();
+      ctx.save(); ctx.shadowColor = p.warn; ctx.shadowBlur = on ? 10 : 6 * pu;
+      ctx.strokeStyle = on ? p.hi : p.warn; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(cx - d * 13, cy); ctx.lineTo(cx + d * 13, cy);
+      ctx.moveTo(cx + d * 5, cy - 8); ctx.lineTo(cx + d * 13, cy); ctx.lineTo(cx + d * 5, cy + 8); ctx.stroke();
+      ctx.restore();
     } else {
       rotArrow(ctx, cx, cy, 11, i === 0);   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)
     }
@@ -1349,6 +1392,24 @@ export function drawLandableSpots(ctx, spots, t) {
     ctx.stroke();
   }
   ctx.restore();
+}
+// 平地の真上を飛んでいるときだけ出す小さな LANDABLE の文字。alphas[i] = i 番目の平地のフェード(0..1)
+export function drawLandableLabels(ctx, spots, alphas) {
+  if (!spots || !alphas) return;
+  for (let i = 0; i < spots.length; i++) {
+    const a = alphas[i] || 0; if (a <= 0.01) continue;
+    const s = spots[i];
+    txt(ctx, 'LANDABLE', (s.x0 + s.x1) / 2, s.y - 24, 7, '#7fd0c2', 'center', { sp: 2.2, w: 500, a: a * 0.9, sh: 1 });
+  }
+}
+// 緊急シールド（同じステージで隕石に2回墜落した次の挑戦）のバナー。a: 0..1
+export function drawEmergencyBanner(ctx, a) {
+  const p = P();
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  panel(ctx, 70, 186, AW - 140, 44, { a: 0.78, border: p.mid, ba: 0.5 });
+  ctx.restore();
+  txt(ctx, 'EMERGENCY SHIELD', AW / 2, 202, 11, p.hi, 'center', { sp: 3, w: 600, a });
+  txt(ctx, '+1 SHIELD CHARGE', AW / 2, 218, 7, p.mid, 'center', { sp: 2.5, w: 500, a: a * 0.9 });
 }
 // 機体の真下の地面マーカー。kind: 'ok'(ティール=この速度で着地可) / 'caution'(琥珀=平地だが速い/傾き) / 'bad'(赤=急斜面)
 export function groundShadowColor(kind) {

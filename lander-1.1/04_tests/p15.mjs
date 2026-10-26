@@ -51,7 +51,7 @@ const MOONLIKE = [0, 1, 2];
   ok(BODIES.every(b => b.realG === realG[b.id]), 'real gravity table');
   // pad / obstacles / speed formulas
   ok(padWidth(1) === 54 && padWidth(12) === 22 && padWidth(14) === 22 && padWidth(15) === 46 && padWidth(28) === 22 && padWidth(2) === 51, 'pad width formula');
-  ok(obstacleCount(1) === 0 && obstacleCount(2) === 2 && obstacleCount(3) === 3 && obstacleCount(12) === 7 && obstacleCount(14) === 7 && obstacleCount(15) === 4 + 0, 'obstacle count: ' + [1, 2, 3, 12, 14, 15].map(obstacleCount));
+  ok(obstacleCount(1) === 0 && obstacleCount(2) === 1 && obstacleCount(3) === 2 && obstacleCount(12) === 7 && obstacleCount(14) === 7 && obstacleCount(15) === 4 + 0, 'obstacle count: ' + [1, 2, 3, 12, 14, 15].map(obstacleCount));
   ok(obstacleSpeed(1) === 12 && obstacleSpeed(12) === 45 && obstacleSpeed(14) === 51 && obstacleSpeed(15) === 18, 'obstacle speed');
   const { g } = newGame();
   for (const s of [1, 4, 9, 13, 20, 30]) { g.stage = s; g.bonus = null; g._initStage();

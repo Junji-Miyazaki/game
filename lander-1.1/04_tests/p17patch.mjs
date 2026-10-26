@@ -309,7 +309,7 @@ function loadAll(e) { try { return { profiles: JSON.parse(e.store.get('profiles'
 {
   const E0 = WHATSNEW.entries[0];
   ok(E0.items.length <= 6 && E0.items.length >= 1, 'newest entry stays within 6 items (' + E0.items.length + ')');
-  ok(E0.items.includes('PERFECT で天体ごとのパッチ') && 'PERFECT で天体ごとのパッチ'.length <= 22, 'mentions the patches (<=22 chars)');
+  ok(WHATSNEW.entries.some((en) => en.items.includes('PERFECT で天体ごとのパッチ')) && 'PERFECT で天体ごとのパッチ'.length <= 22, 'mentions the patches (<=22 chars)');
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'every item <= 22 chars');
   { const A = WHATSNEW.entries.flatMap((en) => en.items); ok(A.some((l) => /輪/.test(l)) && A.some((l) => /★/.test(l)) && A.some((l) => /水星/.test(l)) && A.some((l) => /MAP/.test(l)), 'rings/power-ups, stars, Mercury, MAP listed across entries'); }
 }

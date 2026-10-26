@@ -3,6 +3,13 @@
 import { APP_VERSION } from './version.js';
 export const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.10.26', items: [
+    'SIDE THRUST：左右で真横に移動',
+    '平地の上に LANDABLE を表示',
+    '隕石に進行方向の尾と危険表示',
+    '隕石で2回墜落すると緊急シールド',
+    '序盤の隕石を少しずつ増やす',
+  ] },
+  { version: '1.1.0-beta.3', date: '2026.10.26', items: [
     'PERFECT で天体ごとのパッチ',
     'タイトルの MAP から太陽系マップ',
     '隕石スローを 1/4 の速さに強化',

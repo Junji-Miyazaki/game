@@ -97,7 +97,9 @@ export function padWidth(stage) {
 }
 export function obstacleCount(stage) {
   if (stage <= 1) return 0;
-  return Math.min(2 + Math.floor(inLoop(stage) / 2), 7) + 2 * stageInfo(stage).loop;
+  const cur = Math.min(2 + Math.floor(inLoop(stage) / 2), 7) + 2 * stageInfo(stage).loop;
+  // 1周目だけ序盤をなだらかに（s1 0, s2 1, s3 2, s4 3, s5 4、以降は従来どおり）。2周目以降は不変
+  return stageInfo(stage).loop === 0 ? Math.min(cur, inLoop(stage)) : cur;
 }
 export function obstacleSpeed(stage) {
   return 12 + 3 * inLoop(stage) + 6 * stageInfo(stage).loop;

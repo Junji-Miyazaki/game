@@ -15,15 +15,16 @@ export const POWER_RING_GAP = 2 * RING_R + 8;   // 特典の輪と通常の輪�
 export const POWER_CHANCE = 0.35;      // ステージ2以降、1ステージにつき最大1個。この確率で出る（短く・まれに）
 export const POWER_MIN_STAGE = 2;
 export const SLOWMO_S = 8, SLOWMO_FACTOR = 0.25;  // SLOW-MO: 隕石(障害物)が8秒間 25%速度（ユーザー要望で 50%→25%）
-export const ASSIST_S = 6;                         // ATTITUDE ASSIST: 6秒間 自動で水平に戻す
+export const SIDE_S = 8;                           // SIDE THRUST: 8秒間 機体を水平に保ち、左右ボタンで真横に移動（回転入力は無効）
+export const SIDE_ACCEL = 12;                      // SIDE THRUST の横加速度(px/s^2)。主推力 5.2・通常RCSのドリフト 2.5 に対し「はっきり効く」値。燃料は通常のRCSと同じ率
 export const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
 export const POWER_DEFS = {
   slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', dur: SLOWMO_S },
   radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
-  attitude: { id: 'attitude', name: 'ATTITUDE ASSIST', note: 'AUTO-LEVEL · 6 S',            dur: ASSIST_S },
+  side:     { id: 'side',     name: 'SIDE THRUST',     note: 'SIDE BUTTONS MOVE SIDEWAYS · 8 S', dur: SIDE_S },
   fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
 };
-export const POWER_IDS = ['slowmo', 'radar', 'attitude', 'fuel'];
+export const POWER_IDS = ['slowmo', 'radar', 'side', 'fuel'];
 
 // 経路上の点（誘導線と同じ式）
 export function pathPoint(sx, sy, tx, ty, t) { return { x: sx + (tx - sx) * t, y: sy + (ty - sy) * t * t }; }

@@ -7,7 +7,7 @@ import { BODIES, TERRA, STAGES_PER_BODY, BODY_COUNT, stageInfo, bodyGravity, pad
 import { autopilotKeys } from '../02_src/autopilot.js';
 import { setDebug } from '../02_src/debug.js';
 import { __setRelayUrl } from '../02_src/net.js';
-import { RING_R, POWER_RING_GAP, RING_MIN, RING_MAX, RING_GAP_MIN, RING_TERRAIN_MARGIN, RING_Y_MAX, POWER_DEFS, POWER_IDS, SLOWMO_S, ASSIST_S, POWER_FUEL_FRAC, SLOWMO_FACTOR, buildRings, newRingState, ringStep, ringCollect, allRingsGot, maxRingScore, terrainTopIn, segDist } from '../02_src/rings.js';
+import { RING_R, POWER_RING_GAP, RING_MIN, RING_MAX, RING_GAP_MIN, RING_TERRAIN_MARGIN, RING_Y_MAX, POWER_DEFS, POWER_IDS, SLOWMO_S, SIDE_S, SIDE_ACCEL, POWER_FUEL_FRAC, SLOWMO_FACTOR, buildRings, newRingState, ringStep, ringCollect, allRingsGot, maxRingScore, terrainTopIn, segDist } from '../02_src/rings.js';
 import { readStageBest, recordStage, stageRecord, starsSummary, starCount, STAR_LANDED, STAR_RINGS, STAR_PERFECT } from '../02_src/stars.js';
 import { WHATSNEW } from '../02_src/whatsnew.js';
 import { APP_VERSION, APP_LABEL, APP_BUILD_TEXT } from '../02_src/version.js';
@@ -280,18 +280,18 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   g4._slowT = 0.05; g4.obstacles[0].x = 100; g4.obstacles[0].vx = 40; g4.x = 30; g4.y = 80; g4.vx = 0; g4.vy = 0;
   run(g4, 0.2); g4.obstacles[0].x = 100; g4.x = 30; g4.y = 80; g4.vx = 0; g4.vy = 0; const xb = g4.obstacles[0].x; g4.update(0.05);
   ok(near((g4.obstacles[0].x - xb) / 0.05, 40, 1.5) && g4._slowT === 0 && !g4._activePower(), 'SLOW-MO ends: obstacles back to full speed');
-  ok(SLOWMO_S === 8 && SLOWMO_FACTOR === 0.25 && ASSIST_S === 6 && POWER_FUEL_FRAC === 0.15, 'spec constants: 8s / 25% / 6s / 15%');
-  // ATTITUDE ASSIST: 6秒間 自動で水平へ
-  const r5 = stageGame(6); const g5 = r5.g; g5.obstacles = []; setRings(g5, [[100, 150]], [220, 200, 'attitude']);
+  ok(SLOWMO_S === 8 && SLOWMO_FACTOR === 0.25 && SIDE_S === 8 && SIDE_ACCEL === 12 && POWER_FUEL_FRAC === 0.15, 'spec constants: 8s / 25% / side 8s / 12 px/s2 / 15%');
+  // SIDE THRUST: 8秒間 水平を保ち、左右ボタンで真横へ（詳細は p18assist）
+  const r5 = stageGame(6); const g5 = r5.g; g5.obstacles = []; setRings(g5, [[100, 150]], [220, 200, 'side']);
   g5.angle = 40; g5.omega = 0; g5.vx = 0; g5.vy = 0; g5._gravity = 0.1; g5.x = 220; g5.y = 170;
   for (let i = 0; i < 60 && !g5._rg.power.got; i++) { g5.y += 1; g5.update(DT); }
-  ok(g5._rg.power.got && g5._assistT > 5 && g5._assistT <= ASSIST_S, 'ATTITUDE ASSIST started: ' + g5._assistT.toFixed(2));
+  ok(g5._rg.power.got && g5._sideT > 7 && g5._sideT <= SIDE_S, 'SIDE THRUST started: ' + g5._sideT.toFixed(2));
   const a0 = Math.abs(g5.angle); const fuel0 = g5.fuel;
   g5.y = 150; g5.vy = 0; run(g5, 3); g5.y = 150; g5.vy = 0;
-  ok(Math.abs(g5.angle) < 6 && Math.abs(g5.angle) < a0 - 20, 'auto-levels within 3 s: ' + a0.toFixed(1) + ' -> ' + g5.angle.toFixed(1));
-  ok(near(g5.fuel, fuel0, 0.01), 'assist uses no fuel (and no autopilot translation)');
-  g5.y = 150; g5.vy = 0; g5.vx = 0; run(g5, 3.5);
-  ok(g5._assistT === 0 && !g5._activePower(), 'ASSIST ends after 6 s');
+  ok(Math.abs(g5.angle) < 1 && Math.abs(g5.angle) < a0 - 20, 'held level within 3 s: ' + a0.toFixed(1) + ' -> ' + g5.angle.toFixed(1));
+  ok(near(g5.fuel, fuel0, 0.01), 'no buttons pressed: side thrust uses no fuel');
+  g5.y = 150; g5.vy = 0; g5.vx = 0; run(g5, 5.5);
+  ok(g5._sideT === 0 && !g5._activePower(), 'SIDE THRUST ends after 8 s');
   g5.angle = 30; g5.omega = 0; g5.y = 150; g5.vy = 0; g5.vx = 0; run(g5, 1); ok(Math.abs(g5.angle - 30) < 1.5, 'after it ends the ship holds its attitude again (no auto-level)');
   // 特典は自動操縦を出さない（位置・速度は触らない）
   const x0 = g5.x, vx0 = g5.vx; g5.update(DT); ok(g5.x === x0 + g5.vx * DT || near(g5.x, x0 + vx0 * DT, 0.01), 'power-ups never steer the ship translation');
@@ -300,7 +300,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   sweep(m.g, 100, 120, 100, 180); sweep(m.g, 220, 230, 220, 290);
   ok(m.e.sfxLog.filter((x) => x[0] === 'ring' || x[0] === 'power').length === 0, 'muted: no ring/power sfx at all');
   // 特典の輪のボーナス・ステージ1では出ない（配置側で保証済み）。パワー種別の定義
-  ok(POWER_IDS.join() === 'slowmo,radar,attitude,fuel' && POWER_IDS.every((k) => POWER_DEFS[k] && POWER_DEFS[k].name), 'power definitions');
+  ok(POWER_IDS.join() === 'slowmo,radar,side,fuel' && POWER_IDS.every((k) => POWER_DEFS[k] && POWER_DEFS[k].name), 'power definitions');
   ok(!POWER_IDS.includes('autopilot'), 'no autopilot power');
 }
 
@@ -482,13 +482,13 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 
 // ---------- 11. WHAT'S NEW / 版 ----------
 {
-  ok(APP_VERSION === '1.1.0-beta.3' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.3', 'version 1.1.0-beta.3, label unchanged');
+  ok(APP_VERSION === '1.1.0-beta.4' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.4', 'version 1.1.0-beta.4, label unchanged');
   const E0 = WHATSNEW.entries[0];
   ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 1 && E0.items.length <= 6, 'whatsnew newest entry: 1-6 items');
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
   const joined = WHATSNEW.entries.flatMap((en) => en.items).join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
-  ok(E0.items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
+  ok(WHATSNEW.entries[1].items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
 }
 
 console.log('p13rings: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));
