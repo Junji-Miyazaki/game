@@ -1551,9 +1551,10 @@ export function drawCrashPanel(ctx, d) {
   const cx = AW / 2, cy = AH / 2;
   panel(ctx, 20, cy - 100, AW - 40, 196, { a: 0.9, border: p.bad, ba: 0.30 });
   txt(ctx, 'CRASHED', cx, cy - 84, 24, p.bad, 'center', { sp: 8, w: 300 });
-  txt(ctx, d.reason, cx, cy - 48, 10, p.warn, 'center', { sp: 3, w: 500 });
-  txt(ctx, 'SCORE', cx, cy - 26, 8, p.dim, 'center', { sp: 3, w: 500 });
-  num(ctx, d.score, cx + numWidth(d.score, 18) / 2, cy - 14, 18, p.fg, { w: 300 });
+  txt(ctx, d.reason, cx, cy - 52, 10, p.warn, 'center', { sp: 3, w: 500 });
+  if (d.detail) txt(ctx, d.detail.text, cx, cy - 37, 8, p.dim, 'center', { sp: 2, w: 500 });
+  txt(ctx, 'SCORE', cx, cy - 22, 8, p.dim, 'center', { sp: 3, w: 500 });
+  num(ctx, d.score, cx + numWidth(d.score, 18) / 2, cy - 11, 18, p.fg, { w: 300 });
   pill(ctx, cx - 112, cy + 14, 224, 32, rgba(p.fg, 0.10), rgba(p.fg, 0.28));
   txt(ctx, 'TAP TO CONTINUE  ·  ' + d.left + ' LEFT', cx, cy + 24, 10, p.hi, 'center', { sp: 2, w: 500 });
   const g = d.giveUp;
@@ -1565,8 +1566,9 @@ export function drawBonusFailedPanel(ctx, d) {
   const cx = AW / 2, cy = AH / 2;
   panel(ctx, 20, cy - 90, AW - 40, 170, { a: 0.9, border: p.warn, ba: 0.28 });
   txt(ctx, 'BONUS FAILED', cx, cy - 72, 20, p.warn, 'center', { sp: 6, w: 300 });
-  txt(ctx, d.reason, cx, cy - 36, 10, p.fg, 'center', { sp: 3, w: 500 });
-  txt(ctx, 'NO CONTINUE USED', cx, cy - 16, 8, p.dim, 'center', { sp: 3, w: 500 });
+  txt(ctx, d.reason, cx, cy - 40, 10, p.fg, 'center', { sp: 3, w: 500 });
+  if (d.detail) txt(ctx, d.detail.text, cx, cy - 25, 8, p.dim, 'center', { sp: 2, w: 500 });
+  txt(ctx, 'NO CONTINUE USED', cx, cy - 10, 8, p.dim, 'center', { sp: 3, w: 500 });
   pill(ctx, cx - 100, cy + 16, 200, 32, rgba(p.fg, 0.10), rgba(p.fg, 0.28));
   txt(ctx, 'TAP  ·  STAGE ' + d.next, cx, cy + 26, 10, p.hi, 'center', { sp: 3, w: 500 });
 }

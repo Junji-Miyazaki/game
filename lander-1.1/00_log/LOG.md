@@ -155,3 +155,11 @@ v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/
 - 目視（preview lander-1.1, 375x812）: 一時ハーネスでクリア画面（飛来の途中・最終状態）、7枚の紋章の拡大シート（取得/未取得/各サイズ）、シード済みストレージでマップ概観（PATCH 4/7・バッジ）・木星/土星のカード・PILOTS 行の PATCH ボタン・パッチケースを確認。ハーネスと localStorage は片付け済み、ビューポートも復元。
 - 判断: 「タップで進める」はパッチ演出中は終状態へ（元は★の押印中でも即次へ進んだが、パッチがあるときだけ見せ切るため）。ヘッダは `SELECT DESTINATION` と幅が衝突するので ★ の真下の行に置いた。内部版は上げていない（NEW の再表示なし）。
 - 未確認: 実機のチャイムの音色、実機タッチ、パッチ絵の小サイズ（バッジ r4.6・カード r9）の見え方、複数系（地球=MOON のみ・土星=TITAN）の概観バッジの重なり、PERFECT 実プレイでの演出（テストは _doSuccess 直接＋ハーネス）。
+
+## 2026-10-26 失敗理由に実測値/上限の行を追加（beta.4 内、版は上げず）
+- 実施:
+  - `game.js`: `_crashDetail = { text }`（無ければ null）。`_doCrash(reason, detail)`。整数丸めの `'52 / 45 px/s'` 形式。TOO FAST=vy/`_bounceVy()`（衝撃吸収モジュール込み）、TOO MUCH SIDEWAYS SPEED=vx/26 px/s、TIPPED OVER=傾き/55°（バウンス決着時 `_resolveBounce` は 33°）、SPINNING TOO FAST=角速度/40 °/s、STEEP GROUND=斜面角/10°、HARD IMPACT=上限超過のうち比が最大の指標、HARD LANDING=全指標のうち上限比が最大のもの。HIT AN OBSTACLE / OUT OF FUEL / DEBUG は値行なし。
+  - `art.js`: `drawCrashPanel` / `drawBonusFailedPanel` に理由の下の小行（8px・dim）。パネル枠は不変、理由・SCORE を 4px 上げて収めた（ボタン位置は不変）。ボーナス失敗は理由と NO CONTINUE USED の間。
+  - `whatsnew.js`: 最新 entry に `失敗理由に速さ・傾きの数値を表示` を追加（6項目）。`p18assist` の項目一覧アサーションを更新。
+- テスト: 新規 `04_tests/p19crash.mjs`（27）。全スイート PASS、`node build.js`・`node --check` OK。
+- 未確認: 実機での見え方（目視は未実施）、360 幅の実描画の重なりはテキスト座標のみで確認。

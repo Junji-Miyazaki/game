@@ -309,7 +309,7 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
   ok(APP_VERSION === '1.1.0-beta.4', 'APP_VERSION 1.1.0-beta.4');
   const E = WHATSNEW.entries;
   ok(E[0].version === '1.1.0-beta.4' && E[0].date === '2026.10.26' && WHATSNEW.version === '1.1.0-beta.4', 'newest entry = beta.4 (2026.10.26)');
-  ok(E[0].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす'].join('|'), 'beta.4 items as specified');
+  ok(E[0].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified');
   ok(E.every((en) => en.items.every((l) => l.length <= 22)), 'every item <= 22 chars: ' + E[0].items.map((l) => l.length).join(','));
   ok(E.map((en) => en.version).join() === '1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
 }

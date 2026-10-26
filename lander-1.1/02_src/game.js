@@ -526,6 +526,7 @@ export class Game extends Scene {
     this._bonusScore    = 0;
     this._bonusGrant    = false;
     this._crashReason   = '';
+    this._crashDetail   = null;   // { text } 失敗理由の下に出す「実測値 / 上限」。無い理由は null
     this.landingSeq     = null;
     this._auto          = false;
     this._perfect       = false;
@@ -1336,13 +1337,14 @@ export class Game extends Scene {
     this._bouncing = false;
     this._bounceTime = 0;
     if (!onPad) {   // パッド外: 平地なら接地（得点なし）、急斜面や大きな傾きは失敗
-      if (footSlopeDeg(this.terrainPts, this.x) > LAND_SLOPE_DEG) { this._doCrash('STEEP GROUND'); return; }
+      const sl0 = footSlopeDeg(this.terrainPts, this.x);
+      if (sl0 > LAND_SLOPE_DEG) { this._doCrash('STEEP GROUND', this._detailText(sl0, LAND_SLOPE_DEG, '°')); return; }
       if (absAngle <= BOUNCE_RESOLVE_DEG) this._doGrounded();
-      else this._doCrash('TIPPED OVER');
+      else this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_RESOLVE_DEG, '°'));
       return;
     }
     if (absAngle <= BOUNCE_RESOLVE_DEG) this._doSuccess(absAngle, Math.abs(this.omega));
-    else this._doCrash('TIPPED OVER');
+    else this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_RESOLVE_DEG, '°'));
   }
 
   // ---- Collision & landing check ----
@@ -1365,9 +1367,10 @@ export class Game extends Scene {
     if (!this._bouncing && !this._contact0) this._contact0 = { vy: absVy, vx: absVx, ang: absAngle, om: absOmega };
 
     if (!onPad) {
-      if (absAngle > BOUNCE_ANGLE) { this._bouncing = false; this._doCrash('TIPPED OVER'); return; }
-      if (absVy > this._bounceVy() || absVx > BOUNCE_VX || absOmega > BOUNCE_OMEGA) { this._bouncing = false; this._doCrash('HARD IMPACT'); return; }
-      if (footSlopeDeg(this.terrainPts, this.x) > LAND_SLOPE_DEG) { this._bouncing = false; this._doCrash('STEEP GROUND'); return; }
+      if (absAngle > BOUNCE_ANGLE) { this._bouncing = false; this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_ANGLE, '°')); return; }
+      if (absVy > this._bounceVy() || absVx > BOUNCE_VX || absOmega > BOUNCE_OMEGA) { this._bouncing = false; this._doCrash('HARD IMPACT', this._worstDetail(absVy, absVx, absAngle, absOmega, true)); return; }
+      const sl1 = footSlopeDeg(this.terrainPts, this.x);
+      if (sl1 > LAND_SLOPE_DEG) { this._bouncing = false; this._doCrash('STEEP GROUND', this._detailText(sl1, LAND_SLOPE_DEG, '°')); return; }
     }
     const succeed = (a, o) => { if (onPad) this._doSuccess(a, o); else this._doGrounded(); };
 
@@ -1382,7 +1385,7 @@ export class Game extends Scene {
       // バウンス後もまだ速すぎる/傾きすぎ -> クラッシュ
       if (absVy > this._bounceVy() || absVx > BOUNCE_VX || absAngle > BOUNCE_ANGLE) {
         this._bouncing = false;
-        this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega));
+        this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega), this._crashDetailFor(absVy, absVx, absAngle, absOmega));
         return;
       }
       // まだ接触中だがゆっくりと落ち着いている -> もう一度バウンス処理
@@ -1430,7 +1433,7 @@ export class Game extends Scene {
 
     // ---- BOUNCE_* 超え -> 即クラッシュ（パッド上のみここに来る）----
     this._bouncing = false;
-    this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega));
+    this._doCrash(this._crashReasonFor(absVy, absVx, absAngle, absOmega), this._crashDetailFor(absVy, absVx, absAngle, absOmega));
   }
 
   _crashReasonFor(absVy, absVx, absAngle, absOmega) {
@@ -1439,6 +1442,34 @@ export class Game extends Scene {
     if (absVx > BOUNCE_VX) return 'TOO MUCH SIDEWAYS SPEED';
     if (absOmega > BOUNCE_OMEGA) return 'SPINNING TOO FAST';
     return 'HARD LANDING';
+  }
+
+  // 失敗理由の下の小さな行: '52 / 45 px/s'（整数。実測値 / 使った上限）
+  _detailText(v, lim, unit) { return { text: Math.round(v) + ' / ' + Math.round(lim) + ' ' + unit.trim() }; }
+  _metrics(vy, vx, ang, om) {
+    return [
+      { v: vy, lim: this._bounceVy(), unit: 'px/s' },
+      { v: vx, lim: BOUNCE_VX, unit: 'px/s' },
+      { v: ang, lim: BOUNCE_ANGLE, unit: '°' },
+      { v: om, lim: BOUNCE_OMEGA, unit: '°/s' },
+    ];
+  }
+  // 上限比が最大の指標。onlyOver なら上限超過のものだけ（HARD IMPACT）。HARD LANDING は全指標から
+  _worstDetail(vy, vx, ang, om, onlyOver) {
+    let best = null;
+    for (const m of this._metrics(vy, vx, ang, om)) {
+      if (onlyOver && !(m.v > m.lim)) continue;
+      if (!best || m.v / m.lim > best.v / best.lim) best = m;
+    }
+    return best ? this._detailText(best.v, best.lim, best.unit) : null;
+  }
+  _crashDetailFor(vy, vx, ang, om) {
+    const reason = this._crashReasonFor(vy, vx, ang, om);
+    if (reason === 'TIPPED OVER') return this._detailText(ang, BOUNCE_ANGLE, '°');
+    if (reason === 'TOO FAST') return this._detailText(vy, this._bounceVy(), 'px/s');
+    if (reason === 'TOO MUCH SIDEWAYS SPEED') return this._detailText(vx, BOUNCE_VX, 'px/s');
+    if (reason === 'SPINNING TOO FAST') return this._detailText(om, BOUNCE_OMEGA, '°/s');
+    return this._worstDetail(vy, vx, ang, om, false);
   }
 
   // ---- L1: 接地（パッド外の平地）。得点なし。推力で離陸できる ----
@@ -1662,12 +1693,13 @@ export class Game extends Scene {
 
   // ---- クラッシュ処理 ----
   // ボーナス中: Continue を消費せず BONUS FAILED。通常: Continue が残っていれば 'crashed'、無ければ GAME OVER。
-  _doCrash(reason) {
+  _doCrash(reason, detail) {
     this._explode();
     // 失敗音はユーザー指定で旧来の素朴な低いビープ（120Hz・ノコギリ波）に戻す。ミュート時は engine.audio.enabled=false で無音
     this.engine.audio.bad();
     musicOf(this.engine).stopAll(0.4); this._bgmOn = false;   // クラッシュ: BGM無音（再開は _initStage で）
     this._crashReason = reason || 'CRASHED';
+    this._crashDetail = detail || null;
     if (reason === 'HIT AN OBSTACLE' && !this.bonus && !this._isDebugRun()) this._countObsCrash();   // 緊急シールド用（同じステージで2回）
     this._contact0 = null;
     this._bouncing = false;
@@ -2064,7 +2096,7 @@ export class Game extends Scene {
 
   // ---- Crashed (continue available) ----
   _drawCrashed(ctx) {
-    drawCrashPanel(ctx, { reason: this._crashReason || '', score: this.totalScore, left: this.continues, giveUp: this._giveUpRect() });
+    drawCrashPanel(ctx, { reason: this._crashReason || '', detail: this._crashDetail, score: this.totalScore, left: this.continues, giveUp: this._giveUpRect() });
   }
 
   // ---- ボーナスミッション選択 ----
@@ -2075,7 +2107,7 @@ export class Game extends Scene {
 
   // ---- Bonus failed (no continue consumed) ----
   _drawBonusFailed(ctx) {
-    drawBonusFailedPanel(ctx, { reason: this._crashReason || '', next: this.stage + 1 });
+    drawBonusFailedPanel(ctx, { reason: this._crashReason || '', detail: this._crashDetail, next: this.stage + 1 });
   }
 
   // ---- Game Over: ranking（名前はプレイ前に入力済み）----
