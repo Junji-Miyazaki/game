@@ -4826,7 +4826,7 @@ const WHATSNEW_ENTRIES = [
     '特別な輪で短時間の特典',
     'ステージごとに★3つを集めよう',
     '新天体：水星（暗闇のクレーター）',
-    '太陽系マップから出発地点を選べる',
+    'タイトルの MAP から太陽系マップ',
     '起動時に世界ランキング TOP 5',
   ] },
   { version: '1.1.0-beta', date: '2026.10.26', items: [
@@ -5052,6 +5052,7 @@ class SolarMap {
     this.sum = o.summary || { totalStars: 0, maxStars: 0, bodies: [] };
     this.sfx = typeof o.sfx === 'function' ? o.sfx : () => {};
     this.reduce = !!o.reduce;
+    this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）
     let mx = 1; for (const e of this.list) if (e.stage > mx) mx = e.stage;
     this.maxStage = mx;
     this.opt = new Map(); for (const e of this.list) this.opt.set(e.stage, e);
@@ -5257,7 +5258,7 @@ class SolarMap {
     }
     if (z === 1) {
       if (SM_hit(this.backRect(), x, y)) return { kind: 'back' };
-      if (this.sel !== null && SM_hit(this.startRect(), x, y)) return { kind: 'start' };
+      if (!this.viewOnly && this.sel !== null && SM_hit(this.startRect(), x, y)) return { kind: 'start' };
       const cards = this.cards(this.camSys);
       for (const c of cards) if (c.kind === 'body') {
         const B = this.B[c.id], st = this.stepRects(c);
@@ -5318,7 +5319,7 @@ class SolarMap {
     return { close: true };
   }
   _start() {
-    if (this.sel === null || !this.opt.has(this.sel)) return null;
+    if (this.viewOnly || this.sel === null || !this.opt.has(this.sel)) return null;
     this.sfx();
     return { start: this.sel };
   }
@@ -5666,7 +5667,7 @@ class SolarMap {
     SM_T(c, SM_SYS[sys].name, SM_W - 16, 28, 13, p.fg, 'right', 600, 3);
     SM_T(c, '★ ' + ss.st + '/' + ss.mx + '   ' + n + ' SITE' + (n > 1 ? 'S' : ''), SM_W - 16, 44, 9, rgba(p.fg, 0.65), 'right', 500, 0.6);
     this.cards(sys).forEach((cd) => this._drawCard(c, cd));
-    if (this.sel !== null && this.opt.has(this.sel)) {
+    if (!this.viewOnly && this.sel !== null && this.opt.has(this.sel)) {
       const r = this.startRect(), o = this.opt.get(this.sel), k = SM_clamp((this.NOW - this.selTime) / 0.2);
       c.save(); c.globalAlpha *= 0.4 + 0.6 * k;
       c.fillStyle = 'rgba(255,181,71,0.12)'; c.fillRect(r.x, r.y, r.w, r.h);
@@ -5676,7 +5677,8 @@ class SolarMap {
       SM_T(c, o.label, r.x + 48, r.y + 41, 8.5, p.dim, 'left', 500, 1);
       SM_T(c, 'ST.' + o.stage, r.x + r.w - 16, r.y + 32, 12, p.warn, 'right', 600, 1);
       c.restore();
-    } else SM_T(c, 'SELECT SITE  /  TAP A STAGE', SM_W / 2, 628, 8.5, p.dim, 'center', 500, 1.5);
+    } else if (this.viewOnly) SM_T(c, 'LAND TO UNLOCK MORE STARTS', SM_W / 2, 628, 8.5, p.dim, 'center', 500, 1.5);
+    else SM_T(c, 'SELECT SITE  /  TAP A STAGE', SM_W / 2, 628, 8.5, p.dim, 'center', 500, 1.5);
     c.restore();
   }
   render(c) {
@@ -6244,7 +6246,9 @@ class TitleScene extends Scene {
     this.cp = null;
     this.map = null;                                                // 太陽系マップ（旧 CHOOSE START）。開いている間は SolarMap
     this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
-    this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
+    // RANKING と MAP は左右に並べる。当たり判定は 44px 高（見た目の pill は 28px: rankPill/mapPill）。NEW MISSION(〜552)より下
+    this.rankBtn = { x: W / 2 - 112, y: 560, w: 108, h: 44 };
+    this.mapBtn = { x: W / 2 + 4, y: 560, w: 108, h: 44 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
       this.stars.push({ x: Math.random() * W, y: Math.random() * 380, r: Math.random() < 0.2 ? 1.5 : 0.9, tw: Math.random() * 6.28, deep: i >= 40 });
@@ -6468,6 +6472,13 @@ class TitleScene extends Scene {
     }
     this._startAt(1);
   }
+  // MAP ボタン: 閲覧モードで開く。開始は list.length>1 かつ名前ありの時だけ（それ以外は閲覧専用）。チェックポイントは触らない
+  _openMap() {
+    const list = this._startOptions();
+    this.showRank = false;
+    let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
+    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+  }
   _startAt(stage) {
     this.map = null;
     clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
@@ -6511,6 +6522,7 @@ class TitleScene extends Scene {
         if (this.showRank) this.tabs = createRankTabs();
         return;
       }
+      if (this._hit(this.mapBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openMap(); return; }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64, this.engine.storage)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
@@ -6663,8 +6675,11 @@ class TitleScene extends Scene {
         if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
       }
       const b = this.rankBtn;
-      pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
-      txt(ctx, 'RANKING', W / 2, b.y + 9, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
+      pill(ctx, b.x, b.y + 8, b.w, 28, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
+      txt(ctx, 'RANKING', b.x + b.w / 2, b.y + 17, 9, p.mid, 'center', { sp: 3, w: 500, a: ui });
+      const mb = this.mapBtn;
+      pill(ctx, mb.x, mb.y + 8, mb.w, 28, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
+      txt(ctx, 'MAP', mb.x + mb.w / 2, mb.y + 17, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
     }
     if (isDebug()) txt(ctx, 'DEBUG', 12, 16, 9, p.warn, 'left', { sp: 3, w: 500 });
     if (this.toastT > 0) {

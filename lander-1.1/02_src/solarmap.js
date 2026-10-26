@@ -212,6 +212,7 @@ export class SolarMap {
     this.sum = o.summary || { totalStars: 0, maxStars: 0, bodies: [] };
     this.sfx = typeof o.sfx === 'function' ? o.sfx : () => {};
     this.reduce = !!o.reduce;
+    this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）
     let mx = 1; for (const e of this.list) if (e.stage > mx) mx = e.stage;
     this.maxStage = mx;
     this.opt = new Map(); for (const e of this.list) this.opt.set(e.stage, e);
@@ -417,7 +418,7 @@ export class SolarMap {
     }
     if (z === 1) {
       if (SM_hit(this.backRect(), x, y)) return { kind: 'back' };
-      if (this.sel !== null && SM_hit(this.startRect(), x, y)) return { kind: 'start' };
+      if (!this.viewOnly && this.sel !== null && SM_hit(this.startRect(), x, y)) return { kind: 'start' };
       const cards = this.cards(this.camSys);
       for (const c of cards) if (c.kind === 'body') {
         const B = this.B[c.id], st = this.stepRects(c);
@@ -478,7 +479,7 @@ export class SolarMap {
     return { close: true };
   }
   _start() {
-    if (this.sel === null || !this.opt.has(this.sel)) return null;
+    if (this.viewOnly || this.sel === null || !this.opt.has(this.sel)) return null;
     this.sfx();
     return { start: this.sel };
   }
@@ -826,7 +827,7 @@ export class SolarMap {
     SM_T(c, SM_SYS[sys].name, SM_W - 16, 28, 13, p.fg, 'right', 600, 3);
     SM_T(c, '★ ' + ss.st + '/' + ss.mx + '   ' + n + ' SITE' + (n > 1 ? 'S' : ''), SM_W - 16, 44, 9, rgba(p.fg, 0.65), 'right', 500, 0.6);
     this.cards(sys).forEach((cd) => this._drawCard(c, cd));
-    if (this.sel !== null && this.opt.has(this.sel)) {
+    if (!this.viewOnly && this.sel !== null && this.opt.has(this.sel)) {
       const r = this.startRect(), o = this.opt.get(this.sel), k = SM_clamp((this.NOW - this.selTime) / 0.2);
       c.save(); c.globalAlpha *= 0.4 + 0.6 * k;
       c.fillStyle = 'rgba(255,181,71,0.12)'; c.fillRect(r.x, r.y, r.w, r.h);
@@ -836,7 +837,8 @@ export class SolarMap {
       SM_T(c, o.label, r.x + 48, r.y + 41, 8.5, p.dim, 'left', 500, 1);
       SM_T(c, 'ST.' + o.stage, r.x + r.w - 16, r.y + 32, 12, p.warn, 'right', 600, 1);
       c.restore();
-    } else SM_T(c, 'SELECT SITE  /  TAP A STAGE', SM_W / 2, 628, 8.5, p.dim, 'center', 500, 1.5);
+    } else if (this.viewOnly) SM_T(c, 'LAND TO UNLOCK MORE STARTS', SM_W / 2, 628, 8.5, p.dim, 'center', 500, 1.5);
+    else SM_T(c, 'SELECT SITE  /  TAP A STAGE', SM_W / 2, 628, 8.5, p.dim, 'center', 500, 1.5);
     c.restore();
   }
   render(c) {

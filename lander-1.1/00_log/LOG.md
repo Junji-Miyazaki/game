@@ -119,3 +119,13 @@ v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/
 - 判断: ドラッグ判定は engine 側（6px, CSS px）で行い、BootScene の dragZone を枠に限定。枠外のスワイプは何もしない（BEGIN もしない）。ピルは見出しの実測幅で配置し、極端に広いフォントでは画面外に出うる（7px 文字が 1 字 8px まで確認）。
 - 目視（preview lander-1.1, 375x812）: 初回（NEW あり・見出しと非重複）、ドラッグでスクロール（上下フェード・バー・BEGIN せず）、枠内タップで開始→seenVersion=1.1.0-beta.2 保存、再読込で NEW なし、タイトルの BETA タグがモノクロ、を確認。
 - 未確認: 実機タッチ（慣性なし・mouse/emulated のみ）、実機の 60fps、ホイールは engine のテストのみ（ブラウザ操作ツールのスクロールでは未確認）、日本語フォントのフォールバック別の見え方。
+
+## 2026-10-26 タイトルに MAP ボタン（太陽系マップの閲覧モード）
+- 実施:
+  - `title.js`: `mapBtn` 追加。RANKING と MAP を左右対称に並べた（当たり判定 各 108x44、y560〜604。見た目の pill は 28px で y568〜596 のまま）。NEW MISSION(〜552)・START/PILOTS/プレート/SET TITLE と非重複。`_openMap()` が `_startOptions()` と starsSummary で SolarMap を開く。`viewOnly = !(name && list.length>1)`。チェックポイントは開閉で触らず、`_startAt` 経由の開始時だけ破棄（従来どおり）。MAP タップは一覧表示中でも有効（一覧を閉じてマップを開く）。
+  - `solarmap.js`: オプション `viewOnly`。START バーを出さず、START の当たり判定・`_start()` も無効。下部に `LAND TO UNLOCK MORE STARTS`。
+  - `whatsnew.js`: 最新 entry は既に6項目のため追加せず、マップの行を `タイトルの MAP から太陽系マップ`（17字）に変更。`p13rings.mjs` の該当アサーションを更新。
+  - キーボード M は未実装（engine.js のキー割当が固定で、engine を触るため見送り。任意項目）。
+- テスト: 新規 `04_tests/p16mapbtn.mjs`（46）。配置・44px・非重複(cp 有無)・1開始で閲覧専用(START なし・タップ/確定で開始せず・cp 保持)・名前なし・>1開始で開始パラメータが `_startAt` と一致・開閉で cp 保持。既存の配置系テスト(p2b/p7title/p9champ)は rankBtn を中心タップ/非重複で見ており変更不要で通過。全スイート PASS、`node build.js`・`node --check` OK。
+- 目視(375x812): チャンピオンプレート付きタイトルに RANKING/MAP が並ぶ、名前なしで MAP→太陽系→Earth ズームで START バーなし＋ヒント表示を確認。ストレージとビューポートは復元済み。
+- 未確認: 実機タッチ、>1開始の MAP 実画面（テストのみ）。

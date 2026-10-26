@@ -529,7 +529,9 @@ export class TitleScene extends Scene {
     this.cp = null;
     this.map = null;                                                // 太陽系マップ（旧 CHOOSE START）。開いている間は SolarMap
     this.prof = null;                                               // PILOTS パネル { mode, target, msg, busy }
-    this.rankBtn = { x: W / 2 - 60, y: 568, w: 120, h: 28 };
+    // RANKING と MAP は左右に並べる。当たり判定は 44px 高（見た目の pill は 28px: rankPill/mapPill）。NEW MISSION(〜552)より下
+    this.rankBtn = { x: W / 2 - 112, y: 560, w: 108, h: 44 };
+    this.mapBtn = { x: W / 2 + 4, y: 560, w: 108, h: 44 };
     this.stars = [];
     for (let i = 0; i < 70; i++) {
       this.stars.push({ x: Math.random() * W, y: Math.random() * 380, r: Math.random() < 0.2 ? 1.5 : 0.9, tw: Math.random() * 6.28, deep: i >= 40 });
@@ -753,6 +755,13 @@ export class TitleScene extends Scene {
     }
     this._startAt(1);
   }
+  // MAP ボタン: 閲覧モードで開く。開始は list.length>1 かつ名前ありの時だけ（それ以外は閲覧専用）。チェックポイントは触らない
+  _openMap() {
+    const list = this._startOptions();
+    this.showRank = false;
+    let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
+    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+  }
   _startAt(stage) {
     this.map = null;
     clearCheckpoint(this.engine.storage); this.cp = null; this.engine.resumeCheckpoint = null;
@@ -796,6 +805,7 @@ export class TitleScene extends Scene {
         if (this.showRank) this.tabs = createRankTabs();
         return;
       }
+      if (this._hit(this.mapBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openMap(); return; }
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64, this.engine.storage)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
@@ -948,8 +958,11 @@ export class TitleScene extends Scene {
         if (this.rank.length) txt(ctx, 'BEST  ' + this.rank[0].score, W / 2, 530, 9, p.dim, 'center', { sp: 3, w: 400, a: ui });
       }
       const b = this.rankBtn;
-      pill(ctx, b.x, b.y, b.w, b.h, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
-      txt(ctx, 'RANKING', W / 2, b.y + 9, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
+      pill(ctx, b.x, b.y + 8, b.w, 28, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
+      txt(ctx, 'RANKING', b.x + b.w / 2, b.y + 17, 9, p.mid, 'center', { sp: 3, w: 500, a: ui });
+      const mb = this.mapBtn;
+      pill(ctx, mb.x, mb.y + 8, mb.w, 28, rgba(p.fg, 0.03 * ui), rgba(p.fg, 0.2 * ui));
+      txt(ctx, 'MAP', mb.x + mb.w / 2, mb.y + 17, 9, p.mid, 'center', { sp: 4, w: 500, a: ui });
     }
     if (isDebug()) txt(ctx, 'DEBUG', 12, 16, 9, p.warn, 'left', { sp: 3, w: 500 });
     if (this.toastT > 0) {

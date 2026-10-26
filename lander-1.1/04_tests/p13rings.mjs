@@ -488,7 +488,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
   const joined = E0.items.join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
-  ok(E0.items.includes('太陽系マップから出発地点を選べる') && '太陽系マップから出発地点を選べる'.length <= 22, 'mentions the solar system map');
+  ok(E0.items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
 }
 
 console.log('p13rings: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));
