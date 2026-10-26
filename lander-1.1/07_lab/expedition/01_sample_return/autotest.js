@@ -1,4 +1,5 @@
 // テスト専用（?test=1 のときだけ mission.js が読み込む）。window.__auto に検証用の自動操縦を置く。
+// 流れ: docked(係留1.2s+自動で漂う) → descent → sampling(着地して2s) → return → win。
 // 注意: 姿勢は「理想的に」直接セットする（実機の回転は遅いので、これは流れ・判定・燃料の確認用であって人間の腕前の保証ではない）。
 const YR = 130 + 31, SX = 222;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -10,9 +11,10 @@ export function install(lab) {
       if (l.state === 'grounded') { stage = 'climb'; return m.sampled ? { main: true } : {}; }
       if (!m.sampled) {
         const alt = l.terrainY(s.x) - (s.y + 16);
-        const tvx = alt < 60 ? clamp(0.25 * (SX - s.x), -3, 3) : clamp(0.1 * (SX - s.x), -10, 10);
+        const tvx = alt < 60 ? clamp(0.25 * (SX - s.x), -3, 3) : Math.sign(SX - s.x) * Math.min(10, Math.sqrt(2 * 1.2 * Math.max(Math.abs(SX - s.x) - 4, 0)));   // 制動曲線
         const tvy = Math.min(18, 2 + Math.sqrt(2 * 3 * Math.max(0, alt)));
-        s.angle = clamp(2.5 * (tvx - s.vx), -28, 28); s.omega = 0;
+        // 横移動は理想化: vx を目標へ 2.4px/s² で直接寄せる（推力で横移動すると鉛直の持ち分が足りないため）。燃料は鉛直制動ぶんのみ
+        s.vx += clamp(tvx - s.vx, -2.4 / 60, 2.4 / 60); s.angle = 0; s.omega = 0;
         if (s.vy > tvy) o.main = true;
         return o;
       }
@@ -30,7 +32,7 @@ export function install(lab) {
     lab.reset(); const ctl = makeCtl(opt); const log = []; let last = '';
     for (let i = 0; i < 60 * 150; i++) {
       lab.script = ctl; lab.step(1 / 60);
-      const ph = lab.m.result || (lab.m.sampled ? 'return' : lab.state);
+      const ph = lab.m.result || (lab.m.docked ? 'docked' : lab.m.sampled ? 'return' : lab.state === 'grounded' ? (lab.m.gauge > 0 ? 'sampling' : 'grounded') : 'descent');
       if (ph !== last) { log.push(lab.t.toFixed(0) + 's ' + ph + ' fuel' + Math.round(lab.fuelPct())); last = ph; }
       if (lab.m.result && lab.m.resultT > 1.5) break;
     }

@@ -11,6 +11,8 @@ const MS_Y = 130, MS_AMP = 90;              // 母船の高さ
 const RING_DY = 31, RING_R = 17;   // ドッキング枠: 母船の中心からの下方向オフセットと半径（円形判定の半径）
 const DOCK_REL = 10, DOCK_TILT = 20;
 const STAR2_FUEL = 30;
+const REL_AT = 1.2, DRIFT_S = 1.0, DRIFT_VY = 18;   // 発進: 係留 1.2s → 解放 → 1.0s は自動で漂う（操作不可）
+const DOCK_CONFIRM = 0.25;   // 条件を満たし続ける秒数（ゴースト点灯 → 成功）
 const OUT = { x0: -10, x1: 370, y0: -30 };
 
 // ---- 地形（ゆるい起伏 + 採取地点だけ平ら） ---------------------------------------------------
@@ -50,8 +52,10 @@ function phaseName(m) { return m.result ? m.result : m.sampled ? 'RETURN' : m.ga
 
 // ---------------------------------------------------------------- 状態
 function start(l) {
-  l.resetShip({ x: 62, y: 215, vx: 9, vy: 16, angle: 0 });
-  l.m = { ph: l.params.ph0, mx: 180 + MS_AMP * Math.sin(l.params.ph0), mvx: l.params.ms * Math.cos(l.params.ph0), gauge: 0, sampled: false, sampleGrade: null, touchGrade: null, strandT: 0, result: null, resultT: 0, final: null, toast: '', toastT: 0, rel: null, fb: '', dockOk: false, inZone: false };
+  const ph0 = l.params.ph0, mx0 = 180 + MS_AMP * Math.sin(ph0), mvx0 = l.params.ms * Math.cos(ph0);
+  l.resetShip({ x: mx0, y: MS_Y + RING_DY, vx: mvx0, vy: 0, angle: 0 });
+  l.frozen = true; l.controlsEnabled = false;   // 係留中
+  l.m = { docked: true, relT: 0, driftT: 0, dockT: 0, ph: l.params.ph0, mx: 180 + MS_AMP * Math.sin(l.params.ph0), mvx: l.params.ms * Math.cos(l.params.ph0), gauge: 0, sampled: false, sampleGrade: null, touchGrade: null, strandT: 0, result: null, resultT: 0, final: null, toast: '', toastT: 0, rel: null, fb: '', dockOk: false, inZone: false };
 }
 function toast(l, s, sec = 2) { l.m.toast = s; l.m.toastT = sec; }
 
@@ -75,6 +79,12 @@ function onUpdate(l, dt) {
   const w = pr.ms / MS_AMP;
   m.ph += w * dt; m.mx = 180 + MS_AMP * Math.sin(m.ph); m.mvx = pr.ms * Math.cos(m.ph);
   if (m.toastT > 0) m.toastT -= dt;
+  if (m.docked) {   // 係留: 母船に固定。1.2s で解放 → 母船の水平速度を引き継いで、下へゆっくり離れる
+    m.relT += dt; s.x = m.mx; s.y = MS_Y + RING_DY; s.vx = m.mvx; s.vy = 0; s.angle = 0; s.omega = 0;
+    if (m.relT >= REL_AT) { m.docked = false; l.frozen = false; s.vx = m.mvx; s.vy = DRIFT_VY; toast(l, 'RELEASED', 1.6); }
+    return;
+  }
+  if (m.driftT < DRIFT_S) { m.driftT += dt; if (m.driftT >= DRIFT_S) l.controlsEnabled = true; }   // 自動で漂う間は入力なし
   if (m.result) {
     m.resultT += dt;
     if (m.result === 'win') {   // 吸い込まれる
@@ -103,7 +113,8 @@ function onUpdate(l, dt) {
   const inZone = dx * dx + dy * dy <= pr.ring * pr.ring;
   m.inZone = inZone; m.dockOk = relSpeed <= DOCK_REL && tilt <= DOCK_TILT;
   m.fb = inZone && m.sampled && !m.dockOk ? (relSpeed > DOCK_REL ? 'TOO FAST  REL ' + relSpeed.toFixed(0) + ' > ' + DOCK_REL : 'TOO TILTED  ' + tilt.toFixed(0) + '° > ' + DOCK_TILT + '°') : '';
-  if (l.state === 'play' && m.sampled && inZone && m.dockOk) {
+  m.dockT = (l.state === 'play' && m.sampled && inZone && m.dockOk) ? m.dockT + dt : 0;
+  if (m.dockT >= DOCK_CONFIRM) {
     m.result = 'win'; m.resultT = 0; l.frozen = true; l.controlsEnabled = false;
     const fp = l.fuelPct();
     m.final = { t: l.t, fuel: fp, grade: m.sampleGrade, s2: fp >= STAR2_FUEL, s3: m.sampleGrade === 'PERFECT' };
@@ -170,6 +181,18 @@ function drawMothership(ctx, l) {
   // アンテナ
   ctx.strokeStyle = '#bdb6a4'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-26, -10); ctx.lineTo(-30, -19); ctx.stroke();
   ctx.fillStyle = (Math.floor(t * 1.3) % 2) ? p.warn : rgba(p.warn, 0.25); ctx.beginPath(); ctx.arc(-30, -20, 1.6, 0, 7); ctx.fill();
+  // ゴースト: 戻るべき姿勢（直立）の破線アウトライン。母船と一緒に動く。条件成立で青緑に点灯
+  if (!m.docked) {
+    const lit = m.dockT > 0 || m.result === 'win', gc = lit ? '#63D8C9' : rgba(p.fg, armed ? 1 : 0.85), gy = RING_DY;
+    ctx.save(); ctx.translate(0, gy); ctx.lineWidth = lit ? 2.2 : 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = gc;
+    if (lit) { ctx.shadowColor = '#63D8C9'; ctx.shadowBlur = 12; }
+    ctx.setLineDash([3, 2.5]);
+    ctx.beginPath(); ctx.moveTo(-9, -4); ctx.arc(0, -4, 9, Math.PI, 0, false); ctx.lineTo(9, 5); ctx.quadraticCurveTo(9, 9, 5, 9); ctx.lineTo(-5, 9); ctx.quadraticCurveTo(-9, 9, -9, 5); ctx.closePath(); ctx.stroke();   // 船体
+    ctx.beginPath(); ctx.moveTo(-6, 6.5); ctx.lineTo(-12.2, 14.4); ctx.moveTo(6, 6.5); ctx.lineTo(12.2, 14.4); ctx.moveTo(-2.7, 8.5); ctx.lineTo(-3.7, 12.2); ctx.lineTo(3.7, 12.2); ctx.lineTo(2.7, 8.5); ctx.stroke();   // 脚・ノズル
+    ctx.beginPath(); ctx.ellipse(-14.4, 15, 3.8, 1.35, 0, 0, 7); ctx.moveTo(18.2, 15); ctx.ellipse(14.4, 15, 3.8, 1.35, 0, 0, 7); ctx.stroke();
+    if (lit) { ctx.fillStyle = rgba('#63D8C9', 0.18); ctx.beginPath(); ctx.arc(0, 0, 14, 0, 7); ctx.fill(); }
+    ctx.restore();
+  }
   // ドッキング枠
   const pulse = 0.65 + 0.35 * Math.sin(t * 5), R = l.params.ring;
   const cy = RING_DY;
@@ -249,9 +272,9 @@ function onDrawFront(ctx, l) {
   // ヒント
   let hint = '';
   if (!m.result) {
-    if (l.t < 9 && !m.sampled && l.state !== 'grounded') hint = 'LAND ON THE SITE · HOLD 2s · DOCK WITH THE MOTHERSHIP';
+    if (l.t < 9 && !m.sampled && l.state !== 'grounded') hint = 'UNDOCK · LAND ON THE SITE · HOLD 2s · RETURN TO THE DOCK';
     else if (!m.sampled && l.state === 'grounded') hint = m.gauge > 0 ? 'HOLD STILL...' : (l.padAt(s.x) ? 'DON’T TOUCH THRUST' : 'MOVE ONTO THE SITE: LIFT OFF AND LAND');
-    else if (m.sampled) hint = m.fb || (m.dockOk || !m.inZone ? 'ENTER THE RING · MATCH ITS SPEED (REL ≤ ' + DOCK_REL + ')' : '');
+    else if (m.sampled) hint = m.fb || (m.dockOk || !m.inZone ? 'FILL THE OUTLINE · UPRIGHT · MATCH SPEED (REL ≤ ' + DOCK_REL + ')' : '');
     if (hint) txt(ctx, hint, 180, 66, 7.5, m.fb ? p.bad : p.fg, 'center', { w: 600, sp: 0.4, a: 0.95 });
   }
   if (m.toastT > 0) txt(ctx, m.toast, 180, 236, 10, p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
