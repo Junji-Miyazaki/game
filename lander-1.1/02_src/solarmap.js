@@ -12,10 +12,10 @@ const SM_PER_LOOP = STAGES_PER_BODY * BODY_COUNT;
 
 // ---- データ（見た目）----
 const SM_BCOL = { mercury: '#a39a8e', venus: '#e2b878', earth: '#5b8fd0', mars: '#c1583a', jupiter: '#cfa77c', saturn: '#dcc592',
-  moon: '#b9bfcb', io: '#e0bb3c', europa: '#d6e6ee', titan: '#e0a03e' };
+  pluto: '#d9ccb8', moon: '#b9bfcb', io: '#e0bb3c', europa: '#d6e6ee', titan: '#e0a03e' };
 // 着陸天体（カード単位）。hub=true は惑星そのものに着陸
 const SM_LB = {
-  mercury: { sys: 'mercury', hub: true }, venus: { sys: 'venus', hub: true }, moon: { sys: 'earth' },
+  pluto: { sys: 'pluto', hub: true }, mercury: { sys: 'mercury', hub: true }, venus: { sys: 'venus', hub: true }, moon: { sys: 'earth' },
   mars: { sys: 'mars', hub: true }, io: { sys: 'jupiter' }, europa: { sys: 'jupiter' }, titan: { sys: 'saturn' },
 };
 const SM_SYS = {
@@ -25,12 +25,14 @@ const SM_SYS = {
   mars:    { name: 'MARS', ab: 'MAR', bodies: ['mars'], hubR: 44, soon: 'PHOBOS', bonus: false },
   jupiter: { name: 'JUPITER', ab: 'JUP', bodies: ['io', 'europa'], hubR: 52, soon: null, bonus: false },
   saturn:  { name: 'SATURN', ab: 'SAT', bodies: ['titan'], hubR: 32, soon: 'ENCELADUS', bonus: false },
+  pluto:   { name: 'PLUTO', ab: 'PLU', bodies: ['pluto'], hubR: 34, soon: null, bonus: false },
 };
-const SM_SYS_ORDER = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn'];
-const SM_PL = {
-  mercury: { r: 24, sz: 4.2, w: SM_TAU / 46, ph: 0.5 }, venus: { r: 46, sz: 6.2, w: SM_TAU / 80, ph: 3.2 },
-  earth: { r: 70, sz: 6.8, w: SM_TAU / 120, ph: 4.9 }, mars: { r: 94, sz: 5.2, w: SM_TAU / 180, ph: 1.9 },
-  jupiter: { r: 126, sz: 11, w: SM_TAU / 300, ph: 5.7 }, saturn: { r: 158, sz: 8, w: SM_TAU / 420, ph: 2.6 },
+const SM_SYS_ORDER = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'pluto'];
+const SM_PL = {   // 軌道半径は縮尺を圧縮（外周の目盛り R=176 の内側に冥王星まで収める）
+  mercury: { r: 20, sz: 4.2, w: SM_TAU / 46, ph: 0.5 }, venus: { r: 39, sz: 6.2, w: SM_TAU / 80, ph: 3.2 },
+  earth: { r: 60, sz: 6.8, w: SM_TAU / 120, ph: 4.9 }, mars: { r: 81, sz: 5.2, w: SM_TAU / 180, ph: 1.9 },
+  jupiter: { r: 107, sz: 11, w: SM_TAU / 300, ph: 5.7 }, saturn: { r: 135, sz: 8, w: SM_TAU / 420, ph: 2.6 },
+  pluto: { r: 163, sz: 4.6, w: SM_TAU / 600, ph: 0.9 },
 };
 const SM_OV = { cx: 180, cy: 262 };
 const SM_MOONS = {
@@ -39,7 +41,7 @@ const SM_MOONS = {
   europa: { sys: 'jupiter', ovR: 22, ovW: SM_TAU / 9, ph: 2.4, zx: 140, zy: 44, zW: SM_TAU / 24, zr: 11 },
   titan:  { sys: 'saturn', ovR: 17, ovW: SM_TAU / 8, ph: 1.3, zx: 138, zy: 40, zW: SM_TAU / 26, zr: 14 },
 };
-const SM_SOON = ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON', 'PLUTO'];
+const SM_SOON = ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON'];
 const SM_ZH = { x: 180, y: 166 };
 const SM_KZ = 3.2;
 const SM_HALO = { titan: ['224,160,62', 1.42, 0.42], venus: ['255,200,120', 1.3, 0.28], mars: ['230,140,90', 1.22, 0.2], earth: ['120,180,255', 1.22, 0.22] };
@@ -98,6 +100,12 @@ function SM_pers(c, id, r, t) {            // clip 内（中心=原点）の表�
       const u = (t * 0.07) % 1, dx = -r * 0.8 + u * r * 1.6, base = r * 0.42;
       c.fillStyle = 'rgba(60,20,10,0.3)'; c.beginPath(); c.ellipse(dx, base + 1, r * 0.1, r * 0.04, 0, 0, SM_TAU); c.fill();
       for (let i = 0; i < 7; i++) { const f = i / 6, w = r * 0.04 + f * r * 0.1; c.fillStyle = 'rgba(255,214,170,' + (0.7 * (1 - f * 0.6)) + ')'; c.beginPath(); c.ellipse(dx + Math.sin(t * 5 + f * 4) * r * 0.025 + f * r * 0.06, base - f * r * 0.42, w, w * 0.5, 0, 0, SM_TAU); c.fill(); }
+      break;
+    }
+    case 'pluto': {
+      c.fillStyle = 'rgba(120,74,52,0.5)'; c.beginPath(); c.ellipse(-r * 0.5, r * 0.5, r * 0.6, r * 0.3, 0.3, 0, SM_TAU); c.fill();
+      c.fillStyle = 'rgba(255,250,236,0.75)'; c.beginPath(); c.moveTo(r * 0.1, r * 0.55); c.bezierCurveTo(-r * 0.5, r * 0.15, -r * 0.4, -r * 0.35, -r * 0.1, -r * 0.3); c.bezierCurveTo(r * 0.02, -r * 0.28, r * 0.1, -r * 0.2, r * 0.1, -r * 0.12);
+      c.bezierCurveTo(r * 0.1, -r * 0.2, r * 0.22, -r * 0.28, r * 0.34, -r * 0.3); c.bezierCurveTo(r * 0.64, -r * 0.35, r * 0.7, r * 0.15, r * 0.1, r * 0.55); c.fill();
       break;
     }
     case 'mercury': {
@@ -199,7 +207,6 @@ function SM_silhouette(c, nm, x, y, s) {
   else c.arc(0, 0, 8.5, 0, SM_TAU);
   c.fill(); c.stroke(); c.setLineDash([]);
   if (nm === 'ENCELADUS') { c.fillStyle = rgba(p.dim, 0.8); for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(-3 + i * 3, 14 + (i % 2) * 2, 0.9, 0, SM_TAU); c.fill(); } }
-  if (nm === 'PLUTO') { c.strokeStyle = rgba(p.dim, 0.5); c.beginPath(); c.arc(-2, 1, 4, 0.3, 4.4); c.stroke(); }
   if (nm === 'TRITON') { c.strokeStyle = rgba(p.dim, 0.5); c.beginPath(); c.moveTo(-7, 3); c.quadraticCurveTo(0, 6, 7, 2); c.stroke(); }
   c.restore();
 }
@@ -273,7 +280,7 @@ export class SolarMap {
   sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } return { st, mx }; }
   backRect() { return { x: 4, y: 4, w: 86, h: 50 }; }
   startRect() { return { x: 16, y: 536, w: 328, h: 52 }; }
-  chipRects() { const w = 54, g = 5, x0 = (SM_W - 6 * w - 5 * g) / 2; return SM_SYS_ORDER.map((id, i) => ({ x: x0 + i * (w + g), y: 500, w, h: 44, sys: id })); }
+  chipRects() { const n = SM_SYS_ORDER.length, w = 46, g = 4, x0 = (SM_W - n * w - (n - 1) * g) / 2; return SM_SYS_ORDER.map((id, i) => ({ x: x0 + i * (w + g), y: 500, w, h: 44, sys: id })); }
   soonRects() { return SM_SOON.map((nm, i) => ({ x: 2 + i * 60, y: 572, w: 56, h: 56, soon: nm })); }
   cards(sys) {
     const out = []; let y = 300;

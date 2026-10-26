@@ -76,7 +76,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 {
   let total = 0, bad = 0, counts = { 4: 0, 5: 0, 6: 0 }, minGap = 1e9, minTer = 1e9, obsOK = 0, obsTot = 0, monotone = true, nearStart = 1e9, pwN = 0, pwTot = 0, pwTooClose = 0, pwStage1 = 0, pwMulti = 0, mercurySeen = 0;
   const stages = [];
-  for (let s = 1; s <= 56; s++) stages.push(s);   // 4周ぶん（全天体×全ステージ）
+  for (let s = 1; s <= 64; s++) stages.push(s);   // 4周ぶん（全天体×全ステージ）
   for (const stage of stages) for (let seed = 1; seed <= 25; seed++) {
     seeded(seed * 131 + stage);
     const { g } = stageGame(stage); unseed();
@@ -360,7 +360,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   const sbl = readStageBest(l1.e.storage); ok(sbl.GUS['4'].grade === 'A' && sbl.GUS['3'].grade === 'S' && sbl.GUS['3'].stars === 1, 'L1-format data upgraded in place (grade kept, stars added)');
   // 集計関数（L3 の太陽系マップ用）
   const sum = starsSummary(e.storage, 'ACE');
-  ok(sum.bodies.length === BODY_COUNT && sum.bodies[sum.bodies.length - 1].id === 'mercury', 'starsSummary: one entry per body, Mercury last');
+  ok(sum.bodies.length === BODY_COUNT && sum.bodies[sum.bodies.length - 1].id === 'pluto' && sum.bodies[6].id === 'mercury', 'starsSummary: one entry per body, Pluto last (after Mercury)');
   const europa = sum.bodies.find((b) => b.id === 'europa');
   ok(europa.stages.length >= 2 && europa.stages[0].stage === 3 && europa.stages[0].stars === 3 && europa.stages[0].grade === 'PERFECT' && europa.stages[0].mask === 7, 'starsSummary: per-stage stars + best grade (Europa stage 3)');
   ok(europa.stars === 3 && europa.grade === 'PERFECT' && sum.totalStars === 3 + 0 && sum.maxStars === BODY_COUNT * 2 * 3, 'starsSummary totals: ' + sum.totalStars + '/' + sum.maxStars);
@@ -399,21 +399,21 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 
 // ---------- 8. 水星 ----------
 {
-  const M = BODIES[BODIES.length - 1];
-  ok(BODY_COUNT === 7 && M.id === 'mercury' && M.name === 'MERCURY' && BODIES[5].id === 'venus', 'Mercury is the 7th body, right after Venus (end of the tour)');
+  const M = BODIES[6];
+  ok(BODY_COUNT === 8 && M.id === 'mercury' && M.name === 'MERCURY' && BODIES[5].id === 'venus' && BODIES[7].id === 'pluto', 'Mercury is the 7th body, right after Venus (Pluto follows as the end of the tour)');
   ok(M.realG === 3.70 && M.atmoType === 'none' && M.atmoTag === 'NONE' && M.drag === 0 && !M.wind.base && !M.wind.gust, 'real g 3.70, no atmosphere, no drag, no wind');
   ok(M.visibility > 0 && M.visibility < 150 && M.heat && M.heat.fuelDrain > 0 && M.heat.fuelDrain < BODIES[5].heat.fuelDrain && M.heat.mainFuelMul <= BODIES[5].heat.mainFuelMul, 'visibility (dark crater) + lighter heat than Venus');
   ok(M.guideAboveFog === true && M.visual.sky[0] === '#000000' && M.visual.skyObject === 'sun-low' && /^#[0-3]/.test(M.visual.ground), 'dark ground + low sun + guide drawn above the darkness');
   ok(M.celebTier === 2 && celebrationParams(M).apex > 0, 'celebration tier fitted');
   ok(introText(M).startsWith('MERCURY · g 3.70 m/s² · NONE') && introText(M).includes('DARK CRATER') && !introText(M).includes('WIND'), 'intro text: ' + introText(M));
-  ok(STAGES_PER_BODY === 2 && stageInfo(13).body.id === 'mercury' && stageInfo(14).body.id === 'mercury' && stageInfo(15).body.id === 'moon' && stageInfo(15).loop === 1, 'two stages like other bodies; loop is now 14 stages');
+  ok(STAGES_PER_BODY === 2 && stageInfo(13).body.id === 'mercury' && stageInfo(14).body.id === 'mercury' && stageInfo(17).body.id === 'moon' && stageInfo(17).loop === 1, 'two stages like other bodies; loop is now 16 stages');
   // 重力と周回の拡大
-  for (const [stage, loop] of [[13, 0], [14, 0], [27, 1], [28, 1], [41, 2]]) {
+  for (const [stage, loop] of [[13, 0], [14, 0], [29, 1], [30, 1], [45, 2]]) {
     const { g } = stageGame(stage);
     ok(near(g._gravity, 0.25 * Math.sqrt(3.70 / 1.62) * (1 + 0.15 * loop), 1e-12) && g._body.id === 'mercury' && g._info.loop === loop, 'Mercury gravity/loop scaling at stage ' + stage);
     ok(g._padW === padWidth(stage) && g.obstacles.length === obstacleCount(stage) && g._windSpec === null, 'pad/obstacles per formula, no wind at stage ' + stage);
   }
-  ok(padWidth(15) === 46 && obstacleSpeed(14) === 51 && obstacleSpeed(15) === 18 && padWidth(14) === 22, 'loop-scaling formulas follow the 14-stage loop');
+  ok(padWidth(17) === 46 && obstacleSpeed(16) === 57 && obstacleSpeed(17) === 18 && padWidth(16) === 22, 'loop-scaling formulas follow the 16-stage loop');
   // 受動的な燃料消費（日照側の熱）: 毎秒 fuelDrain、推力では 1.0 倍
   const { g } = stageGame(13); g.obstacles = []; g.x = 180; g.y = 100; g.vx = 0; g.vy = 0; g._gravity = 0; const f0 = g.fuel; run(g, 3);
   ok(near(f0 - g.fuel, 3 * M.heat.fuelDrain, 0.05), 'passive fuel drain on Mercury: ' + (f0 - g.fuel).toFixed(2) + ' ~ ' + (3 * M.heat.fuelDrain).toFixed(2));
@@ -441,7 +441,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 // ---------- 9. 水星: 自動操縦（04_tests の PD）で全ステージ着陸、周回でも ----------
 {
   const N = 40; const out = [];
-  for (const stage of [13, 14, 27, 28, 41, 42]) {
+  for (const stage of [13, 14, 29, 30, 45, 46]) {
     let wins = 0;
     for (let seed = 1; seed <= N; seed++) {
       seeded(seed * 7919 + stage);
@@ -463,7 +463,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   ok(/score > stage \* MAX_SCORE_PER_STAGE/.test(worker), 'relay rejects score > stage * cap');
   // 全ステージ「満タン・PERFECT・全輪最大コンボ」で進める最悪ケース。各ステージの到達時点で total <= stage * cap を確認（ボーナスは STORM 満タン）
   const { g } = newGame(); g.continues = 3; let worst = 0, worstBonus = 0, violations = 0;
-  for (let stage = 1; stage <= 84; stage++) {
+  for (let stage = 1; stage <= 96; stage++) {
     g.stage = stage; g.bonus = null; g._initStage(); g.obstacles = [];
     const n = g._rg.rings.length; for (let i = 0; i < n; i++) ringCollect(g._rg, i);
     g.fuel = g._fuelMax(); onPad(g); g.vx = 0; g.vy = 0; g.angle = 0; g.omega = 0; g._doSuccess(0, 0);
@@ -475,20 +475,20 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
       if (g.totalScore > stage * cap) violations++;
     }
   }
-  ok(violations === 0, 'worst-case run never exceeds stage x 8000 at any stage (84 stages incl. Mercury + bonuses)');
+  ok(violations === 0, 'worst-case run never exceeds stage x 8000 at any stage (96 stages incl. Mercury, Pluto + bonuses)');
   ok(worst < cap * 0.6 && worstBonus < cap, 'single-stage worst case ' + worst + ' (< 60% of the cap), bonus worst ' + worstBonus);
   ok(maxRingScore(RING_MAX) === 1050, 'ring bonus never exceeds 1050 per stage');
 }
 
 // ---------- 11. WHAT'S NEW / 版 ----------
 {
-  ok(APP_VERSION === '1.1.0-beta.4' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.4', 'version 1.1.0-beta.4, label unchanged');
+  ok(APP_VERSION === '1.1.0-beta.5' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.5', 'version 1.1.0-beta.5, label unchanged');
   const E0 = WHATSNEW.entries[0];
   ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 1 && E0.items.length <= 6, 'whatsnew newest entry: 1-6 items');
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
   const joined = WHATSNEW.entries.flatMap((en) => en.items).join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
-  ok(WHATSNEW.entries[1].items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
+  ok(WHATSNEW.entries[2].items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
 }
 
 console.log('p13rings: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));

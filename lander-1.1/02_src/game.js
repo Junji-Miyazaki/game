@@ -9,14 +9,14 @@ import { P } from './core/palette.js';
 import { loadRanking, saveRanking, recordEntry, qualifies, createRankTabs, rankTabsTap, drawRankPanel, getPlayerName, getActiveProfile, newRunId, recordStageReached, loadCheckpoint, saveCheckpoint, clearCheckpoint, WorldNet, top1FromList, loadWorld } from './ranking.js';
 import { isDebug } from './debug.js';
 import { autopilotKeys } from './autopilot.js';
-import { GRAVITY_BASE, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose, TERRA, BONUS_ALT, missionOf, bonusBody, bonusScoreFor } from './bodies.js';
+import { GRAVITY_BASE, ICE_FRICTION, STAGES_PER_BODY, stageInfo, bodyGravity, padWidth, obstacleCount, obstacleSpeed, makeWindSpec, windAt, bodyHasWind, introText, celebrationPose, TERRA, BONUS_ALT, missionOf, bonusBody, bonusScoreFor } from './bodies.js';
 import { buildRings, newRingState, ringStep, allRingsGot, POWER_DEFS, POWER_FUEL_FRAC, SLOWMO_S, SLOWMO_FACTOR, SIDE_S, SIDE_ACCEL, segDist } from './rings.js';
 import { recordStage, STAR_LANDED, STAR_RINGS, STAR_PERFECT } from './stars.js';
 import { patchesSummary, patchIsNew, drawPatchAward, PATCH_AWARD_S, PATCH_CHIME_S } from './patches.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
 import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
-import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawEmergencyBanner } from './art.js';
+import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawEmergencyBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -104,6 +104,11 @@ const STRANDED_S        = 1.5;   // 燃料切れで接地したままこの秒�
 const LIFTOFF_VY        = -7;    // 離陸時の上向きの初速(px/s)
 const LIFTOFF_MIN_S     = 0.2;   // 接地直後にこの秒数は離陸しない（押しっぱなしでそのまま跳ねないように）
 const SHAKE_S = 0.25, SHAKE_PX = 3;
+export const SLIDE_CAP_DIST = 12;   // 冥王星: 氷上でこれ以上滑ると（パッド上で止まっても）グレードは A まで
+const SLIDE_EPS = 0.05;           // この速さ(px/s)未満で「止まった」とみなす
+const WP_FUEL_MUL = 1.35;           // 冥王星 2つめ（中継地点つき）の燃料倍率
+const WP_W = 44;                  // 中継地点の幅(px)
+const SLIDE_MARGIN = 14;          // 画面端（水平クランプと同じ）
 const CLEAR_SLOT_S = 0.2;        // クリア画面の集計：1行あたりの秒数
 const CLEAR_STAMP_S = 0.18;      // グレードのスタンプが押される秒数
 const STAR_POP_DELAY = 0.12, STAR_POP_STEP = 0.24, STAR_POP_S = 0.2;   // クリア画面: 新しく取った★が順に押される（グレードのスタンプの後）
@@ -456,7 +461,7 @@ export class Game extends Scene {
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
-  _fuelMax() { return FUEL_MAX * fuelMulFor(this._lvl('fuel')); }
+  _fuelMax() { return FUEL_MAX * fuelMulFor(this._lvl('fuel')) * (this._wp ? WP_FUEL_MUL : 1); }   // 中継地点つきステージは燃料 +35%
   _angDamp() { return angDampFor(this._lvl('stab')); }
   _safeVy() { return SAFE_VY + SAFE_VY_PER_LEVEL * this._lvl('shock'); }
   _bounceVy() { return BOUNCE_VY + BOUNCE_VY_PER_LEVEL * this._lvl('shock'); }
@@ -533,6 +538,16 @@ export class Game extends Scene {
     this._bannerT       = btype ? 2.8 : 0;   // ボーナス開始バナーの残り秒
     this.particles      = [];
     this._spots         = landableSpots(this.terrainPts, this.pad);   // パッド以外の着陸可能な平地（目印とヒント用）
+    // 冥王星の2つめ（HOP）: パッドから最も遠い平地に中継地点 1 を置く。着地するまでパッドは LOCKED。誘導線と輪は中継地点へ（着いたら誘導線はパッドへ）
+    this._wp = null; this._wpBonus = 0; this._wpBannerT = 0; this._wpGradeNow = ''; this._slide = null; this._slideDist = 0;
+    if (!mission && this._body.iceSlide && !sp.info.firstOfBody && this._spots.length) {
+      const pcx = this.pad.x + this.pad.w / 2; let best = null, bd = -1;
+      for (const sp2 of this._spots) { const cx = (sp2.x0 + sp2.x1) / 2, d = Math.abs(cx - pcx); if (d > bd) { bd = d; best = sp2; } }
+      const w = Math.min(WP_W, best.x1 - best.x0 - 4), cx = (best.x0 + best.x1) / 2;
+      this._wp = { x: cx, y: this._terrainYAt(cx), w, done: false, t: 0 };
+      this.fuel = this._fuelMax();
+      this.guidePts = buildGuide(this.x, this.y, { x: cx - w / 2, y: this._wp.y, w }, GUIDE_PTS);
+    }
     this._contact0      = null;    // 最初の接触時の速度・姿勢（グレード用。バウンスしても最初の衝撃で評価する）
     this._groundedT = 0; this._strandT = 0;
     this._touchHintT    = 0;
@@ -552,7 +567,7 @@ export class Game extends Scene {
 
     // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/SIDE THRUST/RADAR）の状態もここで初期化
     this._floats = []; this._slowT = 0; this._sideT = 0; this._lblA = []; this._threats = []; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
-    this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
+    this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this._wp ? { x: this._wp.x - this._wp.w / 2, y: this._wp.y, w: this._wp.w } : this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
 
     // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
     if (!this.bonus && !this._isDebugRun()) {
@@ -1076,6 +1091,8 @@ export class Game extends Scene {
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
     if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
     if (this._esT > 0) this._esT = Math.max(0, this._esT - dt);
+    if (this._wpBannerT > 0) this._wpBannerT = Math.max(0, this._wpBannerT - dt);
+    if (this._wp) this._wp.t += dt;
     if (this._pbT > 0) this._pbT = Math.max(0, this._pbT - dt);
     const ringPx = this.x, ringPy = this.y;   // 輪の通過判定用に、このフレームの移動の始点
 
@@ -1339,11 +1356,11 @@ export class Game extends Scene {
     if (!onPad) {   // パッド外: 平地なら接地（得点なし）、急斜面や大きな傾きは失敗
       const sl0 = footSlopeDeg(this.terrainPts, this.x);
       if (sl0 > LAND_SLOPE_DEG) { this._doCrash('STEEP GROUND', this._detailText(sl0, LAND_SLOPE_DEG, '°')); return; }
-      if (absAngle <= BOUNCE_RESOLVE_DEG) this._doGrounded();
+      if (absAngle <= BOUNCE_RESOLVE_DEG) this._touchdown(false, absAngle, Math.abs(this.omega));
       else this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_RESOLVE_DEG, '°'));
       return;
     }
-    if (absAngle <= BOUNCE_RESOLVE_DEG) this._doSuccess(absAngle, Math.abs(this.omega));
+    if (absAngle <= BOUNCE_RESOLVE_DEG) this._touchdown(true, absAngle, Math.abs(this.omega));
     else this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_RESOLVE_DEG, '°'));
   }
 
@@ -1372,7 +1389,7 @@ export class Game extends Scene {
       const sl1 = footSlopeDeg(this.terrainPts, this.x);
       if (sl1 > LAND_SLOPE_DEG) { this._bouncing = false; this._doCrash('STEEP GROUND', this._detailText(sl1, LAND_SLOPE_DEG, '°')); return; }
     }
-    const succeed = (a, o) => { if (onPad) this._doSuccess(a, o); else this._doGrounded(); };
+    const succeed = (a, o) => this._touchdown(onPad, a, o);
 
     // バウンス中の「静定チェック」: 前フレームのバウンスで速度が十分落ちていれば成功
     if (this._bouncing) {
@@ -1472,35 +1489,114 @@ export class Game extends Scene {
     return this._worstDetail(vy, vx, ang, om, false);
   }
 
+  // 接地が成立した（速度・姿勢が許容内）。通常は即決着（パッド=成功 / 平地=接地）。氷の天体（冥王星）は水平速度を残して滑り、止まった所で決着する
+  _touchdown(onPad, a, o) {
+    if (this._body && this._body.iceSlide && !this.bonus) this._startSlide(a, o);
+    else if (onPad && !this._padLocked()) this._doSuccess(a, o);
+    else this._doGrounded();
+  }
+  // 中継地点つきステージ（冥王星の2つめ）: 中継地点に着くまでパッドは LOCKED
+  _padLocked() { return !!(this._wp && !this._wp.done); }
+  _onWaypoint() { const w = this._wp; return !!w && this.x >= w.x - w.w / 2 && this.x <= w.x + w.w / 2; }
+  _wpDone() {
+    const w = this._wp; if (!w || w.done) return;
+    w.done = true; w.t = 0; this._wpBannerT = 2.2;
+    this._wpBonus = 100 + 50 * Math.max(0, gradeRank(this._wpGradeNow || 'C'));
+    this._sfx('ring', 5);
+    this.guidePts = buildGuide(this.x, this.y, this.pad, GUIDE_PTS);
+  }
+
+  // ---- 冥王星: ICE SLIDE ----
+  // 接地した機体は水平速度を保ったまま水平を保って滑り、ICE_FRICTION で減速する。止まったとき: パッド上=成功 / 平地=接地 / 滑走中に斜面・縁=クラッシュ。推力で離陸できる
+  _startSlide(a, o) {
+    this.y = this._terrainYAt(this.x) - 16;
+    this.vy = 0; this.omega = 0;
+    this._bouncing = false; this._bounceTime = 0;
+    this._groundedT = 0; this._strandT = 0;
+    this._slide = { x0: this.x, ang: a || 0, om: o || 0, sprayT: 0 };
+    this.state = 'grounded';
+    this._touchdownFx(1);
+  }
+  _slideStep(dt) {
+    const sl = this._slide;
+    this.vy = 0; this.omega = 0;
+    this.angle *= Math.pow(0.02, dt);
+    const sp0 = Math.abs(this.vx);
+    const sgn = this.vx < 0 ? -1 : 1;
+    const sp = Math.max(0, sp0 - ICE_FRICTION * dt);
+    this.vx = sgn * sp;
+    this.x += sgn * (sp0 + sp) * 0.5 * dt;   // 台形則。解析解 v0^2/(2*mu) と一致する
+    let wall = false;
+    if (this.x < SLIDE_MARGIN) { this.x = SLIDE_MARGIN; wall = true; }
+    if (this.x > W - SLIDE_MARGIN) { this.x = W - SLIDE_MARGIN; wall = true; }
+    this.y = this._terrainYAt(this.x) - 16;
+    const slope = footSlopeDeg(this.terrainPts, this.x);
+    if (slope > LAND_SLOPE_DEG) { this._slide = null; this._contact0 = null; this._doCrash('SLID OFF THE EDGE', { text: 'SLIDING AT ' + Math.round(sp0) + ' px/s' }); return; }
+    if (sp > 1 && this.particles) {   // 氷の飛沫（進行方向と逆へ小さく）
+      sl.sprayT += dt;
+      while (sl.sprayT >= 0.05) {
+        sl.sprayT -= 0.05;
+        const ty = this._terrainYAt(this.x);
+        this.particles.push({ x: this.x - sgn * (8 + Math.random() * 8), y: ty - 1, vx: -sgn * (4 + Math.random() * 10) + (Math.random() - 0.5) * 6, vy: -(2 + Math.random() * 7),
+          life: 0.35 + Math.random() * 0.35, max: 0.7, col: '#e8f1ff', r: 0.9 + Math.random() * 1.1 });
+      }
+      if (this.particles.length > 120) this.particles.splice(0, this.particles.length - 120);
+    }
+    if (sp < SLIDE_EPS || wall) { this.vx = 0; this._resolveSlide(); }
+  }
+  _resolveSlide() {
+    const sl = this._slide; if (!sl) return;
+    const onPad = (this.x >= this.pad.x && this.x <= this.pad.x + this.pad.w);
+    const c0 = this._contact0 || { vy: 0, vx: 0, ang: sl.ang, om: sl.om };
+    this._slide = null; this.vx = 0; this.vy = 0; this.omega = 0;
+    if (this._wp && !this._wp.done && this._onWaypoint()) {   // 中継地点に着いた（SAFE 内の接地）
+      this._wpGradeNow = gradeFor({ vy: c0.vy, vx: c0.vx, ang: c0.ang, om: c0.om, dist: Math.min(9, Math.abs(this.x - this._wp.x) / (this._wp.w / 2)) });
+      this._wpDone();
+    }
+    if (onPad && !this._padLocked()) {
+      this._slideDist = Math.abs(this.x - sl.x0);
+      this.vx = c0.vx; this.vy = c0.vy;   // 着地精度ボーナスは最初の接触の速さで数える（グレードと同じ）
+      this._doSuccess(c0.ang, c0.om);
+    } else {
+      this._contact0 = null; this._groundedT = 0; this._strandT = 0;   // 平らな氷の上で停止（ロック中のパッド含む）= 接地（得点なし）
+    }
+  }
+
   // ---- L1: 接地（パッド外の平地）。得点なし。推力で離陸できる ----
   _doGrounded() {
     const terrainY = this._terrainYAt(this.x);
     this.y = terrainY - 16;
     this.vx = 0; this.vy = 0; this.omega = 0;
     this._bouncing = false; this._bounceTime = 0; this._contact0 = null;
-    this._groundedT = 0; this._strandT = 0;
+    this._groundedT = 0; this._strandT = 0; this._slide = null;
     this.state = 'grounded';
     this._touchdownFx(0.6);
   }
   // 接地中の1フレーム: 機体を起こし、推力で離陸、燃料切れのまま1.5秒で失敗
   _stepGrounded(dt) {
-    this.vx = 0; this.vy = 0; this.omega = 0;
-    this.angle *= Math.pow(0.02, dt);
-    this.y = this._terrainYAt(this.x) - 16;
+    const sliding = !!this._slide;
+    if (!sliding) {
+      this.vx = 0; this.vy = 0; this.omega = 0;
+      this.angle *= Math.pow(0.02, dt);
+      this.y = this._terrainYAt(this.x) - 16;
+    }
     this._groundedT += dt;
     this._thrustRcsL = false; this._thrustRcsR = false;   // 接地中は姿勢制御しない（燃料も使わない）
     if (this.fuel > 0) {
       this._strandT = 0;
       if (this._thrustMain && this._groundedT >= LIFTOFF_MIN_S) {
         this.state = 'play';
-        this.vy = LIFTOFF_VY; this.y -= 2;   // 少し持ち上げて即再接触しないように
+        this.vy = LIFTOFF_VY; this.y -= 2;   // 少し持ち上げて即再接触しないように（滑走中なら水平速度は保つ）
+        this._slide = null;
         this._contact0 = null; this._bouncing = false; this._bounceTime = 0;
+        return;
       }
-    } else {
+    } else if (!sliding) {
       this._thrustMain = false;
       this._strandT += dt;
       if (this._strandT >= STRANDED_S) this._doCrash('STRANDED — OUT OF FUEL');
-    }
+    } else this._thrustMain = false;   // 滑走中の燃料切れ: 止まるまで待つ
+    if (this._slide) this._slideStep(dt);
   }
   // 接地の演出: 脚元の砂塵（天体色）、小さな画面揺れ、鈍い音。strength 1=パッド着陸 / 0.6=パッド外
   _touchdownFx(strength) {
@@ -1599,9 +1695,11 @@ export class Game extends Scene {
       }
       this._guideBonus  = guideBonus;
       const ringScore = this._rg ? this._rg.score : 0;   // L2: 輪の得点（50×コンボ）は着陸した時に加算（墜落して Continue しても稼げない）
-      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus + ringScore;
+      const wpScore = this._wp && this._wp.done ? this._wpBonus : 0;   // 中継地点ボーナス: 100 + 50×(着地グレードの順位) = 100〜300
+      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus + ringScore + wpScore;
       this._breakdown = [['FUEL BONUS', fuelBonus], ['LANDING', softBonus + horzBonus + uprBonus + omgBonus], ['GUIDE BONUS', guideBonus], ['STAGE BONUS', sp.stageBonus]];
       if (ringScore > 0) this._breakdown.push(['RINGS', ringScore]);
+      if (wpScore > 0) this._breakdown.push(['WAYPOINT', wpScore]);
     }
     this.totalScore  += this._stageScore;
     // グレード: 最初の接触の速度・姿勢（バウンスしても最初の衝撃で評価）とパッド中心からの距離。PERFECT は祝福に星のバーストが付く
@@ -1610,6 +1708,8 @@ export class Game extends Scene {
     const halfW = Math.max(1, this.pad.w / 2);
     const dist = Math.min(9, Math.abs(this.x - (this.pad.x + halfW)) / halfW);
     this._grade = gradeFor({ vy: c0.vy, vx: c0.vx, ang: c0.ang, om: c0.om, dist });
+    if (this._slideDist > SLIDE_CAP_DIST && gradeRank(this._grade) > gradeRank('A')) this._grade = 'A';   // 冥王星: 大きく滑ったら A まで
+    this._slideDist = 0;
     this._lastGrade = this._grade;
     this._perfect = this._grade === 'PERFECT';
     this._clearT = 0; this._clearSnd = 0;
@@ -1809,6 +1909,9 @@ export class Game extends Scene {
       if (this._spots && this._spots.length && this.state !== 'module') { drawLandableSpots(ctx, this._spots, t); drawLandableLabels(ctx, this._spots, this._lblA); }   // 着陸可能な平地の目印（地形の手前）＋ 真上にいる間だけ LANDABLE
     }
 
+    // 冥王星: 全体を薄暗く沈める（地形・パッドまで。誘導線・機体・HUD は明るいまま）。中継地点と LOCKED のパッド
+    if (body && body.dim && !sel) { drawDimTint(ctx, body.dim); if (this._wp) drawWaypoint(ctx, this._wp, t); if (this._padLocked() && this.pad) drawPadLocked(ctx, this.pad, t); }
+
     // Descent trajectory guide（常に描画）— 地形・パッドより手前に描き、山に隠れずパッドまで繋がって見えるようにする
     if (!sel) this._drawGuide(ctx, false);
 
@@ -1849,11 +1952,16 @@ export class Game extends Scene {
     // 天体の紹介バナー（天体の最初のステージ）
     if (this.state === 'play' && !this._tipOn && this._introT > 0 && body) {
       const parts = introText(body).split(' · ');
-      drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
+      if (body.tagline) drawIntro(ctx, parts[0], parts[1], parts.slice(2).join('  ·  '), this._introT * 2);
+      else drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
 
     // 接地中のバナー / 初回ヒント（非停止のトースト）
-    if (this.state === 'grounded' && !this._tipOn) drawGroundedBanner(ctx, !(this.fuel > 0), Math.min(1, (this._groundedT || 0) / 0.25));
+    if (this.state === 'grounded' && !this._tipOn && !(this._wpBannerT > 0)) {   // 中継地点のバナー中は重ねない
+      if (this._slide) drawSlidingCue(ctx, Math.abs(this.vx));
+      else drawGroundedBanner(ctx, !(this.fuel > 0), Math.min(1, (this._groundedT || 0) / 0.25));
+    }
+    if (this._wpBannerT > 0 && !this._tipOn) drawWaypointBanner(ctx, Math.min(1, this._wpBannerT / 0.4, (2.2 - this._wpBannerT) / 0.25));
     if (this._live() && !this._tipOn && this._touchHintT > 0) drawTouchHint(ctx, Math.min(1, this._touchHintT / 0.4, (TOUCH_HINT_S - this._touchHintT) / 0.3));
 
     // 特典の輪のバナー
@@ -1912,6 +2020,7 @@ export class Game extends Scene {
 
   _drawBeacon(ctx) {
     if (!this.pad || this.state === 'module' || this.state === 'bonusselect') return;
+    if (this._wp && !this._wp.done) { drawBeacon(ctx, { x: this._wp.x - this._wp.w / 2, y: this._wp.y, w: this._wp.w }, this._clock || 0); return; }   // 中継地点が先
     drawBeacon(ctx, this.pad, this._clock || 0);
   }
 

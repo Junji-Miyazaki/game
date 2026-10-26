@@ -154,7 +154,7 @@ function toCleared(g, s) {
     STORM:     { moving: true,  wind: true,  drag: true },
   };
   for (const loop of [0, 1]) for (const id of Object.keys(exp)) {
-    const s = 3 + loop * 12;
+    const s = 3 + loop * 16;
     g.stage = s; g.bonus = { type: id, afterStage: s }; g._initStage();
     const m = BONUS_MISSIONS[id], x = exp[id];
     const tag = id + ' loop ' + loop;
@@ -170,7 +170,7 @@ function toCleared(g, s) {
     ok(BONUS_MISSIONS.STORM.padW < BONUS_MISSIONS.ROVER.padW, 'STORM pad smaller than the others');
   }
   ok(near(bodyGravity(TERRA, 0), 0.6151, 0.0005), 'TERRA gravity value ~0.615: ' + bodyGravity(TERRA, 0).toFixed(4));
-  ok(!BODIES.some((b) => b.id === 'terra') && BODIES.length === 7, 'TERRA is not part of the 7-body tour');
+  ok(!BODIES.some((b) => b.id === 'terra') && BODIES.length === 8, 'TERRA is not part of the 8-body tour');
   // 台地上のパッドが実際に動く
   g.stage = 3; g.bonus = { type: 'ROVER', afterStage: 3 }; g._initStage();
   const x0 = g.pad.x; run(g, 2); ok(Math.abs(g.pad.x - x0) > 5, 'ROVER pad moves: ' + (g.pad.x - x0).toFixed(1));
@@ -243,7 +243,7 @@ function toCleared(g, s) {
   const exp = { CALM: 0, ROVER: 1, CROSSWIND: 1, STORM: 2 };
   for (const id of Object.keys(exp)) for (const loop of [0, 1]) {
     const { g, e } = newGame();
-    const s = 3 + loop * 12;
+    const s = 3 + loop * 16;
     g.stage = s; g.bonus = { type: id, afterStage: s }; g._initStage(); onPad(g); g.vx = 0; g.vy = 1; g._doSuccess(0, 0);
     const j = e.music.log.filter((x) => x.startsWith('jingle:')).pop();
     ok(j === 'jingle:' + exp[id], id + ' loop ' + loop + ' jingle tier ' + j);
@@ -322,7 +322,7 @@ function toCleared(g, s) {
 {
   const N = +(process.env.P6_N || 50); const t0 = Date.now(); const rates = [];
   for (const id of Object.keys(BONUS_MISSIONS)) for (let loop = 0; loop < 2; loop++) {
-    const stage = 3 + loop * 12;
+    const stage = 3 + loop * 16;
     let wins = 0; const why = {};
     for (let seed = 1; seed <= N; seed++) {
       seeded(seed * 7919 + (id.length * 31) + loop * 13);
@@ -343,7 +343,7 @@ function toCleared(g, s) {
   let threw = null;
   for (const id of [null, ...Object.keys(BONUS_MISSIONS)]) for (const loop of [0, 1, 3]) for (const st of states) {
     const { g } = newGame();
-    g.stage = 3 + loop * 12; g.bonus = id ? { type: id, afterStage: g.stage } : null; g._initStage(); run(g, 0.3);
+    g.stage = 3 + loop * 16; g.bonus = id ? { type: id, afterStage: g.stage } : null; g._initStage(); run(g, 0.3);
     if (st === 'bonusselect') { g._enterBonusSelect(); }
     else if (st === 'module') { g.offers = MODULE_DEFS.slice(0, 2).map((d) => d.id); g.state = 'module'; }
     else if (st === 'hold') { g._enterHold(); }

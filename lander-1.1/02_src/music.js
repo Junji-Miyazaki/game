@@ -555,11 +555,24 @@ const _musSCENES = {
     build(sc) {
       _musDelay(sc, 0.9, 0.5, 0.45);
       _musDrone(sc, { osc: [{ type: 'sine', f: 55 }, { type: 'sine', f: 82.4, det: 3 }, { type: 'triangle', f: 110, det: -4 }], lp: 240, gain: 0.1, lfoRate: 0.04, lfoDepth: 50 });
-      _musAir(sc, 'highpass', 5200, 0.6, 0.006, 0.02);
+      _musAir(sc, 'highpass', 5200, 0.6, 0.006);   // gustRate だけ渡すと gustDepth が undefined で AudioParam が例外になる（beta.4 までの水星で発生）ので渡さない
     },
     step(t, sc) {
       _musBell(sc, t, _musHz(220, _musPick([0, 3, 7, 10]) + _musPick([0, 12])), 5, 0.08, 2.76);
       return _musRand(11, 22);
+    },
+  },
+  pluto: {   // 冥王星: 太陽系の果ての静寂。さらに低い持続音と、氷のきしみのような高いガラスの鐘が遠くにまばらに鳴る
+    build(sc) {
+      _musDelay(sc, 1.1, 0.55, 0.5);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 46.2 }, { type: 'sine', f: 69.3, det: 5 }, { type: 'sine', f: 277.2, det: -6 }], lp: 300, gain: 0.09, lfoRate: 0.03, lfoDepth: 40 });
+      _musAir(sc, 'highpass', 6500, 0.6, 0.005);
+    },
+    step(t, sc) {
+      const f = _musHz(659.25, _musPick([0, 5, 7, 12]) + _musPick([0, 12]));
+      _musBell(sc, t, f, 4.2, 0.06, 3.5);
+      if (Math.random() < 0.3) _musBell(sc, t + 0.4, f * 1.5, 3.4, 0.035, 3.5);
+      return _musRand(10, 20);
     },
   },
   terra: {   // ボーナス専用の昼の惑星: 明るい長調のやわらかいパッド + やさしい風 + 稀なやわらかいベル（ハーモニック）

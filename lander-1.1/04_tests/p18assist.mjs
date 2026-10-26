@@ -292,13 +292,13 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
 
 // ================================================================ 5. 序盤の隕石数
 {
-  const want = [0, 1, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 7, 7, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 9, 9, 6, 6];
+  const want = [0, 1, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 9, 9];
   const got = Array.from({ length: 30 }, (_, i) => obstacleCount(i + 1));
   ok(got.join() === want.join(), 'obstacleCount stages 1..30: ' + got.join());
   // 2周目以降は従来式のまま
-  const old = (s) => { const il = (s - 1) % 14; return s <= 1 ? 0 : Math.min(2 + Math.floor(il / 2), 7) + 2 * stageInfo(s).loop; };
-  let same = true; for (let s = 15; s <= 70; s++) if (obstacleCount(s) !== old(s)) same = false;
-  ok(same, 'loops >= 1 identical to the old formula (stages 15..70)');
+  const old = (s) => { const il = (s - 1) % 16; return s <= 1 ? 0 : Math.min(2 + Math.floor(il / 2), 7) + 2 * stageInfo(s).loop; };
+  let same = true; for (let s = 17; s <= 70; s++) if (obstacleCount(s) !== old(s)) same = false;
+  ok(same, 'loops >= 1 identical to the old formula (stages 17..70)');
   let ge = true; for (let s = 1; s <= 14; s++) { if (obstacleCount(s) > old(s)) ge = false; if (s >= 5 && obstacleCount(s) !== old(s)) ge = false; }
   ok(ge && obstacleCount(2) === 1 && obstacleCount(5) === 4, 'loop 0: ramp only below the old value, identical from stage 5');
   ok(stageGame(3).g.obstacles.length === 2 && stageGame(2).g.obstacles.length === 1 && stageGame(1).g.obstacles.length === 0, 'game builds the new counts (s1 0, s2 1, s3 2)');
@@ -306,12 +306,13 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
 
 // ================================================================ 6. 版・UPDATE INFORMATION
 {
-  ok(APP_VERSION === '1.1.0-beta.4', 'APP_VERSION 1.1.0-beta.4');
+  ok(APP_VERSION === '1.1.0-beta.5', 'APP_VERSION 1.1.0-beta.5');
   const E = WHATSNEW.entries;
-  ok(E[0].version === '1.1.0-beta.4' && E[0].date === '2026.10.26' && WHATSNEW.version === '1.1.0-beta.4', 'newest entry = beta.4 (2026.10.26)');
-  ok(E[0].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified');
+  ok(E[0].version === '1.1.0-beta.5' && E[0].date === '2026.10.26' && WHATSNEW.version === '1.1.0-beta.5', 'newest entry = beta.5 (2026.10.26)');
+  ok(E[1].version === '1.1.0-beta.4' && E[1].date === '2026.10.26', 'beta.4 is the second entry');
+  ok(E[1].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [1])');
   ok(E.every((en) => en.items.every((l) => l.length <= 22)), 'every item <= 22 chars: ' + E[0].items.map((l) => l.length).join(','));
-  ok(E.map((en) => en.version).join() === '1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
+  ok(E.map((en) => en.version).join() === '1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
 }
 
 console.log('p18assist: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));

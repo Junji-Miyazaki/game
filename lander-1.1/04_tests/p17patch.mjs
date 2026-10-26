@@ -52,23 +52,23 @@ const onPad = (g) => { g.x = g.pad.x + g.pad.w / 2; g.y = g._terrainYAt(g.x) - 1
 const stageGame = (stage, extra, opts) => { const r = newGame(extra, opts); r.g.stage = stage; r.g.bonus = null; r.g._initStage(); r.g.obstacles = []; return r; };
 const landPerfect = (g) => { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0; g._doSuccess(0, 0); };
 const landSoso = (g) => { onPad(g); g.vx = 0; g.vy = 14; g.angle = 0; g.omega = 0; g._doSuccess(0, 0); };
-const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury'];
-const bodyAt = (stage) => BODYORD[Math.floor(((stage - 1) % 14) / 2)];
+const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury', 'pluto'];
+const bodyAt = (stage) => BODYORD[Math.floor(((stage - 1) % 16) / 2)];
 
 // ---------- 1. 導出（stageBest が正）----------
 {
   const m = new Map([...prof('AAA'), ['stageBest', JSON.stringify({
     AAA: { 3: { grade: 'PERFECT', stars: 7 },        // europa（1周目）
-           29: { grade: 'PERFECT', stars: 5 },        // 3周目の moon（ステージ29 = 28+1）
+           33: { grade: 'PERFECT', stars: 5 },        // 3周目の moon（ステージ33 = 32+1）
            10: { grade: 'S', stars: 3 },              // titan: PERFECT ではない
-           55: { grade: 'PERFECT', stars: 7 } },      // 4周目の mercury（ステージ55 = 42+13）
+           61: { grade: 'PERFECT', stars: 7 } },      // 4周目の mercury（ステージ61 = 48+13）
     BBB: { 1: { grade: 'A', stars: 3 } } }) ]]);
   const st = { get: (k, d = null) => m.has(k) ? m.get(k) : d, set: (k, v) => { m.set(k, String(v)); return true; } };
   const sm = patchesSummary(st, 'AAA'), by = Object.fromEntries(sm.map((x) => [x.id, x.earned]));
   ok(sm.length === BODIES.length && PATCH_COUNT === BODIES.length && sm.every((x, i) => x.id === BODIES[i].id && x.name === BODIES[i].name && typeof x.earned === 'boolean'), 'summary: one entry per body, in order, {id,name,earned}');
   ok(by.europa === true, 'stage 3 PERFECT -> EUROPA patch');
-  ok(by.moon === true, 'a later loop (stage 29 = loop 3 MOON) counts');
-  ok(by.mercury === true, 'stage 55 (loop 4, MERCURY) counts');
+  ok(by.moon === true, 'a later loop (stage 33 = loop 3 MOON) counts');
+  ok(by.mercury === true, 'stage 61 (loop 4, MERCURY) counts');
   const bit = new Map([['stageBest', JSON.stringify({ DDD: { 7: { grade: '', stars: 4 } } })]]);   // io: grade 空でも ★3 のビットだけで導く
   ok(patchesSummary({ get: (k, d = null) => bit.has(k) ? bit.get(k) : d }, 'DDD').find((x) => x.id === 'mars').earned === true, 'PERFECT star bit alone also counts (stage 7 = mars)');
   ok(by.titan === false && by.mars === false && by.venus === false, 'S grade / no record -> not earned');
@@ -139,8 +139,8 @@ const bodyAt = (stage) => BODYORD[Math.floor(((stage - 1) % 14) / 2)];
   // PERFECT 未満では出ない
   const f = stageGame(7, prof('AAA')); landSoso(f.g);
   ok(f.g._grade !== 'PERFECT' && f.g._patchInfo === null && patchCount(patchesSummary(f.e.storage, 'AAA')) === 0, 'non-PERFECT landing: no patch (' + f.g._grade + ')');
-  // 周回2以降でもその天体で初めてなら新規（stage 3+14 = 17）
-  const g2 = stageGame(17, prof('AAA')); landPerfect(g2.g);
+  // 周回2以降でもその天体で初めてなら新規（stage 3+16 = 19）
+  const g2 = stageGame(19, prof('AAA')); landPerfect(g2.g);
   ok(g2.g._patchInfo && g2.g._patchInfo.id === 'europa', 'loop 2 stage: counts for the body, earns if first');
   // 他のパイロットは別
   const h = stageGame(3, [...st.entries()].filter(([k]) => k !== 'activeProfile' && k !== 'profiles' && k !== 'lastName').concat(prof('BBB', 'AAA')));
@@ -237,9 +237,9 @@ const bestOf = (o) => ['stageBest', JSON.stringify({ AAA: o })];
   const none = title([...base]), two = title([...base, bestOf({ 3: { grade: 'PERFECT', stars: 7 }, 9: { grade: 'PERFECT', stars: 5 } })]);
   for (const x of [none, two]) { x.t.onInput('tap', center(x.t.mapBtn)); x.t.map.introT = 1.6; runT(x.t, 1); }
   const rn = newRec(); none.t.render(makeCtx(rn)); const r2 = newRec(); two.t.render(makeCtx(r2));
-  ok(has(rn, 'PATCH 0/7') && has(r2, 'PATCH 2/7'), 'map header: PATCH n/7 (' + r2.texts.filter((t) => /PATCH/.test(t.s)).map((t) => t.s).join(',') + ')');
-  const star = r2.texts.find((t) => /^★ /.test(t.s)), pt = r2.texts.find((t) => t.s === 'PATCH 2/7'), sel = r2.texts.find((t) => t.s === 'SELECT DESTINATION');
-  ok(star && pt && Math.abs(pt.x - star.x) < 2 && pt.y > star.y && pt.y < star.y + 24, 'PATCH n/7 sits right under the star total, same right edge');
+  ok(has(rn, 'PATCH 0/8') && has(r2, 'PATCH 2/8'), 'map header: PATCH n/8 (' + r2.texts.filter((t) => /PATCH/.test(t.s)).map((t) => t.s).join(',') + ')');
+  const star = r2.texts.find((t) => /^★ /.test(t.s)), pt = r2.texts.find((t) => t.s === 'PATCH 2/8'), sel = r2.texts.find((t) => t.s === 'SELECT DESTINATION');
+  ok(star && pt && Math.abs(pt.x - star.x) < 2 && pt.y > star.y && pt.y < star.y + 24, 'PATCH n/8 sits right under the star total, same right edge');
   ok(pt.x <= 346 && pt.x - 8 * 8 > sel.x + 18 * 7 - 40, 'header text stays inside 360 and clear of the left title');
   ok(two.t.map.hasPatch('europa') && two.t.map.hasPatch('titan') && !two.t.map.hasPatch('io') && two.t.map.patchTotal().n === 2, 'map knows which bodies have patches (europa, titan)');
   ok(r2.clips - rn.clips >= 2, 'overview draws a badge for each earned patch (' + (r2.clips - rn.clips) + ' extra pictograms)');
@@ -268,12 +268,12 @@ const bestOf = (o) => ['stageBest', JSON.stringify({ AAA: o })];
   t.onInput('tap', center(R.rows[0].patch));
   ok(t.prof && t.prof.mode === 'patches' && t.prof.target === 'AAA' && calls.n === 0, 'row PATCH button opens the patch case for that pilot');
   rec = newRec(); t.render(makeCtx(rec));
-  ok(has(rec, 'PATCHES') && has(rec, 'AAA') && has(rec, '2 / 7') && has(rec, 'BACK'), 'patch case: title, pilot, count, BACK');
-  ok(rec.texts.filter((x) => x.s === '?').length === 5, 'unearned patches show ? (5 of 7)');
+  ok(has(rec, 'PATCHES') && has(rec, 'AAA') && has(rec, '2 / 8') && has(rec, 'BACK'), 'patch case: title, pilot, count, BACK');
+  ok(rec.texts.filter((x) => x.s === '?').length === 6, 'unearned patches show ? (6 of 8)');
   ok(BODIES.every((b) => has(rec, b.name)), 'all seven body names labelled');
   ok(rec.clips >= 2, 'earned patches are drawn with pictograms');
   const R2 = t._profRects();
-  ok(R2.cells.length === 7 && R2.pbk.h >= 44 && R2.pbk.w >= 44 && R2.cells.every((c) => c.w >= 44 && c.h >= 44 && c.x >= 20 && c.x + c.w <= 340 && c.y + c.h <= R2.pbk.y), 'grid of 7 cells, BACK >= 44px, all inside the panel and above BACK');
+  ok(R2.cells.length === 8 && R2.pbk.h >= 44 && R2.pbk.w >= 44 && R2.cells.every((c) => c.w >= 44 && c.h >= 44 && c.x >= 20 && c.x + c.w <= 340 && c.y + c.h <= R2.pbk.y), 'grid of 8 cells, BACK >= 44px, all inside the panel and above BACK');
   const ids = BODIES.map((b) => b.id);
   t.onInput('tap', center(R2.cells[ids.indexOf('io')]));
   rec = newRec(); t.render(makeCtx(rec));
@@ -289,7 +289,7 @@ const bestOf = (o) => ['stageBest', JSON.stringify({ AAA: o })];
   ok(t.prof && t.prof.mode === 'list', 'BACK returns to the pilot list');
   t.onInput('tap', center(R.rows[1].patch));
   rec = newRec(); t.render(makeCtx(rec));
-  ok(t.prof.mode === 'patches' && t.prof.target === 'BBB' && has(rec, 'BBB') && has(rec, '0 / 7') && rec.texts.filter((x) => x.s === '?').length === 7, 'second pilot: own case (0 / 7, all ?)');
+  ok(t.prof.mode === 'patches' && t.prof.target === 'BBB' && has(rec, 'BBB') && has(rec, '0 / 8') && rec.texts.filter((x) => x.s === '?').length === 8, 'second pilot: own case (0 / 8, all ?)');
   t.onInput('back', {}); ok(t.prof && t.prof.mode === 'list', 'back key also returns to the list');
   t.onInput('back', {}); ok(t.prof === null, 'back key again closes PILOTS');
   // 一覧の他のボタンは従来どおり（PIN/DEL/名前タップ）

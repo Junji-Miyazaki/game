@@ -45,14 +45,14 @@ const KEY = 'ab'.repeat(32);
 
 // ===== 1. ラベル / 定数 =====
 {
-  ok(APP_VERSION === '1.1.0-beta.4' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.4', 'version constants');
+  ok(APP_VERSION === '1.1.0-beta.5' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.5', 'version constants');
   ok(STORAGE_PREFIX === 'lander11.' && LEGACY_PREFIX === 'lander.' && APP_BOARD === 'v1.1', 'prefix/board constants');
   ok(WHATSNEW.version === APP_VERSION, 'whatsnew.version is the single APP_VERSION');
   const store = new Map();
   const b = new BootScene(makeEngine(store), noop); b.update(2);
   const { ctx, rec } = makeCtx(); b.render(ctx);
   ok(rec.texts.some((t) => t === 'BETA v1.1'), 'boot shows BETA v1.1');
-  ok(rec.texts.some((t) => t === 'build 1.1.0-beta.4'), 'boot shows build text under the update frame');
+  ok(rec.texts.some((t) => t === 'build 1.1.0-beta.5'), 'boot shows build text under the update frame');
   ok(rec.texts.some((t) => t === 'UPDATE INFORMATION'), 'boot shows UPDATE INFORMATION');
   b.onInput('tap', { x: 1, y: 1 });
   ok(store.get('seenVersion') === APP_VERSION, 'seenVersion = APP_VERSION');

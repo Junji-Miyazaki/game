@@ -462,7 +462,7 @@ function landAndClear(extra = [], opts = {}) {
     h._touchHintT = 2; renderOK(h) && n++; h._shakeT = 0.2; h._shakeAmp = 3; renderOK(h) && n++;
     h.state = 'hold'; h._holdPrev = 'grounded'; renderOK(h) && n++;
   }
-  ok(n === 8 * 6 * 4, 'render never throws: all new states x 8 bodies (7 + TERRA) x 4 seeds (' + n + ')');
+  ok(n === 9 * 6 * 4, 'render never throws: all new states x 9 bodies (8 + TERRA) x 4 seeds (' + n + ')');
   // 全グレードのスタンプ
   for (const gr of ['C', 'B', 'A', 'S', 'PERFECT']) for (const t of [0, 0.3, 0.7, 1.0, 1.22, 5]) {
     const { g: h } = newGame(); flatWorld(h); h.x = 305; h.y = 484; h.vy = 4; h.state = 'play'; run(h, 0.05); h._grade = gr; h._clearT = t; h.state = 'cleared'; h.landingSeq = { t: 3 };
@@ -479,7 +479,7 @@ function landAndClear(extra = [], opts = {}) {
 // ---------- 12. WHAT'S NEW ----------
 {
   const ENT = WHATSNEW.entries;
-  ok(WHATSNEW.version === '1.1.0-beta.4' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
+  ok(WHATSNEW.version === '1.1.0-beta.5' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
   ok(ENT.every(en => /^\d{4}\.\d\d\.\d\d$/.test(en.date) && en.items.length >= 3 && en.items.length <= 6), 'each entry: date + 3-6 items');
   ok(ENT.every(en => en.items.every(l => l.length <= 22 && /[\u3040-\u30ff]/.test(l))), 'items <= 22 chars, Japanese (user decision)');
   const ITEMS = ENT.flatMap(en => en.items);

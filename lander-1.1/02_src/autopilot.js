@@ -35,9 +35,10 @@ const VY_CAP = 14;
 export function autopilotKeys(g) {
   const keys = { left: false, right: false, up: false };
   if (!g || !g.pad) return keys;
-  const h = Math.max(0, g.pad.y - (g.y + 16));
+  const wpOn = !!(g._wp && !g._wp.done);                  // 冥王星の中継地点がまだなら、そこが目標（パッドは LOCKED）
+  const h = Math.max(0, (wpOn ? g._wp.y : g.pad.y) - (g.y + 16));
   let tg = h / Math.max(g.vy, 2);                   // 接地までの概算秒
-  let padCx = g.pad.x + g.pad.w / 2;
+  let padCx = wpOn ? g._wp.x : g.pad.x + g.pad.w / 2;
   let vyCmd = null;                                  // 移動パッド: 接地時刻を折り返しに合わせるための目標降下速度
   if (g.pad.moving) {
     const P = g.pad.period || 8, tNow = g._padT || 0;
@@ -78,6 +79,8 @@ export function autopilotKeys(g) {
   else if (u < -1.5) keys.right = true;
 
   if (T >= TMIN && Math.abs(err) < 8 && !(Fy === 0 && g.vy < -8)) keys.up = true;
+  // 接地中（滑走が止まって平地に残った／中継地点に着いた）: 地上では姿勢制御できないので、目標が遠ければそのまま離陸する
+  if (g.state === 'grounded' && !g._slide && Math.abs(padCx - g.x) > 6) keys.up = true;
   return keys;
 }
 

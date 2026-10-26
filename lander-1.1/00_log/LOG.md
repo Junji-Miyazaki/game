@@ -3,6 +3,16 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-10-27 beta.5: 冥王星（ツアー最後の天体、1.1.0-beta.5）
+- 実施（`lander-1.1/` の 02_src・04_tests・00_log・01_docs/PLAN.md のみ。07_lab・`../lander/` は不変。方針は PLAN §7p）:
+  - bodies.js: PLUTO（realG 0.62、TRACE N₂、`dim` 暗幕、`iceSlide`、`tagline`）、`ICE_FRICTION`=5。1周=16ステージ。art.js: カロンの空・赤褐色の高地・対流セル、`drawDimTint/drawWaypoint/drawPadLocked/drawSlidingCue/drawWaypointBanner`。music.js: pluto ambient。patches.js: PLUTO パッチ（ハート形の平原＋カロン）。solarmap.js: 最外周の着陸天体（チップ7つ、軌道半径を圧縮、COMING SOON は5つ）。
+  - game.js: ICE SLIDE（`_touchdown/_startSlide/_slideStep/_resolveSlide`、grounded の流用）。2つめは中継地点（`_wp`）＋LOCKED パッド、燃料×1.35、ボーナス 100〜300、誘導線・ビーコン・輪は中継地点側。autopilot.js: 中継地点→パッド。
+  - 版 1.1.0-beta.5、UPDATE INFORMATION に新 entry（3項目）。
+- 調整値: ICE_FRICTION=5（初期値のまま）。自動操縦 15:30/30 16:29/30 31:30/30 32:30/30（障害物なし・ICE込み）。
+- 不具合の発見: 水星の音が実ブラウザで例外（`_musAir` の引数）。冥王星の目視で発覚、修正済み（テストはソース検査で再発防止）。
+- 既存テストの変更: 7体/14ステージ/42★/7パッチ → 8/16/48/8 の更新（p15・p2a・p6bonus・p8start・p10touch・p12v11・p13rings・p15map・p16mapbtn・p17patch・p18assist・p19crash）。新規 p20pluto.mjs（92）。
+- 未確認: 実機の滑りの手触り（5 px/s²）、中継地点の説明の分かりやすさ、冥王星の曲、人が操作したときの2つめのクリア時間（自動操縦の中央値は約270秒）。
+
 ## 2026-10-26 beta.4: SIDE THRUST・見やすさ・緊急シールド・序盤の隕石（1.1.0-beta.4）
 - 実施（`lander-1.1/` のみ。`../lander/` は不変。方針は PLAN §7o）:
   - SIDE THRUST が ATTITUDE ASSIST を置換（種類 id `side`、`attitude` は全箇所から削除。rings.js: `SIDE_S=8`・`SIDE_ACCEL=12`）。有効中は角度が時定数 1/8 秒で水平へ・角速度 0 固定（回転入力は効かない）、左ボタン/左キー→左、右→右へ 12 px/s²、燃料は RCS と同じ 1.5/s、主推力は不変、同時押しは打ち消し、自動操縦（デバッグ）は従来どおり。終了時は omega 0 で通常操作へ。UI: 左右ボタンに金の ⇦ ⇨・HUD・バナー・炎の左右入れ替え。

@@ -92,6 +92,16 @@ const PT_ART = {
     c.strokeStyle = rgba('#ff5a1a', 0.85); c.lineWidth = 1.5 * u;
     for (let i = -1; i <= 1; i++) { const x = i * 0.26; c.beginPath(); c.moveTo(x, 0.7); c.bezierCurveTo(x - 0.1, 0.56, x + 0.1, 0.44, x, 0.32); c.stroke(); }
   },
+  pluto(c, u, k) {   // ハート形の氷原（スプートニク平原）とカロン
+    c.fillStyle = '#7a4a34'; c.beginPath(); c.ellipse(0, 0.62, 0.95, 0.34, 0, Math.PI, PT_TAU); c.fill();   // 赤褐色の高地
+    c.fillStyle = '#f0e6d2'; c.beginPath();
+    c.moveTo(0, 0.62); c.bezierCurveTo(-0.62, 0.3, -0.5, -0.18, -0.2, -0.14); c.bezierCurveTo(-0.08, -0.12, 0, -0.02, 0, 0.06);
+    c.bezierCurveTo(0, -0.02, 0.08, -0.12, 0.2, -0.14); c.bezierCurveTo(0.5, -0.18, 0.62, 0.3, 0, 0.62); c.fill();   // ハート
+    c.strokeStyle = 'rgba(150,134,110,0.55)'; c.lineWidth = 0.8 * u; c.beginPath(); c.moveTo(-0.28, 0.08); c.lineTo(-0.06, 0.2); c.lineTo(0.14, 0.1); c.lineTo(0.3, 0.2); c.stroke();
+    const g = c.createRadialGradient(0.38, -0.46, 0.02, 0.38, -0.46, 0.2); g.addColorStop(0, '#d2cdc6'); g.addColorStop(1, '#6a6660');
+    c.fillStyle = g; c.beginPath(); c.arc(0.38, -0.46, 0.2, 0, PT_TAU); c.fill();   // カロン
+    c.fillStyle = 'rgba(122,64,44,0.8)'; c.beginPath(); c.ellipse(0.38, -0.62, 0.1, 0.04, 0, 0, PT_TAU); c.fill();
+  },
   mercury(c, u, k) {   // 影のクレーターと巨大な太陽
     c.fillStyle = rgba('#ffb878', 0.12); c.beginPath(); c.arc(0.05, 0.2, 0.7, 0, PT_TAU); c.fill();
     c.fillStyle = rgba('#ffb878', 0.22); c.beginPath(); c.arc(0.05, 0.2, 0.55, 0, PT_TAU); c.fill();
@@ -102,7 +112,7 @@ const PT_ART = {
     c.strokeStyle = rgba('#ffb878', 0.85); c.lineWidth = 1.4 * u; c.beginPath(); c.ellipse(-0.02, 0.5, 0.5, 0.15, 0, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
   },
 };
-const PT_SKY = { moon: '#0b0f1a', europa: '#0b1426', io: '#2a1208', mars: '#b4683c', titan: '#8a5c1a', venus: '#a8501a', mercury: '#050405' };
+const PT_SKY = { pluto: '#080a16', moon: '#0b0f1a', europa: '#0b1426', io: '#2a1208', mars: '#b4683c', titan: '#8a5c1a', venus: '#a8501a', mercury: '#050405' };
 
 // 名前を下側の縁に沿って1字ずつ描く（縁の帯の中。小さいパッチでは描かない）
 function PT_rimText(c, name, rad, px, color) {

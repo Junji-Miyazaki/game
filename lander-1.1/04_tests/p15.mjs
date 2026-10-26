@@ -40,31 +40,31 @@ const MOONLIKE = [0, 1, 2];
 // ---------- 1. stage -> body / loop mapping ----------
 {
   const ids = BODIES.map(b => b.id);
-  ok(ids.join() === 'moon,europa,io,mars,titan,venus,mercury', 'body order');
+  ok(ids.join() === 'moon,europa,io,mars,titan,venus,mercury,pluto', 'body order');
   for (let s = 1; s <= 30; s++) {
     const i = stageInfo(s);
-    ok(i.index === Math.floor((s - 1) / 2) % 7 && i.loop === Math.floor((s - 1) / 14) && i.body === BODIES[i.index], 'mapping stage ' + s);
+    ok(i.index === Math.floor((s - 1) / 2) % 8 && i.loop === Math.floor((s - 1) / 16) && i.body === BODIES[i.index], 'mapping stage ' + s);
     ok(i.firstOfBody === (s % 2 === 1), 'firstOfBody stage ' + s);
   }
-  ok(stageInfo(1).body.id === 'moon' && stageInfo(2).body.id === 'moon' && stageInfo(3).body.id === 'europa' && stageInfo(12).body.id === 'venus' && stageInfo(13).body.id === 'mercury' && stageInfo(14).body.id === 'mercury' && stageInfo(15).body.id === 'moon' && stageInfo(15).loop === 1, 'spot checks');
-  const realG = { moon: 1.62, europa: 1.31, io: 1.80, mars: 3.71, titan: 1.35, venus: 8.87, mercury: 3.70 };
+  ok(stageInfo(1).body.id === 'moon' && stageInfo(2).body.id === 'moon' && stageInfo(3).body.id === 'europa' && stageInfo(12).body.id === 'venus' && stageInfo(13).body.id === 'mercury' && stageInfo(14).body.id === 'mercury' && stageInfo(15).body.id === 'pluto' && stageInfo(16).body.id === 'pluto' && stageInfo(17).body.id === 'moon' && stageInfo(17).loop === 1, 'spot checks');
+  const realG = { moon: 1.62, europa: 1.31, io: 1.80, mars: 3.71, titan: 1.35, venus: 8.87, mercury: 3.70, pluto: 0.62 };
   ok(BODIES.every(b => b.realG === realG[b.id]), 'real gravity table');
   // pad / obstacles / speed formulas
-  ok(padWidth(1) === 54 && padWidth(12) === 22 && padWidth(14) === 22 && padWidth(15) === 46 && padWidth(28) === 22 && padWidth(2) === 51, 'pad width formula');
-  ok(obstacleCount(1) === 0 && obstacleCount(2) === 1 && obstacleCount(3) === 2 && obstacleCount(12) === 7 && obstacleCount(14) === 7 && obstacleCount(15) === 4 + 0, 'obstacle count: ' + [1, 2, 3, 12, 14, 15].map(obstacleCount));
-  ok(obstacleSpeed(1) === 12 && obstacleSpeed(12) === 45 && obstacleSpeed(14) === 51 && obstacleSpeed(15) === 18, 'obstacle speed');
+  ok(padWidth(1) === 54 && padWidth(12) === 22 && padWidth(16) === 22 && padWidth(17) === 46 && padWidth(32) === 22 && padWidth(2) === 51, 'pad width formula');
+  ok(obstacleCount(1) === 0 && obstacleCount(2) === 1 && obstacleCount(3) === 2 && obstacleCount(12) === 7 && obstacleCount(16) === 7 && obstacleCount(17) === 4 + 0, 'obstacle count: ' + [1, 2, 3, 12, 16, 17].map(obstacleCount));
+  ok(obstacleSpeed(1) === 12 && obstacleSpeed(12) === 45 && obstacleSpeed(16) === 57 && obstacleSpeed(17) === 18, 'obstacle speed');
   const { g } = newGame();
   for (const s of [1, 4, 9, 13, 20, 30]) { g.stage = s; g.bonus = null; g._initStage();
     ok(g._padW === padWidth(s) && g.obstacles.length === obstacleCount(s) && g._info.index === stageInfo(s).index, 'game applies stage ' + s);
     ok(g.obstacles.every(o => o.style === stageInfo(s).body.obstacleStyle), 'obstacle style stage ' + s); }
-  ok(BODIES.map(b => b.obstacleStyle).join() === 'rock,ice,lava,rock,ice,lava,rock', 'obstacle style per body');
+  ok(BODIES.map(b => b.obstacleStyle).join() === 'rock,ice,lava,rock,ice,lava,rock,ice', 'obstacle style per body');
 }
 
 // ---------- 2. gravity formula ----------
 {
   const { g } = newGame();
-  for (let loop = 0; loop < 3; loop++) for (let b = 0; b < 7; b++) {
-    const s = loop * 14 + b * 2 + 1;
+  for (let loop = 0; loop < 3; loop++) for (let b = 0; b < 8; b++) {
+    const s = loop * 16 + b * 2 + 1;
     g.stage = s; g.bonus = null; g._initStage();
     const exp = GRAVITY_BASE * Math.sqrt(BODIES[b].realG / 1.62) * (1 + 0.15 * loop);
     ok(near(g._gravity, exp, 1e-12) && near(bodyGravity(BODIES[b], loop), exp, 1e-12), 'gravity ' + BODIES[b].id + ' loop ' + loop);
@@ -125,9 +125,9 @@ const MOONLIKE = [0, 1, 2];
     const v = b.visual;
     ok(Array.isArray(v.sky) && v.sky.length === 2 && v.ground && v.rim && v.accent && 'fog' in v && 'skyObject' in v && typeof v.mood === 'string', b.id + ' visual tokens');
   }
-  ok(BODIES.map(b => b.visual.skyObject).join() === 'earth,jupiter,jupiter,phobos,saturn,sun-glow,sun-low', 'sky objects');
+  ok(BODIES.map(b => b.visual.skyObject).join() === 'earth,jupiter,jupiter,phobos,saturn,sun-glow,sun-low,charon', 'sky objects');
   // render fog / haze / beacon without error in each atmosphere body
-  for (let b = 0; b < 7; b++) { const { g } = newGame(); g.stage = b * 2 + 1; g._initStage(); tick(g, 0.5); g.render(ctx); }
+  for (let b = 0; b < 8; b++) { const { g } = newGame(); g.stage = b * 2 + 1; g._initStage(); tick(g, 0.5); g.render(ctx); }
   ok(true, 'render each body ok');
   // fog gradient is created with the right radius and the beacon is drawn after it
   const calls = [];
@@ -155,13 +155,13 @@ const MOONLIKE = [0, 1, 2];
 // ---------- 5. landability (PD autopilot): >= 80% of 50 seeds per body, loops 0 and 1 ----------
 {
   const N = 50; const t0 = Date.now(); const rates = [];
-  for (let loop = 0; loop < 2; loop++) for (let b = 0; b < 7; b++) {
-    const stage = loop * 14 + b * 2 + 2;   // 各天体の2番目のステージ（パッドが狭い方）
+  for (let loop = 0; loop < 2; loop++) for (let b = 0; b < 8; b++) {
+    const stage = loop * 16 + b * 2 + 2;   // 各天体の2番目のステージ（パッドが狭い方）
     let wins = 0;
     for (let seed = 1; seed <= N; seed++) {
       seeded(seed * 7919 + b);
       const { g } = newGame(); g.stage = stage; g.bonus = null; g._initStage(); g.obstacles = [];   // 障害物は大気と無関係のため除外
-      for (let f = 0; f < 15000 && g.state === 'play'; f++) autopilotFrame(g);
+      for (let f = 0; f < 40000 && (g.state === 'play' || g.state === 'grounded'); f++) autopilotFrame(g);
       unseed();
       if (g.state === 'landing') wins++;
     }
@@ -422,10 +422,10 @@ const realFetch = globalThis.fetch;
     ok(g.totalScore > 0, 'WIN NOW scored'); }
   // AUTO LAND flies and lands on every body
   { let wins = 0, tries = 0;
-    for (let b = 0; b < 7; b++) for (let s = 1; s <= 6; s++) {
+    for (let b = 0; b < 8; b++) for (let s = 1; s <= 6; s++) {
       seeded(s * 131 + b); const { g } = newGame(); g.stage = b * 2 + 2; g._initStage(); unseed();
       open(g); press(g, 0); ok(g.state === 'play' && g._auto === true, 'AUTO LAND engaged');
-      for (let f = 0; f < 15000 && g.state === 'play'; f++) g.update(1 / 60);
+      for (let f = 0; f < 30000 && (g.state === 'play' || g.state === 'grounded'); f++) g.update(1 / 60);
       tries++; if (g.state === 'landing') wins++;
     }
     ok(wins >= 0.8 * tries, 'AUTO LAND lands on every body: ' + wins + '/' + tries);
@@ -519,7 +519,7 @@ const realFetch = globalThis.fetch;
       else if (r < 0.06) g.onInput(['left', 'right', 'up', 'down', 'confirm', 'back'][Math.floor(rnd() * 6)]);
       if (rnd() < 0.012) {
         const k = rnd();
-        if (k < 0.25) { g.bonus = rnd() < 0.5 ? { type: ['CALM', 'ROVER', 'CROSSWIND', 'STORM'][Math.floor(rnd() * 4)] } : null; g.stage = 1 + ((fuzzInit++ * 3) % 42); g._initStage(); }   // 全天体(7)を確実に巡る
+        if (k < 0.25) { g.bonus = rnd() < 0.5 ? { type: ['CALM', 'ROVER', 'CROSSWIND', 'STORM'][Math.floor(rnd() * 4)] } : null; g.stage = 1 + ((fuzzInit++ * 3) % 48); g._initStage(); }   // 全天体(7)を確実に巡る
         else if (k < 0.45) { onPad(g); g.vy = 1; g.angle = 0; if (g.state === 'play') g._doSuccess(0, 0); }
         else if (k < 0.6) { if (g.state === 'play') g._doCrash('FUZZ'); }
         else if (k < 0.7) { g.continues = 0; if (g.state === 'play') g._doCrash('FUZZ'); }
@@ -538,7 +538,7 @@ const realFetch = globalThis.fetch;
   setDebug(false); globalThis.fetch = savedFetch;
   ok(!threw, '5000 random frames, no exception: ' + (threw && threw.stack));
   ok(['play', 'landing', 'cleared', 'crashed', 'bonusfailed', 'gameover', 'module'].every(s => visited.has(s)), 'fuzz visited states: ' + [...visited].join(','));
-  ok(BODIES.every(b => bodiesSeen.has(b.id)), 'fuzz visited all 7 bodies (+ TERRA via bonus): ' + [...bodiesSeen].join(','));
+  ok(BODIES.every(b => bodiesSeen.has(b.id)), 'fuzz visited all 8 bodies (+ TERRA via bonus): ' + [...bodiesSeen].join(','));
 }
 
 console.log(pass + '/' + (pass + fail) + ' PASS');

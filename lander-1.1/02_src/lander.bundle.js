@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.4';
+const APP_VERSION = '1.1.0-beta.5';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -423,12 +423,13 @@ class Engine {
 
 
 // ---- 02_src/bodies.js ----
-// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星→水星、14ステージで1周）。
+// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星→水星→冥王星、16ステージで1周）。
 // ゲーム性に関わる数値（重力・大気）と、P2が描画に使う見た目トークンを1か所に集約する。
 // 真空の天体（moon/europa/io）は風・抗力・視界制限なし（ユーザー指摘どおり）。
 const GRAVITY_BASE = 0.25;   // 月(1.62 m/s^2)でのステージ1重力 px/s^2
 const G_REF = 1.62;
 const STAGES_PER_BODY = 2;
+const ICE_FRICTION = 5;      // 冥王星の氷の摩擦（滑走の減速度 px/s^2。04_tests/p20pluto.mjs の自動操縦で調整）
 
 // wind: base = 定常風の大きさ(px/s^2, 符号はステージごとにランダム) / gust = 突風の振幅(px/s^2)。0なら風なし。
 // drag: 水平速度の抗力係数(1/s)。dragY: 垂直（省略時は drag と同じ）。visibility: 視界半径px(null=無制限)。heat: 高温(燃料の受動消費と主エンジン増)。
@@ -461,12 +462,19 @@ const BODIES = [
        visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
     visual: { sky: ['#7a3410', '#c26a1c'], ground: '#33180a', rim: '#ff8a2a', accent: '#ff9a3c',
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
-  // MERCURY（v1.1 L2）: ツアーの最後。大気なし（風・抗力なし）。永久影の極域クレーター＝暗闇（visibility: 機体のライトの届く範囲だけ地形が見える。
+  // MERCURY（v1.1 L2）: ツアーの7番目（beta.5 から最後は冥王星）。大気なし（風・抗力なし）。永久影の極域クレーター＝暗闇（visibility: 機体のライトの届く範囲だけ地形が見える。
   // パッドのビーコンと誘導線は暗闇の上に描く＝guideAboveFog）。日照側の高温＝受動的な燃料消費（金星より軽い）。重力は火星とほぼ同じ。
   { id: 'mercury', celebTier: 2, name: 'MERCURY', atmoTag: 'NONE', realG: 3.70, atmoLabel: 'NONE \u00b7 DARK CRATER', atmoType: 'none',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: 130, heat: { fuelDrain: 0.3, mainFuelMul: 1.0 }, guideAboveFog: true, obstacleStyle: 'rock',
     visual: { sky: ['#000000', '#0b0809'], ground: '#2d2b2e', rim: '#ffd29a', accent: '#ffb878', fog: '#000000', haze: null,
       skyObject: 'sun-low', mood: 'permanently shadowed crater, near-black regolith, huge low sun glare on the horizon' } },
+  // PLUTO（v1.1 beta.5）: ツアーの最後（太陽系の果て）。実重力 0.62 → ゲーム内 g≈0.155（既存の平方根圧縮）。ごく薄い N₂（風・抗力なし）。
+  // 全体に薄暗い（visibility ではなく dim = 見た目の沈み）。iceSlide: 氷原の低摩擦。着地後も水平速度を保って滑り、止まった所で判定する（game.js _stepSlide）。
+  { id: 'pluto', celebTier: 2, name: 'PLUTO', atmoTag: 'TRACE N\u2082', atmoLabel: 'TRACE N\u2082 \u00b7 SLIPPERY ICE', atmoType: 'trace', realG: 0.62,
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'ice', iceSlide: true, dim: 0.30,
+    tagline: 'THE EDGE OF THE SOLAR SYSTEM',
+    visual: { sky: ['#03040a', '#0d0f1c'], ground: '#e2d0ae', rim: '#f8eed8', accent: '#d9c7aa', fog: null, haze: null,
+      skyObject: 'charon', mood: 'pale nitrogen-ice plains, reddish tholin highlands, Charon in the sky, the Sun a bright star' } },
 ];
 
 
@@ -510,7 +518,7 @@ function stageInfo(stage) {
   return { index, loop, body: BODIES[index], firstOfBody: (s - 1) % STAGES_PER_BODY === 0 };
 }
 
-// 周回内のステージ番号(0始まり、0..11)
+// 周回内のステージ番号(0始まり、0..15)
 const inLoop = (stage) => (Math.max(1, Math.floor(stage) || 1) - 1) % (STAGES_PER_BODY * BODY_COUNT);
 
 // ゲーム内重力: 実重力を平方根で圧縮（金星でも遊べる）し、周回ごとに+15%
@@ -551,6 +559,7 @@ function bodyHasWind(body) { return !!(body.wind && (body.wind.base || body.wind
 
 // 例: 'MARS · g 3.71 m/s² · THIN CO₂ · WIND'
 function introText(body) {
+  if (body.tagline) return body.name + ' \u00b7 ' + body.tagline + ' \u00b7 g ' + body.realG.toFixed(2) + ' m/s\u00b2 \u00b7 ' + body.atmoLabel;
   return body.name + ' · g ' + body.realG.toFixed(2) + ' m/s² · ' + body.atmoLabel + (bodyHasWind(body) ? ' · WIND' : '');
 }
 
@@ -1147,9 +1156,10 @@ const VY_CAP = 14;
 function autopilotKeys(g) {
   const keys = { left: false, right: false, up: false };
   if (!g || !g.pad) return keys;
-  const h = Math.max(0, g.pad.y - (g.y + 16));
+  const wpOn = !!(g._wp && !g._wp.done);                  // 冥王星の中継地点がまだなら、そこが目標（パッドは LOCKED）
+  const h = Math.max(0, (wpOn ? g._wp.y : g.pad.y) - (g.y + 16));
   let tg = h / Math.max(g.vy, 2);                   // 接地までの概算秒
-  let padCx = g.pad.x + g.pad.w / 2;
+  let padCx = wpOn ? g._wp.x : g.pad.x + g.pad.w / 2;
   let vyCmd = null;                                  // 移動パッド: 接地時刻を折り返しに合わせるための目標降下速度
   if (g.pad.moving) {
     const P = g.pad.period || 8, tNow = g._padT || 0;
@@ -1190,6 +1200,8 @@ function autopilotKeys(g) {
   else if (u < -1.5) keys.right = true;
 
   if (T >= TMIN && Math.abs(err) < 8 && !(Fy === 0 && g.vy < -8)) keys.up = true;
+  // 接地中（滑走が止まって平地に残った／中継地点に着いた）: 地上では姿勢制御できないので、目標が遠ければそのまま離陸する
+  if (g.state === 'grounded' && !g._slide && Math.abs(padCx - g.x) > 6) keys.up = true;
   return keys;
 }
 
@@ -1974,7 +1986,8 @@ const SKYOBJ = {
   phobos:   { x: 268, y: 160, r: 9 },
   saturn:   { x: 248, y: 182, r: 22 },
   'sun-glow': { x: 208, y: 168, r: 150 },
-  'sun-low': { x: 330, y: 452, r: 330 },   // 水星: 地平線の縁すれすれの巨大な太陽
+  'sun-low': { x: 330, y: 452, r: 330 },
+  charon:   { x: 96, y: 196, r: 52 },      // 冥王星: 空に大きなカロン（太陽は小さな明るい星 = 288,138）   // 水星: 地平線の縁すれすれの巨大な太陽
 };
 function skyObjFor(body) {
   const k = body.visual.skyObject;
@@ -2075,6 +2088,26 @@ function paintSunGlow(c, o) {
   for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
 }
 // 水星: 低く巨大な太陽の光が地平線の縁に溜まる（空は黒のまま。地形は逆光のシルエットになる）
+// 冥王星: 大きなカロン（灰色の球、北極に赤褐色の帽子、明暗境界）と、ただの明るい星としての太陽
+function paintCharon(c, o) {
+  const { x, y, r } = o;
+  const g = mkR(c, x - r * 0.35, y - r * 0.3, r * 0.15, x, y, r);
+  g.addColorStop(0, '#b9b4ae'); g.addColorStop(1, '#6a6660');
+  c.save(); c.beginPath(); c.arc(x, y, r, 0, TAU); c.clip();
+  c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.fillStyle = 'rgba(120,64,44,0.75)'; c.beginPath(); c.ellipse(x, y - r * 0.92, r * 0.6, r * 0.3, 0, 0, TAU); c.fill();   // 北極の赤褐色の帽子（モルドール）
+  c.fillStyle = 'rgba(40,38,36,0.32)';
+  for (const q of [[-0.3, 0.1, 0.2], [0.25, 0.35, 0.14], [0.1, -0.3, 0.1]]) { c.beginPath(); c.arc(x + q[0] * r, y + q[1] * r, q[2] * r, 0, TAU); c.fill(); }
+  const tg = mkR(c, x - r * 0.5, y - r * 0.35, r * 0.4, x - r * 0.5, y - r * 0.35, r * 1.8);
+  tg.addColorStop(0, 'rgba(2,3,10,0)'); tg.addColorStop(0.6, 'rgba(2,3,10,0.4)'); tg.addColorStop(1, 'rgba(2,3,10,0.9)');
+  c.fillStyle = tg; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.restore();
+  c.strokeStyle = 'rgba(200,196,190,0.35)'; c.lineWidth = 0.8; c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
+  const sx = 288, sy = 138, sg = mkR(c, sx, sy, 0, sx, sy, 22);   // 太陽: 明るい星
+  sg.addColorStop(0, 'rgba(255,248,230,0.9)'); sg.addColorStop(0.2, 'rgba(255,240,210,0.3)'); sg.addColorStop(1, 'rgba(255,240,210,0)');
+  c.fillStyle = sg; c.fillRect(sx - 22, sy - 22, 44, 44);
+  c.fillStyle = '#fffaf0'; c.fillRect(sx - 1, sy - 1, 2, 2);
+}
 function paintSunLow(c, o) {
   const { x, y, r } = o;
   const g = mkR(c, x, y, 0, x, y, r);
@@ -2138,6 +2171,7 @@ function paintSky(c, body) {
     case 'phobos': paintPhobos(c, o); break;
     case 'sun-glow': paintSunGlow(c, o); break;
     case 'sun-low': paintSunLow(c, o); break;
+    case 'charon': paintCharon(c, o); break;
     default: break;
   }
 }
@@ -2177,8 +2211,9 @@ function paintTerrain(c, body, pts) {
   const ph1 = R() * 6, ph2 = R() * 6, ph3 = R() * 6, ph4 = R() * 6;
   const sky1 = v.sky[1];
   // 奥の層（空気遠近: 空色に寄せる）
-  ridge(c, 408, 20, 9, ph1, ph2, mixHex(v.ground, sky1, 0.74), v.rim, 0.20);
-  ridge(c, 448, 16, 8, ph3, ph4, mixHex(v.ground, sky1, 0.42), v.rim, 0.32);
+  const hi = body.id === 'pluto' ? '#7a4f3c' : v.ground;   // 冥王星: 遠い高地は赤褐色のソリン
+  ridge(c, 408, 20, 9, ph1, ph2, mixHex(hi, sky1, 0.74), v.rim, 0.20);
+  ridge(c, 448, 16, 8, ph3, ph4, mixHex(hi, sky1, 0.42), v.rim, 0.32);
   // 手前（実際の地形ポリライン）
   const gTop = shade(v.ground, 0.10), gBot = shade(v.ground, -0.55);
   const fg = mkL(c, 0, 430, 0, AH);
@@ -2221,6 +2256,15 @@ function paintTerrain(c, body, pts) {
       c.fillStyle = hard ? 'rgba(0,0,0,0.42)' : 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
       c.strokeStyle = hard ? 'rgba(255,214,160,0.20)' : 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
     }
+  } else if (body.id === 'pluto') {                              // スプートニク平原: 多角形の対流セル（淡い線）と赤褐色のしみ
+    c.strokeStyle = 'rgba(120,108,92,0.30)'; c.lineWidth = 0.8;
+    for (let k = 0; k < 10; k++) {
+      const x = T() * AW, y = 478 + T() * 120, rx = 14 + T() * 22; c.beginPath();
+      for (let a = 0; a < 6; a++) { const th = a / 6 * TAU + 0.3, px = x + Math.cos(th) * rx, py = y + Math.sin(th) * rx * 0.28; if (a === 0) c.moveTo(px, py); else c.lineTo(px, py); }
+      c.closePath(); c.stroke();
+    }
+    c.fillStyle = 'rgba(122,74,52,0.30)';
+    for (let k = 0; k < 6; k++) { c.beginPath(); c.ellipse(T() * AW, 470 + T() * 130, 12 + T() * 26, 2 + T() * 4, 0, 0, TAU); c.fill(); }
   } else if (body.id === 'terra') {                              // TERRA: 畑の帯と木々
     for (let k = 0; k < 8; k++) {
       c.fillStyle = k % 2 ? 'rgba(255,238,150,0.12)' : 'rgba(18,70,34,0.16)';
@@ -3865,6 +3909,43 @@ function drawWorldTop5(ctx, view, t, a, y0, e) {
   }
 }
 
+// ================================================================ 冥王星（ICE SLIDE / 中継地点）
+// 全体を薄暗く沈める（青みのある暗幕）。地形・パッドまで。誘導線・機体・HUD はこの後に描くので明るいまま
+function drawDimTint(ctx, a) {
+  ctx.save(); ctx.fillStyle = 'rgba(8,12,34,' + a + ')'; ctx.fillRect(0, 0, AW, AH); ctx.restore();
+}
+// 中継地点: 平らな氷の上の小さなビーコンと数字 '1'（取得後は緑の ✓）
+function drawWaypoint(ctx, wp, t) {
+  const p = P(), done = !!wp.done, a = 0.55 + 0.45 * Math.sin(t * 3);
+  const x0 = wp.x - wp.w / 2, x1 = wp.x + wp.w / 2, y = wp.y;
+  ctx.save();
+  ctx.strokeStyle = done ? rgba(p.green, 0.9) : rgba(p.warn, 0.55 + 0.4 * a); ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y - 0.5); ctx.lineTo(x1, y - 0.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x0, y - 0.5); ctx.lineTo(x0, y - 6); ctx.moveTo(x1, y - 0.5); ctx.lineTo(x1, y - 6); ctx.stroke();
+  txt(ctx, done ? '\u2713' : '1', wp.x, y - 8, 11, done ? (p.green) : p.warn, 'center', { sp: 0, w: 700, a: done ? 0.9 : 0.7 + 0.3 * a, sh: 1 });
+  ctx.restore();
+}
+// LOCKED のパッド: 暗くして ✕ と LOCKED を出す
+function drawPadLocked(ctx, pad, t) {
+  const p = P();
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,8,20,0.62)'; ctx.fillRect(pad.x - 1, pad.y - 3, pad.w + 2, 8);
+  ctx.strokeStyle = rgba(p.bad, 0.8); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(pad.x + 2, pad.y - 2); ctx.lineTo(pad.x + pad.w - 2, pad.y + 3); ctx.moveTo(pad.x + pad.w - 2, pad.y - 2); ctx.lineTo(pad.x + 2, pad.y + 3); ctx.stroke();
+  ctx.restore();
+  txt(ctx, 'LOCKED', pad.x + pad.w / 2, pad.y - 24, 7, p.bad, 'center', { sp: 2, w: 600, a: 0.7 + 0.3 * Math.sin(t * 3), sh: 1 });
+}
+function drawSlidingCue(ctx, speed) {
+  const p = P();
+  txt(ctx, 'SLIDING', AW / 2, 124, 12, p.hi, 'center', { sp: 4, w: 400, a: 0.9, sh: 1 });
+  txt(ctx, Math.round(speed) + ' px/s \u00b7 THRUST TO LIFT OFF', AW / 2, 143, 8, p.fg, 'center', { sp: 3, w: 400, a: 0.8, sh: 1 });
+}
+function drawWaypointBanner(ctx, a) {
+  const p = P();
+  txt(ctx, 'WAYPOINT 1 \u2713', AW / 2, 124, 13, p.green, 'center', { sp: 4, w: 500, a, sh: 1 });
+  txt(ctx, 'PAD UNLOCKED \u00b7 LIFT OFF AND LAND ON IT', AW / 2, 143, 8, p.fg, 'center', { sp: 3, w: 400, a: 0.85 * a, sh: 1 });
+}
+
 
 // ---- 02_src/patches.js ----
 // LANDER BETA v1.1 — ミッションパッチ。天体ごとに1枚、その天体のどのステージ（どの周回でも）でも PERFECT で着陸すると手に入る。
@@ -3957,6 +4038,16 @@ const PT_ART = {
     c.strokeStyle = rgba('#ff5a1a', 0.85); c.lineWidth = 1.5 * u;
     for (let i = -1; i <= 1; i++) { const x = i * 0.26; c.beginPath(); c.moveTo(x, 0.7); c.bezierCurveTo(x - 0.1, 0.56, x + 0.1, 0.44, x, 0.32); c.stroke(); }
   },
+  pluto(c, u, k) {   // ハート形の氷原（スプートニク平原）とカロン
+    c.fillStyle = '#7a4a34'; c.beginPath(); c.ellipse(0, 0.62, 0.95, 0.34, 0, Math.PI, PT_TAU); c.fill();   // 赤褐色の高地
+    c.fillStyle = '#f0e6d2'; c.beginPath();
+    c.moveTo(0, 0.62); c.bezierCurveTo(-0.62, 0.3, -0.5, -0.18, -0.2, -0.14); c.bezierCurveTo(-0.08, -0.12, 0, -0.02, 0, 0.06);
+    c.bezierCurveTo(0, -0.02, 0.08, -0.12, 0.2, -0.14); c.bezierCurveTo(0.5, -0.18, 0.62, 0.3, 0, 0.62); c.fill();   // ハート
+    c.strokeStyle = 'rgba(150,134,110,0.55)'; c.lineWidth = 0.8 * u; c.beginPath(); c.moveTo(-0.28, 0.08); c.lineTo(-0.06, 0.2); c.lineTo(0.14, 0.1); c.lineTo(0.3, 0.2); c.stroke();
+    const g = c.createRadialGradient(0.38, -0.46, 0.02, 0.38, -0.46, 0.2); g.addColorStop(0, '#d2cdc6'); g.addColorStop(1, '#6a6660');
+    c.fillStyle = g; c.beginPath(); c.arc(0.38, -0.46, 0.2, 0, PT_TAU); c.fill();   // カロン
+    c.fillStyle = 'rgba(122,64,44,0.8)'; c.beginPath(); c.ellipse(0.38, -0.62, 0.1, 0.04, 0, 0, PT_TAU); c.fill();
+  },
   mercury(c, u, k) {   // 影のクレーターと巨大な太陽
     c.fillStyle = rgba('#ffb878', 0.12); c.beginPath(); c.arc(0.05, 0.2, 0.7, 0, PT_TAU); c.fill();
     c.fillStyle = rgba('#ffb878', 0.22); c.beginPath(); c.arc(0.05, 0.2, 0.55, 0, PT_TAU); c.fill();
@@ -3967,7 +4058,7 @@ const PT_ART = {
     c.strokeStyle = rgba('#ffb878', 0.85); c.lineWidth = 1.4 * u; c.beginPath(); c.ellipse(-0.02, 0.5, 0.5, 0.15, 0, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
   },
 };
-const PT_SKY = { moon: '#0b0f1a', europa: '#0b1426', io: '#2a1208', mars: '#b4683c', titan: '#8a5c1a', venus: '#a8501a', mercury: '#050405' };
+const PT_SKY = { pluto: '#080a16', moon: '#0b0f1a', europa: '#0b1426', io: '#2a1208', mars: '#b4683c', titan: '#8a5c1a', venus: '#a8501a', mercury: '#050405' };
 
 // 名前を下側の縁に沿って1字ずつ描く（縁の帯の中。小さいパッチでは描かない）
 function PT_rimText(c, name, rad, px, color) {
@@ -4672,11 +4763,24 @@ const _musSCENES = {
     build(sc) {
       _musDelay(sc, 0.9, 0.5, 0.45);
       _musDrone(sc, { osc: [{ type: 'sine', f: 55 }, { type: 'sine', f: 82.4, det: 3 }, { type: 'triangle', f: 110, det: -4 }], lp: 240, gain: 0.1, lfoRate: 0.04, lfoDepth: 50 });
-      _musAir(sc, 'highpass', 5200, 0.6, 0.006, 0.02);
+      _musAir(sc, 'highpass', 5200, 0.6, 0.006);   // gustRate だけ渡すと gustDepth が undefined で AudioParam が例外になる（beta.4 までの水星で発生）ので渡さない
     },
     step(t, sc) {
       _musBell(sc, t, _musHz(220, _musPick([0, 3, 7, 10]) + _musPick([0, 12])), 5, 0.08, 2.76);
       return _musRand(11, 22);
+    },
+  },
+  pluto: {   // 冥王星: 太陽系の果ての静寂。さらに低い持続音と、氷のきしみのような高いガラスの鐘が遠くにまばらに鳴る
+    build(sc) {
+      _musDelay(sc, 1.1, 0.55, 0.5);
+      _musDrone(sc, { osc: [{ type: 'sine', f: 46.2 }, { type: 'sine', f: 69.3, det: 5 }, { type: 'sine', f: 277.2, det: -6 }], lp: 300, gain: 0.09, lfoRate: 0.03, lfoDepth: 40 });
+      _musAir(sc, 'highpass', 6500, 0.6, 0.005);
+    },
+    step(t, sc) {
+      const f = _musHz(659.25, _musPick([0, 5, 7, 12]) + _musPick([0, 12]));
+      _musBell(sc, t, f, 4.2, 0.06, 3.5);
+      if (Math.random() < 0.3) _musBell(sc, t + 0.4, f * 1.5, 3.4, 0.035, 3.5);
+      return _musRand(10, 20);
     },
   },
   terra: {   // ボーナス専用の昼の惑星: 明るい長調のやわらかいパッド + やさしい風 + 稀なやわらかいベル（ハーモニック）
@@ -5089,6 +5193,11 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // 項目は日本語の短文（22字まで）。他の表示（英語）と違う見た目にして読んでもらうため日本語にする（ユーザー決定）。
 const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.10.26', items: [
+    '新天体：冥王星（氷で滑る・中継着陸）',
+    'ツアーは1周16ステージに',
+    '★は48個、パッチは8枚に',
+  ] },
+  { version: '1.1.0-beta.4', date: '2026.10.26', items: [
     'SIDE THRUST：左右で真横に移動',
     '平地の上に LANDABLE を表示',
     '隕石に進行方向の尾と危険表示',
@@ -5129,10 +5238,10 @@ const SM_PER_LOOP = STAGES_PER_BODY * BODY_COUNT;
 
 // ---- データ（見た目）----
 const SM_BCOL = { mercury: '#a39a8e', venus: '#e2b878', earth: '#5b8fd0', mars: '#c1583a', jupiter: '#cfa77c', saturn: '#dcc592',
-  moon: '#b9bfcb', io: '#e0bb3c', europa: '#d6e6ee', titan: '#e0a03e' };
+  pluto: '#d9ccb8', moon: '#b9bfcb', io: '#e0bb3c', europa: '#d6e6ee', titan: '#e0a03e' };
 // 着陸天体（カード単位）。hub=true は惑星そのものに着陸
 const SM_LB = {
-  mercury: { sys: 'mercury', hub: true }, venus: { sys: 'venus', hub: true }, moon: { sys: 'earth' },
+  pluto: { sys: 'pluto', hub: true }, mercury: { sys: 'mercury', hub: true }, venus: { sys: 'venus', hub: true }, moon: { sys: 'earth' },
   mars: { sys: 'mars', hub: true }, io: { sys: 'jupiter' }, europa: { sys: 'jupiter' }, titan: { sys: 'saturn' },
 };
 const SM_SYS = {
@@ -5142,12 +5251,14 @@ const SM_SYS = {
   mars:    { name: 'MARS', ab: 'MAR', bodies: ['mars'], hubR: 44, soon: 'PHOBOS', bonus: false },
   jupiter: { name: 'JUPITER', ab: 'JUP', bodies: ['io', 'europa'], hubR: 52, soon: null, bonus: false },
   saturn:  { name: 'SATURN', ab: 'SAT', bodies: ['titan'], hubR: 32, soon: 'ENCELADUS', bonus: false },
+  pluto:   { name: 'PLUTO', ab: 'PLU', bodies: ['pluto'], hubR: 34, soon: null, bonus: false },
 };
-const SM_SYS_ORDER = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn'];
-const SM_PL = {
-  mercury: { r: 24, sz: 4.2, w: SM_TAU / 46, ph: 0.5 }, venus: { r: 46, sz: 6.2, w: SM_TAU / 80, ph: 3.2 },
-  earth: { r: 70, sz: 6.8, w: SM_TAU / 120, ph: 4.9 }, mars: { r: 94, sz: 5.2, w: SM_TAU / 180, ph: 1.9 },
-  jupiter: { r: 126, sz: 11, w: SM_TAU / 300, ph: 5.7 }, saturn: { r: 158, sz: 8, w: SM_TAU / 420, ph: 2.6 },
+const SM_SYS_ORDER = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'pluto'];
+const SM_PL = {   // 軌道半径は縮尺を圧縮（外周の目盛り R=176 の内側に冥王星まで収める）
+  mercury: { r: 20, sz: 4.2, w: SM_TAU / 46, ph: 0.5 }, venus: { r: 39, sz: 6.2, w: SM_TAU / 80, ph: 3.2 },
+  earth: { r: 60, sz: 6.8, w: SM_TAU / 120, ph: 4.9 }, mars: { r: 81, sz: 5.2, w: SM_TAU / 180, ph: 1.9 },
+  jupiter: { r: 107, sz: 11, w: SM_TAU / 300, ph: 5.7 }, saturn: { r: 135, sz: 8, w: SM_TAU / 420, ph: 2.6 },
+  pluto: { r: 163, sz: 4.6, w: SM_TAU / 600, ph: 0.9 },
 };
 const SM_OV = { cx: 180, cy: 262 };
 const SM_MOONS = {
@@ -5156,7 +5267,7 @@ const SM_MOONS = {
   europa: { sys: 'jupiter', ovR: 22, ovW: SM_TAU / 9, ph: 2.4, zx: 140, zy: 44, zW: SM_TAU / 24, zr: 11 },
   titan:  { sys: 'saturn', ovR: 17, ovW: SM_TAU / 8, ph: 1.3, zx: 138, zy: 40, zW: SM_TAU / 26, zr: 14 },
 };
-const SM_SOON = ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON', 'PLUTO'];
+const SM_SOON = ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON'];
 const SM_ZH = { x: 180, y: 166 };
 const SM_KZ = 3.2;
 const SM_HALO = { titan: ['224,160,62', 1.42, 0.42], venus: ['255,200,120', 1.3, 0.28], mars: ['230,140,90', 1.22, 0.2], earth: ['120,180,255', 1.22, 0.22] };
@@ -5215,6 +5326,12 @@ function SM_pers(c, id, r, t) {            // clip 内（中心=原点）の表�
       const u = (t * 0.07) % 1, dx = -r * 0.8 + u * r * 1.6, base = r * 0.42;
       c.fillStyle = 'rgba(60,20,10,0.3)'; c.beginPath(); c.ellipse(dx, base + 1, r * 0.1, r * 0.04, 0, 0, SM_TAU); c.fill();
       for (let i = 0; i < 7; i++) { const f = i / 6, w = r * 0.04 + f * r * 0.1; c.fillStyle = 'rgba(255,214,170,' + (0.7 * (1 - f * 0.6)) + ')'; c.beginPath(); c.ellipse(dx + Math.sin(t * 5 + f * 4) * r * 0.025 + f * r * 0.06, base - f * r * 0.42, w, w * 0.5, 0, 0, SM_TAU); c.fill(); }
+      break;
+    }
+    case 'pluto': {
+      c.fillStyle = 'rgba(120,74,52,0.5)'; c.beginPath(); c.ellipse(-r * 0.5, r * 0.5, r * 0.6, r * 0.3, 0.3, 0, SM_TAU); c.fill();
+      c.fillStyle = 'rgba(255,250,236,0.75)'; c.beginPath(); c.moveTo(r * 0.1, r * 0.55); c.bezierCurveTo(-r * 0.5, r * 0.15, -r * 0.4, -r * 0.35, -r * 0.1, -r * 0.3); c.bezierCurveTo(r * 0.02, -r * 0.28, r * 0.1, -r * 0.2, r * 0.1, -r * 0.12);
+      c.bezierCurveTo(r * 0.1, -r * 0.2, r * 0.22, -r * 0.28, r * 0.34, -r * 0.3); c.bezierCurveTo(r * 0.64, -r * 0.35, r * 0.7, r * 0.15, r * 0.1, r * 0.55); c.fill();
       break;
     }
     case 'mercury': {
@@ -5316,7 +5433,6 @@ function SM_silhouette(c, nm, x, y, s) {
   else c.arc(0, 0, 8.5, 0, SM_TAU);
   c.fill(); c.stroke(); c.setLineDash([]);
   if (nm === 'ENCELADUS') { c.fillStyle = rgba(p.dim, 0.8); for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(-3 + i * 3, 14 + (i % 2) * 2, 0.9, 0, SM_TAU); c.fill(); } }
-  if (nm === 'PLUTO') { c.strokeStyle = rgba(p.dim, 0.5); c.beginPath(); c.arc(-2, 1, 4, 0.3, 4.4); c.stroke(); }
   if (nm === 'TRITON') { c.strokeStyle = rgba(p.dim, 0.5); c.beginPath(); c.moveTo(-7, 3); c.quadraticCurveTo(0, 6, 7, 2); c.stroke(); }
   c.restore();
 }
@@ -5390,7 +5506,7 @@ class SolarMap {
   sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } return { st, mx }; }
   backRect() { return { x: 4, y: 4, w: 86, h: 50 }; }
   startRect() { return { x: 16, y: 536, w: 328, h: 52 }; }
-  chipRects() { const w = 54, g = 5, x0 = (SM_W - 6 * w - 5 * g) / 2; return SM_SYS_ORDER.map((id, i) => ({ x: x0 + i * (w + g), y: 500, w, h: 44, sys: id })); }
+  chipRects() { const n = SM_SYS_ORDER.length, w = 46, g = 4, x0 = (SM_W - n * w - (n - 1) * g) / 2; return SM_SYS_ORDER.map((id, i) => ({ x: x0 + i * (w + g), y: 500, w, h: 44, sys: id })); }
   soonRects() { return SM_SOON.map((nm, i) => ({ x: 2 + i * 60, y: 572, w: 56, h: 56, soon: nm })); }
   cards(sys) {
     const out = []; let y = 300;
@@ -7202,6 +7318,11 @@ const STRANDED_S        = 1.5;   // 燃料切れで接地したままこの秒�
 const LIFTOFF_VY        = -7;    // 離陸時の上向きの初速(px/s)
 const LIFTOFF_MIN_S     = 0.2;   // 接地直後にこの秒数は離陸しない（押しっぱなしでそのまま跳ねないように）
 const SHAKE_S = 0.25, SHAKE_PX = 3;
+const SLIDE_CAP_DIST = 12;   // 冥王星: 氷上でこれ以上滑ると（パッド上で止まっても）グレードは A まで
+const SLIDE_EPS = 0.05;           // この速さ(px/s)未満で「止まった」とみなす
+const WP_FUEL_MUL = 1.35;           // 冥王星 2つめ（中継地点つき）の燃料倍率
+const WP_W = 44;                  // 中継地点の幅(px)
+const SLIDE_MARGIN = 14;          // 画面端（水平クランプと同じ）
 const CLEAR_SLOT_S = 0.2;        // クリア画面の集計：1行あたりの秒数
 const CLEAR_STAMP_S = 0.18;      // グレードのスタンプが押される秒数
 const STAR_POP_DELAY = 0.12, STAR_POP_STEP = 0.24, STAR_POP_S = 0.2;   // クリア画面: 新しく取った★が順に押される（グレードのスタンプの後）
@@ -7554,7 +7675,7 @@ class Game extends Scene {
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
-  _fuelMax() { return FUEL_MAX * fuelMulFor(this._lvl('fuel')); }
+  _fuelMax() { return FUEL_MAX * fuelMulFor(this._lvl('fuel')) * (this._wp ? WP_FUEL_MUL : 1); }   // 中継地点つきステージは燃料 +35%
   _angDamp() { return angDampFor(this._lvl('stab')); }
   _safeVy() { return SAFE_VY + SAFE_VY_PER_LEVEL * this._lvl('shock'); }
   _bounceVy() { return BOUNCE_VY + BOUNCE_VY_PER_LEVEL * this._lvl('shock'); }
@@ -7631,6 +7752,16 @@ class Game extends Scene {
     this._bannerT       = btype ? 2.8 : 0;   // ボーナス開始バナーの残り秒
     this.particles      = [];
     this._spots         = landableSpots(this.terrainPts, this.pad);   // パッド以外の着陸可能な平地（目印とヒント用）
+    // 冥王星の2つめ（HOP）: パッドから最も遠い平地に中継地点 1 を置く。着地するまでパッドは LOCKED。誘導線と輪は中継地点へ（着いたら誘導線はパッドへ）
+    this._wp = null; this._wpBonus = 0; this._wpBannerT = 0; this._wpGradeNow = ''; this._slide = null; this._slideDist = 0;
+    if (!mission && this._body.iceSlide && !sp.info.firstOfBody && this._spots.length) {
+      const pcx = this.pad.x + this.pad.w / 2; let best = null, bd = -1;
+      for (const sp2 of this._spots) { const cx = (sp2.x0 + sp2.x1) / 2, d = Math.abs(cx - pcx); if (d > bd) { bd = d; best = sp2; } }
+      const w = Math.min(WP_W, best.x1 - best.x0 - 4), cx = (best.x0 + best.x1) / 2;
+      this._wp = { x: cx, y: this._terrainYAt(cx), w, done: false, t: 0 };
+      this.fuel = this._fuelMax();
+      this.guidePts = buildGuide(this.x, this.y, { x: cx - w / 2, y: this._wp.y, w }, GUIDE_PTS);
+    }
     this._contact0      = null;    // 最初の接触時の速度・姿勢（グレード用。バウンスしても最初の衝撃で評価する）
     this._groundedT = 0; this._strandT = 0;
     this._touchHintT    = 0;
@@ -7650,7 +7781,7 @@ class Game extends Scene {
 
     // L2: 降下ルート（誘導線）に沿った輪。通常ステージのみ（ボーナスは輪なし）。特典（SLOW-MO/SIDE THRUST/RADAR）の状態もここで初期化
     this._floats = []; this._slowT = 0; this._sideT = 0; this._lblA = []; this._threats = []; this._powerRadar = false; this._pbT = 0; this._pbKind = ''; this._starsInfo = null; this._patchInfo = null; this._starT = 0; this._starSnd = 0;
-    this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
+    this._rg = mission ? null : newRingState(buildRings({ stage: this.stage, startX: this.x, startY: this.y, pad: this._wp ? { x: this._wp.x - this._wp.w / 2, y: this._wp.y, w: this._wp.w } : this.pad, terrainPts: this.terrainPts, obstacles: this.obstacles, radarOwned: this._lvl('radar') > 0 }));
 
     // 到達記録（パイロット別）。通常ステージの開始のみ、デバッグランは除外
     if (!this.bonus && !this._isDebugRun()) {
@@ -8174,6 +8305,8 @@ class Game extends Scene {
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
     if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
     if (this._esT > 0) this._esT = Math.max(0, this._esT - dt);
+    if (this._wpBannerT > 0) this._wpBannerT = Math.max(0, this._wpBannerT - dt);
+    if (this._wp) this._wp.t += dt;
     if (this._pbT > 0) this._pbT = Math.max(0, this._pbT - dt);
     const ringPx = this.x, ringPy = this.y;   // 輪の通過判定用に、このフレームの移動の始点
 
@@ -8437,11 +8570,11 @@ class Game extends Scene {
     if (!onPad) {   // パッド外: 平地なら接地（得点なし）、急斜面や大きな傾きは失敗
       const sl0 = footSlopeDeg(this.terrainPts, this.x);
       if (sl0 > LAND_SLOPE_DEG) { this._doCrash('STEEP GROUND', this._detailText(sl0, LAND_SLOPE_DEG, '°')); return; }
-      if (absAngle <= BOUNCE_RESOLVE_DEG) this._doGrounded();
+      if (absAngle <= BOUNCE_RESOLVE_DEG) this._touchdown(false, absAngle, Math.abs(this.omega));
       else this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_RESOLVE_DEG, '°'));
       return;
     }
-    if (absAngle <= BOUNCE_RESOLVE_DEG) this._doSuccess(absAngle, Math.abs(this.omega));
+    if (absAngle <= BOUNCE_RESOLVE_DEG) this._touchdown(true, absAngle, Math.abs(this.omega));
     else this._doCrash('TIPPED OVER', this._detailText(absAngle, BOUNCE_RESOLVE_DEG, '°'));
   }
 
@@ -8470,7 +8603,7 @@ class Game extends Scene {
       const sl1 = footSlopeDeg(this.terrainPts, this.x);
       if (sl1 > LAND_SLOPE_DEG) { this._bouncing = false; this._doCrash('STEEP GROUND', this._detailText(sl1, LAND_SLOPE_DEG, '°')); return; }
     }
-    const succeed = (a, o) => { if (onPad) this._doSuccess(a, o); else this._doGrounded(); };
+    const succeed = (a, o) => this._touchdown(onPad, a, o);
 
     // バウンス中の「静定チェック」: 前フレームのバウンスで速度が十分落ちていれば成功
     if (this._bouncing) {
@@ -8570,35 +8703,114 @@ class Game extends Scene {
     return this._worstDetail(vy, vx, ang, om, false);
   }
 
+  // 接地が成立した（速度・姿勢が許容内）。通常は即決着（パッド=成功 / 平地=接地）。氷の天体（冥王星）は水平速度を残して滑り、止まった所で決着する
+  _touchdown(onPad, a, o) {
+    if (this._body && this._body.iceSlide && !this.bonus) this._startSlide(a, o);
+    else if (onPad && !this._padLocked()) this._doSuccess(a, o);
+    else this._doGrounded();
+  }
+  // 中継地点つきステージ（冥王星の2つめ）: 中継地点に着くまでパッドは LOCKED
+  _padLocked() { return !!(this._wp && !this._wp.done); }
+  _onWaypoint() { const w = this._wp; return !!w && this.x >= w.x - w.w / 2 && this.x <= w.x + w.w / 2; }
+  _wpDone() {
+    const w = this._wp; if (!w || w.done) return;
+    w.done = true; w.t = 0; this._wpBannerT = 2.2;
+    this._wpBonus = 100 + 50 * Math.max(0, gradeRank(this._wpGradeNow || 'C'));
+    this._sfx('ring', 5);
+    this.guidePts = buildGuide(this.x, this.y, this.pad, GUIDE_PTS);
+  }
+
+  // ---- 冥王星: ICE SLIDE ----
+  // 接地した機体は水平速度を保ったまま水平を保って滑り、ICE_FRICTION で減速する。止まったとき: パッド上=成功 / 平地=接地 / 滑走中に斜面・縁=クラッシュ。推力で離陸できる
+  _startSlide(a, o) {
+    this.y = this._terrainYAt(this.x) - 16;
+    this.vy = 0; this.omega = 0;
+    this._bouncing = false; this._bounceTime = 0;
+    this._groundedT = 0; this._strandT = 0;
+    this._slide = { x0: this.x, ang: a || 0, om: o || 0, sprayT: 0 };
+    this.state = 'grounded';
+    this._touchdownFx(1);
+  }
+  _slideStep(dt) {
+    const sl = this._slide;
+    this.vy = 0; this.omega = 0;
+    this.angle *= Math.pow(0.02, dt);
+    const sp0 = Math.abs(this.vx);
+    const sgn = this.vx < 0 ? -1 : 1;
+    const sp = Math.max(0, sp0 - ICE_FRICTION * dt);
+    this.vx = sgn * sp;
+    this.x += sgn * (sp0 + sp) * 0.5 * dt;   // 台形則。解析解 v0^2/(2*mu) と一致する
+    let wall = false;
+    if (this.x < SLIDE_MARGIN) { this.x = SLIDE_MARGIN; wall = true; }
+    if (this.x > W - SLIDE_MARGIN) { this.x = W - SLIDE_MARGIN; wall = true; }
+    this.y = this._terrainYAt(this.x) - 16;
+    const slope = footSlopeDeg(this.terrainPts, this.x);
+    if (slope > LAND_SLOPE_DEG) { this._slide = null; this._contact0 = null; this._doCrash('SLID OFF THE EDGE', { text: 'SLIDING AT ' + Math.round(sp0) + ' px/s' }); return; }
+    if (sp > 1 && this.particles) {   // 氷の飛沫（進行方向と逆へ小さく）
+      sl.sprayT += dt;
+      while (sl.sprayT >= 0.05) {
+        sl.sprayT -= 0.05;
+        const ty = this._terrainYAt(this.x);
+        this.particles.push({ x: this.x - sgn * (8 + Math.random() * 8), y: ty - 1, vx: -sgn * (4 + Math.random() * 10) + (Math.random() - 0.5) * 6, vy: -(2 + Math.random() * 7),
+          life: 0.35 + Math.random() * 0.35, max: 0.7, col: '#e8f1ff', r: 0.9 + Math.random() * 1.1 });
+      }
+      if (this.particles.length > 120) this.particles.splice(0, this.particles.length - 120);
+    }
+    if (sp < SLIDE_EPS || wall) { this.vx = 0; this._resolveSlide(); }
+  }
+  _resolveSlide() {
+    const sl = this._slide; if (!sl) return;
+    const onPad = (this.x >= this.pad.x && this.x <= this.pad.x + this.pad.w);
+    const c0 = this._contact0 || { vy: 0, vx: 0, ang: sl.ang, om: sl.om };
+    this._slide = null; this.vx = 0; this.vy = 0; this.omega = 0;
+    if (this._wp && !this._wp.done && this._onWaypoint()) {   // 中継地点に着いた（SAFE 内の接地）
+      this._wpGradeNow = gradeFor({ vy: c0.vy, vx: c0.vx, ang: c0.ang, om: c0.om, dist: Math.min(9, Math.abs(this.x - this._wp.x) / (this._wp.w / 2)) });
+      this._wpDone();
+    }
+    if (onPad && !this._padLocked()) {
+      this._slideDist = Math.abs(this.x - sl.x0);
+      this.vx = c0.vx; this.vy = c0.vy;   // 着地精度ボーナスは最初の接触の速さで数える（グレードと同じ）
+      this._doSuccess(c0.ang, c0.om);
+    } else {
+      this._contact0 = null; this._groundedT = 0; this._strandT = 0;   // 平らな氷の上で停止（ロック中のパッド含む）= 接地（得点なし）
+    }
+  }
+
   // ---- L1: 接地（パッド外の平地）。得点なし。推力で離陸できる ----
   _doGrounded() {
     const terrainY = this._terrainYAt(this.x);
     this.y = terrainY - 16;
     this.vx = 0; this.vy = 0; this.omega = 0;
     this._bouncing = false; this._bounceTime = 0; this._contact0 = null;
-    this._groundedT = 0; this._strandT = 0;
+    this._groundedT = 0; this._strandT = 0; this._slide = null;
     this.state = 'grounded';
     this._touchdownFx(0.6);
   }
   // 接地中の1フレーム: 機体を起こし、推力で離陸、燃料切れのまま1.5秒で失敗
   _stepGrounded(dt) {
-    this.vx = 0; this.vy = 0; this.omega = 0;
-    this.angle *= Math.pow(0.02, dt);
-    this.y = this._terrainYAt(this.x) - 16;
+    const sliding = !!this._slide;
+    if (!sliding) {
+      this.vx = 0; this.vy = 0; this.omega = 0;
+      this.angle *= Math.pow(0.02, dt);
+      this.y = this._terrainYAt(this.x) - 16;
+    }
     this._groundedT += dt;
     this._thrustRcsL = false; this._thrustRcsR = false;   // 接地中は姿勢制御しない（燃料も使わない）
     if (this.fuel > 0) {
       this._strandT = 0;
       if (this._thrustMain && this._groundedT >= LIFTOFF_MIN_S) {
         this.state = 'play';
-        this.vy = LIFTOFF_VY; this.y -= 2;   // 少し持ち上げて即再接触しないように
+        this.vy = LIFTOFF_VY; this.y -= 2;   // 少し持ち上げて即再接触しないように（滑走中なら水平速度は保つ）
+        this._slide = null;
         this._contact0 = null; this._bouncing = false; this._bounceTime = 0;
+        return;
       }
-    } else {
+    } else if (!sliding) {
       this._thrustMain = false;
       this._strandT += dt;
       if (this._strandT >= STRANDED_S) this._doCrash('STRANDED — OUT OF FUEL');
-    }
+    } else this._thrustMain = false;   // 滑走中の燃料切れ: 止まるまで待つ
+    if (this._slide) this._slideStep(dt);
   }
   // 接地の演出: 脚元の砂塵（天体色）、小さな画面揺れ、鈍い音。strength 1=パッド着陸 / 0.6=パッド外
   _touchdownFx(strength) {
@@ -8697,9 +8909,11 @@ class Game extends Scene {
       }
       this._guideBonus  = guideBonus;
       const ringScore = this._rg ? this._rg.score : 0;   // L2: 輪の得点（50×コンボ）は着陸した時に加算（墜落して Continue しても稼げない）
-      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus + ringScore;
+      const wpScore = this._wp && this._wp.done ? this._wpBonus : 0;   // 中継地点ボーナス: 100 + 50×(着地グレードの順位) = 100〜300
+      this._stageScore  = fuelBonus + softBonus + horzBonus + uprBonus + omgBonus + guideBonus + sp.stageBonus + ringScore + wpScore;
       this._breakdown = [['FUEL BONUS', fuelBonus], ['LANDING', softBonus + horzBonus + uprBonus + omgBonus], ['GUIDE BONUS', guideBonus], ['STAGE BONUS', sp.stageBonus]];
       if (ringScore > 0) this._breakdown.push(['RINGS', ringScore]);
+      if (wpScore > 0) this._breakdown.push(['WAYPOINT', wpScore]);
     }
     this.totalScore  += this._stageScore;
     // グレード: 最初の接触の速度・姿勢（バウンスしても最初の衝撃で評価）とパッド中心からの距離。PERFECT は祝福に星のバーストが付く
@@ -8708,6 +8922,8 @@ class Game extends Scene {
     const halfW = Math.max(1, this.pad.w / 2);
     const dist = Math.min(9, Math.abs(this.x - (this.pad.x + halfW)) / halfW);
     this._grade = gradeFor({ vy: c0.vy, vx: c0.vx, ang: c0.ang, om: c0.om, dist });
+    if (this._slideDist > SLIDE_CAP_DIST && gradeRank(this._grade) > gradeRank('A')) this._grade = 'A';   // 冥王星: 大きく滑ったら A まで
+    this._slideDist = 0;
     this._lastGrade = this._grade;
     this._perfect = this._grade === 'PERFECT';
     this._clearT = 0; this._clearSnd = 0;
@@ -8907,6 +9123,9 @@ class Game extends Scene {
       if (this._spots && this._spots.length && this.state !== 'module') { drawLandableSpots(ctx, this._spots, t); drawLandableLabels(ctx, this._spots, this._lblA); }   // 着陸可能な平地の目印（地形の手前）＋ 真上にいる間だけ LANDABLE
     }
 
+    // 冥王星: 全体を薄暗く沈める（地形・パッドまで。誘導線・機体・HUD は明るいまま）。中継地点と LOCKED のパッド
+    if (body && body.dim && !sel) { drawDimTint(ctx, body.dim); if (this._wp) drawWaypoint(ctx, this._wp, t); if (this._padLocked() && this.pad) drawPadLocked(ctx, this.pad, t); }
+
     // Descent trajectory guide（常に描画）— 地形・パッドより手前に描き、山に隠れずパッドまで繋がって見えるようにする
     if (!sel) this._drawGuide(ctx, false);
 
@@ -8947,11 +9166,16 @@ class Game extends Scene {
     // 天体の紹介バナー（天体の最初のステージ）
     if (this.state === 'play' && !this._tipOn && this._introT > 0 && body) {
       const parts = introText(body).split(' · ');
-      drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
+      if (body.tagline) drawIntro(ctx, parts[0], parts[1], parts.slice(2).join('  ·  '), this._introT * 2);
+      else drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
 
     // 接地中のバナー / 初回ヒント（非停止のトースト）
-    if (this.state === 'grounded' && !this._tipOn) drawGroundedBanner(ctx, !(this.fuel > 0), Math.min(1, (this._groundedT || 0) / 0.25));
+    if (this.state === 'grounded' && !this._tipOn && !(this._wpBannerT > 0)) {   // 中継地点のバナー中は重ねない
+      if (this._slide) drawSlidingCue(ctx, Math.abs(this.vx));
+      else drawGroundedBanner(ctx, !(this.fuel > 0), Math.min(1, (this._groundedT || 0) / 0.25));
+    }
+    if (this._wpBannerT > 0 && !this._tipOn) drawWaypointBanner(ctx, Math.min(1, this._wpBannerT / 0.4, (2.2 - this._wpBannerT) / 0.25));
     if (this._live() && !this._tipOn && this._touchHintT > 0) drawTouchHint(ctx, Math.min(1, this._touchHintT / 0.4, (TOUCH_HINT_S - this._touchHintT) / 0.3));
 
     // 特典の輪のバナー
@@ -9010,6 +9234,7 @@ class Game extends Scene {
 
   _drawBeacon(ctx) {
     if (!this.pad || this.state === 'module' || this.state === 'bonusselect') return;
+    if (this._wp && !this._wp.done) { drawBeacon(ctx, { x: this._wp.x - this._wp.w / 2, y: this._wp.y, w: this._wp.w }, this._clock || 0); return; }   // 中継地点が先
     drawBeacon(ctx, this.pad, this._clock || 0);
   }
 

@@ -49,10 +49,10 @@ const storeWith = (max, best, extra) => {
 };
 const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, now: 0, t0: 0 });
 const mkTitle = (store) => { const calls = { n: 0 }; const e = makeEngine(store); const t = new TitleScene(e, () => { calls.n++; }, { launch: false }); t.enter(); t.update(0.016); return { e, t, calls }; };
-const SYSOF = { moon: 'earth', io: 'jupiter', europa: 'jupiter', titan: 'saturn', mars: 'mars', venus: 'venus', mercury: 'mercury' };
-const SYSORD = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn'];
-const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury'];
-const bodyOf = (stage) => BODYORD[Math.floor(((stage - 1) % 14) / 2)];
+const SYSOF = { moon: 'earth', io: 'jupiter', europa: 'jupiter', titan: 'saturn', mars: 'mars', venus: 'venus', mercury: 'mercury', pluto: 'pluto' };
+const SYSORD = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'pluto'];
+const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury', 'pluto'];
+const bodyOf = (stage) => BODYORD[Math.floor(((stage - 1) % 16) / 2)];
 const run = (t, sec) => { for (let i = 0; i < Math.round(sec / 0.05); i++) t.update(0.05); };
 function zoomTo(t, sys) {
   const m = t.map; m.introT = 1.6;
@@ -65,7 +65,7 @@ function zoomTo(t, sys) {
 function selectStage(t, stage) {
   const m = t.map, id = bodyOf(stage), sys = SYSOF[id];
   zoomTo(t, sys);
-  const card = m.cards(sys).find((c) => c.id === id), want = Math.floor((stage - 1) / 14);
+  const card = m.cards(sys).find((c) => c.id === id), want = Math.floor((stage - 1) / 16);
   for (let g = 0; g < 40 && m.B[id].loop !== want; g++) t.onInput('tap', center(m.B[id].loop < want ? m.stepRects(card).next : m.stepRects(card).prev));
   t.onInput('tap', center(m.pipRect(card, (stage - 1) % 2)));
   run(t, 1.5);
@@ -109,23 +109,23 @@ for (const max of [2, 3, 7, 13, 14, 15, 16, 28, 29, 41, 60, 200]) {
 {
   const cp = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 10, continues: 2, modules: {}, name: 'AAA' });
   let allSame = true, msg = '';
-  for (let s = 1; s <= 29; s++) {
+  for (let s = 1; s <= 33; s++) {
     // 旧パス（CHOOSE START の行タップ）= title._startAt(stage)
-    const A = mkTitle(storeWith(29, null, [['checkpoint', cp]]));
+    const A = mkTitle(storeWith(33, null, [['checkpoint', cp]]));
     A.t.onInput('tap', center(A.t.newBtn)); A.t._startAt(s);
     // 新パス（マップ）
-    const B = mkTitle(storeWith(29, null, [['checkpoint', cp]]));
+    const B = mkTitle(storeWith(33, null, [['checkpoint', cp]]));
     B.t.onInput('tap', center(B.t.newBtn)); startVia(B.t, s);
     const same = A.calls.n === 1 && B.calls.n === 1 && A.e.startStage === B.e.startStage && (B.e.startStage === (s > 1 ? s : null)) && B.t.map === null
       && loadCheckpoint(B.e.storage) === null && B.e.resumeCheckpoint == null && B.t.cp === null;
     if (!same) { allSame = false; msg += ' ' + s; }
-    if (s === 1 || s === 8 || s === 22 || s === 29) {
+    if (s === 1 || s === 8 || s === 22 || s === 33) {
       const ga = new Game(A.e); ga.enter(); const gb = new Game(B.e); gb.enter();
       const eq = ga.stage === gb.stage && gb.stage === s && gb.totalScore === 0 && gb.continues === 3 && gb.startStage === s && ga.startStage === gb.startStage;
       ok(eq, 'Game starts at stage ' + s + ' with the same params via the map');
     }
   }
-  ok(allSame, 'every stage 1..29 starts exactly as the old panel did (startStage, checkpoint cleared, one begin)' + msg);
+  ok(allSame, 'every stage 1..33 starts exactly as the old panel did (startStage, checkpoint cleared, one begin)' + msg);
 }
 
 // ===== 4. ロックされたステージ・START の誤爆 =====
@@ -217,17 +217,18 @@ for (const max of [2, 3, 7, 13, 14, 15, 16, 28, 29, 41, 60, 200]) {
   m.introT = 1.6; run(t, 1);
   const rec = render(t);
   ok(rec.texts.includes('★ ' + sum.totalStars + ' / ' + sum.maxStars), 'total stars counter drawn: ' + (rec.texts.find((s) => s.startsWith('★ ')) || 'none') + ' / expect ' + sum.totalStars + ' / ' + sum.maxStars);
-  ok(sum.totalStars === 10 && sum.maxStars === 42, 'counter data: 10 / 42');
-  for (const nm of ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON', 'PLUTO']) ok(rec.texts.includes(nm), 'COMING SOON silhouette label drawn: ' + nm);
+  ok(sum.totalStars === 10 && sum.maxStars === 48, 'counter data: 10 / 48');
+  for (const nm of ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON']) ok(rec.texts.includes(nm), 'COMING SOON silhouette label drawn: ' + nm);
+  ok(m.soonRects().length === 5 && m.soonRects().every((r) => r.soon !== 'PLUTO') && m.chipRects().length === 7 && m.chipRects()[6].sys === 'pluto', 'Pluto left COMING SOON (5 silhouettes) and has its own chip (7 chips)');
   ok(rec.texts.includes('COMING SOON · v1.2'), 'COMING SOON heading drawn');
   // 拡大画面
   zoomTo(t, 'jupiter');
   const rz = render(t);
   ok(['IO', 'EUROPA', 'S1', 'S2', 'BEST'].every((s) => rz.texts.includes(s)) && rz.texts.includes('P'), 'zoom draws cards, stage pips, best grade');
-  // 周回: 2周目の記録（stage 15 = moon 1）を持つとき
-  const best2 = Object.assign({}, best, { 15: { grade: 'A', stars: 3 } });
-  const o2 = openMap(storeWith(16, best2)); const m2 = o2.t.map;
-  ok(m2.B.moon.loops === 1 && m2.B.moon.loop === 1 && m2.pips('moon')[0].stage === 15 && m2.pips('moon')[0].mask === 3, 'orbit 2 pips use the later stage records');
+  // 周回: 2周目の記録（stage 17 = moon 1）を持つとき
+  const best2 = Object.assign({}, best, { 17: { grade: 'A', stars: 3 } });
+  const o2 = openMap(storeWith(18, best2)); const m2 = o2.t.map;
+  ok(m2.B.moon.loops === 1 && m2.B.moon.loop === 1 && m2.pips('moon')[0].stage === 17 && m2.pips('moon')[0].mask === 3, 'orbit 2 pips use the later stage records');
   ok(m2.B.moon.ring === true && m2.ringState('moon') === 'ring', 'ring is judged on the first-orbit stages');
 }
 
@@ -257,11 +258,11 @@ for (const max of [2, 3, 7, 13, 14, 15, 16, 28, 29, 41, 60, 200]) {
   const { t, calls, e } = openMap(storeWith(40));
   const m = t.map; zoomTo(t, 'earth');
   const card = m.cards('earth')[0];
-  ok(m.B.moon.loops === 2 && m.B.moon.loop === 2 && m.pips('moon')[0].stage === 29, 'default orbit is the furthest unlocked (stage 29/30)');
+  ok(m.B.moon.loops === 2 && m.B.moon.loop === 2 && m.pips('moon')[0].stage === 33, 'default orbit is the furthest unlocked (stage 33/34)');
   t.onInput('tap', center(m.pipRect(card, 0)));
-  ok(m.sel === 29, 'select the orbit-3 stage');
+  ok(m.sel === 33, 'select the orbit-3 stage');
   t.onInput('tap', center(m.stepRects(card).prev));
-  ok(m.B.moon.loop === 1 && m.sel === null && m.pips('moon')[0].stage === 15, 'previous orbit: pips switch, selection cleared');
+  ok(m.B.moon.loop === 1 && m.sel === null && m.pips('moon')[0].stage === 17, 'previous orbit: pips switch, selection cleared');
   t.onInput('tap', center(m.stepRects(card).prev)); t.onInput('tap', center(m.stepRects(card).prev));
   ok(m.B.moon.loop === 0, 'orbit stepper clamps at the first orbit');
   t.onInput('tap', center(m.pipRect(card, 1)));

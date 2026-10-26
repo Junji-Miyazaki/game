@@ -49,10 +49,10 @@ const storeWith = (max, best, extra) => {
 };
 const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, now: 0, t0: 0 });
 const mkTitle = (store) => { const calls = { n: 0 }; const e = makeEngine(store); const t = new TitleScene(e, () => { calls.n++; }, { launch: false }); t.enter(); t.update(0.016); return { e, t, calls }; };
-const SYSOF = { moon: 'earth', io: 'jupiter', europa: 'jupiter', titan: 'saturn', mars: 'mars', venus: 'venus', mercury: 'mercury' };
-const SYSORD = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn'];
-const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury'];
-const bodyOf = (stage) => BODYORD[Math.floor(((stage - 1) % 14) / 2)];
+const SYSOF = { moon: 'earth', io: 'jupiter', europa: 'jupiter', titan: 'saturn', mars: 'mars', venus: 'venus', mercury: 'mercury', pluto: 'pluto' };
+const SYSORD = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'pluto'];
+const BODYORD = ['moon', 'europa', 'io', 'mars', 'titan', 'venus', 'mercury', 'pluto'];
+const bodyOf = (stage) => BODYORD[Math.floor(((stage - 1) % 16) / 2)];
 const run = (t, sec) => { for (let i = 0; i < Math.round(sec / 0.05); i++) t.update(0.05); };
 function zoomTo(t, sys) {
   const m = t.map; m.introT = 1.6;
@@ -65,7 +65,7 @@ function zoomTo(t, sys) {
 function selectStage(t, stage) {
   const m = t.map, id = bodyOf(stage), sys = SYSOF[id];
   zoomTo(t, sys);
-  const card = m.cards(sys).find((c) => c.id === id), want = Math.floor((stage - 1) / 14);
+  const card = m.cards(sys).find((c) => c.id === id), want = Math.floor((stage - 1) / 16);
   for (let g = 0; g < 40 && m.B[id].loop !== want; g++) t.onInput('tap', center(m.B[id].loop < want ? m.stepRects(card).next : m.stepRects(card).prev));
   t.onInput('tap', center(m.pipRect(card, (stage - 1) % 2)));
   run(t, 1.5);
@@ -120,9 +120,9 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 10, con
 // 4. >1 開始 → 開始できる。_startAt 経路と同一
 {
   let same = true;
-  for (const s of [1, 2, 3, 7, 15, 29]) {
-    const A = mkTitle(storeWith(29, null, [['checkpoint', cpJson]])); A.t._startAt(s);
-    const B = mkTitle(storeWith(29, null, [['checkpoint', cpJson]]));
+  for (const s of [1, 2, 3, 7, 15, 17, 33]) {
+    const A = mkTitle(storeWith(33, null, [['checkpoint', cpJson]])); A.t._startAt(s);
+    const B = mkTitle(storeWith(33, null, [['checkpoint', cpJson]]));
     B.t.onInput('tap', center(B.t.mapBtn));
     ok(!!B.t.map && B.t.map.viewOnly === false && !!loadCheckpoint(B.e.storage), 'MAP with >1 starts: startable, checkpoint intact on open (' + s + ')');
     startVia(B.t, s);

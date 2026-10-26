@@ -322,7 +322,8 @@ const SKYOBJ = {
   phobos:   { x: 268, y: 160, r: 9 },
   saturn:   { x: 248, y: 182, r: 22 },
   'sun-glow': { x: 208, y: 168, r: 150 },
-  'sun-low': { x: 330, y: 452, r: 330 },   // 水星: 地平線の縁すれすれの巨大な太陽
+  'sun-low': { x: 330, y: 452, r: 330 },
+  charon:   { x: 96, y: 196, r: 52 },      // 冥王星: 空に大きなカロン（太陽は小さな明るい星 = 288,138）   // 水星: 地平線の縁すれすれの巨大な太陽
 };
 function skyObjFor(body) {
   const k = body.visual.skyObject;
@@ -423,6 +424,26 @@ function paintSunGlow(c, o) {
   for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(60 + i * 58, 70 + (i % 3) * 80, 120, 7 + (i % 2) * 4, 0.04, 0, TAU); c.fill(); }
 }
 // 水星: 低く巨大な太陽の光が地平線の縁に溜まる（空は黒のまま。地形は逆光のシルエットになる）
+// 冥王星: 大きなカロン（灰色の球、北極に赤褐色の帽子、明暗境界）と、ただの明るい星としての太陽
+function paintCharon(c, o) {
+  const { x, y, r } = o;
+  const g = mkR(c, x - r * 0.35, y - r * 0.3, r * 0.15, x, y, r);
+  g.addColorStop(0, '#b9b4ae'); g.addColorStop(1, '#6a6660');
+  c.save(); c.beginPath(); c.arc(x, y, r, 0, TAU); c.clip();
+  c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.fillStyle = 'rgba(120,64,44,0.75)'; c.beginPath(); c.ellipse(x, y - r * 0.92, r * 0.6, r * 0.3, 0, 0, TAU); c.fill();   // 北極の赤褐色の帽子（モルドール）
+  c.fillStyle = 'rgba(40,38,36,0.32)';
+  for (const q of [[-0.3, 0.1, 0.2], [0.25, 0.35, 0.14], [0.1, -0.3, 0.1]]) { c.beginPath(); c.arc(x + q[0] * r, y + q[1] * r, q[2] * r, 0, TAU); c.fill(); }
+  const tg = mkR(c, x - r * 0.5, y - r * 0.35, r * 0.4, x - r * 0.5, y - r * 0.35, r * 1.8);
+  tg.addColorStop(0, 'rgba(2,3,10,0)'); tg.addColorStop(0.6, 'rgba(2,3,10,0.4)'); tg.addColorStop(1, 'rgba(2,3,10,0.9)');
+  c.fillStyle = tg; c.fillRect(x - r, y - r, r * 2, r * 2);
+  c.restore();
+  c.strokeStyle = 'rgba(200,196,190,0.35)'; c.lineWidth = 0.8; c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
+  const sx = 288, sy = 138, sg = mkR(c, sx, sy, 0, sx, sy, 22);   // 太陽: 明るい星
+  sg.addColorStop(0, 'rgba(255,248,230,0.9)'); sg.addColorStop(0.2, 'rgba(255,240,210,0.3)'); sg.addColorStop(1, 'rgba(255,240,210,0)');
+  c.fillStyle = sg; c.fillRect(sx - 22, sy - 22, 44, 44);
+  c.fillStyle = '#fffaf0'; c.fillRect(sx - 1, sy - 1, 2, 2);
+}
 function paintSunLow(c, o) {
   const { x, y, r } = o;
   const g = mkR(c, x, y, 0, x, y, r);
@@ -486,6 +507,7 @@ function paintSky(c, body) {
     case 'phobos': paintPhobos(c, o); break;
     case 'sun-glow': paintSunGlow(c, o); break;
     case 'sun-low': paintSunLow(c, o); break;
+    case 'charon': paintCharon(c, o); break;
     default: break;
   }
 }
@@ -525,8 +547,9 @@ function paintTerrain(c, body, pts) {
   const ph1 = R() * 6, ph2 = R() * 6, ph3 = R() * 6, ph4 = R() * 6;
   const sky1 = v.sky[1];
   // 奥の層（空気遠近: 空色に寄せる）
-  ridge(c, 408, 20, 9, ph1, ph2, mixHex(v.ground, sky1, 0.74), v.rim, 0.20);
-  ridge(c, 448, 16, 8, ph3, ph4, mixHex(v.ground, sky1, 0.42), v.rim, 0.32);
+  const hi = body.id === 'pluto' ? '#7a4f3c' : v.ground;   // 冥王星: 遠い高地は赤褐色のソリン
+  ridge(c, 408, 20, 9, ph1, ph2, mixHex(hi, sky1, 0.74), v.rim, 0.20);
+  ridge(c, 448, 16, 8, ph3, ph4, mixHex(hi, sky1, 0.42), v.rim, 0.32);
   // 手前（実際の地形ポリライン）
   const gTop = shade(v.ground, 0.10), gBot = shade(v.ground, -0.55);
   const fg = mkL(c, 0, 430, 0, AH);
@@ -569,6 +592,15 @@ function paintTerrain(c, body, pts) {
       c.fillStyle = hard ? 'rgba(0,0,0,0.42)' : 'rgba(0,0,0,0.20)'; c.beginPath(); c.ellipse(x, y, rx, rx * 0.28, 0, 0, TAU); c.fill();
       c.strokeStyle = hard ? 'rgba(255,214,160,0.20)' : 'rgba(255,255,255,0.10)'; c.lineWidth = 0.8; c.beginPath(); c.ellipse(x, y + 0.6, rx, rx * 0.28, 0, 0.1, Math.PI - 0.1); c.stroke();
     }
+  } else if (body.id === 'pluto') {                              // スプートニク平原: 多角形の対流セル（淡い線）と赤褐色のしみ
+    c.strokeStyle = 'rgba(120,108,92,0.30)'; c.lineWidth = 0.8;
+    for (let k = 0; k < 10; k++) {
+      const x = T() * AW, y = 478 + T() * 120, rx = 14 + T() * 22; c.beginPath();
+      for (let a = 0; a < 6; a++) { const th = a / 6 * TAU + 0.3, px = x + Math.cos(th) * rx, py = y + Math.sin(th) * rx * 0.28; if (a === 0) c.moveTo(px, py); else c.lineTo(px, py); }
+      c.closePath(); c.stroke();
+    }
+    c.fillStyle = 'rgba(122,74,52,0.30)';
+    for (let k = 0; k < 6; k++) { c.beginPath(); c.ellipse(T() * AW, 470 + T() * 130, 12 + T() * 26, 2 + T() * 4, 0, 0, TAU); c.fill(); }
   } else if (body.id === 'terra') {                              // TERRA: 畑の帯と木々
     for (let k = 0; k < 8; k++) {
       c.fillStyle = k % 2 ? 'rgba(255,238,150,0.12)' : 'rgba(18,70,34,0.16)';
@@ -2211,4 +2243,41 @@ export function drawWorldTop5(ctx, view, t, a, y0, e) {
     txt(ctx, 'YOU  #' + view.extra.rank, x + 4, y, 9, p.warn, 'left', { sp: 2, w: 500, a: A });
     txt(ctx, String(view.extra.score), x + w - 4, y, 9, p.warn, 'right', { sp: 1, w: 500, a: A });
   }
+}
+
+// ================================================================ 冥王星（ICE SLIDE / 中継地点）
+// 全体を薄暗く沈める（青みのある暗幕）。地形・パッドまで。誘導線・機体・HUD はこの後に描くので明るいまま
+export function drawDimTint(ctx, a) {
+  ctx.save(); ctx.fillStyle = 'rgba(8,12,34,' + a + ')'; ctx.fillRect(0, 0, AW, AH); ctx.restore();
+}
+// 中継地点: 平らな氷の上の小さなビーコンと数字 '1'（取得後は緑の ✓）
+export function drawWaypoint(ctx, wp, t) {
+  const p = P(), done = !!wp.done, a = 0.55 + 0.45 * Math.sin(t * 3);
+  const x0 = wp.x - wp.w / 2, x1 = wp.x + wp.w / 2, y = wp.y;
+  ctx.save();
+  ctx.strokeStyle = done ? rgba(p.green, 0.9) : rgba(p.warn, 0.55 + 0.4 * a); ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y - 0.5); ctx.lineTo(x1, y - 0.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x0, y - 0.5); ctx.lineTo(x0, y - 6); ctx.moveTo(x1, y - 0.5); ctx.lineTo(x1, y - 6); ctx.stroke();
+  txt(ctx, done ? '\u2713' : '1', wp.x, y - 8, 11, done ? (p.green) : p.warn, 'center', { sp: 0, w: 700, a: done ? 0.9 : 0.7 + 0.3 * a, sh: 1 });
+  ctx.restore();
+}
+// LOCKED のパッド: 暗くして ✕ と LOCKED を出す
+export function drawPadLocked(ctx, pad, t) {
+  const p = P();
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,8,20,0.62)'; ctx.fillRect(pad.x - 1, pad.y - 3, pad.w + 2, 8);
+  ctx.strokeStyle = rgba(p.bad, 0.8); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(pad.x + 2, pad.y - 2); ctx.lineTo(pad.x + pad.w - 2, pad.y + 3); ctx.moveTo(pad.x + pad.w - 2, pad.y - 2); ctx.lineTo(pad.x + 2, pad.y + 3); ctx.stroke();
+  ctx.restore();
+  txt(ctx, 'LOCKED', pad.x + pad.w / 2, pad.y - 24, 7, p.bad, 'center', { sp: 2, w: 600, a: 0.7 + 0.3 * Math.sin(t * 3), sh: 1 });
+}
+export function drawSlidingCue(ctx, speed) {
+  const p = P();
+  txt(ctx, 'SLIDING', AW / 2, 124, 12, p.hi, 'center', { sp: 4, w: 400, a: 0.9, sh: 1 });
+  txt(ctx, Math.round(speed) + ' px/s \u00b7 THRUST TO LIFT OFF', AW / 2, 143, 8, p.fg, 'center', { sp: 3, w: 400, a: 0.8, sh: 1 });
+}
+export function drawWaypointBanner(ctx, a) {
+  const p = P();
+  txt(ctx, 'WAYPOINT 1 \u2713', AW / 2, 124, 13, p.green, 'center', { sp: 4, w: 500, a, sh: 1 });
+  txt(ctx, 'PAD UNLOCKED \u00b7 LIFT OFF AND LAND ON IT', AW / 2, 143, 8, p.fg, 'center', { sp: 3, w: 400, a: 0.85 * a, sh: 1 });
 }

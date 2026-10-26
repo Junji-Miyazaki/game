@@ -1,9 +1,10 @@
-// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星→水星、14ステージで1周）。
+// 天体ツアー（P1.5）。ステージ2つごとに天体が変わる（月→エウロパ→イオ→火星→タイタン→金星→水星→冥王星、16ステージで1周）。
 // ゲーム性に関わる数値（重力・大気）と、P2が描画に使う見た目トークンを1か所に集約する。
 // 真空の天体（moon/europa/io）は風・抗力・視界制限なし（ユーザー指摘どおり）。
 export const GRAVITY_BASE = 0.25;   // 月(1.62 m/s^2)でのステージ1重力 px/s^2
 const G_REF = 1.62;
 export const STAGES_PER_BODY = 2;
+export const ICE_FRICTION = 5;      // 冥王星の氷の摩擦（滑走の減速度 px/s^2。04_tests/p20pluto.mjs の自動操縦で調整）
 
 // wind: base = 定常風の大きさ(px/s^2, 符号はステージごとにランダム) / gust = 突風の振幅(px/s^2)。0なら風なし。
 // drag: 水平速度の抗力係数(1/s)。dragY: 垂直（省略時は drag と同じ）。visibility: 視界半径px(null=無制限)。heat: 高温(燃料の受動消費と主エンジン増)。
@@ -36,12 +37,19 @@ export const BODIES = [
        visibility: 110, heat: { fuelDrain: 0.8, mainFuelMul: 1.3 }, obstacleStyle: 'lava',
     visual: { sky: ['#7a3410', '#c26a1c'], ground: '#33180a', rim: '#ff8a2a', accent: '#ff9a3c',
       fog: '#7a3a08', haze: null, skyObject: 'sun-glow', mood: 'crushing sulfur clouds, furnace glow' } },
-  // MERCURY（v1.1 L2）: ツアーの最後。大気なし（風・抗力なし）。永久影の極域クレーター＝暗闇（visibility: 機体のライトの届く範囲だけ地形が見える。
+  // MERCURY（v1.1 L2）: ツアーの7番目（beta.5 から最後は冥王星）。大気なし（風・抗力なし）。永久影の極域クレーター＝暗闇（visibility: 機体のライトの届く範囲だけ地形が見える。
   // パッドのビーコンと誘導線は暗闇の上に描く＝guideAboveFog）。日照側の高温＝受動的な燃料消費（金星より軽い）。重力は火星とほぼ同じ。
   { id: 'mercury', celebTier: 2, name: 'MERCURY', atmoTag: 'NONE', realG: 3.70, atmoLabel: 'NONE \u00b7 DARK CRATER', atmoType: 'none',
     wind: { base: 0, gust: 0 }, drag: 0, visibility: 130, heat: { fuelDrain: 0.3, mainFuelMul: 1.0 }, guideAboveFog: true, obstacleStyle: 'rock',
     visual: { sky: ['#000000', '#0b0809'], ground: '#2d2b2e', rim: '#ffd29a', accent: '#ffb878', fog: '#000000', haze: null,
       skyObject: 'sun-low', mood: 'permanently shadowed crater, near-black regolith, huge low sun glare on the horizon' } },
+  // PLUTO（v1.1 beta.5）: ツアーの最後（太陽系の果て）。実重力 0.62 → ゲーム内 g≈0.155（既存の平方根圧縮）。ごく薄い N₂（風・抗力なし）。
+  // 全体に薄暗い（visibility ではなく dim = 見た目の沈み）。iceSlide: 氷原の低摩擦。着地後も水平速度を保って滑り、止まった所で判定する（game.js _stepSlide）。
+  { id: 'pluto', celebTier: 2, name: 'PLUTO', atmoTag: 'TRACE N\u2082', atmoLabel: 'TRACE N\u2082 \u00b7 SLIPPERY ICE', atmoType: 'trace', realG: 0.62,
+    wind: { base: 0, gust: 0 }, drag: 0, visibility: null, heat: null, obstacleStyle: 'ice', iceSlide: true, dim: 0.30,
+    tagline: 'THE EDGE OF THE SOLAR SYSTEM',
+    visual: { sky: ['#03040a', '#0d0f1c'], ground: '#e2d0ae', rim: '#f8eed8', accent: '#d9c7aa', fog: null, haze: null,
+      skyObject: 'charon', mood: 'pale nitrogen-ice plains, reddish tholin highlands, Charon in the sky, the Sun a bright star' } },
 ];
 
 
@@ -85,7 +93,7 @@ export function stageInfo(stage) {
   return { index, loop, body: BODIES[index], firstOfBody: (s - 1) % STAGES_PER_BODY === 0 };
 }
 
-// 周回内のステージ番号(0始まり、0..11)
+// 周回内のステージ番号(0始まり、0..15)
 const inLoop = (stage) => (Math.max(1, Math.floor(stage) || 1) - 1) % (STAGES_PER_BODY * BODY_COUNT);
 
 // ゲーム内重力: 実重力を平方根で圧縮（金星でも遊べる）し、周回ごとに+15%
@@ -126,6 +134,7 @@ export function bodyHasWind(body) { return !!(body.wind && (body.wind.base || bo
 
 // 例: 'MARS · g 3.71 m/s² · THIN CO₂ · WIND'
 export function introText(body) {
+  if (body.tagline) return body.name + ' \u00b7 ' + body.tagline + ' \u00b7 g ' + body.realG.toFixed(2) + ' m/s\u00b2 \u00b7 ' + body.atmoLabel;
   return body.name + ' · g ' + body.realG.toFixed(2) + ' m/s² · ' + body.atmoLabel + (bodyHasWind(body) ? ' · WIND' : '');
 }
 
