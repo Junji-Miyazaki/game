@@ -14,9 +14,11 @@
 **PRACTICE / MISSION**: 起動時はメニュー（PRACTICE / MISSION の2ボタン、BEST スコアと累積★1-3 を表示）。URL `?mode=practice|mission` でメニューを飛ばせる。
 - PRACTICE: 'UNLIMITED RETRIES · NO STARS'。失敗しても R / RETRY で即やり直し、スコア・★は保存しない（HUD に PRACTICE）。メニューのチェック **START AT SITE**（降下を飛ばして採取地点から）/ **START NEAR DOCK**（採取済みで母船の真下から帰路のみ。両方ONなら NEAR DOCK 優先）。URL `site=1` `near=1`。
 - MISSION: '3 LIVES · STARS & SCORE'。HUD 右上にライフ（小さな機体アイコン×3）。失敗 → ライフ -1 → 'LIFE LOST' を 1.6 秒表示 → 母船係留スタートへ自動で戻る（母船の位相は従来どおり ph0 から）。0 ライフ → 'MISSION FAILED'（RETRY MISSION＝新しい3ライフ / MENU）。**ミッション中に R を押す（解放後）とライフを1つ失う**（無料リトライの抜け道を塞ぐ。係留中の R は無料）。
-- スコア = (1000 + 燃料% ×10 + 着地ボーナス[PERFECT 300 / その他 100]) × ライフ倍率（残り3 ×1.0 / 2 ×0.8 / 1 ×0.6）。勝利時は 'MISSION COMPLETE'・残りライフと倍率・SCORE・★（新規に NEW）・BEST・RETRY MISSION / MENU。
-- ★: ★1 完了 / ★2 ドッキング時の燃料 ≥30% / ★3 採取した着地が PERFECT。累積（和集合）と最高スコアは localStorage `lander11.exp.sample_return.best` のみ（MISSION 勝利時だけ更新）。旧 `...attempts` は起動時に削除。デバッグパネルの RESET RECORD で記録消去。
-タイマー常時表示。R か RETRY で即やり直し。
+- スコア = (1000 + 燃料% ×10 + 着地ボーナス[PERFECT 300 / その他 100] + 時間ボーナス max(0, 1500 − 10×秒)) × ライフ倍率（残り3 ×1.0 / 2 ×0.8 / 1 ×0.6）。勝利時は 'MISSION COMPLETE'・残りライフと倍率・SCORE・★（新規に NEW）・BEST・RETRY MISSION / MENU。
+- **タイムトライアル**: 時間 = 解放 → ドッキング成功（成功した命の分だけ。ライフを失うと次の命で 0 から。係留中は進まない）。解放後に HUD 右上へ mm:ss.t を常時表示（PRACTICE も表示するが保存しない）。結果画面に TIME / TIME BONUS、自己ベスト更新で 'NEW BEST TIME'。メニューに BEST SCORE / BEST TIME。ベストタイム（MISSION 勝利のみ・最小値）は `lander11.exp.sample_return.besttime`（秒の数値）、スコア・★は `...best`（別キー）。
+- **オフサイト着地**: SAMPLE SITE 以外でも、傾斜 ≤10° かつ SAFE 内なら grounded（採取なし・失敗なし）。推力で離陸（本編 L1 の grounded と同じ規則）。急斜面・強い衝撃は従来どおり失敗（STEEP GROUND / HARD IMPACT）。地形に平地 2 か所（x≈28-92, 300-350）と急な岩（x≈130）を追加。機体の真下の地面に傾斜マーカー（青緑 ≤5° / 琥珀 ≤10° / 赤 >10°）を高度 130px 以内で表示。
+- ★: ★1 完了 / ★2 ドッキング時の燃料 ≥30% / ★3 採取した着地が PERFECT。累積（和集合）と最高スコアは localStorage `lander11.exp.sample_return.best` のみ（MISSION 勝利時だけ更新）。旧 `...attempts` は起動時に削除。デバッグパネルの RESET RECORD で記録消去（スコア・ベストタイム両方）。
+R か RETRY で即やり直し。
 速度ベクトル矢印: 採取前は地面に対する速度、採取後は**母船に対する相対速度（REL）**。機首方向の点線が矢印と逆向きなら逆噴射の向き。デバッグで OFF 可。
 
 URL パラメータ（共通 + 固有）: `g=0.04 thrust=5.2 ang=28 damp=0.82 drag=0 fuel=100 rcs=2.5 vec=1` / `ms`（母船の最大速度 px/s, 既定9）/ `ph0`（母船の開始位相 rad, 既定-1.2）/ `hold`（採取秒, 既定2.0）/ `ring`（枠の半径 px, 既定17）/ `dbg=1`（パネル初期表示）/ `test=1`（`window.__auto.run({ph0})` の検証用自動操縦。姿勢と降下中の横速度を理想的に与えるので人間の腕前の保証ではない。局面ログ: docked → descent → sampling → return → win の5局面。`__auto.bump({speed,ox,dy})` = 母船への衝突テスト（墜落せず続行・すり抜けなし）、`__auto.score()` = メニュー/練習/ミッション/ライフ喪失/MISSION FAILED/永続化の検査、`__auto.five()` = ミッション通常クリア5本、`window.__flow` = begin(mode,opts)・tap(x,y) のテスト用口。test=1 は帰路の横合わせも理想化）。

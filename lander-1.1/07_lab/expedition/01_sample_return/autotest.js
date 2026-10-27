@@ -52,16 +52,32 @@ export function install(lab) {
     for (let i = 0; i < 180; i++) { lab.step(1 / 60); minDy = Math.min(minDy, s.y - 130); maxDy = Math.max(maxDy, s.y - 130); if (m.result) break; }
     return { bumps: m.bumps, result: m.result, reason: m.reason, state: lab.state, minDy: +minDy.toFixed(1), vy: +s.vy.toFixed(1) };
   };
+  const offsite = () => {
+    const F = window.__flow, out = []; F.begin('practice', { atSite: false, nearDock: false }); F.tap(180, 320);
+    for (let i = 0; i < 70; i++) lab.step(1 / 60);   // 解放 → 操作可
+    const s = lab.ship, m = lab.m, drop = (x) => { s.x = x; s.y = lab.terrainY(x) - 16 - 25; s.vx = 0; s.vy = 8; s.angle = 0; s.omega = 0; };
+    drop(60); for (let i = 0; i < 240 && lab.state === 'play'; i++) lab.step(1 / 60);
+    out.push(lab.state === 'grounded', !m.result, !m.sampled, lab.padAt(s.x) === null, lab.lastTouch && lab.lastTouch.kind === 'ground');
+    for (let i = 0; i < 180; i++) lab.step(1 / 60); out.push(m.gauge === 0, !m.sampled, lab.state === 'grounded');   // 3 秒置いても採取されない
+    lab.script = () => ({ main: true }); for (let i = 0; i < 20; i++) lab.step(1 / 60); lab.script = null;
+    out.push(lab.state === 'play', s.vy < 0);                                                                       // 推力で離陸
+    drop(325); for (let i = 0; i < 240 && lab.state === 'play'; i++) lab.step(1 / 60); out.push(lab.state === 'grounded', !m.result);   // もう一つの平地
+    s.x = 60; lab.state = 'play'; drop(116); for (let i = 0; i < 240 && lab.state === 'play'; i++) lab.step(1 / 60);
+    out.push(lab.state === 'crashed', m.result === 'lose', m.reason === 'STEEP GROUND');                              // 急な岩
+    return out;
+  };
   // メニュー → MISSION/PRACTICE、スコア式（ライフ倍率）、ライフ喪失 → MISSION FAILED、練習は保存しない、★和集合・最高スコア
   const score = () => {
     const A = window.__score, F = window.__flow, B = F.BTN, ok = {}, K = A.KEY_B;
-    const get = () => localStorage.getItem(K), step = (sec) => { for (let i = 0; i < sec * 60; i++) lab.step(1 / 60); };
+    const KT = A.KEY_T, getT = () => localStorage.getItem(KT), get = () => localStorage.getItem(K), step = (sec) => { for (let i = 0; i < sec * 60; i++) lab.step(1 / 60); };
     const center = (b) => [b.x + b.w / 2, b.y + b.h / 2];
     const kill = () => { if (lab.m.docked) F.tap(180, 320); lab.step(1 / 60); lab.m.result || lab.crash('TEST', 'forced'); };   // 解放後に墜落させる
-    const wipe = () => { localStorage.removeItem(K); localStorage.removeItem('lander11.exp.sample_return.attempts'); };
+    const wipe = () => { localStorage.removeItem(K); localStorage.removeItem(KT); localStorage.removeItem('lander11.exp.sample_return.attempts'); };
     wipe(); const sv = { ...F.sess };
     // 式
-    ok.formula = [A.mult(3) === 1, A.mult(2) === 0.8, A.mult(1) === 0.6, A.score(100, 'PERFECT', 3) === 2300, A.score(50, 'GOOD', 2) === Math.round(1600 * 0.8), A.score(0, null, 1) === 600];
+    ok.formula = [A.mult(3) === 1, A.mult(2) === 0.8, A.mult(1) === 0.6, A.score(100, 'PERFECT', 3) === 2300, A.score(50, 'GOOD', 2) === Math.round(1600 * 0.8), A.score(0, null, 1) === 600,
+      A.timeBonus(0) === 1500, A.timeBonus(30) === 1200, A.timeBonus(45.55) === 1045, A.timeBonus(150) === 0, A.timeBonus(400) === 0,
+      A.score(100, 'PERFECT', 3, 30) === 3500, A.score(50, 'GOOD', 2, 60) === Math.round((1600 + 900) * 0.8)];
     // メニュー: ボタン 44px 以上、PRACTICE タップで練習へ、MENU で戻る
     F.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44, B.site.h >= 44, B.near.h >= 44];
     F.tap(...center(B.site)); ok.toggle = [F.sess.atSite === true]; F.tap(...center(B.site));
@@ -72,21 +88,24 @@ export function install(lab) {
     // 練習: 失敗は何度でも・ライフ不変・保存なし
     kill(); step(1); ok.pracFail = [lab.m.result === 'lose', lab.m.lifeLost === false, lab.m.failed === false, F.sess.lives === 3];
     lab.reset(); ok.pracRetry = [F.sess.mode === 'practice', lab.m.docked && !lab.m.result];
-    const pw = run({ mode: 'practice' }); ok.pracWin = [pw.result === 'win', pw.final.practice === true, get() === null];
+    const pw = run({ mode: 'practice' }); ok.pracWin = [pw.result === 'win', pw.final.practice === true, get() === null, getT() === null, pw.final.newBestTime === false];
+    // オフサイト着地: 平らな別地点 = grounded（失敗ではない・採取なし）→ 推力で離陸。急な岩 = STEEP GROUND
+    ok.offsite = offsite();
     // 練習の局面スキップ
     F.begin('practice', { atSite: true, nearDock: false }); ok.atSite = [lab.state === 'grounded', !lab.m.sampled, !lab.m.docked]; step(2.2); ok.atSite.push(lab.m.sampled === true);
     F.begin('practice', { atSite: false, nearDock: true }); ok.nearDock = [lab.m.sampled === true, lab.state === 'play', !lab.m.docked];
-    const nw = run({ mode: 'practice', nearDock: true }); ok.nearDock.push(nw.result === 'win', get() === null);
+    const nw = run({ mode: 'practice', nearDock: true }); ok.nearDock.push(nw.result === 'win', get() === null, getT() === null);
     F.begin('practice', { atSite: false, nearDock: false });
     // ミッション勝利: 3 ライフ ×1.0
     const w1 = run({ mode: 'mission', ph0: -1.2 }), f1 = lab.m.final;
-    ok.win3 = [w1.result === 'win', f1.lives === 3, f1.mult === 1, f1.score === A.score(f1.fuel, f1.grade, 3), f1.newStars[0] === true, JSON.parse(get()).score === f1.score, JSON.parse(get()).stars[0] === true];
+    ok.win3 = [w1.result === 'win', f1.lives === 3, f1.mult === 1, f1.newStars[0] === true, JSON.parse(get()).score === f1.score, JSON.parse(get()).stars[0] === true,
+      f1.tbonus === A.timeBonus(f1.t), f1.score === A.score(f1.fuel, f1.grade, 3, f1.t), f1.t > 5 && f1.t < 150, f1.newBestTime === true, Math.abs(parseFloat(getT()) - f1.t) < 1e-9];
     // ライフ喪失 → 自動で係留スタートへ → 勝利は ×0.8
-    lab.reset(); kill(); ok.lose1 = [lab.m.lifeLost === true, F.sess.lives === 2, lab.m.result === 'lose']; step(F.LIFE_LOST_S + 0.1);
-    ok.lose1.push(!lab.m.result && lab.m.docked && F.sess.lives === 2 && F.sess.mode === 'mission');
+    lab.reset(); step(1); F.tap(180, 320); step(3); const tLost = lab.m.flyT; kill(); ok.lose1 = [tLost > 2.9 && tLost < 3.2, lab.m.lifeLost === true, F.sess.lives === 2, lab.m.result === 'lose']; step(F.LIFE_LOST_S + 0.1);
+    ok.lose1.push(!lab.m.result && lab.m.docked && F.sess.lives === 2 && F.sess.mode === 'mission' && lab.m.flyT === 0);
     // この回は手動で 3 ライフ前提を崩さずに勝つ
     const w2 = run({}), f2 = lab.m.final;
-    ok.win2 = [w2.result === 'win', f2.lives === 2, Math.abs(f2.mult - 0.8) < 1e-9, f2.score === A.score(f2.fuel, f2.grade, 2), JSON.parse(get()).score === Math.max(f1.score, f2.score), f2.newStars[0] === false];
+    ok.win2 = [w2.result === 'win', f2.lives === 2, Math.abs(f2.mult - 0.8) < 1e-9, f2.score === A.score(f2.fuel, f2.grade, 2, f2.t), f2.t < f1.t + 20, Math.abs(parseFloat(getT()) - Math.min(f1.t, f2.t)) < 1e-9, f2.newBestTime === (f2.t < f1.t), JSON.parse(get()).score === Math.max(f1.score, f2.score), f2.newStars[0] === false];
     // 0 ライフ → MISSION FAILED → RETRY MISSION（新しい3ライフ）→ MENU
     F.begin('mission'); kill(); step(F.LIFE_LOST_S + 0.1); kill(); step(F.LIFE_LOST_S + 0.1); kill(); step(1);
     ok.failed = [lab.m.failed === true, lab.m.lifeLost === false, F.sess.lives === 0, lab.m.result === 'lose'];
@@ -97,6 +116,12 @@ export function install(lab) {
     localStorage.setItem(K, JSON.stringify({ score: 99999, stars: [true, false, true] }));
     const w3 = run({ mode: 'mission', ph0: -1.2 }), f3 = lab.m.final, b3 = JSON.parse(get());
     ok.persist = [w3.result === 'win', b3.score === 99999, f3.newBest === false, b3.stars[0] && b3.stars[2], b3.stars[1] === f3.s2, f3.newStars[2] === false];
+    // ベストタイム: 遅い記録では更新されない / 速い記録では更新される（最小値）。スコアとは別キー
+    localStorage.setItem(KT, '1'); const w4 = run({ mode: 'mission', ph0: -1.2 }), f4 = lab.m.final;
+    ok.bestTime = [w4.result === 'win', f4.newBestTime === false, parseFloat(getT()) === 1, f4.bestTime === 1];
+    localStorage.setItem(KT, '9999'); const w5 = run({ mode: 'mission', ph0: -1.2 }), f5 = lab.m.final;
+    ok.bestTime.push(f5.newBestTime === true, Math.abs(parseFloat(getT()) - f5.t) < 1e-9, JSON.parse(get()).score === 99999);
+    localStorage.setItem(KT, 'junk'); F.begin('menu'); ok.bestTime.push(lab.m.menu === true);
     localStorage.setItem(K, '{broken'); F.begin('menu'); ok.persist.push(lab.m.menu === true);   // 壊れた保存でも落ちない
     wipe(); Object.assign(F.sess, sv); F.begin('menu');
     const flat = Object.entries(ok).map(([k, v]) => [k, v.every(Boolean), v.map((x) => (x ? 1 : 0)).join('')]);
@@ -105,7 +130,7 @@ export function install(lab) {
   // 通常クリア 5 本（ミッションモード、母船の開始位相を変える）
   const five = () => {
     const out = [-1.2, -2.6, 0, 1.4, 2.6].map((ph0) => { const r = run({ mode: 'mission', ph0 }); return r.result === 'win' && r.final.lives === 3; });
-    localStorage.removeItem(window.__score.KEY_B); window.__flow.begin('menu'); lab.params.ph0 = -1.2;
+    localStorage.removeItem(window.__score.KEY_B); localStorage.removeItem(window.__score.KEY_T); window.__flow.begin('menu'); lab.params.ph0 = -1.2;
     return { out, pass: out.every(Boolean) };
   };
   window.__auto = { makeCtl, run, bump, score, five };
