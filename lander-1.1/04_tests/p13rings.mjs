@@ -482,13 +482,13 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
 
 // ---------- 11. WHAT'S NEW / 版 ----------
 {
-  ok(APP_VERSION === '1.1.0-beta.5' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.5', 'version 1.1.0-beta.5, label unchanged');
+  ok(APP_VERSION === '1.1.0-beta.6' && APP_LABEL === 'BETA v1.1' && APP_BUILD_TEXT === 'build 1.1.0-beta.6', 'version 1.1.0-beta.6, label unchanged');
   const E0 = WHATSNEW.entries[0];
   ok(WHATSNEW.version === APP_VERSION && E0.version === APP_VERSION && E0.items.length >= 1 && E0.items.length <= 6, 'whatsnew newest entry: 1-6 items');
   ok(WHATSNEW.entries.every((en) => en.items.every((l) => l.length <= 22)), 'each item <= 22 chars: ' + WHATSNEW.entries.flatMap((en) => en.items.map((l) => l.length)).join(','));
   const joined = WHATSNEW.entries.flatMap((en) => en.items).join('|');
   ok(/輪/.test(joined) && /特別な輪|特典/.test(joined) && /★/.test(joined) && /水星/.test(joined), 'mentions rings, special rings, stars, Mercury');
-  ok(WHATSNEW.entries[2].items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
+  ok(WHATSNEW.entries[3].items.includes('タイトルの MAP から太陽系マップ') && 'タイトルの MAP から太陽系マップ'.length <= 22, 'mentions the title MAP button');
 }
 
 console.log('p13rings: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));

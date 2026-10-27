@@ -3,6 +3,20 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-10-27 beta.6: HOW TO PLAY・言語・操作の向き・ステージ開始の1文（1.1.0-beta.6）
+- 実施（`lander-1.1/` の 02_src・04_tests・00_log・01_docs/PLAN.md のみ。方針は PLAN §7q）:
+  - 新規 `core/i18n.js`（言語・操作の向きの保存と既定判定。描画層向けに `i18nBind(storage)`）、`howto.js`（HtCard）。build.js の FILES に追加。
+  - HOW TO PLAY: 初回自動表示（'howtoSeen'/'hudTipSeen' が両方無い端末のみ。既存プレイヤーは割り込まない）、タイトルの `?`、MISSION HOLD のボタン。言語 JA/EN と STANDARD/INVERTED の切替を同じカードの下部に置いた。
+  - 操作の向き: INVERTED を追加。SIDE THRUST の向きを変更（STANDARD は左ボタン→右へ）。art.js `drawCtlButton`（ボタン1個の描画を切り出し、HOW TO PLAY と共用）。
+  - 説明文の JA/EN: UPDATE INFORMATION は `itemsEn` の並列配列、計器ヒント・接地ヒント・特典バナー注記も切替。
+  - ステージ開始の1文: bodies.js `GOAL_LINES/goalKey/goalText`、game.js `_goalKey`、art.js `drawGoalLine`（y=192、2.5秒）。
+  - 版 1.1.0-beta.6、UPDATE INFORMATION に新 entry（4項目）。
+- 判断・仕様の補足（リーダー確認希望）: (1) 初回自動表示の条件に 'hudTipSeen' 無しを加えた（既存プレイヤーに出さない。既存テストも保てる）。(2) EN の氷の文は指示例が43字で上限40字を超えるため 'Ice slides — land slow enough to stop'（37字）にした。(3) ステージ開始の1文は全ステージで出す（天体紹介は各天体の最初のみ。紹介が無いステージでは1文だけ）。(4) 一時停止はタップ専用で P キーは無い。Esc は即タイトルへ戻る（確認なし）ので PC の説明に明記した。(5) 水星以外の視界のある天体（金星・タイタン）は 'fog'（視界が悪い）の文にした。
+- 既存テストの変更: p10touch/p14boot（UPDATE INFORMATION の日本語項目を検査するため store に lang=ja。接地ヒントは JA 文を検査）、p12v11/p13rings/p18assist/p10touch（版 beta.6）、p13rings/p19crash/p18assist/p20pluto（entry の添字ずれ）、p18assist（SIDE THRUST の方向を STANDARD=逆に、矢印の向きを STANDARD/INVERTED で検査）、p3fix/p4hold（初回カードを閉じてから）、p5hud（howtoSeen を既読に）。新規 p21howto.mjs（156）。smoke と p1〜p21（p10setup 除く）全て通過。
+- 目視（preview lander-1.1。ページは 1024x768 のままで 375x812 指定は反映されず、キャンバス比 360:640 で確認）: タイトルの `?` 位置、HOW TO PLAY（JA/PC、EN/タッチ/INVERTED）、初回自動表示→ステージ1の開始の1文、MISSION HOLD の HOW TO PLAY ボタン。確認後に lander11.* を削除、ビューポートは desktop に戻した。
+- 未確認: 実機タッチでの `?` の押しやすさ、日本語フォントの崩れ（Safari）、他天体のステージ開始の1文の見た目、INVERTED の操作感。
+- 次アクション: 実機で INVERTED と SIDE THRUST の新しい向きの体感を確認。
+
 ## 2026-10-27 beta.5: 冥王星（ツアー最後の天体、1.1.0-beta.5）
 - 実施（`lander-1.1/` の 02_src・04_tests・00_log・01_docs/PLAN.md のみ。07_lab・`../lander/` は不変。方針は PLAN §7p）:
   - bodies.js: PLUTO（realG 0.62、TRACE N₂、`dim` 暗幕、`iceSlide`、`tagline`）、`ICE_FRICTION`=5。1周=16ステージ。art.js: カロンの空・赤褐色の高地・対流セル、`drawDimTint/drawWaypoint/drawPadLocked/drawSlidingCue/drawWaypointBanner`。music.js: pluto ambient。patches.js: PLUTO パッチ（ハート形の平原＋カロン）。solarmap.js: 最外周の着陸天体（チップ7つ、軌道半径を圧縮、COMING SOON は5つ）。

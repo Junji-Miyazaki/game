@@ -168,12 +168,12 @@ __setRelayUrl('');
   const cv = Object.assign(mk(), { style: {}, width: 0, height: 0, getContext: () => makeCtx({ depth: 0, texts: [] }), getBoundingClientRect: () => ({ left: 0, top: 0, width: 360, height: 640 }) });
   const E = new eng.Engine(cv);
   for (const [name, fire] of [['blur', () => (L.get('blur') || []).forEach((f) => f())], ['pagehide', () => (L.get('pagehide') || []).forEach((f) => f())], ['visibilitychange', () => { document.hidden = true; (L.get('visibilitychange') || []).forEach((f) => f()); document.hidden = false; }]]) {
-    const g = new Game(E); E.changeScene(g); if (g.state === 'tip') g._endTip(); run(g, 0.5);
+    const g = new Game(E); E.changeScene(g); if (g._ht) g._ht.close(); if (g.state === 'tip') g._endTip(); run(g, 0.5);
     fire();
     ok(g.state === 'hold', 'engine ' + name + ' -> hold');
   }
   // 押しっぱなしの指は hold 中に離しても tap にならない
-  const g = new Game(E); E.changeScene(g); if (g.state === 'tip') g._endTip(); run(g, 0.5);
+  const g = new Game(E); E.changeScene(g); if (g._ht) g._ht.close(); if (g.state === 'tip') g._endTip(); run(g, 0.5);
   clock += 10; E._pStart(5, 180, 400); clock += 200;
   g._enterHold(); clock += 100;
   const before = g.state; const cb = g._holdConfirm;

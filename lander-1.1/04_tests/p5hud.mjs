@@ -44,7 +44,7 @@ function makeCtx(st) {
   });
 }
 function makeEngine(seen = true) {
-  const store = new Map(seen ? [['hudTipSeen', '1']] : []);
+  const store = new Map(seen ? [['hudTipSeen', '1']] : [['howtoSeen', '1']]);   // beta.6: HOW TO PLAY は既読扱い（初回の流れは p21howto で検査）
   const log = [];
   return {
     music: { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, tick: noop, duck: noop, sfx: { landing: noop, crash: noop, module: noop, launch: noop, uiTap: noop } },

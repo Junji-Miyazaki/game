@@ -20,7 +20,7 @@ function makeCtx(rec) {
   }, set: (t, k, v) => { t[k] = v; return true; } });
 }
 function eng(init = []) {
-  const store = new Map(init);
+  const store = new Map([['lang', 'ja'], ...init]);   // beta.6: UPDATE INFORMATION は設定の言語で表示。日本語の項目を検査するので ja にする
   return { started: false, store, audio: { unlock: noop }, storage: { get: (k, d = null) => (store.has(k) ? store.get(k) : d), set: (k, v) => { store.set(k, String(v)); return true; } } };
 }
 const mk = (init) => { const e = eng(init); const b = new BootScene(e, () => { e.started = true; }); return { e, b }; };

@@ -6,7 +6,7 @@ import { WHATSNEW } from '../02_src/whatsnew.js';
 import { BODIES, TERRA, padWidth, BONUS_MISSIONS } from '../02_src/bodies.js';
 import { setDebug } from '../02_src/debug.js';
 import { __setRelayUrl } from '../02_src/net.js';
-import { GROUNDED_BANNER, TOUCH_HINT, groundShadowColor } from '../02_src/art.js';
+import { GROUNDED_BANNER, TOUCH_HINT, TOUCH_HINT_JA, groundShadowColor } from '../02_src/art.js';
 import { P } from '../02_src/core/palette.js';
 
 let pass = 0, fail = 0;
@@ -51,7 +51,7 @@ function makeMusic(log) {
   return { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, tick: noop, duck: noop, sfx };
 }
 function makeEngine(extra = []) {
-  const store = new Map([['hudTipSeen', '1'], ['touchHintSeen', '1'], ...extra]);
+  const store = new Map([['hudTipSeen', '1'], ['touchHintSeen', '1'], ['lang', 'ja'], ...extra]);
   const sfxLog = [];
   return { store, sfxLog, music: makeMusic(sfxLog), audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },
     storage: { getHigh: () => 0, setHigh: () => false, get: (k, d = null) => store.has(k) ? store.get(k) : d, set: (k, v) => { store.set(k, String(v)); return true; } },
@@ -269,7 +269,7 @@ const touch = (g, x, vy, vx = 0, angle = 0, omega = 0) => { put(g, x, vy, vx, an
   g.x = 80; g.y = 500 - 16 - 150; g.vy = 0; g.guidePts = [{ x: 80, y: 340 }, { x: 305, y: 500 }]; run(g, 0.02);
   ok(g._touchHintT > 0 && e.store.get('touchHintSeen') === '1', 'within 160 px: hint toast + saved');
   const rec = { texts: [], tr: [] }; renderOK(g, rec);
-  ok(TOUCH_HINT === 'FLAT GROUND: YOU CAN TOUCH DOWN · NO SCORE' && rec.texts.some(t => t.s === TOUCH_HINT), 'hint text shown');
+  ok(TOUCH_HINT === 'FLAT GROUND: YOU CAN TOUCH DOWN · NO SCORE' && rec.texts.some(t => t.s === TOUCH_HINT_JA), 'hint text shown (lang ja)');
   ok(g.state === 'play', 'hint does not pause the game');
   const y0 = g.y; run(g, 0.2); ok(g.y !== y0, 'physics keeps running during the hint');
   run(g, 5); ok(g._touchHintT === 0, 'hint fades out');
@@ -479,7 +479,7 @@ function landAndClear(extra = [], opts = {}) {
 // ---------- 12. WHAT'S NEW ----------
 {
   const ENT = WHATSNEW.entries;
-  ok(WHATSNEW.version === '1.1.0-beta.5' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
+  ok(WHATSNEW.version === '1.1.0-beta.6' && ENT.length >= 2 && ENT[0].version === WHATSNEW.version, 'whatsnew: entries newest first, version = entries[0]');
   ok(ENT.every(en => /^\d{4}\.\d\d\.\d\d$/.test(en.date) && en.items.length >= 3 && en.items.length <= 6), 'each entry: date + 3-6 items');
   ok(ENT.every(en => en.items.every(l => l.length <= 22 && /[\u3040-\u30ff]/.test(l))), 'items <= 22 chars, Japanese (user decision)');
   const ITEMS = ENT.flatMap(en => en.items);

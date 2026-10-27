@@ -105,7 +105,7 @@ function panelTexts(bonus) {
 }
 // --- UPDATE INFORMATION
 {
-  const it = WHATSNEW.entries[1].items; ok(it.includes('失敗理由に速さ・傾きの数値を表示') && it.length <= 6, 'whatsnew item added, <=6: ' + it.length);
+  const it = WHATSNEW.entries[2].items; ok(it.includes('失敗理由に速さ・傾きの数値を表示') && it.length <= 6, 'whatsnew item added, <=6: ' + it.length);
   ok(it.every((l) => l.length <= 22), 'items <= 22 chars');
 }
 console.log('p19crash: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));

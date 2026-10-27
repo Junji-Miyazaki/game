@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.5';
+const APP_VERSION = '1.1.0-beta.6';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -127,6 +127,30 @@ const Storage = {
     } catch (_) { return false; }
   },
 };
+
+
+// ---- 02_src/core/i18n.js ----
+// 説明文の言語（JA/EN）と操作の向き（STANDARD/INVERTED）の設定。保存キー 'lang' / 'controls'（接頭辞 lander11.）。
+// 言語は説明文だけに効く（STAGE・START・RANKING などのデザイン上のラベルは常に英語）。
+// 既定: 'lang' が無ければ navigator.language が ja* なら JA、それ以外は EN。
+// art.js など描画層は engine を持たないため、i18nBind(storage) で束ねた保存先を読む（未束縛なら Storage）。
+
+let I18N_ST = Storage;
+function i18nBind(storage) { I18N_ST = storage || Storage; }
+function i18nRead(key) { try { return I18N_ST.get(key, null); } catch (_) { return null; } }
+function i18nDetect() {
+  try {
+    const n = (typeof navigator !== 'undefined' && navigator && (navigator.language || (navigator.languages && navigator.languages[0]))) || '';
+    return /^ja/i.test(String(n)) ? 'ja' : 'en';
+  } catch (_) { return 'en'; }
+}
+function i18nLang() { const v = i18nRead('lang'); return v === 'ja' || v === 'en' ? v : i18nDetect(); }
+function i18nSetLang(v) { if (v !== 'ja' && v !== 'en') return false; try { return !!I18N_ST.set('lang', v); } catch (_) { return false; } }
+function i18nControls() { return i18nRead('controls') === 'inverted' ? 'inverted' : 'standard'; }
+function i18nInverted() { return i18nControls() === 'inverted'; }
+function i18nSetControls(v) { if (v !== 'standard' && v !== 'inverted') return false; try { return !!I18N_ST.set('controls', v); } catch (_) { return false; } }
+// 言語に合わせて選ぶ。ja が空なら en を返す
+function i18nTr(ja, en) { return (i18nLang() === 'ja' && ja != null && ja !== '') ? ja : en; }
 
 
 // ---- 02_src/core/engine.js ----
@@ -605,6 +629,37 @@ function celebrationPose(body, loop, t, perfect) {
   return pose;
 }
 
+// ---- ステージ開始時の「やること」1文（案内のみ。新しい条件や目標ではない）----
+// 特徴は1つだけ選ぶ。優先順: 中継地点 > 氷 > 暗闇/視界 > 動くパッド > 風 > 隕石 > 何もなし。
+// ボーナス（TERRA のミッション）は種類ごとの文。JA は22字以内、EN は40字以内。
+const GOAL_LINES = {
+  waypoint:  { ja: '中継地点に降りてからパッドへ', en: 'Touch the waypoint first, then the pad' },
+  ice:       { ja: '氷で滑る。止まれる速さでパッドへ', en: 'Ice slides — land slow enough to stop' },
+  dark:      { ja: 'ライトの届く範囲を頼りにパッドへ', en: 'Trust your light — find the pad' },
+  fog:       { ja: '視界が悪い。慎重にパッドへ', en: 'Poor visibility — approach with care' },
+  moving:    { ja: '動くパッドに合わせて着陸しよう', en: 'Time your landing with the moving pad' },
+  wind:      { ja: '風に流されないようにパッドへ', en: 'Fight the wind and reach the pad' },
+  meteors:   { ja: '隕石をよけてパッドに着陸しよう', en: 'Dodge the meteors and land on the pad' },
+  plain:     { ja: 'パッドにゆっくり着陸しよう', en: 'Land gently on the pad' },
+  CALM:      { ja: 'ゆっくりまっすぐパッドへ', en: 'Come down gently onto the pad' },
+  ROVER:     { ja: '動くパッドに合わせて着陸しよう', en: 'Time your landing with the moving pad' },
+  CROSSWIND: { ja: '横風に注意してパッドへ', en: 'Watch the crosswind and reach the pad' },
+  STORM:     { ja: '風と動くパッドを読んで着陸しよう', en: 'Read the wind and the moving pad' },
+};
+// f: { bonusType, waypoint, ice, visibility(null|数), dark(true=暗闇), moving, wind, meteors } -> GOAL_LINES のキー
+function goalKey(f) {
+  f = f || {};
+  if (f.bonusType && GOAL_LINES[f.bonusType]) return f.bonusType;
+  if (f.waypoint) return 'waypoint';
+  if (f.ice) return 'ice';
+  if (f.visibility != null) return f.dark ? 'dark' : 'fog';
+  if (f.moving) return 'moving';
+  if (f.wind) return 'wind';
+  if (f.meteors) return 'meteors';
+  return 'plain';
+}
+function goalText(key, lang) { const g = GOAL_LINES[key] || GOAL_LINES.plain; return lang === 'ja' ? g.ja : g.en; }
+
 
 // ---- 02_src/modules.js ----
 // モジュール（P1.5）: 3ステージごと（ボーナス終了後）に2択で1つ獲得。ラン中は永続（Continueで維持、新規ランでリセット）。
@@ -671,10 +726,10 @@ const SIDE_S = 8;                           // SIDE THRUST: 8秒間 機体を水
 const SIDE_ACCEL = 12;                      // SIDE THRUST の横加速度(px/s^2)。主推力 5.2・通常RCSのドリフト 2.5 に対し「はっきり効く」値。燃料は通常のRCSと同じ率
 const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
 const POWER_DEFS = {
-  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', dur: SLOWMO_S },
-  radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
-  side:     { id: 'side',     name: 'SIDE THRUST',     note: 'SIDE BUTTONS MOVE SIDEWAYS · 8 S', dur: SIDE_S },
-  fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
+  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', noteJa: '隕石が1/4の速さに · 8秒', dur: SLOWMO_S },
+  radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE', noteJa: 'このステージの間', dur: 0 },
+  side:     { id: 'side',     name: 'SIDE THRUST',     note: 'SIDE BUTTONS MOVE SIDEWAYS · 8 S', noteJa: '左右ボタンで真横に移動 · 8秒', dur: SIDE_S },
+  fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED', noteJa: '燃料を補給', dur: 0 },
 };
 const POWER_IDS = ['slowmo', 'radar', 'side', 'fuel'];
 
@@ -2818,7 +2873,8 @@ function drawPowerBanner(ctx, kind, def, k) {
   ctx.restore();
   txt(ctx, 'POWER UP', 112, 126, 7, p.warn, 'left', { sp: 3, w: 500, a });
   txt(ctx, def.name, 112, 138, 13, p.hi, 'left', { sp: 2, w: 600, a });
-  txt(ctx, def.note, 112, 157, 7, p.fg, 'left', { sp: 1.5, w: 500, a: a * 0.85 });
+  const nja = i18nLang() === 'ja' && def.noteJa;
+  txt(ctx, nja ? def.noteJa : def.note, 112, nja ? 155 : 157, nja ? 9 : 7, p.fg, 'left', { sp: nja ? 0.6 : 1.5, w: 500, a: a * 0.85 });
 }
 // 水星の地平線の光（暗闇の上に重ねる。霧に隠れない）
 function drawHorizonGlare(ctx) {
@@ -2961,8 +3017,9 @@ function drawHudTip(ctx, k) {
   ctx.strokeStyle = rgba(p.mid, 0.55); ctx.lineWidth = 1; ctx.stroke();
   const cx = AW / 2;
   txt(ctx, 'DESCENT ↓   DRIFT ↔   TILT   SPIN', cx, L.y + 14, 9, p.hi, 'center', { sp: 1.6, w: 500 });
-  txt(ctx, 'KEEP THEM WHITE TO LAND SAFELY', cx, L.y + 34, 9, p.fg, 'center', { sp: 2, w: 400 });
-  txt(ctx, 'AMBER = CAUTION    RED = TOO FAST', cx, L.y + 50, 8, p.warn, 'center', { sp: 1.8, w: 500 });
+  const ja = i18nLang() === 'ja';   // 説明文だけ言語を切り替える（計器の名前 DESCENT/DRIFT/TILT/SPIN と TAP TO START は英語のまま）
+  txt(ctx, ja ? '白いままなら安全に着陸できます' : 'KEEP THEM WHITE TO LAND SAFELY', cx, L.y + 34, ja ? 10 : 9, p.fg, 'center', { sp: ja ? 0.8 : 2, w: 400 });
+  txt(ctx, ja ? '琥珀＝注意　赤＝速すぎ' : 'AMBER = CAUTION    RED = TOO FAST', cx, L.y + 50, ja ? 9 : 8, p.warn, 'center', { sp: ja ? 0.8 : 1.8, w: 500 });
   txt(ctx, 'TAP TO START', cx, L.y + 68, 7, p.dim, 'center', { sp: 3, w: 500 });
   ctx.restore();
 }
@@ -2981,47 +3038,59 @@ function rotArrow(ctx, cx, cy, r, cw) {
   ctx.stroke();
   ctx.restore();
 }
-// side: SIDE THRUST 中の残り秒（>0 で左右ボタンに ⇦ ⇨ を光らせる。押下の向きはそのまま=左ボタンで左へ移動）
-function drawControls(ctx, left, mid, right, side, t) {
+// 1つの操作ボタン（i: 0=左 1=中央 2=右）。drawControls と HOW TO PLAY で共用。
+// inv: 操作の向き INVERTED（左ボタン=機首が左へ）。side: SIDE THRUST 残り秒（>0 で金の横矢印）。
+// 横矢印の向き: STANDARD=左ボタンで機体が右へ（反作用ドリフトと同じ向き）、INVERTED=左ボタンで左へ
+function drawCtlButton(ctx, i, bx, by, bw, bh, on, side, t, inv) {
+  const p = P();
+  const accent = i === 1 ? p.warn : p.fg;
+  rr(ctx, bx, by, bw, bh, 22);
+  ctx.fillStyle = on ? rgba(accent, i === 1 ? 0.20 : 0.15) : rgba(p.fg, 0.045);
+  ctx.fill();
+  ctx.lineWidth = on ? 1.4 : 1;
+  ctx.strokeStyle = on ? rgba(accent, 0.8) : rgba(p.fg, 0.2);
+  ctx.stroke();
+  const cx = bx + bw / 2, cy = by + bh / 2;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 2;
+  ctx.strokeStyle = on ? accent : rgba(p.fg, 0.62);
+  if (i === 1) {
+    ctx.beginPath(); ctx.moveTo(cx, cy + 9); ctx.lineTo(cx, cy - 9);
+    ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 7, cy - 2); ctx.stroke();
+    ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (side > 0) {   // SIDE THRUST: 金色の光る横矢印（⇦ / ⇨）
+    const pu = 0.75 + 0.25 * Math.sin((t || 0) * 6), d = (i === 0 ? 1 : -1) * (inv ? -1 : 1);
+    rr(ctx, bx, by, bw, bh, 22);
+    ctx.fillStyle = rgba(p.warn, on ? 0.22 : 0.08 * pu + 0.04); ctx.fill();
+    ctx.lineWidth = on ? 1.8 : 1.2; ctx.strokeStyle = rgba(p.warn, on ? 0.95 : 0.5 * pu + 0.25); ctx.stroke();
+    ctx.save(); ctx.shadowColor = p.warn; ctx.shadowBlur = on ? 10 : 6 * pu;
+    ctx.strokeStyle = on ? p.hi : p.warn; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(cx - d * 13, cy); ctx.lineTo(cx + d * 13, cy);
+    ctx.moveTo(cx + d * 5, cy - 8); ctx.lineTo(cx + d * 13, cy); ctx.lineTo(cx + d * 5, cy + 8); ctx.stroke();
+    ctx.restore();
+  } else {
+    rotArrow(ctx, cx, cy, 11, (i === 0) !== !!inv);   // STANDARD: 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ。INVERTED は逆
+  }
+}
+// side: SIDE THRUST 中の残り秒（>0 で左右ボタンに ⇦ ⇨ を光らせる）。inv: INVERTED 設定
+function drawControls(ctx, left, mid, right, side, t, inv) {
   const p = P();
   ctx.save();
   // 下部の薄いベール（地形の上でもボタンを読めるように）
   ctx.fillStyle = gLin(ctx, 'ctlVeil', 0, ART_BTN_Y - 20, 0, AH, [[0, 'rgba(6,8,14,0)'], [0.3, 'rgba(6,8,14,0.55)'], [1, 'rgba(6,8,14,0.9)']]);
   ctx.fillRect(0, ART_BTN_Y - 20, AW, 100);
   const flags = [left, mid, right];
-  for (let i = 0; i < 3; i++) {
-    const on = flags[i];
-    const bx = i * 120 + 12, by = ART_BTN_Y + 10, bw = 96, bh = 56;
-    const accent = i === 1 ? p.warn : p.fg;
-    rr(ctx, bx, by, bw, bh, 22);
-    ctx.fillStyle = on ? rgba(accent, i === 1 ? 0.20 : 0.15) : rgba(p.fg, 0.045);
-    ctx.fill();
-    ctx.lineWidth = on ? 1.4 : 1;
-    ctx.strokeStyle = on ? rgba(accent, 0.8) : rgba(p.fg, 0.2);
-    ctx.stroke();
-    const cx = bx + bw / 2, cy = by + bh / 2;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 2;
-    ctx.strokeStyle = on ? accent : rgba(p.fg, 0.62);
-    if (i === 1) {
-      ctx.beginPath(); ctx.moveTo(cx, cy + 9); ctx.lineTo(cx, cy - 9);
-      ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 7, cy - 2); ctx.stroke();
-      ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
-      ctx.globalAlpha = 1;
-    } else if (side > 0) {   // SIDE THRUST: 金色の光る横矢印（⇦ / ⇨）
-      const pu = 0.75 + 0.25 * Math.sin((t || 0) * 6), d = i === 0 ? -1 : 1;
-      rr(ctx, bx, by, bw, bh, 22);
-      ctx.fillStyle = rgba(p.warn, on ? 0.22 : 0.08 * pu + 0.04); ctx.fill();
-      ctx.lineWidth = on ? 1.8 : 1.2; ctx.strokeStyle = rgba(p.warn, on ? 0.95 : 0.5 * pu + 0.25); ctx.stroke();
-      ctx.save(); ctx.shadowColor = p.warn; ctx.shadowBlur = on ? 10 : 6 * pu;
-      ctx.strokeStyle = on ? p.hi : p.warn; ctx.lineWidth = 2.4;
-      ctx.beginPath(); ctx.moveTo(cx - d * 13, cy); ctx.lineTo(cx + d * 13, cy);
-      ctx.moveTo(cx + d * 5, cy - 8); ctx.lineTo(cx + d * 13, cy); ctx.lineTo(cx + d * 5, cy + 8); ctx.stroke();
-      ctx.restore();
-    } else {
-      rotArrow(ctx, cx, cy, 11, i === 0);   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)
-    }
-  }
+  for (let i = 0; i < 3; i++) drawCtlButton(ctx, i, i * 120 + 12, ART_BTN_Y + 10, 96, 56, flags[i], side, t, inv);
+  ctx.restore();
+}
+
+// ステージ開始時の「やること」1文（天体名・紹介の下。非ブロッキング）
+function drawGoalLine(ctx, text, k) {
+  const p = P(), a = Math.max(0, Math.min(1, k)), ja = i18nLang() === 'ja';
+  ctx.save(); ctx.globalAlpha = a;
+  pill(ctx, 30, 192, AW - 60, 24, rgba('#06080E', 0.55), rgba(p.fg, 0.18));
+  txt(ctx, text, AW / 2, ja ? 197 : 199, ja ? 11 : 9, p.hi, 'center', { sp: ja ? 0.6 : 1.4, w: 500 });
   ctx.restore();
 }
 
@@ -3132,12 +3201,14 @@ function drawGroundedBanner(ctx, outOfFuel, a) {
   else txt(ctx, parts[1], AW / 2, 143, 9, p.fg, 'center', { sp: 4, w: 400, a: 0.85 * a, sh: 1 });
 }
 const TOUCH_HINT = 'FLAT GROUND: YOU CAN TOUCH DOWN · NO SCORE';
+const TOUCH_HINT_JA = '平らな地面なら接地できます（得点なし）';
 function drawTouchHint(ctx, a) {
   const p = P();
   const w = 288, x = (AW - w) / 2, y = 170;
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
   pill(ctx, x, y, w, 22, rgba('#080b14', 0.7), rgba('#7fb8ae', 0.4));
-  txt(ctx, TOUCH_HINT, AW / 2, y + 7, 8, p.fg, 'center', { sp: 1.6, w: 500 });
+  const ja = i18nLang() === 'ja';
+  txt(ctx, ja ? TOUCH_HINT_JA : TOUCH_HINT, AW / 2, y + (ja ? 6 : 7), ja ? 10 : 8, p.fg, 'center', { sp: ja ? 0.6 : 1.6, w: 500 });
   ctx.restore();
 }
 
@@ -3640,7 +3711,7 @@ function drawHoldPanel(ctx, d) {
   veil(ctx, 0.55);
   const conf = !!d.confirm;
   const edge = conf ? p.bad : p.mid;
-  panel(ctx, 40, 184, AW - 80, 272, { a: 0.9, border: edge, ba: conf ? 0.32 : 0.22 });
+  panel(ctx, 40, 184, AW - 80, conf ? 272 : 322, { a: 0.9, border: edge, ba: conf ? 0.32 : 0.22 });
   if (!conf) {
     txt(ctx, 'MISSION HOLD', cx, 208, 18, p.hi, 'center', { sp: 6, w: 300 });
     txt(ctx, 'STAGE ' + d.stage + (d.body ? '  ·  ' + String(d.body).toUpperCase() : ''), cx, 248, 9, p.fg, 'center', { sp: 3, w: 500 });
@@ -3944,6 +4015,133 @@ function drawWaypointBanner(ctx, a) {
   const p = P();
   txt(ctx, 'WAYPOINT 1 \u2713', AW / 2, 124, 13, p.green, 'center', { sp: 4, w: 500, a, sh: 1 });
   txt(ctx, 'PAD UNLOCKED \u00b7 LIFT OFF AND LAND ON IT', AW / 2, 143, 8, p.fg, 'center', { sp: 3, w: 400, a: 0.85 * a, sh: 1 });
+}
+
+
+// ---- 02_src/howto.js ----
+// HOW TO PLAY カード（操作説明＋言語/操作の向きの設定）。タイトル・MISSION HOLD・初回プレイ前の3か所で共用。
+// 名前は全て HT / ht 接頭辞（バンドルは1つのスコープ）。論理座標 360x640。
+// 閉じ方: 設定ボタン以外のタップ、または何かのキー。表示直後 0.35 秒と、表示前から押していた指の解除は無視（誤閉じ防止）。
+
+const HT_LOCK_MS = 350;
+const htNow = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+// タッチ端末か（PC なら矢印キー、タッチならボタンの絵を主に出す）
+function htTouchDevice() {
+  try { return typeof window !== 'undefined' && !!(('ontouchstart' in window) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)); } catch (_) { return false; }
+}
+
+// 説明文（ja/en）。inv: 操作の向き INVERTED。touch: タッチ端末
+function htContent(lang, inv, touch) {
+  const ja = lang === 'ja';
+  const tilt = ja
+    ? (inv ? '左：機首が左へ（反時計回り） 右：機首が右へ（時計回り）' : '左：機首が右へ（時計回り） 右：機首が左へ（反時計回り）')
+    : (inv ? 'LEFT: NOSE TILTS LEFT (COUNTER-CLOCKWISE). RIGHT: NOSE TILTS RIGHT (CLOCKWISE).' : 'LEFT: NOSE TILTS RIGHT (CLOCKWISE). RIGHT: NOSE TILTS LEFT (COUNTER-CLOCKWISE).');
+  return {
+    all: ja ? '操作はこれだけです' : 'THESE ARE ALL THE CONTROLS',
+    tiltHead: ja ? (touch ? '左右のボタンで機体を傾ける' : '← → で機体を傾ける') : (touch ? 'LEFT / RIGHT BUTTONS TILT THE SHIP' : '← → TILT THE SHIP'),
+    tilt,
+    thrust: ja ? (touch ? '中央のボタンで噴射（落下をゆるめる・傾けて噴射すると横へ進む）' : '↑ / Space で噴射（落下をゆるめる・傾けて噴射すると横へ進む）')
+               : (touch ? 'CENTER BUTTON = MAIN THRUST: SLOWS THE FALL. TILT, THEN THRUST TO MOVE SIDEWAYS.' : '↑ / SPACE = MAIN THRUST: SLOWS THE FALL. TILT, THEN THRUST TO MOVE SIDEWAYS.'),
+    pause: ja ? '一時停止：画面上部の ‖ ボタン' + (touch ? '' : '（Esc はタイトルへ戻る）') : 'PAUSE: THE ‖ BUTTON AT THE TOP' + (touch ? '' : ' (ESC LEAVES TO THE TITLE)'),
+    noWeapons: ja ? '武器はありません。隕石はよけてください' : 'THERE ARE NO WEAPONS. DODGE THE METEORS.',
+    goal: ja ? 'パッドにゆっくり・まっすぐ着地（速さと傾きの上限はHUDに表示）' : 'LAND SLOWLY AND UPRIGHT ON THE PAD. SPEED AND TILT LIMITS ARE SHOWN ON THE HUD.',
+    flat: ja ? 'パッド以外の平地は得点なしで接地できる。噴射で離陸' : 'FLAT GROUND ELSEWHERE: TOUCH DOWN WITHOUT SCORE, THRUST TO LIFT OFF.',
+    rings: ja ? '輪は任意：連続で取るとコンボ。金の輪は短時間の特典（スロー・レーダー・横移動・燃料）' : 'RINGS ARE OPTIONAL: CHAIN THEM FOR COMBO POINTS. GOLD RINGS GIVE A SHORT POWER-UP (SLOW-MO, RADAR, SIDE THRUST, FUEL).',
+    other: ja ? (touch ? 'PC：← → ↑ / Space' : 'タッチ：画面下の3つのボタン') : (touch ? 'PC: ← → ↑ / SPACE' : 'TOUCH: THE 3 BUTTONS AT THE BOTTOM'),
+    close: ja ? 'タップかキーで閉じる' : 'TAP OR PRESS ANY KEY TO CLOSE',
+    langL: 'LANGUAGE', ctlL: 'CONTROLS',
+  };
+}
+
+// 折り返し（日本語は1字ずつ、英語は単語単位）
+function htWrap(ctx, s, size, wt, sp, maxW) {
+  const toks = String(s).match(/[A-Za-z0-9'’.,:;!?\/()+\-·%&=<>←-↓]+ ?| +|[^\sA-Za-z0-9]/gu) || [];
+  const lines = []; let cur = '';
+  const w = (t) => { ctx.save(); ctx.font = ((wt || 400) + ' ' + size + 'px sans-serif'); const m = ctx.measureText(t).width; ctx.restore(); return (m >= 0 ? m : t.length * size * 0.6) + sp * Math.max(0, Array.from(t).length - 1); };
+  for (const t of toks) {
+    if (cur && w(cur + t) > maxW) { lines.push(cur.trimEnd()); cur = t.trimStart(); } else cur += t;
+  }
+  if (cur.trim()) lines.push(cur.trimEnd());
+  return lines;
+}
+
+class HtCard {
+  // opts: { onClose, onTap(音), touch(省略で自動判定), storage(未使用: i18n は束縛済み) }
+  constructor(opts) {
+    opts = opts || {};
+    this.onClose = opts.onClose || null; this.onTap = opts.onTap || null;
+    this.touch = opts.touch === undefined ? htTouchDevice() : !!opts.touch;
+    this.openedAt = htNow();
+    this.closed = false;
+  }
+  // 設定ボタン（当たり判定は高さ 44px 以上）
+  rects() {
+    return {
+      ja: { x: 200, y: 484, w: 60, h: 44 }, en: { x: 264, y: 484, w: 60, h: 44 },
+      std: { x: 160, y: 532, w: 80, h: 44 }, inv: { x: 244, y: 532, w: 80, h: 44 },
+    };
+  }
+  _hit(r, d) { return d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h; }
+  close() { if (this.closed) return; this.closed = true; if (this.onClose) this.onClose(); }
+  // 入力は常に消費する（下の画面に貫通させない）
+  input(action, data) {
+    if (this.closed) return true;
+    if (data && data.repeat) return true;
+    if (action === 'tap' && data) {
+      if (data.t0 !== undefined && data.t0 < this.openedAt) return true;   // 表示前から押していた指の解除
+      const R = this.rects();
+      if (this._hit(R.ja, data)) { i18nSetLang('ja'); if (this.onTap) this.onTap(); return true; }
+      if (this._hit(R.en, data)) { i18nSetLang('en'); if (this.onTap) this.onTap(); return true; }
+      if (this._hit(R.std, data)) { i18nSetControls('standard'); if (this.onTap) this.onTap(); return true; }
+      if (this._hit(R.inv, data)) { i18nSetControls('inverted'); if (this.onTap) this.onTap(); return true; }
+    }
+    if (htNow() - this.openedAt < HT_LOCK_MS) return true;
+    if (this.onTap) this.onTap();
+    this.close();
+    return true;
+  }
+  render(ctx) {
+    const p = P(), lang = i18nLang(), ja = lang === 'ja', inv = i18nControls() === 'inverted';
+    const c = htContent(lang, inv, this.touch);
+    const R = this.rects();
+    veil(ctx, 0.78);
+    panel(ctx, 14, 24, W - 28, 586, { a: 0.94, border: p.mid, ba: 0.26 });
+    txt(ctx, 'HOW TO PLAY', W / 2, 38, 16, p.hi, 'center', { sp: 6, w: 300 });
+    txt(ctx, c.all, W / 2, 66, ja ? 13 : 10, p.warn, 'center', { sp: ja ? 1 : 2, w: 600 });
+    // 操作の絵: タッチ=下のボタンと同じ3つ / PC=キーキャップ
+    if (this.touch) {
+      for (let i = 0; i < 3; i++) drawCtlButton(ctx, i, 36 + i * 94, 90, 84, 46, false, 0, 0, inv);
+    } else {
+      const cap = (x, w, label) => { rr(ctx, x, 94, w, 38, 8); ctx.fillStyle = rgba(p.fg, 0.07); ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = rgba(p.fg, 0.4); ctx.stroke(); txt(ctx, label, x + w / 2, 105, 14, p.hi, 'center', { w: 500 }); };
+      cap(36, 52, '←'); cap(94, 52, '→'); cap(152, 52, '↑'); cap(210, 114, 'SPACE');
+    }
+    const fs = ja ? 11 : 9, lh = ja ? 16 : 14, sp = ja ? 0.4 : 1, left = 30, mw = W - 60;
+    let y = 148;
+    const para = (s, color, a, size) => {
+      const f = size || fs;
+      const ls = htWrap(ctx, s, f, 400, sp, mw);
+      for (const l of ls) { txt(ctx, l, left, y, f, color, 'left', { sp, w: 400, a }); y += lh; }
+      y += 6;
+    };
+    para(c.tiltHead, p.hi, 1);
+    para(c.tilt, p.mid, 0.9, ja ? 10 : 8);
+    para(c.thrust, p.fg, 0.95);
+    para(c.pause, p.fg, 0.8);
+    y += 2;
+    para(c.noWeapons, p.warn, 1);
+    para(c.goal, p.fg, 0.95);
+    para(c.flat, p.fg, 0.85);
+    para(c.rings, p.fg, 0.8);
+    txt(ctx, c.other, W / 2, y + 2, ja ? 9 : 7, p.dim, 'center', { sp: ja ? 0.5 : 1.5, w: 400 });
+    // 設定: LANGUAGE [JA|EN] / CONTROLS [STANDARD|INVERTED]
+    const btn = (r, label, on) => { pill(ctx, r.x, r.y + 6, r.w, 32, on ? rgba(p.mid, 0.18) : rgba(p.fg, 0.03), on ? rgba(p.hi, 0.8) : rgba(p.fg, 0.22), on ? 1.4 : 1); txt(ctx, label, r.x + r.w / 2, r.y + 17, 9, on ? p.hi : p.mid, 'center', { sp: 2, w: 500 }); };
+    txt(ctx, c.langL, 30, R.ja.y + 17, 8, p.dim, 'left', { sp: 3, w: 500 });
+    txt(ctx, c.ctlL, 30, R.std.y + 17, 8, p.dim, 'left', { sp: 3, w: 500 });
+    btn(R.ja, 'JA', lang === 'ja'); btn(R.en, 'EN', lang === 'en');
+    btn(R.std, 'STANDARD', !inv); btn(R.inv, 'INVERTED', inv);
+    txt(ctx, c.close, W / 2, 590, ja ? 9 : 7, p.dim, 'center', { sp: ja ? 0.6 : 3, w: 500, a: 0.7 });
+  }
 }
 
 
@@ -5190,12 +5388,27 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 
 // ---- 02_src/whatsnew.js ----
 // 起動画面（TAP TO BEGIN）の UPDATE INFORMATION。新しい順。先頭の version が APP_VERSION（NEW 表示・seenVersion の基準）。
-// 項目は日本語の短文（22字まで）。他の表示（英語）と違う見た目にして読んでもらうため日本語にする（ユーザー決定）。
+// items = 日本語の短文（22字まで）、itemsEn = 同じ順の英語（34字まで）。表示は設定の言語（i18nLang）で切り替える（既定は navigator.language）。
 const WHATSNEW_ENTRIES = [
-  { version: APP_VERSION, date: '2026.10.26', items: [
+  { version: APP_VERSION, date: '2026.10.27', items: [
+    '操作説明（HOW TO PLAY）を追加',
+    '説明文を日本語・英語で切替',
+    '左右の操作の向きを設定で反転',
+    'ステージ開始時にやることを1文で表示',
+  ], itemsEn: [
+    'Added HOW TO PLAY guide',
+    'Text language: Japanese / English',
+    'Invert left/right in settings',
+    'One-line goal at each stage start',
+  ] },
+  { version: '1.1.0-beta.5', date: '2026.10.26', items: [
     '新天体：冥王星（氷で滑る・中継着陸）',
     'ツアーは1周16ステージに',
     '★は48個、パッチは8枚に',
+  ], itemsEn: [
+    'New: Pluto (ice slide, waypoint)',
+    'Tour is now 16 stages per loop',
+    '48 stars and 8 patches',
   ] },
   { version: '1.1.0-beta.4', date: '2026.10.26', items: [
     'SIDE THRUST：左右で真横に移動',
@@ -5204,17 +5417,33 @@ const WHATSNEW_ENTRIES = [
     '隕石で2回墜落すると緊急シールド',
     '序盤の隕石を少しずつ増やす',
     '失敗理由に速さ・傾きの数値を表示',
+  ], itemsEn: [
+    'SIDE THRUST: slide sideways',
+    'LANDABLE label over flat ground',
+    'Meteor tails and danger warning',
+    'Emergency shield after 2 crashes',
+    'Fewer meteors in early stages',
+    'Crash reasons show speed and tilt',
   ] },
   { version: '1.1.0-beta.3', date: '2026.10.26', items: [
     'PERFECT で天体ごとのパッチ',
     'タイトルの MAP から太陽系マップ',
     '隕石スローを 1/4 の速さに強化',
+  ], itemsEn: [
+    'Patches for PERFECT per world',
+    'Solar-system map via title MAP',
+    'Meteor SLOW-MO now 1/4 speed',
   ] },
   { version: '1.1.0-beta.2', date: '2026.10.26', items: [
     '輪でコンボ・特別な輪で特典',
     'ステージごとに★3つを集めよう',
     '新天体：水星（暗闇のクレーター）',
     '起動時に世界ランキング TOP 5',
+  ], itemsEn: [
+    'Rings: combos, gold = power-ups',
+    'Collect 3 stars per stage',
+    'New world: Mercury (dark craters)',
+    'World TOP 5 shown at launch',
   ] },
   { version: '1.1.0-beta', date: '2026.10.26', items: [
     '平らな地面ならどこでも着地（得点なし）',
@@ -5222,8 +5451,20 @@ const WHATSNEW_ENTRIES = [
     '着陸の評価 C・B・A・S・PERFECT',
     'PINで別の端末でも同じ名前',
     'ランキングは v1.0 と別集計',
+  ], itemsEn: [
+    'Land on any flat ground, no score',
+    'Thrust again to lift off',
+    'Landing grades C, B, A, S, PERFECT',
+    'Same name on other devices: PIN',
+    'Ranking is separate from v1.0',
   ] },
 ];
+// 表示言語での項目（itemsEn が無い/不足なら日本語にフォールバック）
+function whatsnewItems(en, lang) {
+  const l = lang || i18nLang();
+  if (l === 'en' && Array.isArray(en.itemsEn) && en.itemsEn.length === en.items.length) return en.itemsEn;
+  return en.items;
+}
 const WHATSNEW = { version: WHATSNEW_ENTRIES[0].version, entries: WHATSNEW_ENTRIES };
 
 
@@ -6435,6 +6676,7 @@ class BootScene extends Scene {
   constructor(engine, next) {
     super(engine);
     this.next = next;
+    i18nBind(engine.storage);
     this.isRoot = true;   // BACKボタン非表示
     this.t = 0;
     this.done = false;
@@ -6514,7 +6756,7 @@ class BootScene extends Scene {
       const en = WHATSNEW.entries[ei];
       if (y + NEWS_DATE_H > v.y && y < v.y + v.h) txt(ctx, en.date + ' · build ' + en.version, v.x, y + 2, 8, p.dim, 'left', { sp: 1, w: 500, a: edge(y, NEWS_DATE_H) * nf * (ei === 0 && fresh ? 1 : 0.85) });
       y += NEWS_DATE_H;
-      for (const it of en.items) {
+      for (const it of whatsnewItems(en)) {
         if (y + NEWS_LINE > v.y && y < v.y + v.h) {
           const a = edge(y, NEWS_LINE) * nf * (ei === 0 && fresh ? 0.88 : 0.7);
           txt(ctx, '・', v.x, y + 2, 11, p.fg, 'left', { w: 400, a });
@@ -6621,6 +6863,8 @@ class TitleScene extends Scene {
     super(engine);
     this.startGame = startGame;
     this.useLaunch = !!(opts && opts.launch);
+    i18nBind(engine.storage);
+    this.ht = null;                                                 // HOW TO PLAY / 設定カード（HtCard）
     this.isRoot = true;    // 最上位＝BACKボタン非表示
     this.t = 0;
     this.showRank = false;
@@ -6635,6 +6879,7 @@ class TitleScene extends Scene {
     this._steamAcc = 0; this._smokeAcc = 0; this._steamSide = 1;
     // タップ対象（互いに重ならない。8pxグリッド）
     this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
+    this.howBtn = { x: W - 94, y: 6, w: 44, h: 44 };               // ? = HOW TO PLAY（設定もここ）
     this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
     this.betaBox = { x: W / 2 - 38, y: 110, w: 76, h: 12 };        // BETA v1.1 ラベル（タップはロゴタップ扱い）
     this.changeBtn = { x: W / 2 - 40, y: 436, w: 80, h: 20 };      // PILOTS（旧 CHANGE。プロフィール一覧を開く）
@@ -6918,6 +7163,7 @@ class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
+    if (this.ht) { this.ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
     if (this.map) { this._mapInput(action, data); return; }   // 太陽系マップ表示中は入力を独占
     if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
@@ -6926,6 +7172,7 @@ class TitleScene extends Scene {
         if (!m) musicOf(this.engine).sfx.uiTap();
         return;
       }
+      if (this._hit(this.howBtn, data)) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; this.ht = new HtCard({ onTap: () => { try { if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } }, onClose: () => { this.ht = null; } }); return; }
       if (this._hit(this.rankBtn, data)) {
         musicOf(this.engine).sfx.uiTap();
         this.showRank = !this.showRank;
@@ -7064,6 +7311,11 @@ class TitleScene extends Scene {
     if (ui > 0) {
       const sp = drawSpeaker;
       sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
+      { const hb = this.howBtn, hx = hb.x + hb.w / 2, hy = hb.y + hb.h / 2;
+        ctx.save(); ctx.beginPath(); ctx.arc(hx, hy, 11, 0, Math.PI * 2); ctx.strokeStyle = rgba(p.fg, 0.55 * ui); ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.8 * ui; ctx.strokeStyle = p.fg; ctx.fillStyle = p.fg; ctx.lineWidth = 1.5; ctx.lineCap = 'round';   // '?' は線で描く（文字ではない）
+        ctx.beginPath(); ctx.arc(hx, hy - 3.5, 3.6, Math.PI, Math.PI * 2.5); ctx.lineTo(hx, hy + 1.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(hx, hy + 5.5, 1, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
       if (this.name) txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
       else txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
       const cb = this.changeBtn;
@@ -7123,6 +7375,7 @@ class TitleScene extends Scene {
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
     if (championEntryOpen(this._champ)) veil(ctx, 0.55);
+    if (this.ht) this.ht.render(ctx);
   }
 }
 
@@ -7437,6 +7690,7 @@ const HOLD_LOCK_S       = 0.3;   // HOLDパネル表示/切替直後のボタン
 const ADMIN_PER_PAGE    = 5;
 let _adminKeyMem = '';   // 管理キー（セッション中のみ・メモリ上。保存しない）
 const DBG_STATES = ['play', 'landing', 'cleared', 'crashed', 'bonusfailed'];
+const GOAL_S            = 2.5;   // ステージ開始時の「やること」1文の表示秒数（非停止）
 const INTRO_S           = 2.0;   // 天体の最初のステージの紹介バナー秒数
 const RADAR_DT          = 1 / 30;
 const RADAR_MAX_T       = 120;
@@ -7644,14 +7898,37 @@ class Game extends Scene {
       for (const k of Object.keys(this.modules)) { const d = moduleDef(k); this.modules[k] = Math.max(0, Math.min(d ? d.max : 0, (cp.modules && cp.modules[k]) | 0)); }
       this.bonusCount = Math.floor((cp.stage - 1) / BONUS_EVERY);
     }
+    i18nBind(this.engine.storage);
+    this._ht = null;
     this._initStage();
-    this._maybeShowTip();
+    if (!this._maybeShowHowto()) this._maybeShowTip();
   }
 
   exit() { this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
+  // ---- HOW TO PLAY（'howtoSeen' が無い端末で1回だけ自動表示。既存プレイヤーにも1回出す＝操作に迷った人に届けるため（リーダー判断）。物理は凍結）----
+  _maybeShowHowto() {
+    const st = this.engine.storage;
+    if (this.state !== 'play') return false;
+    let seen = null; try { seen = st.get('howtoSeen', null); } catch (_) { /* ignore */ }
+    if (seen) return false;
+    this._openHowto(true);
+    return true;
+  }
+  // first=true: ラン開始前の自動表示（閉じたら計器ヒントへ）。false: MISSION HOLD から（閉じたら HOLD に戻る）
+  _openHowto(first) {
+    try { this.engine.storage.set('howtoSeen', '1'); } catch (_) { /* ignore */ }
+    this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._ht = new HtCard({ onTap: () => this._uiTap(), onClose: () => {
+      this._ht = null;
+      this._holdGrace = HOLD_GRACE_S;
+      if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+      if (first) this._maybeShowTip();
+    } });
+  }
   _maybeShowTip() {
     const st = this.engine.storage;
     if (this.state !== 'play') return;
@@ -7671,7 +7948,7 @@ class Game extends Scene {
     this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
   }
-  blocksBack() { return championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
+  blocksBack() { return !!this._ht || championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -7727,6 +8004,7 @@ class Game extends Scene {
     // 天体の最初のステージ、またはランの開始ステージ（天体の途中から始めた場合も）で天体紹介を出す
     this._introT   = ((sp.info.firstOfBody || this._introNext) && !btype) ? INTRO_S : 0;
     this._introNext = false;
+    this._goalT = GOAL_S;
     this._padW     = mission ? mission.padW : sp.padW;
 
     const terrain     = buildTerrain(this._padW, mission && mission.moving ? { plateau: mission.plateauSegs, period: mission.padPeriod } : null);
@@ -7820,6 +8098,7 @@ class Game extends Scene {
   // ---- Discrete input (keyboard / tap) ----
   onInput(action, data) {
     if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（タイトルへ戻らない・下の画面に貫通しない）
+    if (this._ht) { this._ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
     const confirm = (action === 'tap' || action === 'confirm');
     if (RESULT_STATES.indexOf(this.state) >= 0) {
       if (data && data.repeat) return;                                            // キーのオートリピートは進行に使わない
@@ -7928,7 +8207,7 @@ class Game extends Scene {
     this._uiTap();
   }
   // ページ非表示/ブラー: プレイ中のみ自動で HOLD（自動再開はしない）
-  onHidden() { if (this._live()) this._enterHold(); }
+  onHidden() { if (this._live() && !this._ht) this._enterHold(); }
   _resume() {
     if (this.state !== 'hold') return;
     this.state = this._holdPrev || 'play';
@@ -7950,7 +8229,7 @@ class Game extends Scene {
     const x = 70, w = W - 140;
     return this._holdConfirm
       ? [{ id: 'cancel', label: 'CANCEL', kind: 'main', x, y: 320, w, h: 48 }, { id: 'confirm', label: 'CONFIRM ABORT', kind: 'danger', x, y: 384, w, h: 48 }]
-      : [{ id: 'resume', label: 'RESUME', kind: 'main', x, y: 320, w, h: 48 }, { id: 'abort', label: 'ABORT MISSION', kind: 'danger', x, y: 384, w, h: 48 }];
+      : [{ id: 'resume', label: 'RESUME', kind: 'main', x, y: 320, w, h: 48 }, { id: 'abort', label: 'ABORT MISSION', kind: 'danger', x, y: 384, w, h: 48 }, { id: 'howto', label: 'HOW TO PLAY', kind: 'sub', x, y: 448, w, h: 44 }];
   }
   _holdInput(action, data) {
     if (data && data.repeat) return;
@@ -7961,6 +8240,7 @@ class Game extends Scene {
     for (const b of this._holdButtons()) {
       if (!this._inRect(b, data)) continue;
       if (b.id === 'resume') this._resume();
+      else if (b.id === 'howto') { this._uiTap(); this._openHowto(false); }
       else if (b.id === 'abort') { this._holdConfirm = true; this._inputLock = HOLD_LOCK_S; this._uiTap(); }
       else if (b.id === 'cancel') { this._holdConfirm = false; this._inputLock = HOLD_LOCK_S; this._uiTap(); }
       else if (b.id === 'confirm') this._abortConfirmed();
@@ -8271,6 +8551,7 @@ class Game extends Scene {
     if (typeof dt !== 'number' || dt <= 0 || dt > 0.1) dt = 0.016;
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
+    if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
       this._tipT -= dt; if (this._tipT <= 0) this._endTip();
@@ -8301,6 +8582,7 @@ class Game extends Scene {
 
     if (this._bannerT > 0) this._bannerT = Math.max(0, this._bannerT - dt);
     if (this._introT > 0) this._introT = Math.max(0, this._introT - dt);
+    if (this._goalT > 0) this._goalT = Math.max(0, this._goalT - dt);
     if (this._shieldFlash > 0) this._shieldFlash = Math.max(0, this._shieldFlash - dt);
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
     if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
@@ -8364,10 +8646,13 @@ class Game extends Scene {
       //
       // Keyboard: ArrowLeft maps to _thrustRcsL (same CW convention).
       //           ArrowRight maps to _thrustRcsR (same CCW convention).
+      const inv = i18nInverted() && !this._auto;       // 操作の向き INVERTED（自動操縦は物理の向きで出力するので反転しない）
+      const sgn = inv ? -1 : 1;
       const sideOn = this._sideT > 0 && !this._auto;   // SIDE THRUST（自動操縦は従来の回転制御のまま）
       if (sideOn) {
         // 左右ボタン = 真横に移動（左ボタン→左、右ボタン→右）。回転入力は無効、機体は強く水平に保たれる。燃料は通常のRCSと同じ率
-        const dir = (this._thrustRcsR ? 1 : 0) - (this._thrustRcsL ? 1 : 0);
+        // STANDARD: 左ボタン→右へ（反作用ドリフトと同じ向き）。INVERTED: 左ボタン→左へ
+        const dir = ((this._thrustRcsR ? 1 : 0) - (this._thrustRcsL ? 1 : 0)) * (inv ? 1 : -1);
         if (dir !== 0 && this.fuel > 0) {
           this.vx   += dir * SIDE_ACCEL * dt;
           this.fuel  = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
@@ -8376,13 +8661,13 @@ class Game extends Scene {
         this.angle *= Math.exp(-SIDE_LEVEL_K * dt);       // 水平へ（指数減衰）
       } else {
         if (this._thrustRcsL && this.fuel > 0) {
-          this.omega += ANG_ACCEL * dt;         // CW: nose tilts RIGHT
-          this.vx    += RCS_DRIFT * dt;         // 左ノズル排気反作用 -> 右ドリフト
+          this.omega += sgn * ANG_ACCEL * dt;   // STANDARD CW: nose tilts RIGHT（INVERTED は逆）
+          this.vx    += sgn * RCS_DRIFT * dt;   // 左ノズル排気反作用 -> 右ドリフト（INVERTED は逆）
           this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
         }
         if (this._thrustRcsR && this.fuel > 0) {
-          this.omega -= ANG_ACCEL * dt;         // CCW: nose tilts LEFT
-          this.vx    -= RCS_DRIFT * dt;         // 右ノズル排気反作用 -> 左ドリフト
+          this.omega -= sgn * ANG_ACCEL * dt;   // STANDARD CCW: nose tilts LEFT（INVERTED は逆）
+          this.vx    -= sgn * RCS_DRIFT * dt;   // 右ノズル排気反作用 -> 左ドリフト（INVERTED は逆）
           this.fuel   = Math.max(0, this.fuel - FUEL_RATE_RCS * dt);
         }
       }
@@ -9069,6 +9354,10 @@ class Game extends Scene {
 
   // ---- Main render ----
   render(ctx) {
+    this._renderMain(ctx);
+    if (this._ht) this._ht.render(ctx);
+  }
+  _renderMain(ctx) {
     if (this.state === 'debug') {
       const real = this.state;
       this.state = this._dbgPrev || 'play';
@@ -9169,6 +9458,9 @@ class Game extends Scene {
       if (body.tagline) drawIntro(ctx, parts[0], parts[1], parts.slice(2).join('  ·  '), this._introT * 2);
       else drawIntro(ctx, parts[0], parts.slice(1, 3).join('  ·  '), parts.slice(3).join('  ·  '), this._introT * 2);
     }
+
+    // ステージ開始時の「やること」1文（案内のみ・非停止）
+    if (this.state === 'play' && !this._tipOn && this._goalT > 0 && !this._ht) drawGoalLine(ctx, goalText(this._goalKey(), i18nLang()), Math.min(1, this._goalT / 0.4, (GOAL_S - this._goalT) / 0.4));
 
     // 接地中のバナー / 初回ヒント（非停止のトースト）
     if (this.state === 'grounded' && !this._tipOn && !(this._wpBannerT > 0)) {   // 中継地点のバナー中は重ねない
@@ -9350,11 +9642,18 @@ class Game extends Scene {
   // ---- Lander craft ----
   // Rotation math (ctx.rotate convention): +rad = CW on screen. omega>0 -> angle増 -> 機首が右へ。
   // 炎は発射側ノズルに描く（LEFTボタン=左ノズルが左へ噴射、RIGHTボタン=右ノズルが右へ噴射）。
+  // このステージで最も関係の深い特徴 → GOAL_LINES のキー（優先順は bodies.js goalKey）
+  _goalKey() {
+    const b = this._body || {};
+    return goalKey({ bonusType: this.bonus ? this.bonus.type : null, waypoint: !!this._wp, ice: !!b.iceSlide, visibility: b.visibility == null ? null : b.visibility,
+      dark: !!b.guideAboveFog, moving: !!(this.pad && this.pad.moving), wind: !!this._windSpec, meteors: !!(this.obstacles && this.obstacles.length) });
+  }
+
   _drawLander(ctx, x, y, angleDeg) {
     if (typeof x !== 'number' || typeof y !== 'number') return;
     const fuelOk = this.fuel > 0;
-    // SIDE THRUST 中は左ボタン=左へ移動＝排気は右ノズルから出る（炎を左右入れ替えて描く）
-    const sw = this._sideT > 0 && !this._auto;
+    // INVERTED: 左ボタン=機首/機体が左へ＝排気は右ノズルから出る（SIDE THRUST も同様）。炎を左右入れ替えて描く
+    const sw = i18nInverted() && !this._auto;
     drawShip(ctx, x, y, angleDeg, !!(this._thrustMain && fuelOk), !!((sw ? this._thrustRcsR : this._thrustRcsL) && fuelOk), !!((sw ? this._thrustRcsL : this._thrustRcsR) && fuelOk), this._clock || 0);
   }
 
@@ -9390,7 +9689,7 @@ class Game extends Scene {
   // ---- Bottom button bar（入力ゾーンは update 側の ZONE_* のまま）----
   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)。見た目は機首の回転方向を示す。
   _drawButtons(ctx) {
-    drawControls(ctx, this._thrustRcsL, this._thrustMain, this._thrustRcsR, (this._sideT > 0 && !this._auto && this._live()) ? this._sideT : 0, this._clock || 0);
+    drawControls(ctx, this._thrustRcsL, this._thrustMain, this._thrustRcsR, (this._sideT > 0 && !this._auto && this._live()) ? this._sideT : 0, this._clock || 0, i18nInverted() && !this._auto);
   }
 
   // ---- Stage Clear overlay ----

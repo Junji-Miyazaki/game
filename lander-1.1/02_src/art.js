@@ -5,6 +5,7 @@
 import { P } from './core/palette.js';
 import { APP_LABEL } from './version.js';
 import { drawMissionPatch } from './patches.js';
+import { i18nLang } from './core/i18n.js';
 
 export const ART_VERSION = 1;
 const AW = 360;
@@ -1154,7 +1155,8 @@ export function drawPowerBanner(ctx, kind, def, k) {
   ctx.restore();
   txt(ctx, 'POWER UP', 112, 126, 7, p.warn, 'left', { sp: 3, w: 500, a });
   txt(ctx, def.name, 112, 138, 13, p.hi, 'left', { sp: 2, w: 600, a });
-  txt(ctx, def.note, 112, 157, 7, p.fg, 'left', { sp: 1.5, w: 500, a: a * 0.85 });
+  const nja = i18nLang() === 'ja' && def.noteJa;
+  txt(ctx, nja ? def.noteJa : def.note, 112, nja ? 155 : 157, nja ? 9 : 7, p.fg, 'left', { sp: nja ? 0.6 : 1.5, w: 500, a: a * 0.85 });
 }
 // 水星の地平線の光（暗闇の上に重ねる。霧に隠れない）
 export function drawHorizonGlare(ctx) {
@@ -1297,8 +1299,9 @@ export function drawHudTip(ctx, k) {
   ctx.strokeStyle = rgba(p.mid, 0.55); ctx.lineWidth = 1; ctx.stroke();
   const cx = AW / 2;
   txt(ctx, 'DESCENT ↓   DRIFT ↔   TILT   SPIN', cx, L.y + 14, 9, p.hi, 'center', { sp: 1.6, w: 500 });
-  txt(ctx, 'KEEP THEM WHITE TO LAND SAFELY', cx, L.y + 34, 9, p.fg, 'center', { sp: 2, w: 400 });
-  txt(ctx, 'AMBER = CAUTION    RED = TOO FAST', cx, L.y + 50, 8, p.warn, 'center', { sp: 1.8, w: 500 });
+  const ja = i18nLang() === 'ja';   // 説明文だけ言語を切り替える（計器の名前 DESCENT/DRIFT/TILT/SPIN と TAP TO START は英語のまま）
+  txt(ctx, ja ? '白いままなら安全に着陸できます' : 'KEEP THEM WHITE TO LAND SAFELY', cx, L.y + 34, ja ? 10 : 9, p.fg, 'center', { sp: ja ? 0.8 : 2, w: 400 });
+  txt(ctx, ja ? '琥珀＝注意　赤＝速すぎ' : 'AMBER = CAUTION    RED = TOO FAST', cx, L.y + 50, ja ? 9 : 8, p.warn, 'center', { sp: ja ? 0.8 : 1.8, w: 500 });
   txt(ctx, 'TAP TO START', cx, L.y + 68, 7, p.dim, 'center', { sp: 3, w: 500 });
   ctx.restore();
 }
@@ -1317,47 +1320,59 @@ function rotArrow(ctx, cx, cy, r, cw) {
   ctx.stroke();
   ctx.restore();
 }
-// side: SIDE THRUST 中の残り秒（>0 で左右ボタンに ⇦ ⇨ を光らせる。押下の向きはそのまま=左ボタンで左へ移動）
-export function drawControls(ctx, left, mid, right, side, t) {
+// 1つの操作ボタン（i: 0=左 1=中央 2=右）。drawControls と HOW TO PLAY で共用。
+// inv: 操作の向き INVERTED（左ボタン=機首が左へ）。side: SIDE THRUST 残り秒（>0 で金の横矢印）。
+// 横矢印の向き: STANDARD=左ボタンで機体が右へ（反作用ドリフトと同じ向き）、INVERTED=左ボタンで左へ
+export function drawCtlButton(ctx, i, bx, by, bw, bh, on, side, t, inv) {
+  const p = P();
+  const accent = i === 1 ? p.warn : p.fg;
+  rr(ctx, bx, by, bw, bh, 22);
+  ctx.fillStyle = on ? rgba(accent, i === 1 ? 0.20 : 0.15) : rgba(p.fg, 0.045);
+  ctx.fill();
+  ctx.lineWidth = on ? 1.4 : 1;
+  ctx.strokeStyle = on ? rgba(accent, 0.8) : rgba(p.fg, 0.2);
+  ctx.stroke();
+  const cx = bx + bw / 2, cy = by + bh / 2;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 2;
+  ctx.strokeStyle = on ? accent : rgba(p.fg, 0.62);
+  if (i === 1) {
+    ctx.beginPath(); ctx.moveTo(cx, cy + 9); ctx.lineTo(cx, cy - 9);
+    ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 7, cy - 2); ctx.stroke();
+    ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (side > 0) {   // SIDE THRUST: 金色の光る横矢印（⇦ / ⇨）
+    const pu = 0.75 + 0.25 * Math.sin((t || 0) * 6), d = (i === 0 ? 1 : -1) * (inv ? -1 : 1);
+    rr(ctx, bx, by, bw, bh, 22);
+    ctx.fillStyle = rgba(p.warn, on ? 0.22 : 0.08 * pu + 0.04); ctx.fill();
+    ctx.lineWidth = on ? 1.8 : 1.2; ctx.strokeStyle = rgba(p.warn, on ? 0.95 : 0.5 * pu + 0.25); ctx.stroke();
+    ctx.save(); ctx.shadowColor = p.warn; ctx.shadowBlur = on ? 10 : 6 * pu;
+    ctx.strokeStyle = on ? p.hi : p.warn; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(cx - d * 13, cy); ctx.lineTo(cx + d * 13, cy);
+    ctx.moveTo(cx + d * 5, cy - 8); ctx.lineTo(cx + d * 13, cy); ctx.lineTo(cx + d * 5, cy + 8); ctx.stroke();
+    ctx.restore();
+  } else {
+    rotArrow(ctx, cx, cy, 11, (i === 0) !== !!inv);   // STANDARD: 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ。INVERTED は逆
+  }
+}
+// side: SIDE THRUST 中の残り秒（>0 で左右ボタンに ⇦ ⇨ を光らせる）。inv: INVERTED 設定
+export function drawControls(ctx, left, mid, right, side, t, inv) {
   const p = P();
   ctx.save();
   // 下部の薄いベール（地形の上でもボタンを読めるように）
   ctx.fillStyle = gLin(ctx, 'ctlVeil', 0, ART_BTN_Y - 20, 0, AH, [[0, 'rgba(6,8,14,0)'], [0.3, 'rgba(6,8,14,0.55)'], [1, 'rgba(6,8,14,0.9)']]);
   ctx.fillRect(0, ART_BTN_Y - 20, AW, 100);
   const flags = [left, mid, right];
-  for (let i = 0; i < 3; i++) {
-    const on = flags[i];
-    const bx = i * 120 + 12, by = ART_BTN_Y + 10, bw = 96, bh = 56;
-    const accent = i === 1 ? p.warn : p.fg;
-    rr(ctx, bx, by, bw, bh, 22);
-    ctx.fillStyle = on ? rgba(accent, i === 1 ? 0.20 : 0.15) : rgba(p.fg, 0.045);
-    ctx.fill();
-    ctx.lineWidth = on ? 1.4 : 1;
-    ctx.strokeStyle = on ? rgba(accent, 0.8) : rgba(p.fg, 0.2);
-    ctx.stroke();
-    const cx = bx + bw / 2, cy = by + bh / 2;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 2;
-    ctx.strokeStyle = on ? accent : rgba(p.fg, 0.62);
-    if (i === 1) {
-      ctx.beginPath(); ctx.moveTo(cx, cy + 9); ctx.lineTo(cx, cy - 9);
-      ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx, cy - 9); ctx.lineTo(cx + 7, cy - 2); ctx.stroke();
-      ctx.globalAlpha = on ? 0.9 : 0.4; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(cx - 4, cy + 13); ctx.lineTo(cx - 4, cy + 11); ctx.moveTo(cx + 4, cy + 13); ctx.lineTo(cx + 4, cy + 11); ctx.stroke();
-      ctx.globalAlpha = 1;
-    } else if (side > 0) {   // SIDE THRUST: 金色の光る横矢印（⇦ / ⇨）
-      const pu = 0.75 + 0.25 * Math.sin((t || 0) * 6), d = i === 0 ? -1 : 1;
-      rr(ctx, bx, by, bw, bh, 22);
-      ctx.fillStyle = rgba(p.warn, on ? 0.22 : 0.08 * pu + 0.04); ctx.fill();
-      ctx.lineWidth = on ? 1.8 : 1.2; ctx.strokeStyle = rgba(p.warn, on ? 0.95 : 0.5 * pu + 0.25); ctx.stroke();
-      ctx.save(); ctx.shadowColor = p.warn; ctx.shadowBlur = on ? 10 : 6 * pu;
-      ctx.strokeStyle = on ? p.hi : p.warn; ctx.lineWidth = 2.4;
-      ctx.beginPath(); ctx.moveTo(cx - d * 13, cy); ctx.lineTo(cx + d * 13, cy);
-      ctx.moveTo(cx + d * 5, cy - 8); ctx.lineTo(cx + d * 13, cy); ctx.lineTo(cx + d * 5, cy + 8); ctx.stroke();
-      ctx.restore();
-    } else {
-      rotArrow(ctx, cx, cy, 11, i === 0);   // 左ボタン=機首が右へ(時計回り)、右ボタン=機首が左へ(反時計回り)
-    }
-  }
+  for (let i = 0; i < 3; i++) drawCtlButton(ctx, i, i * 120 + 12, ART_BTN_Y + 10, 96, 56, flags[i], side, t, inv);
+  ctx.restore();
+}
+
+// ステージ開始時の「やること」1文（天体名・紹介の下。非ブロッキング）
+export function drawGoalLine(ctx, text, k) {
+  const p = P(), a = Math.max(0, Math.min(1, k)), ja = i18nLang() === 'ja';
+  ctx.save(); ctx.globalAlpha = a;
+  pill(ctx, 30, 192, AW - 60, 24, rgba('#06080E', 0.55), rgba(p.fg, 0.18));
+  txt(ctx, text, AW / 2, ja ? 197 : 199, ja ? 11 : 9, p.hi, 'center', { sp: ja ? 0.6 : 1.4, w: 500 });
   ctx.restore();
 }
 
@@ -1468,12 +1483,14 @@ export function drawGroundedBanner(ctx, outOfFuel, a) {
   else txt(ctx, parts[1], AW / 2, 143, 9, p.fg, 'center', { sp: 4, w: 400, a: 0.85 * a, sh: 1 });
 }
 export const TOUCH_HINT = 'FLAT GROUND: YOU CAN TOUCH DOWN · NO SCORE';
+export const TOUCH_HINT_JA = '平らな地面なら接地できます（得点なし）';
 export function drawTouchHint(ctx, a) {
   const p = P();
   const w = 288, x = (AW - w) / 2, y = 170;
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
   pill(ctx, x, y, w, 22, rgba('#080b14', 0.7), rgba('#7fb8ae', 0.4));
-  txt(ctx, TOUCH_HINT, AW / 2, y + 7, 8, p.fg, 'center', { sp: 1.6, w: 500 });
+  const ja = i18nLang() === 'ja';
+  txt(ctx, ja ? TOUCH_HINT_JA : TOUCH_HINT, AW / 2, y + (ja ? 6 : 7), ja ? 10 : 8, p.fg, 'center', { sp: ja ? 0.6 : 1.6, w: 500 });
   ctx.restore();
 }
 
@@ -1976,7 +1993,7 @@ export function drawHoldPanel(ctx, d) {
   veil(ctx, 0.55);
   const conf = !!d.confirm;
   const edge = conf ? p.bad : p.mid;
-  panel(ctx, 40, 184, AW - 80, 272, { a: 0.9, border: edge, ba: conf ? 0.32 : 0.22 });
+  panel(ctx, 40, 184, AW - 80, conf ? 272 : 322, { a: 0.9, border: edge, ba: conf ? 0.32 : 0.22 });
   if (!conf) {
     txt(ctx, 'MISSION HOLD', cx, 208, 18, p.hi, 'center', { sp: 6, w: 300 });
     txt(ctx, 'STAGE ' + d.stage + (d.body ? '  ·  ' + String(d.body).toUpperCase() : ''), cx, 248, 9, p.fg, 'center', { sp: 3, w: 500 });

@@ -19,10 +19,10 @@ export const SIDE_S = 8;                           // SIDE THRUST: 8秒間 機�
 export const SIDE_ACCEL = 12;                      // SIDE THRUST の横加速度(px/s^2)。主推力 5.2・通常RCSのドリフト 2.5 に対し「はっきり効く」値。燃料は通常のRCSと同じ率
 export const POWER_FUEL_FRAC = 0.15;               // FUEL: 最大燃料の15%（上限まで）
 export const POWER_DEFS = {
-  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', dur: SLOWMO_S },
-  radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE',                   dur: 0 },
-  side:     { id: 'side',     name: 'SIDE THRUST',     note: 'SIDE BUTTONS MOVE SIDEWAYS · 8 S', dur: SIDE_S },
-  fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED',                         dur: 0 },
+  slowmo:   { id: 'slowmo',   name: 'SLOW-MO',         note: 'METEORS AT 1/4 SPEED · 8 S', noteJa: '隕石が1/4の速さに · 8秒', dur: SLOWMO_S },
+  radar:    { id: 'radar',    name: 'RADAR',           note: 'FOR THIS STAGE', noteJa: 'このステージの間', dur: 0 },
+  side:     { id: 'side',     name: 'SIDE THRUST',     note: 'SIDE BUTTONS MOVE SIDEWAYS · 8 S', noteJa: '左右ボタンで真横に移動 · 8秒', dur: SIDE_S },
+  fuel:     { id: 'fuel',     name: 'FUEL +15%',       note: 'REFUELED', noteJa: '燃料を補給', dur: 0 },
 };
 export const POWER_IDS = ['slowmo', 'radar', 'side', 'fuel'];
 

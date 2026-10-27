@@ -72,20 +72,20 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
   const { g } = air(); g._sideT = SIDE_S; g.angle = 25;
   const f0 = g.fuel;
   key(g, 'left', 1);
-  ok(near(g.vx, -SIDE_ACCEL, 0.6), 'LEFT key moves LEFT at ~12 px/s2 (vx after 1 s = ' + g.vx.toFixed(2) + ')');
+  ok(near(g.vx, SIDE_ACCEL, 0.6), 'STANDARD (beta.6): LEFT key moves the ship RIGHT at ~12 px/s2 (vx after 1 s = ' + g.vx.toFixed(2) + ')');
   ok(Math.abs(g.angle) < 0.05 && g.omega === 0, 'level lock: tilt 25 -> ' + g.angle.toFixed(3) + ', omega 0 while pressing');
   ok(near(f0 - g.fuel, 1.5, 0.06), 'fuel at the normal RCS rate: ' + (f0 - g.fuel).toFixed(3));
-  ok(g.x < 180, 'ship translated left: x=' + g.x.toFixed(1));
+  ok(g.x > 180, 'ship translated right: x=' + g.x.toFixed(1));
   const a = air(); a.g._sideT = SIDE_S; key(a.g, 'right', 1);
-  ok(near(a.g.vx, SIDE_ACCEL, 0.6) && a.g.x > 180, 'RIGHT key moves RIGHT: vx=' + a.g.vx.toFixed(2));
+  ok(near(a.g.vx, -SIDE_ACCEL, 0.6) && a.g.x < 180, 'RIGHT key moves the ship LEFT: vx=' + a.g.vx.toFixed(2));
   // 左右同時押し: 打ち消し（速度も燃料も変わらない）
   const b = air(); b.g._sideT = SIDE_S; for (let i = 0; i < 60; i++) { b.g.onInput('left'); b.g.onInput('right'); b.g.update(DT); }
   ok(near(b.g.vx, 0, 1e-9) && near(b.g.fuel, b.g._fuelMax(), 1e-9), 'both buttons cancel (no drift, no fuel)');
   // タッチ（画面下の左右ゾーン）も同じ規則
   const t1 = air(); t1.g._sideT = SIDE_S; t1.e.touches = [{ x: 40, y: 700 }]; run(t1.g, 1);
-  ok(near(t1.g.vx, -SIDE_ACCEL, 0.6), 'touch on the LEFT button moves left: ' + t1.g.vx.toFixed(2));
+  ok(near(t1.g.vx, SIDE_ACCEL, 0.6), 'touch on the LEFT button moves right (standard): ' + t1.g.vx.toFixed(2));
   const t2 = air(); t2.g._sideT = SIDE_S; t2.e.touches = [{ x: 330, y: 700 }]; run(t2.g, 1);
-  ok(near(t2.g.vx, SIDE_ACCEL, 0.6), 'touch on the RIGHT button moves right: ' + t2.g.vx.toFixed(2));
+  ok(near(t2.g.vx, -SIDE_ACCEL, 0.6), 'touch on the RIGHT button moves left (standard): ' + t2.g.vx.toFixed(2));
   // 回転入力は効かない（角速度 0・角度は水平のまま）
   const c = air(); c.g._sideT = SIDE_S; key(c.g, 'left', 2);
   ok(Math.abs(c.g.angle) < 0.01 && c.g.omega === 0, 'rotation inputs no longer rotate during SIDE THRUST');
@@ -118,12 +118,14 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
   ok(rec.texts.some((t) => /^SIDE THRUST 8s$/.test(t.s)), 'HUD: SIDE THRUST with remaining seconds: ' + rec.texts.filter((t) => /SIDE THRUST/.test(t.s)).map((t) => t.s).join('|'));
   run(g2, 3); const rec2 = render(g2);
   ok(rec2.texts.some((t) => /^SIDE THRUST [45]s$/.test(t.s)), 'HUD countdown: ' + rec2.texts.filter((t) => /SIDE THRUST \d/.test(t.s)).map((t) => t.s).join('|'));
-  // ボタン矢印: side>0 のとき 左ボタンに ⇦（先端が左）、右ボタンに ⇨
+  // ボタン矢印（beta.6: STANDARD は左ボタンが ⇨ =機体が右へ、右ボタンが ⇦。INVERTED は逆）。中心 60 / 300、矢印の半長 13
   const rs = newRec(); drawControls(makeCtx(rs), false, false, false, 5, 1);
+  const ri = newRec(); drawControls(makeCtx(ri), false, false, false, 5, 1, true);
   const r0 = newRec(); drawControls(makeCtx(r0), false, false, false, 0, 1);
-  const left = rs.pts.filter((p) => p[1] === 47), right = rs.pts.filter((p) => p[1] === 313);   // ボタン中心 60 / 300（bx=12/252, bw=96）。左矢印の先端 x=47、右矢印の先端 x=313
-  ok(left.length >= 1 && right.length >= 1, 'arrows drawn on LEFT (tip at left) and RIGHT (tip at right) buttons');
-  ok(r0.pts.filter((p) => p[1] === 47 || p[1] === 313).length === 0, 'no arrows without SIDE THRUST');
+  const tip = (rec, x) => rec.pts.filter((p) => p[0] === 'lineTo' && p[1] === x).length >= 1;
+  ok(tip(rs, 73) && tip(rs, 287) && !tip(rs, 47) && !tip(rs, 313), 'STANDARD arrows: LEFT button tip at right (73), RIGHT button tip at left (287)');
+  ok(tip(ri, 47) && tip(ri, 313) && !tip(ri, 73) && !tip(ri, 287), 'INVERTED arrows: LEFT button tip at left (47), RIGHT button tip at right (313)');
+  ok(r0.pts.filter((p) => [47, 313, 73, 287].includes(p[1])).length === 0, 'no arrows without SIDE THRUST');
   // 描画: 炎は左右入れ替え（左ボタン=右ノズルから排気）。例外なく描ける
   const fl = air(); fl.g._sideT = SIDE_S; fl.e.touches = [{ x: 40, y: 700 }]; run(fl.g, 0.1);
   ok(fl.g._thrustRcsL && render(fl.g).texts.length > 0, 'renders with side thrust held');
@@ -306,13 +308,13 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
 
 // ================================================================ 6. 版・UPDATE INFORMATION
 {
-  ok(APP_VERSION === '1.1.0-beta.5', 'APP_VERSION 1.1.0-beta.5');
+  ok(APP_VERSION === '1.1.0-beta.6', 'APP_VERSION 1.1.0-beta.6');
   const E = WHATSNEW.entries;
-  ok(E[0].version === '1.1.0-beta.5' && E[0].date === '2026.10.26' && WHATSNEW.version === '1.1.0-beta.5', 'newest entry = beta.5 (2026.10.26)');
-  ok(E[1].version === '1.1.0-beta.4' && E[1].date === '2026.10.26', 'beta.4 is the second entry');
-  ok(E[1].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [1])');
+  ok(E[0].version === '1.1.0-beta.6' && E[0].date === '2026.10.27' && WHATSNEW.version === '1.1.0-beta.6', 'newest entry = beta.6 (2026.10.27)');
+  ok(E[2].version === '1.1.0-beta.4' && E[2].date === '2026.10.26', 'beta.4 is the third entry');
+  ok(E[2].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [2])');
   ok(E.every((en) => en.items.every((l) => l.length <= 22)), 'every item <= 22 chars: ' + E[0].items.map((l) => l.length).join(','));
-  ok(E.map((en) => en.version).join() === '1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
+  ok(E.map((en) => en.version).join() === '1.1.0-beta.6,1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
 }
 
 console.log('p18assist: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));

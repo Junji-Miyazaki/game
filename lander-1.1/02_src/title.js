@@ -10,7 +10,9 @@ import { Music } from './music.js';
 import { txt, txtW, rr, ellipsize, pill, rgba, veil, SITE, astronautCycle, drawTitleSky, drawLaunchSite, drawTower, drawRocket, drawLaunchFlame, drawGroundBlast, drawSmoke, drawSpeaker, drawAstronaut, drawProfilePanel, drawBetaTag, drawWorldBanner, drawWorldTop5 } from './art.js';
 
 import { stageInfo } from './bodies.js';
-import { WHATSNEW } from './whatsnew.js';
+import { WHATSNEW, whatsnewItems } from './whatsnew.js';
+import { i18nBind, i18nLang } from './core/i18n.js';
+import { HtCard, htTouchDevice } from './howto.js';
 import { BootFx } from './bootfx.js';
 import { starsSummary } from './stars.js';
 import { patchesSummary, patchCount, PATCH_COUNT } from './patches.js';
@@ -317,6 +319,7 @@ export class BootScene extends Scene {
   constructor(engine, next) {
     super(engine);
     this.next = next;
+    i18nBind(engine.storage);
     this.isRoot = true;   // BACKボタン非表示
     this.t = 0;
     this.done = false;
@@ -396,7 +399,7 @@ export class BootScene extends Scene {
       const en = WHATSNEW.entries[ei];
       if (y + NEWS_DATE_H > v.y && y < v.y + v.h) txt(ctx, en.date + ' · build ' + en.version, v.x, y + 2, 8, p.dim, 'left', { sp: 1, w: 500, a: edge(y, NEWS_DATE_H) * nf * (ei === 0 && fresh ? 1 : 0.85) });
       y += NEWS_DATE_H;
-      for (const it of en.items) {
+      for (const it of whatsnewItems(en)) {
         if (y + NEWS_LINE > v.y && y < v.y + v.h) {
           const a = edge(y, NEWS_LINE) * nf * (ei === 0 && fresh ? 0.88 : 0.7);
           txt(ctx, '・', v.x, y + 2, 11, p.fg, 'left', { w: 400, a });
@@ -503,6 +506,8 @@ export class TitleScene extends Scene {
     super(engine);
     this.startGame = startGame;
     this.useLaunch = !!(opts && opts.launch);
+    i18nBind(engine.storage);
+    this.ht = null;                                                 // HOW TO PLAY / 設定カード（HtCard）
     this.isRoot = true;    // 最上位＝BACKボタン非表示
     this.t = 0;
     this.showRank = false;
@@ -517,6 +522,7 @@ export class TitleScene extends Scene {
     this._steamAcc = 0; this._smokeAcc = 0; this._steamSide = 1;
     // タップ対象（互いに重ならない。8pxグリッド）
     this.muteBtn = { x: W - 48, y: 6, w: 40, h: 40 };
+    this.howBtn = { x: W - 94, y: 6, w: 44, h: 44 };               // ? = HOW TO PLAY（設定もここ）
     this.logoBox = { x: W / 2 - 110, y: 52, w: 220, h: 56 };
     this.betaBox = { x: W / 2 - 38, y: 110, w: 76, h: 12 };        // BETA v1.1 ラベル（タップはロゴタップ扱い）
     this.changeBtn = { x: W / 2 - 40, y: 436, w: 80, h: 20 };      // PILOTS（旧 CHANGE。プロフィール一覧を開く）
@@ -800,6 +806,7 @@ export class TitleScene extends Scene {
       return;
     }
     this._ensureMusic();          // 最初の入力でタイトル曲（iOSはジェスチャ必須）
+    if (this.ht) { this.ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
     if (this.map) { this._mapInput(action, data); return; }   // 太陽系マップ表示中は入力を独占
     if (this.prof) { this._profInput(action, data); return; }   // PILOTS パネル表示中はパネルが入力を独占
     if (action === 'tap' && data) {
@@ -808,6 +815,7 @@ export class TitleScene extends Scene {
         if (!m) musicOf(this.engine).sfx.uiTap();
         return;
       }
+      if (this._hit(this.howBtn, data)) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; this.ht = new HtCard({ onTap: () => { try { if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } }, onClose: () => { this.ht = null; } }); return; }
       if (this._hit(this.rankBtn, data)) {
         musicOf(this.engine).sfx.uiTap();
         this.showRank = !this.showRank;
@@ -946,6 +954,11 @@ export class TitleScene extends Scene {
     if (ui > 0) {
       const sp = drawSpeaker;
       sp(ctx, this.muteBtn.x + this.muteBtn.w / 2, this.muteBtn.y + this.muteBtn.h / 2, 1, rgba(p.fg, 0.7 * ui), isMuted(this.engine));
+      { const hb = this.howBtn, hx = hb.x + hb.w / 2, hy = hb.y + hb.h / 2;
+        ctx.save(); ctx.beginPath(); ctx.arc(hx, hy, 11, 0, Math.PI * 2); ctx.strokeStyle = rgba(p.fg, 0.55 * ui); ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.8 * ui; ctx.strokeStyle = p.fg; ctx.fillStyle = p.fg; ctx.lineWidth = 1.5; ctx.lineCap = 'round';   // '?' は線で描く（文字ではない）
+        ctx.beginPath(); ctx.arc(hx, hy - 3.5, 3.6, Math.PI, Math.PI * 2.5); ctx.lineTo(hx, hy + 1.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(hx, hy + 5.5, 1, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
       if (this.name) txt(ctx, 'PILOT  ' + this.name, W / 2, 416, 12, p.fg, 'center', { sp: 3, w: 500, a: ui });
       else txt(ctx, 'ENTER NAME ON START', W / 2, 420, 8, p.dim, 'center', { sp: 4, w: 400, a: ui });
       const cb = this.changeBtn;
@@ -1005,5 +1018,6 @@ export class TitleScene extends Scene {
         confirm: pf.mode === 'confirm' ? { l1: 'DELETE ' + String(pf.target).toUpperCase() + '?', l2: 'THIS ALSO REMOVES ITS WORLD RECORD', yes: R.yes, no: R.no } : null });
     }
     if (championEntryOpen(this._champ)) veil(ctx, 0.55);
+    if (this.ht) this.ht.render(ctx);
   }
 }

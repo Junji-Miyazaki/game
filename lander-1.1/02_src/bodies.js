@@ -179,3 +179,34 @@ export function celebrationPose(body, loop, t, perfect) {
   if (perfect) pose.fx = { u: (t % 1.2) / 1.2, n: 8 };
   return pose;
 }
+
+// ---- ステージ開始時の「やること」1文（案内のみ。新しい条件や目標ではない）----
+// 特徴は1つだけ選ぶ。優先順: 中継地点 > 氷 > 暗闇/視界 > 動くパッド > 風 > 隕石 > 何もなし。
+// ボーナス（TERRA のミッション）は種類ごとの文。JA は22字以内、EN は40字以内。
+export const GOAL_LINES = {
+  waypoint:  { ja: '中継地点に降りてからパッドへ', en: 'Touch the waypoint first, then the pad' },
+  ice:       { ja: '氷で滑る。止まれる速さでパッドへ', en: 'Ice slides — land slow enough to stop' },
+  dark:      { ja: 'ライトの届く範囲を頼りにパッドへ', en: 'Trust your light — find the pad' },
+  fog:       { ja: '視界が悪い。慎重にパッドへ', en: 'Poor visibility — approach with care' },
+  moving:    { ja: '動くパッドに合わせて着陸しよう', en: 'Time your landing with the moving pad' },
+  wind:      { ja: '風に流されないようにパッドへ', en: 'Fight the wind and reach the pad' },
+  meteors:   { ja: '隕石をよけてパッドに着陸しよう', en: 'Dodge the meteors and land on the pad' },
+  plain:     { ja: 'パッドにゆっくり着陸しよう', en: 'Land gently on the pad' },
+  CALM:      { ja: 'ゆっくりまっすぐパッドへ', en: 'Come down gently onto the pad' },
+  ROVER:     { ja: '動くパッドに合わせて着陸しよう', en: 'Time your landing with the moving pad' },
+  CROSSWIND: { ja: '横風に注意してパッドへ', en: 'Watch the crosswind and reach the pad' },
+  STORM:     { ja: '風と動くパッドを読んで着陸しよう', en: 'Read the wind and the moving pad' },
+};
+// f: { bonusType, waypoint, ice, visibility(null|数), dark(true=暗闇), moving, wind, meteors } -> GOAL_LINES のキー
+export function goalKey(f) {
+  f = f || {};
+  if (f.bonusType && GOAL_LINES[f.bonusType]) return f.bonusType;
+  if (f.waypoint) return 'waypoint';
+  if (f.ice) return 'ice';
+  if (f.visibility != null) return f.dark ? 'dark' : 'fog';
+  if (f.moving) return 'moving';
+  if (f.wind) return 'wind';
+  if (f.meteors) return 'meteors';
+  return 'plain';
+}
+export function goalText(key, lang) { const g = GOAL_LINES[key] || GOAL_LINES.plain; return lang === 'ja' ? g.ja : g.en; }
