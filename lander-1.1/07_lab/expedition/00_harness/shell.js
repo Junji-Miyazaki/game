@@ -55,16 +55,25 @@ export function createShell(cfg) {
   const BTN = {
     practice: { x: 40, y: 284, w: 280, h: 52 }, mission: { x: 40, y: 436, w: 280, h: 52 },
     res1: { x: 24, y: 0, w: 152, h: 48 }, res2: { x: 184, y: 0, w: 152, h: 48 },
+    help: { x: 296, y: 176, w: 48, h: 48 },                     // メニューの '?'（ブリーフィングを開く）
+    skip: { x: 52, y: 446, w: 256, h: 44 },                      // ブリーフィングの NEXT TIME SKIP
   };
+  const BR = { x: 20, y: 96, w: 320, h: 440 };                   // ブリーフィングカード
   options.forEach((o, i) => { BTN[o.btn] = { x: i ? 182 : 24, y: 366, w: 154, h: 44 }; });
   const btnY = (m) => (m.result === 'win' ? 478 : 330);
 
-  const sh = { id, sess, BTN, KEY_B, KEY_T, loadBest, loadBestTime, lsGet, lsSet, lifeMult, timeBonus, LIFE_LOST_S, HINT_Y, mmss, star, button, hit };
+  const KEY_S = 'lander11.exp.' + id + '.skipBrief', brief = cfg.brief || null;
+  const skipOn = () => lsGet(KEY_S) === '1';
+  const sh = { KEY_S, skipOn, id, sess, BTN, KEY_B, KEY_T, loadBest, loadBestTime, lsGet, lsSet, lifeMult, timeBonus, LIFE_LOST_S, HINT_Y, mmss, star, button, hit };
   sh.score = (base, lives, sec = 1e9) => Math.round((base + timeBonus(sec)) * lifeMult(lives));
 
   // ---- セッション ----
   sh.onStart = (prev) => { if (sess.mode === 'mission' && prev && (prev.result === 'win' || prev.failed)) sess.lives = LIVES0; };   // R で結果画面から再開 = 新しい3ライフ
-  sh.begin = (lab, mode, opt = {}) => { sess.mode = mode; if (mode === 'mission') sess.lives = LIVES0; for (const o of options) if (opt[o.key] != null) sess[o.key] = !!opt[o.key]; lab.reset(); };
+  // ブリーフィング: sess.brief = 'start'（PRACTICE/MISSION 選択直後・開始前）| 'view'（メニューの ? ）| false。メニュー経由のみ（RETRY・URL の ?mode= ・テストの begin は出さない）
+  const bsave = {};
+  const briefOpen = (l, kind) => { sess.brief = kind; if (kind === 'start') { bsave.f = l.frozen; bsave.c = l.controlsEnabled; l.frozen = true; l.controlsEnabled = false; } };
+  const briefClose = (l) => { const k = sess.brief; sess.brief = false; if (k === 'start') { l.frozen = bsave.f; l.controlsEnabled = bsave.c; } };
+  sh.begin = (lab, mode, opt = {}) => { sess.brief = false; sess.mode = mode; if (mode === 'mission') sess.lives = LIVES0; for (const o of options) if (opt[o.key] != null) sess[o.key] = !!opt[o.key]; lab.reset(); };
   sh.onLoss = (m) => {   // 失敗: ミッションならライフ -1（0 で MISSION FAILED）
     if (sess.mode === 'mission') { sess.lives = Math.max(0, sess.lives - 1); m.livesLeft = sess.lives; if (sess.lives > 0) m.lifeLost = true; else m.failed = true; }
   };
@@ -82,9 +91,14 @@ export function createShell(cfg) {
   // メニュー / 結果画面のタップ。処理したら true
   sh.tap = (l, x, y) => {
     const m = l.m;
+    if (sess.brief) {   // ブリーフィング中: チェックで切替、それ以外のタップで閉じる（start なら開始待ちへ）
+      if (brief && hit(BTN.skip, x, y)) lsSet(KEY_S, skipOn() ? '' : '1'); else briefClose(l);
+      return true;
+    }
     if (m.menu) {
-      if (hit(BTN.practice, x, y)) sh.begin(l, 'practice');
-      else if (hit(BTN.mission, x, y)) sh.begin(l, 'mission');
+      if (brief && hit(BTN.help, x, y)) briefOpen(l, 'view');
+      else if (hit(BTN.practice, x, y)) { sh.begin(l, 'practice'); if (brief && !skipOn()) briefOpen(l, 'start'); }
+      else if (hit(BTN.mission, x, y)) { sh.begin(l, 'mission'); if (brief && !skipOn()) briefOpen(l, 'start'); }
       else for (const o of options) if (hit(BTN[o.btn], x, y)) sess[o.key] = !sess[o.key];
       return true;
     }
@@ -102,6 +116,11 @@ export function createShell(cfg) {
     const lab = rHook.lab;
     if (sess.mode === 'mission' && lab.m && rHook.started(lab.m) && !lab.m.result) { e.stopImmediatePropagation(); e.preventDefault(); rHook.lose(lab, 'RESTARTED', 'R pressed: life lost'); }
   }, true);
+  window.addEventListener('keydown', (e) => {   // ブリーフィング中の Space / ↑ = タップと同じ（閉じる）。ミッション側のキー処理より先に登録
+    if (!sess.brief || !briefLab || e.repeat || !(e.key === ' ' || e.key === 'ArrowUp')) return;
+    e.stopImmediatePropagation(); e.preventDefault(); briefClose(briefLab);
+  }, true);
+  let briefLab = null; sh.bindLab = (l) => { briefLab = l; };
   sh.hookR = (lab, started, lose) => { rHook = { lab, started, lose }; };
   sh.addResetButton = () => { const box = document.getElementById('dbg'); if (box) { const b = document.createElement('button'); b.textContent = 'RESET RECORD'; b.style.cssText = 'margin-top:8px;font:9px monospace;opacity:.6;padding:2px 6px'; b.onclick = () => { lsSet(KEY_B, ''); lsSet(KEY_T, ''); }; box.appendChild(b); } };
 
@@ -129,6 +148,11 @@ export function createShell(cfg) {
     txt(ctx, 'BEST SCORE ' + (best.score || '-') + '   ·   ★ ' + nst + ' / 3', 180, 225, 9, nst ? '#FFC94D' : p.dim, 'center', { w: 700, sp: 0.8 });
     txt(ctx, 'BEST TIME ' + (bt == null ? '-' : mmss(bt)), 180, 240, 9, bt == null ? p.dim : '#FFC94D', 'center', { w: 700, sp: 0.8 });
     for (let i = 0; i < 3; i++) star(ctx, 150 + i * 30, 266, 8, best.stars[i]);
+    if (brief) {   // '?' ボタン
+      const b = BTN.help, cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, 12, 0, 7); ctx.fillStyle = rgba(p.fg, 0.06); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.55); ctx.lineWidth = 1.2; ctx.stroke();
+      txt(ctx, '?', cx, cy - 7, 13, p.fg, 'center', { w: 700 });
+    }
     button(ctx, BTN.practice, 0, 'PRACTICE', p.mid, hot, 16);
     txt(ctx, 'UNLIMITED RETRIES · NO STARS', 180, 344, 7.5, p.dim, 'center', { w: 600, sp: 0.8 });
     for (const o of options) {
@@ -141,6 +165,31 @@ export function createShell(cfg) {
     if (options.length) txt(ctx, '(PRACTICE ONLY)', 180, 418, 6.5, p.dim, 'center', { w: 500, sp: 0.8 });
     button(ctx, BTN.mission, 0, 'MISSION', p.warn, hot, 16);
     txt(ctx, '3 LIVES · STARS & SCORE', 180, 496, 7.5, p.dim, 'center', { w: 600, sp: 0.8 });
+    sh.drawBrief(ctx, l);
+  };
+
+  // ブリーフィングカード。日本語は 11〜12px（art.js の FONT = システム日本語フォントへフォールバック）
+  sh.drawBrief = (ctx, l) => {
+    if (!sess.brief || !brief) return;
+    const p = P(), c = BR, view = sess.brief === 'view', cx = c.x + c.w / 2, L = c.x + 22;
+    ctx.save(); ctx.fillStyle = 'rgba(4,6,12,0.78)'; ctx.fillRect(0, 0, W, 560);
+    ctx.fillStyle = 'rgba(13,17,27,0.97)'; rr(ctx, c.x, c.y, c.w, c.h, 16); ctx.fill(); ctx.strokeStyle = rgba(p.mid, 0.75); ctx.lineWidth = 1.4; ctx.stroke();
+    txt(ctx, 'MISSION BRIEFING' + (view ? '' : sess.mode === 'practice' ? ' · PRACTICE' : ' · MISSION'), cx, c.y + 16, 7, p.dim, 'center', { w: 600, sp: 2 });
+    txt(ctx, brief.title, cx, c.y + 32, 13, p.fg, 'center', { w: 800, sp: 1 });
+    txt(ctx, brief.sub, cx, c.y + 54, 12, p.warn, 'center', { w: 600 });
+    let y = c.y + 86;
+    txt(ctx, '目的', L, y, 11, p.dim, 'left', { w: 700 }); y += 20;
+    for (const g of brief.goals) { txt(ctx, g, L, y, 12, p.fg, 'left', { w: 500 }); y += 21; }
+    y += 12; txt(ctx, '★ 条件', L, y, 11, p.dim, 'left', { w: 700 }); y += 20;
+    brief.stars.forEach((t, i) => { txt(ctx, '★' + (i + 1), L, y, 12, '#FFC94D', 'left', { w: 700 }); txt(ctx, t, L + 28, y, 12, p.fg, 'left', { w: 500 }); y += 21; });
+    y += 12; txt(ctx, brief.tip, L, y, 12, p.green, 'left', { w: 600 });
+    const b = BTN.skip, on = skipOn();   // NEXT TIME SKIP チェック
+    rr(ctx, b.x, b.y, b.w, b.h, 12); ctx.fillStyle = rgba(p.fg, on ? 0.12 : 0.04); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.35); ctx.lineWidth = 1; ctx.stroke();
+    rr(ctx, b.x + 14, b.y + 15, 14, 14, 3); ctx.strokeStyle = on ? p.green : rgba(p.fg, 0.5); ctx.stroke();
+    if (on) { ctx.beginPath(); ctx.moveTo(b.x + 17, b.y + 22); ctx.lineTo(b.x + 20.5, b.y + 26); ctx.lineTo(b.x + 26, b.y + 18); ctx.lineWidth = 2; ctx.strokeStyle = p.green; ctx.stroke(); }
+    txt(ctx, 'NEXT TIME SKIP', b.x + 38, b.y + 17, 8.5, on ? p.fg : p.dim, 'left', { w: 700, sp: 0.8 });
+    txt(ctx, view ? 'TAP TO CLOSE' : 'TAP TO START', cx, c.y + c.h - 24, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+    ctx.restore();
   };
 
   // 結果 / 失敗。r = { winTitle?, rows:[[on,label,value]]（★3行）, failNote: string|null, failTime: 秒 }

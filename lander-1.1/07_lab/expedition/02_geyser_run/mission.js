@@ -4,9 +4,10 @@
 import { createLab, W, H, C } from '../00_harness/harness.js?v=ff32a905ee';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=55d64ddce0';
+import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=080a6ac4af';
 
-const sh = createShell({ id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN' });
+const sh = createShell({ id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN',
+  brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す' } });
 const sess = sh.sess;
 const STRAND_S = 2.0;
 const OUT = { x0: -10, x1: 370, y0: -30 };
@@ -15,14 +16,17 @@ const PAD = { x: 200, y: 518, w: 60, id: 'pad' };
 const VENT_W = 11;                     // 噴出口の半幅（接触でバウンス）
 // 噴気: x, 周期 P（6〜9秒）, 最初の噴出時刻 O, 強さの係数 f
 const VENTS = [
-  { x: 52,  P: 6.5, O: 3.4, f: 0.92 },
-  { x: 150, P: 7.5, O: 5.6, f: 1.08 },
-  { x: 308, P: 8.5, O: 2.2, f: 1.0 },
+  { x: 52,  P: 11, O: 6.5,  f: 0.92 },
+  { x: 150, P: 12, O: 11.5, f: 1.08 },
+  { x: 308, P: 13, O: 1.5,  f: 1.0 },
 ];
 const TELE_S = 1.2;                    // 前触れ（霜・ヒス音）
-const RISE = 0.4, PEAK = 0.3, FADE = 2.5, ERUPT_S = RISE + PEAK + FADE;   // 噴出: 立ち上がり → ピーク → 2.5 秒で消える
+const RISE = 0.5, PEAK = 1.8, FADE = 2.7, ERUPT_S = RISE + PEAK + FADE;   // 噴出: 立ち上がり 0.5 → ピーク 1.8 → 2.7 秒で消える（計 5.0 s）
 const F_TOP = 3.0;                     // 噴気の頂上での上向き加速度（口で push、頂上で F_TOP へ直線的に減る）
 const SAMPLE_R = 14, SAMPLE_Q = 0.86;  // 試料の取得半径 / 頂上に近い位置（高さ比）
+const LINGER_S = 6.0;                  // 噴出が終わった後も試料が残る秒数（その後 昇華して消える）
+const SAMPLE_GK = 10, SAMPLE_LAT = 1.6;   // 試料は軽い氷粒: 落下加速度 = g × 10（見えるように増幅）/ 横ドリフト px/s（噴気ごとに左右交互）
+const SAMPLE_LIFE = ERUPT_S + LINGER_S - RISE;   // 出現（噴出の RISE 後）から消えるまで
 const ENTRY = { x: 180, y: 96, vy: 14 };   // 上から進入
 
 // ---- 地形（ゆるい起伏 + 噴出口・パッドは平ら） -----------------------------------------------
@@ -57,6 +61,17 @@ function ventAt(v, T, ph0) {
   const tele = a < 0 && toNext < TELE_S ? 1 - toNext / TELE_S : 0;
   const env = a < 0 ? 0 : a < RISE + PEAK ? 1 : Math.max(0, 1 - (a - RISE - PEAK) / FADE);
   return { a, tele, env, toNext, cycle: Math.floor((T - v.O - ph0) / v.P) };
+}
+
+// 試料: 噴出の RISE 後に頂上付近へ出現 → 噴出中はその場に漂い、噴出が終わってから LINGER_S 秒かけて重力でゆっくり落ちる（横にも少しドリフト）→ 昇華して消える。
+// 取れなかった試料は次の噴出で再出現。tau = 出現からの秒。left = 残り秒。nominal = 出現位置（予告マーカーの位置）
+function sampleAt(i, T, ph0, clock = 0, g = 0.066, hp = 290) {
+  const v = VENTS[i], u = (((T - v.O - ph0) % v.P) + v.P) % v.P;
+  const tau = u >= RISE ? u - RISE : u + v.P - RISE, cyc = Math.floor((T - v.O - ph0) / v.P) - (u >= RISE ? 0 : 1), alive = cyc >= 0 && tau >= 0 && tau < SAMPLE_LIFE;   // 最初の噴出より前は出ない
+  const fall = Math.max(0, tau + RISE - ERUPT_S), ny = v.y - hp * SAMPLE_Q;
+  return { alive, tau, left: SAMPLE_LIFE - tau, life: SAMPLE_LIFE, nx: v.x, ny,
+    x: v.x + 4 * Math.sin(clock * 2.1 + i) + (i % 2 ? -1 : 1) * SAMPLE_LAT * fall,
+    y: ny + 3 * Math.sin(clock * 2.7 + i * 2) + 0.5 * g * SAMPLE_GK * fall * fall };
 }
 
 const lab = createLab({
@@ -95,7 +110,7 @@ function go(l) {   // 開始待ち → 進入（タップ / 推力）
 }
 function onTap(l, x, y) {
   const m = l.m;
-  if (m.menu) { sh.tap(l, x, y); return; }
+  if (m.menu || sess.brief) { sh.tap(l, x, y); return; }
   if (m.waiting) { go(l); return; }
   sh.tap(l, x, y);
 }
@@ -170,8 +185,9 @@ function onUpdate(l, dt) {
       l.state = 'play'; s.vy = -22; s.vx += (s.x >= v.x ? 1 : -1) * 9; s.omega += 10; m.bumpT = 0.9; m.shakeT = 0.25; clang(0.5); toast(l, 'VENT ERUPTED', 1.2);
     }
     // 試料: 噴出中だけ頂上付近に出現（噴出ごとに1回、各噴気の試料は1度だけ取れる）
-    if (st.a >= RISE && !m.got[i]) {
-      const p = samplePos(i, l.clock);
+    const sa = sampleAt(i, m.flyT, pr.ph0, l.clock, pr.g, pr.hp);
+    if (sa.alive && !m.got[i]) {
+      const p = sa;
       if (Math.hypot(s.x - p.x, s.y - p.y) <= SAMPLE_R) { m.got[i] = true; chime(samples(m)); toast(l, 'SAMPLE ' + samples(m) + '/3', 1.6); l.burst(p.x, p.y, 16, '#9FF3E6'); }
     }
   }
@@ -179,10 +195,7 @@ function onUpdate(l, dt) {
   if (m.shakeT > 0) m.shakeT -= dt;
   lab.canvas.style.transform = m.shakeT > 0 ? 'translate(' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px,' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px)' : '';
 }
-function samplePos(i, clock) {
-  const v = VENTS[i], hp = lab.params.hp;
-  return { x: v.x + 4 * Math.sin(clock * 2.1 + i), y: v.y - hp * SAMPLE_Q + 3 * Math.sin(clock * 2.7 + i * 2) };
-}
+function samplePos(i, clock, T = lab.m.flyT) { const a = sampleAt(i, T, lab.params.ph0, clock, lab.params.g, lab.params.hp); return { x: a.x, y: a.y }; }
 
 // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
 let actx = null;
@@ -297,9 +310,13 @@ function drawPad(ctx, l) {
 function onDrawMid(ctx, l) {
   const m = l.m, hp = l.params.hp, t = l.clock;
   VENTS.forEach((v, i) => {
-    const st = m.vs[i]; if (!st) { frostIdle(ctx, v, t, 0.15); return; }
+    const st = m.vs[i]; if (!st) { frostIdle(ctx, v, t, 0.15); if (!m.menu) drawMarker(ctx, sampleAt(i, 0, 0, t, 0, hp), t, 0); return; }
     if (st.tele > 0) frostIdle(ctx, v, t, 0.15 + 0.85 * st.tele);
     else if (st.a < 0) frostIdle(ctx, v, t, 0.12);
+    const sa = sampleAt(i, m.flyT, l.params.ph0, t, l.params.g, hp);
+    if (!m.menu && !m.got[i]) {
+      if (sa.alive) drawSample(ctx, sa, t); else drawMarker(ctx, sa, t, st.tele);   // 試料（残り時間リング付き）/ 次の出現位置の予告
+    }
     if (st.a < 0) return;
     const hf = ease(Math.min(1, st.a / RISE)), top = hp * hf, env = st.env, N = 34;
     // 柱の発光（口が明るく、頂上へ薄く）
@@ -314,8 +331,6 @@ function onDrawMid(ctx, l) {
       const ph = (t * (0.7 + (k % 3) * 0.25) + k * 0.31) % 1, h = ph * top, x = v.x + Math.sin(k * 12.9 + i) * plumeHalf(ph) * 0.9;
       ctx.fillStyle = rgba('#ffffff', 0.8 * env * (1 - ph)); ctx.fillRect(x, v.y - h, 1.4, 1.4);
     }
-    // 試料（頂上付近）
-    if (st.a >= RISE && !m.got[i]) drawSample(ctx, samplePos(i, t), t, st);
   });
 }
 function frostIdle(ctx, v, t, k) {   // 噴出口から霜がふわっと立ちのぼる（前触れで濃く・大きく）
@@ -324,13 +339,22 @@ function frostIdle(ctx, v, t, k) {   // 噴出口から霜がふわっと立ち�
     ctx.fillStyle = rgba('#f4faff', 0.5 * k * (1 - ph)); ctx.beginPath(); ctx.arc(x, v.y - 2 - h, 1.2 + 2.6 * ph * k + 0.6, 0, 7); ctx.fill();
   }
 }
-function drawSample(ctx, p, t, st) {
-  const blink = st.a > ERUPT_S - 0.6 ? 0.5 + 0.5 * Math.sin(t * 24) : 1, pulse = 0.7 + 0.3 * Math.sin(t * 6);
+function drawMarker(ctx, sa, t, tele) {   // 予告マーカー: 常にうっすら、霜（前触れ）で濃く。点線の輪 + 中心の点
+  const k = 0.2 + 0.75 * tele, x = sa.nx, y = sa.ny + 3 * Math.sin(t * 2.7);
+  ctx.save(); ctx.globalAlpha = k; ctx.strokeStyle = '#63D8C9'; ctx.fillStyle = '#9FF3E6'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.arc(x, y, SAMPLE_R * 0.9 + tele * 3 * Math.sin(t * 8), 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 7); ctx.fill(); ctx.restore();
+}
+function drawSample(ctx, p, t) {
+  const blink = p.left < 1.5 ? 0.45 + 0.35 * Math.sin(t * 22) + 0.2 : p.left < 2.5 ? 0.85 : 1, pulse = 0.7 + 0.3 * Math.sin(t * 6);
   ctx.save(); ctx.globalAlpha = blink;
   const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 17 + 3 * pulse); g.addColorStop(0, 'rgba(210,255,248,0.95)'); g.addColorStop(0.35, 'rgba(120,240,222,0.5)'); g.addColorStop(1, 'rgba(120,240,222,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, 17 + 3 * pulse, 0, 7); ctx.fill();
   ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(p.x, p.y, 3.2, 0, 7); ctx.fill();
   ctx.strokeStyle = '#63D8C9'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(p.x, p.y, SAMPLE_R * 0.6 + pulse, 0, 7); ctx.stroke();
+  const fr = Math.max(0, Math.min(1, p.left / p.life));   // 残り時間リング（時計回りに縮む）
+  ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = p.left < 2.5 ? '#FFC94D' : '#9FF3E6';
+  ctx.beginPath(); ctx.arc(p.x, p.y, SAMPLE_R + 4, -Math.PI / 2, -Math.PI / 2 + fr * Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 
@@ -363,11 +387,13 @@ function onDrawFront(ctx, l) {
     const f = m.final;
     sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'SAMPLE LANDED', mmss(f.t)], [f.s2, 'ALL 3 SAMPLES', f.n + ' / 3'], [f.s3, 'PERFECT PAD LANDING', f.grade || '-']] : [], failNote: samples(m) ? samples(m) + ' sample(s) collected · lost.' : 'No sample collected yet.', failTime: m.flyT });
   }
+  sh.drawBrief(ctx, l);
 }
 
+sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=04cb132cc2').then((mod) => mod.install(lab));
-window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T };
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=2fec28e92b').then((mod) => mod.install(lab));
+window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
-window.__geyser = { VENTS, PAD, ventAt, samplePos, ERUPT_S, RISE, PEAK, FADE, TELE_S, SAMPLE_R, VENT_W, HP, plumeHalf, F_TOP };
+window.__geyser = { VENTS, PAD, ventAt, samplePos, sampleAt, LINGER_S, SAMPLE_LIFE, ERUPT_S, RISE, PEAK, FADE, TELE_S, SAMPLE_R, VENT_W, HP, plumeHalf, F_TOP };
 lab.start();

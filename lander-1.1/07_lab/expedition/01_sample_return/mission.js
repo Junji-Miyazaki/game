@@ -3,7 +3,7 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=ff32a905ee';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=55d64ddce0';
+import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=080a6ac4af';
 
 const SITE = { x: 190, y: 512, w: 64, id: 'site' };
 const SAMPLE_S = 2.0;          // 採取に必要な静止秒数
@@ -19,6 +19,7 @@ export { LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus };
 export const missionScore = (fuelPct, grade, lives, sec = 1e9) => sh.score(baseScore(fuelPct, grade), lives, sec);
 const LIVES0 = 3;
 const sh = createShell({ id: 'sample_return', expLabel: 'EXPEDITION 01', title: 'PHOBOS SAMPLE RETURN',
+  brief: { title: 'PHOBOS — SAMPLE RETURN', sub: '往復', goals: ['・タップで母船から切り離す', '・採取地点に着地して2秒じっと待つ', '・母船の点線の枠に戻ればクリア'], stars: ['帰還', '燃料30%以上で帰還', '採取地点に PERFECT 着地'], tip: 'コツ：逆向きに噴射すると止まれる' },
   options: [{ key: 'atSite', label: 'START AT SITE', btn: 'site', param: 'site' }, { key: 'nearDock', label: 'START NEAR DOCK', btn: 'near', param: 'near' }] });
 try { localStorage.removeItem('lander11.exp.sample_return.attempts'); } catch (e) { /* 旧キー（試行回数）の掃除 */ }
 const sess = sh.sess;   // menu → practice | mission（lab.reset をまたいで保持）
@@ -104,7 +105,7 @@ function release(l) {   // 係留 → 解放: 母船の水平速度を引き継�
 }
 function onTap(l, x, y) {
   const m = l.m;
-  if (m.menu) { sh.tap(l, x, y); return; }
+  if (m.menu || sess.brief) { sh.tap(l, x, y); return; }
   if (m.docked) { release(l); return; }   // 係留中は画面のどこをタップしても解放（キャンバス上に UI ボタンは無い）
   sh.tap(l, x, y);                        // 結果画面の RETRY / MENU
 }
@@ -122,6 +123,7 @@ function onUpdate(l, dt) {
   const w = pr.ms / MS_AMP;
   m.ph += w * dt; m.mx = 180 + MS_AMP * Math.sin(m.ph); m.mvx = pr.ms * Math.cos(m.ph);
   if (m.toastT > 0) m.toastT -= dt;
+  if (sess.brief && !m.docked) return;   // ブリーフィング中は進めない（START AT SITE / NEAR DOCK 用）
   if (m.docked) {   // 係留: 母船に固定してタップ待ち（タイマー無し・何も失わない）
     m.relT += dt; s.x = m.mx; s.y = MS_Y + RING_DY; s.vx = m.mvx; s.vy = 0; s.angle = 0; s.omega = 0;
     return;
@@ -387,10 +389,12 @@ function onDrawFront(ctx, l) {
     const f = m.final;
     sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'SAMPLE RETURNED', mmss(f.t)], [f.s2, 'FUEL ≥ ' + STAR2_FUEL + '% LEFT', f.fuel.toFixed(0) + '%'], [f.s3, 'PERFECT TOUCHDOWN AT SITE', f.grade || '-']] : [], failNote: m.sampled ? 'The sample was lost.' : 'No sample collected yet.', failTime: m.flyT });
   }
+  sh.drawBrief(ctx, l);
 }
 
+sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=34341c37d3').then((m) => m.install(lab));
-window.__score = { mult: lifeMult, score: missionScore, timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T };
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=85afc2baa5').then((m) => m.install(lab));
+window.__score = { mult: lifeMult, score: missionScore, timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN, LIFE_LOST_S };
 lab.start();

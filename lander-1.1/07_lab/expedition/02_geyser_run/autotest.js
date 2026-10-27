@@ -8,24 +8,39 @@ export function install(lab) {
   const CRUISE_Y = V[1].y - G.HP() * 0.86;   // 試料の高さ（噴気の頂上付近）を巡航する
   const makeCtl = (opt = {}) => {
     const want = opt.want || 1, order = opt.order || (want >= 3 ? [0, 1, 2] : [1]);
-    let ti = 0, phase = 'go';   // go（試料へ）→ pad（パッド上空へ）→ land
+    let ti = 0, phase = 'go', cur = null;   // cur = 今狙っている噴気（want>=3 のときは「最も早く取れる」未取得の試料を選ぶ）   // go（試料へ）→ pad（パッド上空へ）→ land
     return (l) => {
       const s = l.ship, m = l.m, o = {};
       if (l.state === 'grounded') return { main: true };   // 接地したら離陸（試料なしでパッドに降りた場合も）
       const vt = (ty, vmax) => {   // 鉛直: 上/下向き噴射の向きは理想（angle を 0/180 に直接セット）
-        const tvy = clamp(0.8 * (ty - s.y), -vmax, vmax);
+        const dz = ty - s.y, near = Math.abs(dz) < 10, tvy = near ? 0 : clamp(0.8 * (dz - Math.sign(dz) * 10), -vmax, vmax), dead = near ? 3.2 : 1.5;   // 目標の ±10px は「着いた」とみなして惰性で漂う（往復の噴射で燃料を食わない）
         s.omega = 0;
-        if (s.vy > tvy + 1.5) { s.angle = 0; o.main = true; } else if (s.vy < tvy - 1.5) { s.angle = 180; o.main = true; } else s.angle = 0;   // 不感帯つき（燃料節約。重力が小さいので惰性で漂ってよい）
+        if (s.vy > tvy + dead) { s.angle = 0; o.main = true; } else if (s.vy < tvy - dead) { s.angle = 180; o.main = true; } else s.angle = 0;   // 不感帯つき（燃料節約。重力が小さいので惰性で漂ってよい）
       };
-      const hx = (tx, vmax = 14) => {   // 横: 目標へ 2.4px/s² で寄せる制動曲線（理想化）
+      const hx = (tx, vmax = 22) => {   // 横: 目標へ 2.4px/s² で寄せる制動曲線（理想化）
         const dx = tx - s.x, tvx = Math.abs(dx) < 8 ? clamp(0.5 * dx, -3, 3) : Math.sign(dx) * Math.min(vmax, Math.sqrt(2 * 2.2 * (Math.abs(dx) - 4)));
         s.vx += clamp(tvx - s.vx, -2.4 / 60, 2.4 / 60);
       };
       if (phase !== 'pad' && phase !== 'land' && ti >= order.length) phase = 'pad';
       if (phase === 'go') {   // 噴気の頂上の高さ（試料の高さ）を保って横に滑る。燃料節約: 上下の往復をしない
-        const i = order[ti], v = V[i];
-        hx(v.x); vt(CRUISE_Y, 10);
-        if (m.got[i]) ti++;
+        const lab0 = lab, ph0 = lab0.params.ph0;
+        if (want >= 3 && !opt.order) {
+          if (cur == null || m.got[cur]) {   // 取れるまでの時間 = max(出現待ち, 移動) の小さい順
+            let best = 1e9; cur = null;
+            for (const k of [0, 1, 2]) if (!m.got[k]) {
+              const u = (((m.flyT - V[k].O - ph0) % V[k].P) + V[k].P) % V[k].P, sa = G.sampleAt(k, m.flyT, ph0, lab0.clock, lab0.params.g, G.HP());
+              const wait = u < G.ERUPT_S ? G.ERUPT_S - u : sa.alive ? (sa.left < 2.5 ? 1e3 : 0) : V[k].P - u + G.ERUPT_S, cost = Math.max(wait, Math.abs(V[k].x - s.x) / 12);
+              if (cost < best) { best = cost; cur = k; }
+            }
+          }
+          if (cur == null) { ti = order.length; return o; }
+        }
+        const i = cur != null ? cur : order[ti], v = V[i];
+        const sa = G.sampleAt(i, m.flyT, lab.params.ph0, lab.clock, lab.params.g, G.HP()), on = sa.alive && !m.got[i];   // 出ている試料を追う（落下ドリフトにも追従）。なければ頂上の高さで待つ
+        const stv = G.ventAt(v, m.flyT, lab.params.ph0), busy = stv.a >= 0 && stv.a < G.ERUPT_S - 0.3;   // 噴出中は柱の外（50px 横）で待ち、噴出が終わってから残っている試料を取りに行く（燃料節約）
+        const side = s.x < v.x ? -1 : 1;
+        if (busy) { hx(v.x + side * 52); vt(CRUISE_Y, 10); } else { hx(on ? sa.x : v.x); vt(on ? sa.y : CRUISE_Y, 10); }
+        if (m.got[i]) { ti++; if (want >= 3 && !opt.order) { cur = null; if (m.got.every(Boolean)) ti = order.length; } }
         return o;
       }
       if (phase === 'pad') {
@@ -51,6 +66,7 @@ export function install(lab) {
     if (lab.m.waiting) { step(1); F().tap(180, 320); }   // 開始待ち → タップで開始
     for (let i = 0; i < 60 * 200; i++) {
       lab.script = ctl; lab.step(1 / 60);
+      if (opt.trace && i % 120 === 0) opt.trace.push([lab.m.flyT.toFixed(0), Math.round(lab.ship.x), Math.round(lab.ship.y), lab.ship.vy.toFixed(1), Math.round(lab.fuelPct()), lab.m.got.map(Number).join(''), lab.m.vs.map((v) => (v && v.a >= 0 ? 'E' : '.')).join('')].join(' '));
       const m = lab.m, ph = m.result || (lab.state === 'grounded' ? 'grounded' : samplesOf(m) + 'smp');
       if (ph !== last) { log.push(lab.t.toFixed(0) + 's ' + ph + ' fuel' + Math.round(lab.fuelPct())); last = ph; }
       if (m.result && m.resultT > 1.5) break;
@@ -71,22 +87,32 @@ export function install(lab) {
     ok.push = [nearV.every((a) => a >= 9 && a <= 14), topV > 2 && topV < 6, outV < 0.2, accelAt(1, 120) < accelAt(1, 24)];
     // 前触れ: 噴出の 1.2 秒前から tele > 0、噴出前は力なし
     T(1, -0.6); ok.tele = [m.vs[1].tele > 0.4 && m.vs[1].a < 0, accelAt(1, 24, 0, -0.6) < 0.2];
-    // 噴出の長さ: 約 3.2 秒で終わる（a<0）。周期 6〜9 秒
-    ok.timing = [V.every((v) => v.P >= 6 && v.P <= 9), G.ventAt(V[1], V[1].O + 3.0, 0).a >= 0, G.ventAt(V[1], V[1].O + 3.4, 0).a < 0, Math.abs(G.ERUPT_S - 3.2) < 1e-9];
+    // 噴出の長さ: 5.0 秒で終わる（a<0）。周期 11/12/13 秒（静かな時間 6 秒以上）
+    ok.timing = [V.every((v) => v.P >= 11 && v.P <= 13 && v.P > G.ERUPT_S + 5), G.ventAt(V[1], V[1].O + 4.9, 0).a >= 0, G.ventAt(V[1], V[1].O + 5.1, 0).a < 0, Math.abs(G.ERUPT_S - 5.0) < 1e-9, Math.abs(G.RISE - 0.5) < 1e-9, Math.abs(G.PEAK - 1.8) < 1e-9, Math.abs(G.FADE - 2.7) < 1e-9];
     // 噴出口に突っ込む: 墜落でなくバウンス
     T(1, 1.0); place(v1.x, v1.y - 16 - 4, 0, 22); lab.step(1 / 60); ok.bump = [lab.state === 'play', !m.result, s.vy < 0, m.bumpT > 0];
     step(0.5); ok.bump.push(!m.result && lab.state === 'play');
     // 接地中の噴出口が噴く: 持ち上げられる（墜落でも停止でもない）
     lab.reset(); step(1); F().tap(180, 320); lab.script = () => ({}); s = lab.ship; m = lab.m; T(0, -0.02); place(V[0].x, V[0].y - 16); lab.state = 'grounded'; step(0.3); ok.ground = [lab.state === 'play', s.vy < 0 || s.y < V[0].y - 20, !lab.m.result];
-    // 試料: 噴出中だけ出現・取れる・同じ噴気の試料は1回だけ
-    lab.reset(); step(1); F().tap(180, 320); lab.script = () => ({}); const m2 = lab.m, s2 = lab.ship;
-    const sp = () => G.samplePos(1, lab.clock);
-    m2.flyT = V[1].O - 0.5; s2.x = sp().x; s2.y = sp().y; s2.vx = s2.vy = 0; lab.frozen = true; lab.step(1 / 60); const before = m2.got[1];
-    m2.flyT = V[1].O + 0.2; lab.step(1 / 60); const early = m2.got[1];   // 立ち上がり中（a < RISE）は未出現
-    m2.flyT = V[1].O + 1.0; lab.step(1 / 60); const taken = m2.got[1]; const n1 = m2.got.filter(Boolean).length;
-    m2.flyT = V[1].O + 1.2; lab.step(1 / 60); ok.sample = [before === false, early === false, taken === true, n1 === 1, m2.got.filter(Boolean).length === 1];
+    // 試料: 噴出の RISE 後に出現・噴出後も 6 秒残る・ゆっくり落下・期限で消える・取れなかったら次の噴出で再出現・1 噴気 1 回だけ
+    lab.reset(); step(1); F().tap(180, 320); lab.script = () => ({}); const m2 = lab.m, s2 = lab.ship, ph = lab.params.ph0;
+    const SA = (i, a) => G.sampleAt(i, V[i].O + a, ph, lab.clock, lab.params.g, G.HP());
+    const put = (i, a) => { m2.flyT = V[i].O + a; const p = SA(i, a); s2.x = p.x; s2.y = p.y; s2.vx = s2.vy = 0; lab.frozen = true; };
+    const alive = (i, a) => SA(i, a).alive;
+    ok.linger = [!alive(1, -0.5), !alive(1, 0.2), alive(1, 1.0), alive(1, G.ERUPT_S + 5.9), !alive(1, G.ERUPT_S + 6.1), Math.abs(G.LINGER_S - 6) < 1e-9,
+      SA(1, G.ERUPT_S + 5).y > SA(1, G.ERUPT_S - 0.5).y + 8, Math.abs(SA(1, G.ERUPT_S + 5).x - SA(1, G.ERUPT_S - 0.5).x) > 3,   // 落下 + 横ドリフト（wobble 込みで十分な差）
+      SA(1, 4).left > SA(1, 8).left && SA(1, 8).left > 0 && Math.abs(SA(1, 0.5).left - G.SAMPLE_LIFE) < 1e-9,
+      alive(1, V[1].P + 1.0)];   // 次の噴出で再出現
+    put(1, -0.5); lab.step(1 / 60); const before = m2.got[1];
+    put(1, 0.2); lab.step(1 / 60); const early = m2.got[1];   // 立ち上がり中は未出現
+    put(1, G.ERUPT_S + 4.0); lab.step(1 / 60); const taken = m2.got[1]; const n1 = m2.got.filter(Boolean).length;   // 噴出が終わって 4 秒後でも取れる
+    put(1, G.ERUPT_S + 4.5); lab.step(1 / 60); ok.sample = [before === false, early === false, taken === true, n1 === 1, m2.got.filter(Boolean).length === 1];
+    // 期限切れ → 取れずに残る → 次の噴出で再出現して取れる
+    m2.got = [false, false, false]; put(1, G.ERUPT_S + 6.6); lab.step(1 / 60); const expired = m2.got[1];
+    put(1, V[1].P + 1.0); lab.step(1 / 60); ok.respawn = [expired === false, m2.got[1] === true];
     // 3 つの噴気それぞれで1つずつ（最大3）
-    for (const i of [0, 2]) { m2.flyT = V[i].O + 1.0; const p = G.samplePos(i, lab.clock); s2.x = p.x; s2.y = p.y; lab.step(1 / 60); }
+    m2.got = [false, false, false];
+    for (const i of [0, 1, 2]) { put(i, 1.0); lab.step(1 / 60); }
     ok.sample.push(m2.got.every(Boolean));
     // パッドのロック: 試料 0 で着地 = grounded のみ（得点なし・失敗でもない）→ 推力で離陸。試料ありなら勝利
     lab.reset(); step(1); F().tap(180, 320); lab.script = null; const m3 = lab.m, s3 = lab.ship; lab.frozen = false; lab.controlsEnabled = true;
@@ -115,7 +141,7 @@ export function install(lab) {
     wipe();
     ok.formula = [A.mult(3) === 1, A.mult(2) === 0.8, A.mult(1) === 0.6, A.timeBonus(0) === 1500, A.timeBonus(30) === 1200, A.timeBonus(45.55) === 1045, A.timeBonus(150) === 0, A.timeBonus(400) === 0];
     Fw.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44];
-    Fw.tap(...center(B.practice)); ok.menu.push(Fw.sess.mode === 'practice' && !lab.m.menu && lab.m.waiting === true);
+    localStorage.removeItem(A.KEY_S); Fw.tap(...center(B.practice)); ok.menu.push(Fw.sess.mode === 'practice' && !lab.m.menu && lab.m.waiting === true, Fw.sess.brief === 'start'); Fw.tap(180, 320); ok.menu.push(!Fw.sess.brief && lab.m.waiting === true);
     // 開始待ち: 待ってもタイマーは進まず何も失わない。タップで開始（キーでも開始）
     step(4); ok.wait = [lab.m.waiting === true, lab.m.flyT === 0, !lab.m.result, Fw.sess.lives === 3, lab.frozen === true]; Fw.tap(180, 320); step(1); ok.wait.push(!lab.m.waiting, lab.m.flyT > 0.9, lab.ship.y > 96);
     const kd = (k) => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })); window.dispatchEvent(new KeyboardEvent('keyup', { key: k })); };
@@ -150,6 +176,14 @@ export function install(lab) {
     localStorage.setItem(KT, '9999'); const w5 = run({ mode: 'mission', ph0: 0, want: 1 }), f5 = lab.m.final; ok.persist.push(f5.newBestTime === true, Math.abs(parseFloat(getT()) - f5.t) < 1e-9);
     localStorage.setItem(KT, 'junk'); localStorage.setItem(K, '{broken'); Fw.begin('menu'); ok.persist.push(lab.m.menu === true);
     wipe(); Object.assign(Fw.sess, sv); Fw.begin('menu');
+
+    // ブリーフィング: メニュー選択 → カード（開始待ちの前・凍結）→ タップで開始待ち。? で再表示。NEXT TIME SKIP は保存され次回から出ない
+    const KS = A.KEY_S, hadS = localStorage.getItem(KS); localStorage.removeItem(KS);
+    Fw.begin('menu'); Fw.tap(...center(B.help)); ok.brief = [Fw.sess.brief === 'view', lab.m.menu === true]; Fw.tap(...center(B.skip)); ok.brief.push(localStorage.getItem(KS) === '1', Fw.sess.brief === 'view'); Fw.tap(...center(B.skip)); ok.brief.push(!localStorage.getItem(KS)); Fw.tap(180, 320); ok.brief.push(!Fw.sess.brief && lab.m.menu === true);
+    Fw.begin('menu'); Fw.tap(...center(B.mission)); ok.brief.push(Fw.sess.brief === 'start', lab.frozen === true, !lab.m.menu); step(2); ok.brief.push(lab.m.flyT === 0 && !lab.m.result); Fw.tap(180, 320); ok.brief.push(!Fw.sess.brief, Fw.sess.mode === 'mission', lab.m.waiting === true);
+    Fw.begin('menu'); Fw.tap(...center(B.practice)); Fw.tap(...center(B.skip)); ok.brief.push(localStorage.getItem(KS) === '1'); Fw.tap(180, 320);
+    Fw.begin('menu'); Fw.tap(...center(B.mission)); ok.brief.push(!Fw.sess.brief && Fw.sess.mode === 'mission');   // skip 済みなら出ない
+    if (hadS == null) localStorage.removeItem(KS); else localStorage.setItem(KS, hadS); Fw.begin('menu');
     const flat = Object.entries(ok).map(([k, v]) => [k, v.every(Boolean), v.map((x) => (x ? 1 : 0)).join('')]);
     return { pass: flat.every((x) => x[1]), detail: flat.map((x) => x[0] + ':' + x[2]).join(' ') };
   };

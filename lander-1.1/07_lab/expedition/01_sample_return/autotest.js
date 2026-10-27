@@ -81,7 +81,7 @@ export function install(lab) {
     // メニュー: ボタン 44px 以上、PRACTICE タップで練習へ、MENU で戻る
     F.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44, B.site.h >= 44, B.near.h >= 44];
     F.tap(...center(B.site)); ok.toggle = [F.sess.atSite === true]; F.tap(...center(B.site));
-    F.tap(...center(B.practice)); ok.menu.push(F.sess.mode === 'practice' && !lab.m.menu && lab.m.docked);
+    localStorage.removeItem(A.KEY_S); F.tap(...center(B.practice)); ok.menu.push(F.sess.mode === 'practice' && !lab.m.menu && lab.m.docked, F.sess.brief === 'start', lab.frozen === true); F.tap(180, 320); ok.menu.push(!F.sess.brief && lab.m.docked);
     // 係留: 待っても解放されない・ライフ不変。タップ/キーで解放
     step(5); ok.dock = [lab.m.docked === true, !lab.m.result, F.sess.lives === 3]; F.tap(180, 320); ok.dock.push(!lab.m.docked && lab.m.released === true && lab.ship.vy > 0);
     lab.reset(); step(1); const kd = (k) => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k })); window.dispatchEvent(new KeyboardEvent('keyup', { key: k })); }; kd(' '); ok.dock.push(!lab.m.docked); lab.reset(); kd('ArrowUp'); ok.dock.push(!lab.m.docked); lab.reset();
@@ -123,6 +123,13 @@ export function install(lab) {
     ok.bestTime.push(f5.newBestTime === true, Math.abs(parseFloat(getT()) - f5.t) < 1e-9, JSON.parse(get()).score === 99999);
     localStorage.setItem(KT, 'junk'); F.begin('menu'); ok.bestTime.push(lab.m.menu === true);
     localStorage.setItem(K, '{broken'); F.begin('menu'); ok.persist.push(lab.m.menu === true);   // 壊れた保存でも落ちない
+    // ブリーフィング: ? で再表示 / 選択直後に表示（凍結）/ タップで開始待ち / NEXT TIME SKIP は保存され次回から出ない
+    const KS = A.KEY_S, hadS = localStorage.getItem(KS); localStorage.removeItem(KS);
+    F.begin('menu'); F.tap(...center(B.help)); ok.brief = [F.sess.brief === 'view', lab.m.menu === true]; F.tap(...center(B.skip)); ok.brief.push(localStorage.getItem(KS) === '1', F.sess.brief === 'view'); F.tap(...center(B.skip)); ok.brief.push(!localStorage.getItem(KS)); F.tap(180, 320); ok.brief.push(!F.sess.brief && lab.m.menu === true);
+    F.begin('menu'); F.tap(...center(B.mission)); ok.brief.push(F.sess.brief === 'start', lab.frozen === true, !lab.m.menu); step(2); ok.brief.push(lab.m.flyT === 0 && lab.m.docked && !lab.m.result); F.tap(180, 320); ok.brief.push(!F.sess.brief, F.sess.mode === 'mission', lab.m.docked === true);
+    F.begin('menu'); F.tap(...center(B.practice)); F.tap(...center(B.skip)); ok.brief.push(localStorage.getItem(KS) === '1'); F.tap(180, 320);
+    F.begin('menu'); F.tap(...center(B.mission)); ok.brief.push(!F.sess.brief && F.sess.mode === 'mission');   // skip 済みなら出ない
+    if (hadS == null) localStorage.removeItem(KS); else localStorage.setItem(KS, hadS);
     wipe(); Object.assign(F.sess, sv); F.begin('menu');
     const flat = Object.entries(ok).map(([k, v]) => [k, v.every(Boolean), v.map((x) => (x ? 1 : 0)).join('')]);
     return { pass: flat.every((x) => x[1]), detail: flat.map((x) => x[0] + ':' + x[2]).join(' ') };
