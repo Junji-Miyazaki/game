@@ -1,8 +1,9 @@
 // EXPEDITION #1 PHOBOS SAMPLE RETURN（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
 // 着陸 → その場で2秒静止して採取 → 離陸 → 母船のドッキング枠に低速で入る。
-import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=5781d61e7c';
+import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=ff32a905ee';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
+import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=55d64ddce0';
 
 const SITE = { x: 190, y: 512, w: 64, id: 'site' };
 const SAMPLE_S = 2.0;          // 採取に必要な静止秒数
@@ -13,23 +14,14 @@ const DOCK_REL = 10, DOCK_TILT = 20;
 const STAR2_FUEL = 30;
 const DRIFT_S = 1.0, DRIFT_VY = 18;   // 発進: 係留（タップで解放。タイマー無し）→ 解放 → 1.0s は自動で漂う（操作不可）
 const DOCK_CONFIRM = 0.25;   // 条件を満たし続ける秒数（ゴースト点灯 → 成功）
-const KEY_OLD = 'lander11.exp.sample_return.attempts', KEY_B = 'lander11.exp.sample_return.best', KEY_T = 'lander11.exp.sample_return.besttime';
-const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 保存できなくても続行 */ } };
-try { localStorage.removeItem(KEY_OLD); } catch (e) { /* 旧キー（試行回数）の掃除 */ }
-const loadBest = () => { try { const b = JSON.parse(lsGet(KEY_B)); if (b && Array.isArray(b.stars)) return { score: +b.score || 0, stars: [!!b.stars[0], !!b.stars[1], !!b.stars[2]] }; } catch (e) { /* 無効 */ } return { score: 0, stars: [false, false, false] }; };
-export const LIFE_MULT = { 3: 1.0, 2: 0.8, 1: 0.6 };
-export const lifeMult = (lives) => LIFE_MULT[lives] || 0.6;
 export const baseScore = (fuelPct, grade) => 1000 + Math.round(fuelPct) * 10 + (grade === 'PERFECT' ? 300 : grade ? 100 : 0);
-export const missionScore = (fuelPct, grade, lives, sec = 1e9) => Math.round((baseScore(fuelPct, grade) + timeBonus(sec)) * lifeMult(lives));
-export const TIME_BONUS_MAX = 1500, TIME_BONUS_RATE = 10;   // 時間ボーナス = max(0, 1500 − 10×秒)
-export const timeBonus = (sec) => Math.max(0, Math.round(TIME_BONUS_MAX - TIME_BONUS_RATE * sec));
-const loadBestTime = () => { const v = parseFloat(lsGet(KEY_T)); return Number.isFinite(v) && v > 0 ? v : null; };
+export { LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus };
+export const missionScore = (fuelPct, grade, lives, sec = 1e9) => sh.score(baseScore(fuelPct, grade), lives, sec);
 const LIVES0 = 3;
-// セッション状態（lab.reset をまたいで保持）: menu → practice | mission
-const qp = new URLSearchParams(location.search);
-const sess = { mode: qp.get('mode') === 'practice' || qp.get('mode') === 'mission' ? qp.get('mode') : 'menu', lives: LIVES0, atSite: qp.get('site') === '1', nearDock: qp.get('near') === '1' };
-const LIFE_LOST_S = 1.6;
+const sh = createShell({ id: 'sample_return', expLabel: 'EXPEDITION 01', title: 'PHOBOS SAMPLE RETURN',
+  options: [{ key: 'atSite', label: 'START AT SITE', btn: 'site', param: 'site' }, { key: 'nearDock', label: 'START NEAR DOCK', btn: 'near', param: 'near' }] });
+try { localStorage.removeItem('lander11.exp.sample_return.attempts'); } catch (e) { /* 旧キー（試行回数）の掃除 */ }
+const sess = sh.sess;   // menu → practice | mission（lab.reset をまたいで保持）
 const OUT = { x0: -10, x1: 370, y0: -30 };
 
 // ---- 地形（ゆるい起伏 + 採取地点だけ平ら） ---------------------------------------------------
@@ -74,7 +66,7 @@ function phaseName(m) { return m.result ? m.result : m.sampled ? 'RETURN' : m.ga
 // ---------------------------------------------------------------- 状態
 function start(l) {
   const prev = l.m;
-  if (sess.mode === 'mission' && prev && (prev.result === 'win' || prev.failed)) sess.lives = LIVES0;   // R で結果画面から再開 = 新しい3ライフ
+  sh.onStart(prev);   // R で結果画面から再開 = 新しい3ライフ
   l.showHud = sess.mode !== 'menu';
   const ph0 = l.params.ph0, mx0 = 180 + MS_AMP * Math.sin(ph0), mvx0 = l.params.ms * Math.cos(ph0);
   l.resetShip({ x: mx0, y: MS_Y + RING_DY, vx: mvx0, vy: 0, angle: 0 });
@@ -93,12 +85,7 @@ function start(l) {
     }
   }
 }
-function begin(l, mode, opt = {}) {   // メニュー/結果画面から呼ぶ
-  sess.mode = mode; if (mode === 'mission') sess.lives = LIVES0;
-  if (opt.atSite != null) sess.atSite = !!opt.atSite;
-  if (opt.nearDock != null) sess.nearDock = !!opt.nearDock;
-  l.reset();
-}
+const begin = (l, mode, opt) => sh.begin(l, mode, opt);   // メニュー/結果画面から呼ぶ
 function toast(l, s, sec = 2) { l.m.toast = s; l.m.toastT = sec; }
 
 function onTouchdown(l, info) { l.m.touchGrade = info.kind === 'pad' ? info.grade : null; }
@@ -106,17 +93,10 @@ function onLiftoff(l) { if (!l.m.sampled) l.m.gauge = 0; }
 function onCrash(l, reason, detail) {
   const m = l.m; if (m.result) return;
   m.result = 'lose'; m.resultT = 0; m.reason = reason; m.detail = detail; l.controlsEnabled = false;
-  if (sess.mode === 'mission') { sess.lives = Math.max(0, sess.lives - 1); m.livesLeft = sess.lives; if (sess.lives > 0) m.lifeLost = true; else m.failed = true; }
+  sh.onLoss(m);
 }
 function lose(l, reason, detail) { l.crash(reason, detail); }
-// ボタン配置（論理座標 360x640）。高さはすべて 44 以上
-const BTN = {
-  practice: { x: 40, y: 284, w: 280, h: 52 }, mission: { x: 40, y: 436, w: 280, h: 52 },
-  site: { x: 24, y: 366, w: 154, h: 44 }, near: { x: 182, y: 366, w: 154, h: 44 },
-  res1: { x: 24, y: 0, w: 152, h: 48 }, res2: { x: 184, y: 0, w: 152, h: 48 },
-};
-const btnY = (m) => (m.result === 'win' ? 478 : 330);
-const hit = (b, x, y, oy = 0) => x >= b.x && x <= b.x + b.w && y >= b.y + oy && y <= b.y + oy + b.h;
+const { BTN } = sh;
 function release(l) {   // 係留 → 解放: 母船の水平速度を引き継ぎ、下へゆっくり離れる。解放前はライフを失わない
   const m = l.m, s = l.ship;
   if (!m.docked || m.menu || m.result) return;
@@ -124,26 +104,15 @@ function release(l) {   // 係留 → 解放: 母船の水平速度を引き継�
 }
 function onTap(l, x, y) {
   const m = l.m;
-  if (m.menu) {
-    if (hit(BTN.practice, x, y)) begin(l, 'practice');
-    else if (hit(BTN.mission, x, y)) begin(l, 'mission');
-    else if (hit(BTN.site, x, y)) sess.atSite = !sess.atSite;
-    else if (hit(BTN.near, x, y)) sess.nearDock = !sess.nearDock;
-    return;
-  }
+  if (m.menu) { sh.tap(l, x, y); return; }
   if (m.docked) { release(l); return; }   // 係留中は画面のどこをタップしても解放（キャンバス上に UI ボタンは無い）
-  if (!m.result || m.resultT < 0.4 || m.lifeLost) return;
-  const oy = btnY(m);
-  if (hit(BTN.res1, x, y, oy)) begin(l, sess.mode);                 // RETRY / RETRY MISSION
-  else if (hit(BTN.res2, x, y, oy)) begin(l, 'menu');               // MENU
+  sh.tap(l, x, y);                        // 結果画面の RETRY / MENU
 }
 // R: ミッション中（解放後）に押すとライフを1つ失う（無料リトライの抜け道を作らない）。それ以外は harness の即リセット
 window.addEventListener('keydown', (e) => {
-  if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.docked && !lab.m.menu && !e.repeat) { release(lab); e.preventDefault(); return; }
-  if ((e.key === 'r' || e.key === 'R') && sess.mode === 'mission' && lab.m && lab.m.released && !lab.m.result && !e.metaKey && !e.ctrlKey) {
-    e.stopImmediatePropagation(); e.preventDefault(); lose(lab, 'RESTARTED', 'R pressed: life lost');
-  }
+  if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.docked && !lab.m.menu && !e.repeat) { release(lab); e.preventDefault(); }
 }, true);
+sh.hookR(lab, (m) => m.released, lose);
 
 // ---------------------------------------------------------------- 毎フレーム
 function onUpdate(l, dt) {
@@ -193,14 +162,8 @@ function onUpdate(l, dt) {
   if (m.dockT >= DOCK_CONFIRM) {
     m.result = 'win'; m.resultT = 0; l.frozen = true; l.controlsEnabled = false;
     const fp = l.fuelPct(), tsec = m.flyT;
-    m.final = { t: tsec, tbonus: timeBonus(tsec), fuel: fp, grade: m.sampleGrade, s2: fp >= STAR2_FUEL, s3: m.sampleGrade === 'PERFECT', practice: sess.mode === 'practice', lives: sess.lives, mult: lifeMult(sess.lives), score: missionScore(fp, m.sampleGrade, sess.lives, tsec) };
-    const prev = loadBest(), f = m.final, got = [true, f.s2, f.s3];
-    const pt = loadBestTime();
-    if (f.practice) { f.newStars = [false, false, false]; f.newBest = false; f.newBestTime = false; f.best = prev; f.bestTime = pt; return; }   // 練習は保存しない
-    f.newBestTime = pt == null || tsec < pt; f.bestTime = f.newBestTime ? tsec : pt; if (f.newBestTime) lsSet(KEY_T, String(tsec));
-    f.newStars = got.map((g, i) => g && !prev.stars[i]); f.newBest = f.score > prev.score;
-    f.best = { score: Math.max(prev.score, f.score), stars: got.map((g, i) => g || prev.stars[i]) };
-    lsSet(KEY_B, JSON.stringify(f.best));
+    m.final = { t: tsec, base: baseScore(fp, m.sampleGrade), fuel: fp, grade: m.sampleGrade, s2: fp >= STAR2_FUEL, s3: m.sampleGrade === 'PERFECT' };
+    sh.complete(m.final, [true, m.final.s2, m.final.s3]);
     return;
   }
   // 母船の船体・ドッキング枠への接触: 墜落にしない。物理的に跳ね返す（スイープ判定でトンネリング防止）
@@ -362,21 +325,10 @@ function drawTerrain(ctx, l) {
   ctx.beginPath(); for (const q of terrain) (q === terrain[0] ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y));
   ctx.strokeStyle = '#9a9eae'; ctx.lineWidth = 1.2; ctx.stroke();
   drawSite(ctx, l);
-  drawLandability(ctx, l);
+  drawLandabilityHere(ctx, l);
 }
 
-// 機体の真下の地面の着陸しやすさ（足元の傾斜）: 青緑 ≤5° / 琥珀 ≤10° / 赤 >10°（STEEP GROUND）。高度が上がると薄くなる
-function drawLandability(ctx, l) {
-  const s = l.ship, p = P(); if (!s || l.hideShip || l.state === 'crashed' || (l.m && (l.m.menu || l.m.docked))) return;
-  const alt = l.terrainY(s.x) - (s.y + C.LEG_Y), a = Math.max(0, Math.min(1, (130 - alt) / 90)) * 0.85; if (a <= 0.02) return;
-  ctx.save(); ctx.lineWidth = 3; ctx.lineCap = 'butt';
-  for (let x = Math.max(0, Math.floor((s.x - 42) / 6) * 6); x < Math.min(W, s.x + 42); x += 6) {
-    const sl = footSlopeDeg(terrain, x + 3), col = sl <= 5 ? '#63D8C9' : sl <= C.LAND_SLOPE_DEG ? p.warn : p.bad;
-    ctx.globalAlpha = a * (1 - Math.min(1, Math.abs(x + 3 - s.x) / 48) * 0.7); ctx.strokeStyle = col;
-    ctx.beginPath(); ctx.moveTo(x, l.terrainY(x) + 1.5); ctx.lineTo(x + 6.2, l.terrainY(x + 6) + 1.5); ctx.stroke();
-  }
-  ctx.restore();
-}
+const drawLandabilityHere = (ctx, l) => drawLandability(ctx, l, terrain);
 
 function drawSite(ctx, l) {
   const p = P(), m = l.m, t = l.clock, done = m.sampled;
@@ -401,16 +353,9 @@ function drawSite(ctx, l) {
 
 function onDrawMid() {}
 
-function star(ctx, cx, cy, r, on) {
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? r * 0.42 : r; ctx.lineTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2); }
-  ctx.closePath(); ctx.fillStyle = on ? '#FFC94D' : 'rgba(255,255,255,0.1)'; ctx.fill(); ctx.strokeStyle = on ? '#FFE9A8' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
-}
-const mmss = (t) => { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(1).padStart(4, '0'); };
-
 function onDrawFront(ctx, l) {
   const p = P(), m = l.m, s = l.ship;
-  if (m.menu) { drawMenu(ctx, l); return; }
+  if (m.menu) { sh.drawMenu(ctx, l); return; }
   // 採取中: 機体の周りに円ゲージ
   if (!m.sampled && m.gauge > 0 && !m.result) {
     ctx.save(); ctx.lineWidth = 3; ctx.lineCap = 'round';
@@ -418,23 +363,15 @@ function onDrawFront(ctx, l) {
     ctx.strokeStyle = p.green; ctx.beginPath(); ctx.arc(s.x, s.y, 26, -Math.PI / 2, -Math.PI / 2 + m.gauge * Math.PI * 2); ctx.stroke(); ctx.restore();
     txt(ctx, 'SAMPLING ' + Math.round(m.gauge * 100) + '%', s.x, s.y - 46, 8, p.green, 'center', { w: 700, sp: 1 });
   }
-  // タイマー + 進行チェック（右上。DEBUG ボタンの下）
-  const tm = m.result === 'win' ? m.final.t : m.flyT;
-  if (m.released) txt(ctx, mmss(tm), W - 12, 38, 13, p.fg, 'right', { w: 700 });
-  txt(ctx, (m.sampled ? '✓ ' : '○ ') + 'SAMPLE   ' + (m.result === 'win' ? '✓ ' : '○ ') + 'DOCK', W - 12, 56, 7.5, m.sampled ? p.green : p.dim, 'right', { w: 700, sp: 1 });
-  if (sess.mode === 'practice') txt(ctx, 'PRACTICE', W - 12, 68, 7, p.mid, 'right', { w: 700, sp: 1.4 });
-  else for (let i = 0; i < LIVES0; i++) {   // ライフ: 小さな機体アイコン（右から）
-    const cx = W - 18 - i * 14, cy = 72, on = i < sess.lives;
-    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy - 1, 4, Math.PI, 0); ctx.lineTo(cx + 4, cy + 3); ctx.lineTo(cx - 4, cy + 3); ctx.closePath();
-    ctx.fillStyle = on ? p.green : 'rgba(255,255,255,0.1)'; ctx.fill(); ctx.strokeStyle = on ? p.fg : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.8; ctx.stroke(); ctx.restore();
-  }
+  // タイマー + 進行チェック + PRACTICE/ライフ（右上。DEBUG ボタンの下）
+  sh.drawCorner(ctx, l, { time: m.released ? (m.result === 'win' ? m.final.t : m.flyT) : null, check: (m.sampled ? '✓ ' : '○ ') + 'SAMPLE   ' + (m.result === 'win' ? '✓ ' : '○ ') + 'DOCK', checkOk: m.sampled });
   // ヒント
   let hint = '';
   if (!m.result) {
     if ((m.docked || m.relT < 9) && !m.sampled && l.state !== 'grounded') hint = 'TAP TO RELEASE · LAND ON THE SITE · HOLD 2s · RETURN TO THE DOCK';
     else if (!m.sampled && l.state === 'grounded') hint = m.gauge > 0 ? 'HOLD STILL...' : (l.padAt(s.x) ? 'DON’T TOUCH THRUST' : 'OFF SITE · THRUST TO LIFT OFF, LAND ON THE SITE');
     else if (m.sampled) hint = m.fb || (m.dockOk || !m.inZone ? 'FILL THE OUTLINE · UPRIGHT · MATCH SPEED (REL ≤ ' + DOCK_REL + ')' : '');
-    if (hint) txt(ctx, hint, 180, 66, 7.5, m.fb ? p.bad : p.fg, 'center', { w: 600, sp: 0.4, a: 0.95 });
+    sh.drawHint(ctx, hint, !!m.fb);
   }
   if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
   if (m.docked && !m.menu && !m.result) txt(ctx, 'TAP TO RELEASE', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
@@ -446,91 +383,14 @@ function onDrawFront(ctx, l) {
     if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
   }
   // 結果
-  if (m.result && m.resultT > (m.result === 'win' ? 0.7 : 0.5)) drawResult(ctx, l);
-}
-
-function drawResult(ctx, l) {
-  const p = P(), m = l.m, win = m.result === 'win';
-  const k = Math.min(1, (m.resultT - (win ? 0.7 : 0.5)) / 0.3);
-  ctx.save(); ctx.globalAlpha = k;
-  ctx.fillStyle = 'rgba(4,6,12,0.72)'; ctx.fillRect(0, 0, W, 560);
-  const x = 30, y = 100, w = 300, h = win ? 360 : (m.lifeLost ? 150 : 190), RY = btnY(m), prac = sess.mode === 'practice';
-  ctx.fillStyle = 'rgba(13,17,27,0.96)'; rr(ctx, x, y, w, h, 16); ctx.fill(); ctx.strokeStyle = rgba(win ? p.green : p.bad, 0.7); ctx.lineWidth = 1.4; ctx.stroke();
-  if (win) {
+  if (m.result) {
     const f = m.final;
-    txt(ctx, prac ? 'PRACTICE CLEAR' : 'MISSION COMPLETE', 180, y + 18, 13, p.green, 'center', { w: 800, sp: 1.4 });
-    txt(ctx, 'PHOBOS SAMPLE RETURN', 180, y + 40, 8, p.dim, 'center', { w: 600, sp: 1.5 });
-    const rows = [[true, 'SAMPLE RETURNED', mmss(f.t)], [f.s2, 'FUEL ≥ ' + STAR2_FUEL + '% LEFT', f.fuel.toFixed(0) + '%'], [f.s3, 'PERFECT TOUCHDOWN AT SITE', f.grade || '-']];
-    rows.forEach((r, i) => {
-      const ry = y + 72 + i * 50, pop = Math.min(1, Math.max(0, (m.resultT - 0.9 - i * 0.3) / 0.2));
-      ctx.save(); ctx.translate(x + 38, ry + 14); ctx.scale(0.4 + 0.6 * pop, 0.4 + 0.6 * pop); ctx.globalAlpha = k * pop; star(ctx, 0, 0, 14, r[0]); ctx.restore();
-      txt(ctx, r[1], x + 66, ry + 3, 9, r[0] ? p.fg : p.dim, 'left', { w: 700, sp: 0.6 });
-      txt(ctx, r[2], x + 66, ry + 18, 11, r[0] ? p.warn : p.dim, 'left', { w: 700 });
-      if (f.newStars[i]) txt(ctx, 'NEW', x + w - 18, ry + 10, 9, '#FFC94D', 'right', { w: 800, sp: 1.2, a: 0.6 + 0.4 * Math.sin(l.clock * 8) });
-    });
-    if (prac) {
-      txt(ctx, 'NO SCORE · NO STARS IN PRACTICE', 180, y + 232, 9, p.warn, 'center', { w: 700, sp: 0.8 });
-      txt(ctx, 'TIME ' + mmss(f.t) + '   ·   FUEL ' + f.fuel.toFixed(0) + '%', 180, y + 262, 8, p.dim, 'center', { w: 600, sp: 0.8 });
-    } else {
-      txt(ctx, 'SCORE ' + f.score, 180, y + 214, 16, '#FFC94D', 'center', { w: 800, sp: 1 });
-      txt(ctx, f.lives + ' LIVES LEFT · ×' + f.mult.toFixed(1), 180, y + 238, 9, p.warn, 'center', { w: 700, sp: 0.8 });
-      txt(ctx, 'TIME ' + mmss(f.t) + '   ·   TIME BONUS +' + f.tbonus, 180, y + 258, 9, p.fg, 'center', { w: 700, sp: 0.8 });
-      if (f.newBestTime) txt(ctx, 'NEW BEST TIME', 180, y + 276, 11, '#FFC94D', 'center', { w: 800, sp: 1.4, a: 0.65 + 0.35 * Math.sin(l.clock * 8) });
-      else txt(ctx, 'BEST TIME ' + mmss(f.bestTime), 180, y + 276, 8, p.dim, 'center', { w: 700, sp: 0.8 });
-      txt(ctx, 'BEST SCORE ' + f.best.score + (f.newBest ? '  NEW' : '') + '   ·   ★ ' + f.best.stars.filter(Boolean).length + ' / 3', 180, y + 296, 8, f.newBest ? '#FFC94D' : p.dim, 'center', { w: 700, sp: 0.8 });
-      txt(ctx, 'FUEL ' + f.fuel.toFixed(0) + '%', 180, y + 314, 8, p.dim, 'center', { w: 600, sp: 0.8 });
-    }
-  } else if (m.lifeLost) {
-    txt(ctx, 'LIFE LOST', 180, y + 24, 15, p.warn, 'center', { w: 800, sp: 1.8 });
-    txt(ctx, m.reason || '', 180, y + 62, 11, p.fg, 'center', { w: 700, sp: 1 });
-    txt(ctx, m.livesLeft + (m.livesLeft === 1 ? ' LIFE' : ' LIVES') + ' LEFT · RESTARTING', 180, y + 100, 9, p.dim, 'center', { w: 600, sp: 0.8 });
-  } else {
-    txt(ctx, prac ? 'FAILED' : 'MISSION FAILED', 180, y + 22, 15, p.bad, 'center', { w: 800, sp: 1.8 });
-    txt(ctx, m.reason || '', 180, y + 62, 12, p.fg, 'center', { w: 700, sp: 1 });
-    txt(ctx, m.detail || '', 180, y + 86, 9, p.warn, 'center', { w: 600, sp: 0.6 });
-    txt(ctx, m.sampled ? 'The sample was lost.' : 'No sample collected yet.', 180, y + 118, 8, p.dim, 'center', { w: 600, sp: 0.6 });
-    txt(ctx, 'TIME ' + mmss(m.flyT), 180, y + 142, 8, p.dim, 'center', { w: 600, sp: 0.8 });
+    sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'SAMPLE RETURNED', mmss(f.t)], [f.s2, 'FUEL ≥ ' + STAR2_FUEL + '% LEFT', f.fuel.toFixed(0) + '%'], [f.s3, 'PERFECT TOUCHDOWN AT SITE', f.grade || '-']] : [], failNote: m.sampled ? 'The sample was lost.' : 'No sample collected yet.', failTime: m.flyT });
   }
-  if (!m.lifeLost) {
-    const hot = Math.floor(l.clock * 2) % 2;
-    button(ctx, BTN.res1, RY, prac ? 'RETRY' : 'RETRY MISSION', p.mid, hot, prac ? 14 : 11);
-    button(ctx, BTN.res2, RY, 'MENU', p.fg, 0, 13);
-    txt(ctx, 'R = retry', 180, RY + 62, 7, p.dim, 'center', { w: 500, sp: 0.8 });
-  }
-  ctx.restore();
 }
 
-function button(ctx, b, oy, label, col, hot, fs = 14, on = null) {
-  const p = P();
-  rr(ctx, b.x, b.y + oy, b.w, b.h, 20); ctx.fillStyle = '#0D111B'; ctx.fill(); ctx.fillStyle = rgba(col, 0.16 + 0.06 * hot + (on ? 0.14 : 0)); ctx.fill(); ctx.strokeStyle = rgba(col, 0.85); ctx.lineWidth = 1.4; ctx.stroke();
-  txt(ctx, label, b.x + b.w / 2, b.y + oy + b.h / 2 - fs * 0.45, fs, col, 'center', { w: 800, sp: 1.6 });
-}
-function drawMenu(ctx, l) {
-  const p = P(), best = loadBest(), hot = Math.floor(l.clock * 2) % 2;
-  ctx.fillStyle = 'rgba(4,6,12,0.55)'; ctx.fillRect(0, 180, W, 340);
-  txt(ctx, 'EXPEDITION 01', 180, 192, 7, p.dim, 'center', { w: 600, sp: 2 });
-  txt(ctx, 'PHOBOS SAMPLE RETURN', 180, 206, 13, p.fg, 'center', { w: 800, sp: 1.2 });
-  const nst = best.stars.filter(Boolean).length;
-  const bt = loadBestTime();
-  txt(ctx, 'BEST SCORE ' + (best.score || '-') + '   ·   ★ ' + nst + ' / 3', 180, 225, 9, nst ? '#FFC94D' : p.dim, 'center', { w: 700, sp: 0.8 });
-  txt(ctx, 'BEST TIME ' + (bt == null ? '-' : mmss(bt)), 180, 240, 9, bt == null ? p.dim : '#FFC94D', 'center', { w: 700, sp: 0.8 });
-  for (let i = 0; i < 3; i++) star(ctx, 150 + i * 30, 266, 8, best.stars[i]);
-  button(ctx, BTN.practice, 0, 'PRACTICE', p.mid, hot, 16);
-  txt(ctx, 'UNLIMITED RETRIES · NO STARS', 180, 344, 7.5, p.dim, 'center', { w: 600, sp: 0.8 });
-  for (const [b, label, on] of [[BTN.site, 'START AT SITE', sess.atSite], [BTN.near, 'START NEAR DOCK', sess.nearDock]]) {
-    rr(ctx, b.x, b.y, b.w, b.h, 12); ctx.fillStyle = rgba(p.fg, on ? 0.12 : 0.04); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.4); ctx.lineWidth = 1; ctx.stroke();
-    rr(ctx, b.x + 10, b.y + 15, 14, 14, 3); ctx.strokeStyle = on ? p.green : rgba(p.fg, 0.5); ctx.stroke();
-    if (on) { ctx.beginPath(); ctx.moveTo(b.x + 13, b.y + 22); ctx.lineTo(b.x + 16.5, b.y + 26); ctx.lineTo(b.x + 22, b.y + 18); ctx.lineWidth = 2; ctx.strokeStyle = p.green; ctx.stroke(); }
-    txt(ctx, label, b.x + 32, b.y + 18, 8, on ? p.fg : p.dim, 'left', { w: 700, sp: 0.6 });
-  }
-  txt(ctx, '(PRACTICE ONLY)', 180, 418, 6.5, p.dim, 'center', { w: 500, sp: 0.8 });
-  button(ctx, BTN.mission, 0, 'MISSION', p.warn, hot, 16);
-  txt(ctx, '3 LIVES · STARS & SCORE', 180, 496, 7.5, p.dim, 'center', { w: 600, sp: 0.8 });
-}
-
-{ const box = document.getElementById('dbg'); if (box) { const b = document.createElement('button'); b.textContent = 'RESET RECORD'; b.style.cssText = 'margin-top:8px;font:9px monospace;opacity:.6;padding:2px 6px';
-  b.onclick = () => { lsSet(KEY_B, ''); lsSet(KEY_T, ''); }; box.appendChild(b); } }
+sh.addResetButton();
 if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=34341c37d3').then((m) => m.install(lab));
-window.__score = { mult: lifeMult, score: missionScore, timeBonus, KEY_B, KEY_T };
+window.__score = { mult: lifeMult, score: missionScore, timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN, LIFE_LOST_S };
 lab.start();

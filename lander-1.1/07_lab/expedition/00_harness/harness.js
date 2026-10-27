@@ -70,6 +70,7 @@ export function footSlopeDeg(pts, x) {
  *  onLiftoff(lab)                  : 接地 → 離陸
  *  onDrawBack(ctx, lab) / onDrawFront(ctx, lab) : 機体の背面 / 前面（HUD はこちら）
  *  onTap(lab, x, y)                : lab.controlsEnabled=false のときの画面タップ（RETRY など）
+ *  forces(lab, dt)                 : （任意）play 中の物理サブステップ(1/120s)ごとの外力。推力の後・重力の前に呼ばれる
  *  velRef(lab) -> {vx,vy}|null     : 速度ベクトル矢印の基準系（例 母船に対する相対速度）
  *  telemetryExtra(lab) -> string   : パネルのテレメトリ末尾に足す
  */
@@ -209,6 +210,7 @@ export function createLab(opts) {
       s.vy += -Math.cos(rad) * pr.thrust * dt;
       s.fuel = Math.max(0, s.fuel - C.FUEL_RATE_MAIN * dt);
     }
+    if (opts.forces) opts.forces(lab, dt);   // ミッション固有の外力（噴気など）。s.vx/vy/omega を直接変えてよい。play 中の物理サブステップごと
     s.vy += pr.g * dt;
     if (pr.drag > 0) { s.vx -= s.vx * pr.drag * dt; s.vy -= s.vy * pr.drag * dt; }
     s.x += s.vx * dt; s.y += s.vy * dt;

@@ -17,6 +17,7 @@ const lab = createLab({
   start(lab) { lab.resetShip({x,y,vx,vy,angle}); /* ミッション状態をここで初期化 */ },
   onUpdate(lab, dt), onTouchdown(lab, {kind:'pad'|'ground', pad, m:{vy,vx,ang,om,dist}, grade}),
   onLiftoff(lab), onCrash(lab, reason, detail), onTap(lab, x, y),   // onTap は lab.controlsEnabled=false の間だけ
+  forces(lab, dt),                    // 任意: play 中の物理サブステップ(1/120s)ごとの外力（噴気など。推力の後・重力の前。s.vx/vy/omega を直接変える）
   onDrawBack(ctx, lab), onDrawMid(ctx, lab) /* 地形の後 */, onDrawFront(ctx, lab), drawTerrain(ctx, lab),
   velRef(lab) -> {vx,vy}|null,        // 速度ベクトル矢印の基準系（相対速度表示に）
   telemetryExtra(lab) -> string, hud: false /* 標準 HUD を消す */
@@ -29,3 +30,6 @@ lab.start();
 ## デバッグパネル
 右上 DEBUG ボタン（幅 760px 以上、または `?dbg=1` で初期表示）。スライダー: 重力 / 推力 / 角加速度 / 角速度減衰 / 抗力 / 燃料 / RCS ドリフト（+ミッション固有）。値は URL に差分だけ書かれる（`?g=0.03&thrust=5.2`）→ COPY LINK で共有。DEFAULTS / RESET。速度ベクトル（機首方向の点線つき）の切替。テレメトリ: state, t, vx, vy, angle, omega, fuel, 高度。
 物理（game.js と同じ）: 角加速度 ang°/s²、角速度は damp^dt で減衰、主推力は機首方向、`vy += g·dt`、抗力 `v -= v·drag·dt`、燃料 主5/s・RCS1.5/s。着地は SAFE(22/13/28°/20) 即成功・BOUNCE(45/26/55°/40) までバウンス・超えると即クラッシュ・傾斜 >10° は STEEP GROUND、パッド外の安全接地は grounded（推力で離陸、初速 -7）。グレード表は game.js と同じ。
+
+## 共通ミッションシェル shell.js
+メニュー・ライフ・スコア・★/ベスト保存・結果画面などの共通部。使い方と仕様は ../README.md の「共通シェル」。
