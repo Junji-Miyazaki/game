@@ -1,4 +1,4 @@
-// HOW TO PLAY カード（操作説明＋言語/操作の向きの設定）。タイトル・MISSION HOLD・初回プレイ前の3か所で共用。
+// HOW TO PLAY カード（操作説明＋言語/操作の向きの設定＋「次回から表示しない」）。ラン開始のたびと MISSION HOLD から開く（タイトルには置かない）。
 // 名前は全て HT / ht 接頭辞（バンドルは1つのスコープ）。論理座標 360x640。
 // 閉じ方: 設定ボタン以外のタップ、または何かのキー。表示直後 0.35 秒と、表示前から押していた指の解除は無視（誤閉じ防止）。
 import { W, H } from './core/engine.js';
@@ -33,6 +33,7 @@ export function htContent(lang, inv, touch) {
     rings: ja ? '輪は任意：連続で取るとコンボ。金の輪は短時間の特典（スロー・レーダー・横移動・燃料）' : 'RINGS ARE OPTIONAL: CHAIN THEM FOR COMBO POINTS. GOLD RINGS GIVE A SHORT POWER-UP (SLOW-MO, RADAR, SIDE THRUST, FUEL).',
     other: ja ? (touch ? 'PC：← → ↑ / Space' : 'タッチ：画面下の3つのボタン') : (touch ? 'PC: ← → ↑ / SPACE' : 'TOUCH: THE 3 BUTTONS AT THE BOTTOM'),
     close: ja ? 'タップかキーで閉じる' : 'TAP OR PRESS ANY KEY TO CLOSE',
+    skipL: ja ? '次回から表示しない' : "Don't show next time",
     langL: 'LANGUAGE', ctlL: 'CONTROLS',
   };
 }
@@ -49,10 +50,15 @@ export function htWrap(ctx, s, size, wt, sp, maxW) {
   return lines;
 }
 
+// 「次回から表示しない」の保存（'howtoSkip'='1'）。保存できない環境では false（毎回表示）
+export function htSkipGet(st) { try { return !!(st && st.get('howtoSkip', null) === '1'); } catch (_) { return false; } }
+export function htSkipSet(st, on) { try { if (st) st.set('howtoSkip', on ? '1' : '0'); } catch (_) { /* ignore */ } }
+
 export class HtCard {
   // opts: { onClose, onTap(音), touch(省略で自動判定), storage(未使用: i18n は束縛済み) }
   constructor(opts) {
     opts = opts || {};
+    this.storage = opts.storage || null;
     this.onClose = opts.onClose || null; this.onTap = opts.onTap || null;
     this.touch = opts.touch === undefined ? htTouchDevice() : !!opts.touch;
     this.openedAt = htNow();
@@ -61,8 +67,9 @@ export class HtCard {
   // 設定ボタン（当たり判定は高さ 44px 以上）
   rects() {
     return {
-      ja: { x: 200, y: 484, w: 60, h: 44 }, en: { x: 264, y: 484, w: 60, h: 44 },
-      std: { x: 160, y: 532, w: 80, h: 44 }, inv: { x: 244, y: 532, w: 80, h: 44 },
+      ja: { x: 200, y: 466, w: 60, h: 44 }, en: { x: 264, y: 466, w: 60, h: 44 },
+      std: { x: 160, y: 512, w: 80, h: 44 }, inv: { x: 244, y: 512, w: 80, h: 44 },
+      skip: { x: 24, y: 556, w: W - 48, h: 44 },   // 「次回から表示しない」チェック行（行全体が当たり判定）
     };
   }
   _hit(r, d) { return d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h; }
@@ -74,6 +81,7 @@ export class HtCard {
     if (action === 'tap' && data) {
       if (data.t0 !== undefined && data.t0 < this.openedAt) return true;   // 表示前から押していた指の解除
       const R = this.rects();
+      if (this._hit(R.skip, data)) { htSkipSet(this.storage, !htSkipGet(this.storage)); if (this.onTap) this.onTap(); return true; }
       if (this._hit(R.ja, data)) { i18nSetLang('ja'); if (this.onTap) this.onTap(); return true; }
       if (this._hit(R.en, data)) { i18nSetLang('en'); if (this.onTap) this.onTap(); return true; }
       if (this._hit(R.std, data)) { i18nSetControls('standard'); if (this.onTap) this.onTap(); return true; }
@@ -89,7 +97,7 @@ export class HtCard {
     const c = htContent(lang, inv, this.touch);
     const R = this.rects();
     veil(ctx, 0.78);
-    panel(ctx, 14, 24, W - 28, 586, { a: 0.94, border: p.mid, ba: 0.26 });
+    panel(ctx, 14, 24, W - 28, 590, { a: 0.94, border: p.mid, ba: 0.26 });
     txt(ctx, 'HOW TO PLAY', W / 2, 38, 16, p.hi, 'center', { sp: 6, w: 300 });
     txt(ctx, c.all, W / 2, 66, ja ? 13 : 10, p.warn, 'center', { sp: ja ? 1 : 2, w: 600 });
     // 操作の絵: タッチ=下のボタンと同じ3つ / PC=キーキャップ
@@ -123,6 +131,10 @@ export class HtCard {
     txt(ctx, c.ctlL, 30, R.std.y + 17, 8, p.dim, 'left', { sp: 3, w: 500 });
     btn(R.ja, 'JA', lang === 'ja'); btn(R.en, 'EN', lang === 'en');
     btn(R.std, 'STANDARD', !inv); btn(R.inv, 'INVERTED', inv);
-    txt(ctx, c.close, W / 2, 590, ja ? 9 : 7, p.dim, 'center', { sp: ja ? 0.6 : 3, w: 500, a: 0.7 });
+    { const r = R.skip, on = htSkipGet(this.storage), bx = r.x + 6, by = r.y + 13;
+      rr(ctx, bx, by, 18, 18, 4); ctx.fillStyle = on ? rgba(p.mid, 0.22) : rgba(p.fg, 0.04); ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = on ? rgba(p.hi, 0.9) : rgba(p.fg, 0.45); ctx.stroke();
+      if (on) { ctx.save(); ctx.strokeStyle = p.hi; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(bx + 4, by + 9.5); ctx.lineTo(bx + 7.7, by + 13); ctx.lineTo(bx + 14, by + 5.5); ctx.stroke(); ctx.restore(); }
+      txt(ctx, c.skipL, bx + 28, r.y + 17, ja ? 11 : 9, on ? p.hi : p.fg, 'left', { sp: ja ? 1 : 1.5, w: 500 }); }
+    txt(ctx, c.close, W / 2, 603, ja ? 9 : 7, p.dim, 'center', { sp: ja ? 0.6 : 3, w: 500, a: 0.7 });
   }
 }

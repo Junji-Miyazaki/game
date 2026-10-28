@@ -46,7 +46,7 @@ function makeMusic() {
   };
 }
 function makeEngine(ctx, music, store) {
-  store = store || new Map([['hudTipSeen', '1']]);
+  store = store || new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]);
   return {
     ctx, music,
     audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock() { this.ctx = this.ctx || {}; } },

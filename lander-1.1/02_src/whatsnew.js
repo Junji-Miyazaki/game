@@ -8,11 +8,13 @@ export const WHATSNEW_ENTRIES = [
     '説明文を日本語・英語で切替',
     '左右の操作の向きを設定で反転',
     'ステージ開始時にやることを1文で表示',
+    '操作説明は毎回表示（次回から非表示も可）',
   ], itemsEn: [
     'Added HOW TO PLAY guide',
     'Text language: Japanese / English',
     'Invert left/right in settings',
     'One-line goal at each stage start',
+    'How-to shows each run (can hide)',
   ] },
   { version: '1.1.0-beta.5', date: '2026.10.26', items: [
     '新天体：冥王星（氷で滑る・中継着陸）',

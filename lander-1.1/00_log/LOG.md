@@ -3,6 +3,17 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-10-28 HOW TO PLAY: 毎回表示＋「次回から表示しない」（版は 1.1.0-beta.6 のまま）
+- 実施（02_src・04_tests・00_log・01_docs/PLAN.md のみ）:
+  - タイトルの `?` ボタンと当たり判定・描画・HtCard 連携を削除（スピーカーは従来位置）。
+  - HOW TO PLAY はラン開始のたび（NEW/CONTINUE/MAP＝Game.enter）に表示。ステージ間は出ない。カード下部に「次回から表示しない」チェック（行全体 44px 以上、保存 'howtoSkip'='1'/'0'、JA「次回から表示しない」/EN "Don't show next time"）。'howtoSeen' は廃止（読まない・書かない。移行なし）。
+  - 設定（LANGUAGE/CONTROLS）はカードに残す。MISSION HOLD の HOW TO PLAY ボタンから開いても同じチェックが同じ設定を変える。物理凍結・タップ消費・外側タップで閉じるは従来どおり。カードのレイアウトを詰め直し（設定行 466/512、チェック 556、閉じる文言 603、パネル高 590）。
+  - UPDATE INFORMATION の最新項目（beta.6）に「操作説明は毎回表示（次回から非表示も可）」/ "How-to shows each run (can hide)" を追加（5項目）。
+  - テスト: 初回カードが出ない前提だった p1/p2a/p2b/p4hold/p4save/p5hud/p6bonus/p10touch/p12v11/p13rings/p15/p15map/p16mapbtn/p17patch/p18assist/p19crash/p20pluto の store に 'howtoSkip' を追加。p21howto を更新（タイトルに `?` 無し、毎ラン表示・ステージ間は非表示・CONTINUE/MAP、チェックの保存/トグル/JA文言、HOLD からの開閉と同設定、設定ボタン）。smoke と p1〜p21（p10setup 除く）全通過（p21 169）。`node build.js`、node --check 通過。
+- 目視（preview lander-1.1、800x600 のキャンバス）: タイトルに `?` 無し・スピーカー復帰、CONTINUE 開始でカード表示、チェック→ localStorage `lander11.howtoSkip=1`。確認後に localStorage を削除、サーバ停止。
+- 判断: beta.6 の「全員に1回だけ」（リーダー判断）はユーザーのフィードバック（`?` が見つけにくい）で置換。版番号は上げない（指示）。
+- 未確認: 実機タッチでのチェック操作、JA 表示でのカード下部の目視（テストは文言のみ）。
+
 ## 2026-10-27 beta.6: HOW TO PLAY・言語・操作の向き・ステージ開始の1文（1.1.0-beta.6）
 - 実施（`lander-1.1/` の 02_src・04_tests・00_log・01_docs/PLAN.md のみ。方針は PLAN §7q）:
   - 新規 `core/i18n.js`（言語・操作の向きの保存と既定判定。描画層向けに `i18nBind(storage)`）、`howto.js`（HtCard）。build.js の FILES に追加。

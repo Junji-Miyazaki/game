@@ -30,7 +30,7 @@ function makeMusic() {
     playJingle: (o) => log.push('jingle:' + o.tier), tick: noop, duck: noop, sfx: { landing: noop, crash: noop, module: noop, launch: noop, uiTap: noop } };
 }
 function makeEngine() {
-  const store = new Map([['hudTipSeen', '1']]);
+  const store = new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]);
   return { music: makeMusic(), audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },
     storage: { getHigh: () => 0, setHigh: () => false, get: (k, d = null) => store.has(k) ? store.get(k) : d, set: (k, v) => { store.set(k, String(v)); return true; } },
     text: noop, rect: noop, stroke: noop, toMenu() { this.menuCalls = (this.menuCalls || 0) + 1; }, menuCalls: 0, pointer: { down: false, x: 0, y: 0 }, touches: [] };

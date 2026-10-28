@@ -38,7 +38,7 @@ function makeCtx() {
 }
 function makeMusic() { const log = []; const rec = (n) => () => { log.push(n); }; return { log, attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, tick: noop, duck: noop, sfx: { landing: noop, crash: noop, module: noop, launch: noop, uiTap: rec('uiTap') } }; }
 function makeEngine(store) {
-  store = store || new Map([['hudTipSeen', '1']]);
+  store = store || new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]);
   return { music: makeMusic(), audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },
     storage: { getHigh: () => 0, setHigh: () => false, get: (k, d = null) => store.has(k) ? store.get(k) : d, set: (k, v) => { store.set(k, String(v)); return true; } },
     text: noop, rect: noop, stroke: noop, toMenu: noop, pointer: { down: false, x: 0, y: 0 }, touches: [], backBtn: { x: 6, y: 8, w: 42, h: 36 }, _store: store };

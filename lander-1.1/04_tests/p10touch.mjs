@@ -51,7 +51,7 @@ function makeMusic(log) {
   return { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, tick: noop, duck: noop, sfx };
 }
 function makeEngine(extra = []) {
-  const store = new Map([['hudTipSeen', '1'], ['touchHintSeen', '1'], ['lang', 'ja'], ...extra]);
+  const store = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['touchHintSeen', '1'], ['lang', 'ja'], ...extra]);
   const sfxLog = [];
   return { store, sfxLog, music: makeMusic(sfxLog), audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },
     storage: { getHigh: () => 0, setHigh: () => false, get: (k, d = null) => store.has(k) ? store.get(k) : d, set: (k, v) => { store.set(k, String(v)); return true; } },

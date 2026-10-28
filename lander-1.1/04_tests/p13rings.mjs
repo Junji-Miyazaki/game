@@ -42,7 +42,7 @@ function makeCtx(rec) {
 }
 const newRec = () => ({ texts: [], ops: [] });
 function makeEngine(extra = [], opts = {}) {
-  const store = new Map([['hudTipSeen', '1'], ['touchHintSeen', '1'], ...extra]);
+  const store = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['touchHintSeen', '1'], ...extra]);
   const sfxLog = [];
   const sfx = {};
   for (const n of ['landing', 'crash', 'module', 'launch', 'uiTap', 'thud', 'tick', 'ring', 'power']) sfx[n] = (a) => sfxLog.push([n, a]);
@@ -386,7 +386,7 @@ function landPerfect(g) { onPad(g); g.vx = 0; g.vy = 1; g.angle = 0; g.omega = 0
   const v3 = stageGame(3, pf); v3.e.store.set('stageBest', e.store.get('stageBest')); v3.g.obstacles = []; onPad(v3.g); v3.g.vy = 1; v3.g._doSuccess(0, 0);
   ok(v3.g._starsInfo.fresh === 0 && v3.g._starsInfo.mask === 7, 'already-earned stars are shown, not re-animated');
   // CHOOSE START: ステージごとの★と最高グレード
-  const st = new Map([['hudTipSeen', '1'], ...prof('ACE'), ['progress', JSON.stringify({ ACE: { maxStage: 6 } })], ['stageBest', e.store.get('stageBest')]]);
+  const st = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ...prof('ACE'), ['progress', JSON.stringify({ ACE: { maxStage: 6 } })], ['stageBest', e.store.get('stageBest')]]);
   const te = makeEngine([...st.entries()]); const t = new TitleScene(te, noop, { launch: false }); t.enter(); t.update(0.016);
   t.onInput('tap', { x: t.startBtn.x + 2, y: t.startBtn.y + 2, now: 0, t0: 0 });
   ok(!!t.map, 'solar map opens where CHOOSE START did');

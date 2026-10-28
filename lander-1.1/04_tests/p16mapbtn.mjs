@@ -32,7 +32,7 @@ function makeCtx(rec) {
 const ctx = makeCtx();
 function makeEngine(store) {
   store = store || new Map();
-  if (!store.has('hudTipSeen')) store.set('hudTipSeen', '1');
+  if (!store.has('hudTipSeen')) store.set('hudTipSeen', '1'); store.set('howtoSkip', '1');
   const taps = { n: 0 };
   return { ctx, taps, music: { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, duck: noop, tick: noop,
       sfx: { landing: noop, crash: noop, module: noop, launch: noop, uiTap: () => { taps.n++; } } },
@@ -42,7 +42,7 @@ function makeEngine(store) {
 }
 const prof = (...names) => [['profiles', JSON.stringify(names.map((n, i) => ({ name: n, key: String(i).repeat(64) })))], ['activeProfile', names[0]], ['lastName', names[0]]];
 const storeWith = (max, best, extra) => {
-  const m = new Map([['hudTipSeen', '1'], ...prof('AAA'), ['progress', JSON.stringify({ AAA: { maxStage: max } })]]);
+  const m = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ...prof('AAA'), ['progress', JSON.stringify({ AAA: { maxStage: max } })]]);
   if (best) m.set('stageBest', JSON.stringify({ AAA: best }));
   if (extra) for (const [k, v] of extra) m.set(k, v);
   return m;
@@ -112,7 +112,7 @@ const cpJson = JSON.stringify({ v: 1, runId: 'r1', stage: 4, totalScore: 10, con
 }
 // 3. 名前なし
 {
-  const m = new Map([['hudTipSeen', '1']]);
+  const m = new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]);
   const { t, calls } = mkTitle(m);
   t.onInput('tap', center(t.mapBtn));
   ok(!!t.map && t.map.viewOnly === true && calls.n === 0, 'no pilot name: view-only');

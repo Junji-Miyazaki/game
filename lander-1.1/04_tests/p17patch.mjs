@@ -35,7 +35,7 @@ const newRec = () => ({ texts: [], clips: 0 });
 const has = (rec, s) => rec.texts.some((t) => t.s === s);
 
 function makeEngine(extra = [], opts = {}) {
-  const store = new Map([['hudTipSeen', '1'], ['touchHintSeen', '1'], ...extra]);
+  const store = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['touchHintSeen', '1'], ...extra]);
   const sfxLog = [];
   const sfx = {};
   for (const n of ['landing', 'crash', 'module', 'launch', 'uiTap', 'thud', 'tick', 'ring', 'power', 'patch']) sfx[n] = (a) => sfxLog.push([n, a]);

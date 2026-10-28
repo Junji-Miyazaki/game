@@ -14,7 +14,7 @@ const ctx = new Proxy({}, { get: (t, k) => {
 
 const BTN_Y = 640 - 80;
 function makeStorage() {
-  const m = new Map([['hudTipSeen', '1']]);
+  const m = new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]);
   return { m, getHigh: () => 0, setHigh: () => false,
     get: (k, d = null) => m.has(k) ? m.get(k) : d, set: (k, v) => m.set(k, String(v)) };
 }

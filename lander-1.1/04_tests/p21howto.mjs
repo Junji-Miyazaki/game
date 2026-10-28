@@ -1,4 +1,4 @@
-// p21howto — beta.6: HOW TO PLAY / 言語(JA/EN) / 操作の向き(STANDARD/INVERTED) / UPDATE INFORMATION の英訳 / ステージ開始の1文。
+// p21howto — beta.6→beta.7: HOW TO PLAY / 言語(JA/EN) / 操作の向き(STANDARD/INVERTED) / UPDATE INFORMATION の英訳 / ステージ開始の1文。
 // 実行: node 04_tests/p21howto.mjs（lander-1.1/ から）
 import './p10setup.mjs';
 import fs from 'node:fs';
@@ -38,7 +38,7 @@ function makeCtx(rec) {
 }
 const texts = (scene) => { const rec = { texts: [] }; scene.render(makeCtx(rec)); return rec.texts; };
 function makeEngine(extra = [], seen = true) {
-  const store = new Map([...(seen ? [['hudTipSeen', '1'], ['howtoSeen', '1']] : []), ['touchHintSeen', '1'], ...extra]);
+  const store = new Map([...(seen ? [['hudTipSeen', '1'], ['howtoSkip', '1']] : []), ['touchHintSeen', '1'], ...extra]);
   const sfx = {}; for (const n of ['landing', 'crash', 'module', 'launch', 'uiTap', 'thud', 'tick', 'ring', 'power', 'patch']) sfx[n] = noop;
   return { store, music: { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, tick: noop, duck: noop, sfx },
     audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock() { this.ctx = this.ctx || {}; } },
@@ -84,6 +84,7 @@ const c = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
   const E = WHATSNEW.entries;
   ok(APP_VERSION === '1.1.0-beta.6' && E[0].version === APP_VERSION && E[0].date === '2026.10.27' && WHATSNEW.version === APP_VERSION, 'beta.6 is the newest entry (2026.10.27)');
   ok(E[0].items.slice(0, 3).join('|') === '操作説明（HOW TO PLAY）を追加|説明文を日本語・英語で切替|左右の操作の向きを設定で反転', 'beta.6 JA items (first three as specified)');
+  ok(E[0].items.includes('操作説明は毎回表示（次回から非表示も可）') && E[0].itemsEn.includes('How-to shows each run (can hide)'), 'beta.7-change item present (JA/EN)');
   ok(E[0].items.includes('ステージ開始時にやることを1文で表示') && E[0].itemsEn.includes('One-line goal at each stage start') && E[0].items.length <= 6, 'beta.6 has the stage-goal item, <= 6 items');
   ok(E.every((en) => Array.isArray(en.itemsEn) && en.itemsEn.length === en.items.length), 'every entry: itemsEn parallel to items');
   ok(E.every((en) => en.items.every((l) => l.length <= 22) && en.itemsEn.every((l) => l.length <= 34 && /^[\x20-\x7e]+$/.test(l))), 'JA <= 22 chars, EN <= 34 chars ASCII: max EN ' + Math.max(...E.flatMap((en) => en.itemsEn.map((l) => l.length))));
@@ -93,13 +94,12 @@ const c = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
   ok(whatsnewItems({ items: ['a'], itemsEn: [] }, 'en').join() === 'a', 'missing EN falls back to JA');
 }
 
-// ================================================================ 3. HOW TO PLAY: 初回の自動表示
+// ================================================================ 3. HOW TO PLAY: ラン開始のたびに表示 / 次回から表示しない
 {
   setNav('en-US');
   const { e, g } = newGame([], false);
-  ok(!!g._ht && e.store.get('howtoSeen') === '1', 'first run: HOW TO PLAY shown before the stage, flag howtoSeen stored');
+  ok(!!g._ht && !e.store.has('howtoSeen'), "run start: HOW TO PLAY shown; legacy 'howtoSeen' no longer written");
   const snap = () => [g.x, g.y, g.vy, g.fuel, g._clock].join();
-  // 誤閉じ防止: 表示直後(0.35秒)・表示前から押していた指は無視
   g.onInput('tap', { x: 180, y: 300, t0: clock + 5 }); ok(!!g._ht, 'tap within 0.35 s ignored');
   clock += 500; g.onInput('tap', { x: 180, y: 300, t0: clock - 1000 }); ok(!!g._ht, 'stale-finger release ignored');
   const s0 = snap(); run(g, 2);
@@ -107,52 +107,65 @@ const c = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
   ok(g.blocksBack(), 'BACK button blocked while the card is up');
   g.onHidden(); ok(g.state === 'play', 'blur does not open HOLD under the card');
   const tx = texts(g).join('|');
-  ok(tx.includes('HOW TO PLAY') && tx.includes('THESE ARE ALL THE CONTROLS') && /NO WEAPONS/.test(tx), 'card text (EN, PC): title + ALL + no weapons');
+  ok(tx.includes('HOW TO PLAY') && tx.includes('THESE ARE ALL THE CONTROLS') && /NO WEAPONS/.test(tx) && tx.includes("Don't show next time"), 'card text (EN, PC): title + ALL + no weapons + skip checkbox');
   g.onInput('tap', { x: 180, y: 300, t0: clock + 1 });
   ok(!g._ht && g.state === 'tip', 'tap closes the card; the HUD tip follows (state=' + g.state + ')');
-  // 2回目以降は出ない
-  const e2 = makeEngine([], false); e2.store.set('howtoSeen', '1'); const g2 = new Game(e2); g2.enter(); ok(!g2._ht && g2.state === 'tip', "howtoSeen set -> no card (tip as before)");
-  const g3 = newGame([['hudTipSeen', '1']], false).g; ok(!!g3._ht, 'returning player (hudTipSeen, no howtoSeen) sees the card once (leader decision)');
-  const gSeen = newGame([['hudTipSeen', '1'], ['howtoSeen', '1']], false).g; ok(!gSeen._ht && gSeen.state === 'play', 'returning player who has seen HOW TO PLAY is not interrupted');
+  // 毎回表示: 次のラン開始（新しい Game.enter）でも出る。howtoSeen が残っていても関係ない
+  const e2 = makeEngine([['howtoSeen', '1'], ['hudTipSeen', '1']], false); const g2 = new Game(e2); g2.enter(); ok(!!g2._ht, "old 'howtoSeen' ignored: card shown at every run start");
+  const g3 = newGame([['hudTipSeen', '1']], false).g; ok(!!g3._ht, 'returning player also sees the card at run start');
+  // ステージ間では出ない
+  g3._ht.close(); g3.stage += 1; g3._initStage(); ok(!g3._ht, 'not shown between stages');
+  // CONTINUE（チェックポイント再開）・MAP 開始も enter なので出る
+  { const e = makeEngine([['hudTipSeen', '1']], false); e.resumeCheckpoint = { v: 1, stage: 4, totalScore: 100, continues: 0, runId: 'r', startStage: 1, modules: {} }; const g = new Game(e); g.enter(); ok(!!g._ht && g.stage === 4, 'CONTINUE start shows the card'); }
+  { const e = makeEngine([['hudTipSeen', '1']], false); e.mapStart = 5; const g = new Game(e); g.enter(); ok(!!g._ht, 'map/other start shows the card'); }
   const g4 = newGame([], false).g; clock += 500; g4.onInput('confirm'); ok(!g4._ht, 'any key (confirm) closes after the lock');
   const g5 = newGame([], false).g; clock += 500; g5.onInput('left'); ok(!g5._ht && !g5._keys.left, 'an arrow key closes it and is not used for steering');
-  // ブロックされた storage でも落ちない
+  // チェックボックス
+  const { e: e6, g: g6 } = newGame([['hudTipSeen', '1']], false); const R6 = g6._ht.rects();
+  ok(R6.skip.h >= 44 && R6.skip.w >= 44, 'skip checkbox target >= 44 px');
+  const over = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  ok(![R6.ja, R6.en, R6.std, R6.inv].some((r) => over(r, R6.skip)) && R6.skip.y + R6.skip.h <= 640, 'checkbox overlaps no setting button and fits the screen');
+  clock += 500; g6.onInput('tap', c(R6.skip));
+  ok(!!g6._ht && e6.store.get('howtoSkip') === '1', 'checkbox ON: stored howtoSkip=1, card stays open');
+  g6.onInput('tap', c(R6.skip)); ok(!!g6._ht && e6.store.get('howtoSkip') === '0', 'checkbox toggles OFF again');
+  g6.onInput('tap', c(R6.skip)); ok(e6.store.get('howtoSkip') === '1', 'ON again');
+  setNav('en-US'); i18nSetLang('ja'); ok(texts(g6).join('|').includes('次回から表示しない'), 'JA label 次回から表示しない'); i18nSetLang('en');
+  g6.onInput('tap', { x: 180, y: 300, t0: clock + 1 });
+  ok(!g6._ht, 'closed by outside tap');
+  // 保存が効く: 同じ storage の新しいラン開始ではカードが出ない（計器ヒントのみ）
+  const e7 = makeEngine([['hudTipSeen', '1']], false); e7.store.set('howtoSkip', '1'); const g7 = new Game(e7); g7.enter(); ok(!g7._ht && g7.state === 'play', 'howtoSkip=1: no card at run start');
+  e7.store.set('howtoSkip', '0'); const g8 = new Game(e7); g8.enter(); ok(!!g8._ht, 'howtoSkip=0: card shown');
+  // ブロックされた storage でも落ちない（毎回表示になる）
   const eb = makeEngine([], false); eb.storage.get = () => { throw new Error('b'); }; eb.storage.set = () => { throw new Error('b'); };
-  let threw = false; try { const gb = new Game(eb); gb.enter(); run(gb, 1); texts(gb); } catch (_) { threw = true; } ok(!threw, 'blocked storage: no throw');
+  let threw = false; try { const gb = new Game(eb); gb.enter(); run(gb, 1); texts(gb); gb._ht.input('tap', c(gb._ht.rects().skip)); } catch (_) { threw = true; } ok(!threw, 'blocked storage: no throw');
 }
 
-// ================================================================ 4. タイトルから開く・設定・タップ消費
+// ================================================================ 4. タイトルに '?' は無い・カードの設定・タップ消費
 {
   setNav('en-US');
   const e = makeEngine([['profiles', JSON.stringify([{ name: 'TESTER', key: 'a'.repeat(64) }])], ['activeProfile', '0']]);
   const calls = { n: 0 };
   const t = new TitleScene(e, () => { calls.n++; }, { launch: true }); t.enter(); t.update(0.016);
-  const b = t.howBtn;
-  ok(b.w >= 44 && b.h >= 44, 'title ? button target >= 44 px');
-  const others = [t.muteBtn, t.changeBtn, t.startBtn, t.rankBtn, t.mapBtn, t.logoBox, t.betaBox, t.worldBox];
-  const ov = (a, c2) => a.x < c2.x + c2.w && c2.x < a.x + a.w && a.y < c2.y + c2.h && c2.y < a.y + a.h;
-  ok(others.every((o) => !ov(b, o)), '? button overlaps no existing title target');
-  t.onInput('tap', c(b)); ok(!!t.ht, 'tap on ? opens HOW TO PLAY from the title');
-  ok(texts(t).includes('HOW TO PLAY'), 'card drawn over the title');
-  // 開いている間のタップは貫通しない（START・RANKING・MAP）
-  clock += 500;
-  for (const r of [t.rankBtn, t.mapBtn]) { t.ht = new HtCard({ onClose: () => { t.ht = null; } }); clock += 500; t.onInput('tap', c(r)); ok(!t.showRank && !t.map && calls.n === 0 && !t.launch, 'tap while card open does not reach title buttons'); }
-  t.ht = new HtCard({ onClose: () => { t.ht = null; } }); clock += 500;
-  // 設定ボタン: 閉じずに切り替わる
-  const R = t.ht.rects();
+  ok(t.howBtn === undefined && t.ht === undefined, "title has no '?' button / card (beta.7)");
+  ok(t.muteBtn.x === 360 - 48 && t.muteBtn.w === 40, 'mute button back at its original place');
+  t.onInput('tap', { x: 360 - 72, y: 28, t0: clock + 1 }); ok(!t.ht, "tap where '?' used to be opens nothing");
+  ok(!texts(t).includes('HOW TO PLAY'), 'title never draws HOW TO PLAY');
+  // 設定ボタン（単体のカード）
+  let closed = 0; const card = new HtCard({ storage: e.storage, onClose: () => { closed++; } }); clock += 500;
+  const R = card.rects();
   ok([R.ja, R.en, R.std, R.inv].every((r) => r.h >= 44 && r.w >= 44), 'setting buttons >= 44 px');
-  t.onInput('tap', c(R.ja)); ok(!!t.ht && e.store.get('lang') === 'ja', 'JA button sets lang and keeps the card open');
-  let tx = texts(t).join('|'); ok(tx.includes('操作はこれだけです') && tx.includes('HOW TO PLAY'), 'JA texts shown; design label HOW TO PLAY stays English');
-  t.onInput('tap', c(R.inv)); ok(!!t.ht && e.store.get('controls') === 'inverted', 'INVERTED button sets controls');
-  tx = texts(t).join('|'); ok(/左：機首が左へ/.test(tx), 'JA: INVERTED rotation direction text (LEFT -> nose left)');
-  t.onInput('tap', c(R.std)); tx = texts(t).join('|'); ok(/左：機首が右へ/.test(tx), 'JA: STANDARD rotation direction text (LEFT -> nose right)');
-  t.onInput('tap', c(R.en)); ok(e.store.get('lang') === 'en', 'EN button'); tx = texts(t).join('|');
+  const sc = { render: (ctx) => card.render(ctx) };
+  card.input('tap', c(R.ja)); ok(!closed && e.store.get('lang') === 'ja', 'JA button sets lang and keeps the card open');
+  let tx = texts(sc).join('|'); ok(tx.includes('操作はこれだけです') && tx.includes('HOW TO PLAY'), 'JA texts shown; design label HOW TO PLAY stays English');
+  card.input('tap', c(R.inv)); ok(!closed && e.store.get('controls') === 'inverted', 'INVERTED button sets controls');
+  tx = texts(sc).join('|'); ok(/左：機首が左へ/.test(tx), 'JA: INVERTED rotation direction text (LEFT -> nose left)');
+  card.input('tap', c(R.std)); tx = texts(sc).join('|'); ok(/左：機首が右へ/.test(tx), 'JA: STANDARD rotation direction text (LEFT -> nose right)');
+  card.input('tap', c(R.en)); ok(e.store.get('lang') === 'en', 'EN button'); tx = texts(sc).join('|');
   ok(/LEFT: NOSE TILTS RIGHT/.test(tx), 'EN: STANDARD direction text');
-  t.onInput('tap', c(R.inv)); tx = texts(t).join('|'); ok(/LEFT: NOSE TILTS LEFT/.test(tx), 'EN: INVERTED direction text');
-  t.onInput('tap', c(R.std));
-  // 余白タップで閉じる。閉じたタップで START は始まらない
-  t.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); ok(!t.ht && calls.n === 0 && !t.launch, 'tap elsewhere closes; game not started');
-  t.onInput('tap', { x: 180, y: 300, now: 0 }); ok(calls.n > 0 || !!t.launch, 'next tap starts as usual');
+  card.input('tap', c(R.inv)); tx = texts(sc).join('|'); ok(/LEFT: NOSE TILTS LEFT/.test(tx), 'EN: INVERTED direction text');
+  card.input('tap', c(R.std));
+  card.input('tap', { x: 180, y: 300, t0: clock + 1 }); ok(closed === 1, 'tap elsewhere closes');
+  t.onInput('tap', { x: 180, y: 300, now: 0 }); ok(calls.n > 0 || !!t.launch, 'title taps work as usual');
 }
 
 // ================================================================ 5. 文言: PC / タッチ / JA / EN / 折り返し
@@ -196,6 +209,8 @@ const c = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
   clock += 500; g.onInput('tap', c(hb[0])); ok(!g._ht && g.state === 'hold', 'a tap over the RESUME position only closes the card (not consumed as RESUME)');
   run(g, 0.4); g.onInput('tap', c(how)); ok(!!g._ht, 'reopen from HOLD');
   const R = g._ht.rects(); g.onInput('tap', c(R.inv)); ok(e.store.get('controls') === 'inverted', 'settings reachable from HOLD');
+  g.onInput('tap', c(R.skip)); ok(e.store.get('howtoSkip') === '0' && !!g._ht, 'checkbox in HOLD changes the same setting (card stays open)');
+  g.onInput('tap', c(R.skip)); ok(e.store.get('howtoSkip') === '1', 'checkbox in HOLD toggles back');
   clock += 500;
   g.onInput('tap', { x: 180, y: 250, t0: clock + 1 }); ok(!g._ht && g.state === 'hold', 'closing returns to the HOLD menu');
   ok(texts(g).includes('HOW TO PLAY'), 'HOLD menu shows the button label');

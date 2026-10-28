@@ -56,7 +56,7 @@ const KEY = 'ab'.repeat(32);
   ok(rec.texts.some((t) => t === 'UPDATE INFORMATION'), 'boot shows UPDATE INFORMATION');
   b.onInput('tap', { x: 1, y: 1 });
   ok(store.get('seenVersion') === APP_VERSION, 'seenVersion = APP_VERSION');
-  const t = new TitleScene(makeEngine(new Map([['hudTipSeen', '1']])), noop, { launch: true }); net.__setRelayUrl(''); t.enter(); t.update(0.1);
+  const t = new TitleScene(makeEngine(new Map([['hudTipSeen', '1'], ['howtoSkip', '1']])), noop, { launch: true }); net.__setRelayUrl(''); t.enter(); t.update(0.1);
   const c2 = makeCtx(); t.render(c2.ctx);
   ok(c2.rec.texts.includes('BETA v1.1') && !c2.rec.texts.includes('PUBLIC BETA'), 'title shows BETA v1.1 (not PUBLIC BETA)');
 }
@@ -148,11 +148,11 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
   const tabs = R.createRankTabs(); tabs.mode = 'world'; await R.loadWorld(tabs); ok(tabs.status === 'updating', 'WORLD tab status updating (not offline)');
   const c = makeCtx(); R.drawRankPanel({}, c.ctx, tabs, [], 32, 146, 296, -1); ok(c.rec.texts.includes('WORLD: UPDATING') && !c.rec.texts.includes('OFFLINE'), 'WORLD tab draws WORLD: UPDATING');
   // ゲームオーバーでもクラッシュせず注記
-  const g = new Game(makeEngine(new Map([['hudTipSeen', '1'], ['lastName', 'ZED']]))); g.enter(); g.totalScore = 400; g.continues = 0; g.fuel = 0;
+  const g = new Game(makeEngine(new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['lastName', 'ZED']]))); g.enter(); g.totalScore = 400; g.continues = 0; g.fuel = 0;
   let threw = false; try { g._doCrash('X'); await tick(20); g.render(makeCtx().ctx); } catch (_) { threw = true; }
   ok(!threw && g.state === 'gameover' && g._worldNote === 'WORLD: UPDATING' && !calls.some((c2) => /\/submit/.test(c2.url)), 'game over: local ranking kept, note WORLD: UPDATING, no submit');
   // タイトル: 別の版の #1 を出さない
-  const st = new Map([['hudTipSeen', '1'], ['worldTop1', JSON.stringify({ name: 'V10', score: 1, title: '', at: 1 })]]);
+  const st = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['worldTop1', JSON.stringify({ name: 'V10', score: 1, title: '', at: 1 })]]);
   const ts = new TitleScene(makeEngine(st), noop, { launch: true }); ts.enter(); await tick(20); ok(ts.top1 === null, 'title: stale v1.0 #1 hidden while updating');
   // ネットワーク失敗は「不明」: OFFLINE 扱いで送信しない
   net.__setRelayUrl('https://relay.test'); handler = () => { throw new Error('down'); };
@@ -216,7 +216,7 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
   hidePinEntry();
 
   // 6e 名前入力: 登録済み＋PIN あり → THIS IS MY NAME
-  const st = new Map([['hudTipSeen', '1']]); const ts = new TitleScene(makeEngine(st), noop, { launch: true });
+  const st = new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]); const ts = new TitleScene(makeEngine(st), noop, { launch: true });
   handler = (u) => /\/name/.test(u) ? { ok: true, status: 200, json: async () => ({ taken: true, hasPin: true }) } : { ok: true, status: 200, json: async () => ({}) };
   let out = await ts._onNameEntered('Cipher');
   ok(out && typeof out === 'object' && /ENTER PIN/.test(out.action.label) && /REGISTERED/.test(out.msg), 'taken + hasPin -> offer THIS IS MY NAME — ENTER PIN');
@@ -231,7 +231,7 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
   ok(R.loadProfiles(ts.engine.storage).some((p) => p.name === 'Cipher') && ts.name === 'Cipher' && started === 1 && ts.pendingStart === false, 'PIN login success: pilot added, start continues');
 
   // 6f PILOTS 画面: PIN メニュー
-  const st2 = new Map([['hudTipSeen', '1'], ['profiles', JSON.stringify([{ name: 'Neo', key: KEY }])], ['lastName', 'Neo']]);
+  const st2 = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['profiles', JSON.stringify([{ name: 'Neo', key: KEY }])], ['lastName', 'Neo']]);
   const t2 = new TitleScene(makeEngine(st2), noop, { launch: true }); t2.enter();
   handler = (u) => /\/name/.test(u) ? { ok: true, status: 200, json: async () => ({ taken: true, hasPin: true }) } : { ok: true, status: 200, json: async () => ({ ok: true }) };
   t2.onInput('tap', center(t2.changeBtn)); ok(t2.prof && t2.prof.mode === 'list', 'PILOTS opens');
@@ -261,7 +261,7 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
     if (/\/admin\/pin-reset/.test(u)) { admin.names = admin.names.map((n) => (n.name === body.name ? { ...n, hasPin: false } : n)); return { ok: true, status: 200, json: async () => ({ ok: true }) }; }
     return { ok: false, status: 404, json: async () => ({}) };
   };
-  const g = new Game(makeEngine(new Map([['hudTipSeen', '1']]))); g.enter(); g._dbgPrev = 'play'; g.state = 'debug';
+  const g = new Game(makeEngine(new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]))); g.enter(); g._dbgPrev = 'play'; g.state = 'debug';
   g._askAdminKey = (cb) => cb('adminsecret');
   g.onInput('tap', center(g._adminBtnRect())); await tick(20);
   let Rr = g._adminRects(); ok(Rr.rows.length === 2 && Rr.rows[0].hasPin && !Rr.rows[1].hasPin, 'admin rows know hasPin');

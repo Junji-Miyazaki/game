@@ -19,7 +19,7 @@ function makeCtx(rec) {
     return k in t ? t[k] : noop; }, set: (t, k, v) => { t[k] = v; return true; } });
 }
 function makeEngine() {
-  const store = new Map([['hudTipSeen', '1'], ['touchHintSeen', '1']]);
+  const store = new Map([['hudTipSeen', '1'], ['howtoSkip', '1'], ['touchHintSeen', '1']]);
   const sfx = {}; for (const n of ['landing', 'crash', 'module', 'launch', 'uiTap', 'thud', 'tick', 'ring', 'power', 'patch']) sfx[n] = noop;
   return { store, music: { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: noop, stopAll: noop, stopJingle: noop, playJingle: noop, tick: noop, duck: noop, sfx },
     audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },

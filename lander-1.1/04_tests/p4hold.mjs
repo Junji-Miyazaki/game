@@ -37,7 +37,7 @@ function makeMusic() {
     sfx: { landing: rec('landing'), crash: rec('crash'), module: rec('module'), launch: rec('launch'), uiTap: rec('uiTap') } };
 }
 function makeEngine(opts = {}) {
-  const store = new Map([['hudTipSeen', '1']]);
+  const store = new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]);
   return {
     music: opts.noDuck ? Object.assign(makeMusic(), { duck: undefined }) : makeMusic(),
     audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },

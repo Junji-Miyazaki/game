@@ -175,6 +175,7 @@ GitHub Pagesは静的配信のため、**ランキングは端末（ブラウザ
 - **操作の向き**（保存 'controls'）: STANDARD=従来。INVERTED=左ボタン/←で機首も横ドリフトも左へ、右はその逆（炎は左右入れ替え、ボタンの回転矢印も逆）。**SIDE THRUST の向きを変更**: STANDARD は左ボタンで機体が右へ（反作用ドリフトと同じ向き。beta.4 の「左ボタン→左」を置換）、INVERTED は左ボタンで左へ。矢印 ⇦⇨ も設定に追従。自動操縦（AUTO LAND）は物理の向きで出力するため `_auto` 中は反転しない（両設定で同一軌跡）。
 - **ステージ開始の1文**（`bodies.js` GOAL_LINES / goalKey）: 全ステージの開始から2.5秒、天体紹介の下に非ブロッキングで表示。1つだけ選ぶ。優先順 waypoint > ice > dark(水星)/fog(視界のある天体) > moving > wind > meteors > plain。ボーナスは CALM/ROVER/CROSSWIND/STORM ごとの文。JA ≤22字、EN ≤40字。
 - UPDATE INFORMATION: beta.6（2026.10.27）4項目。
+- **改訂（2026-10-28 ユーザー決定。上の「初回自動表示」「タイトルの `?`」を置換）**: タイトルの `?` は見つけにくいので**削除**。HOW TO PLAY は**ラン開始のたび**（新規/CONTINUE/MAP。ステージ間は出さない）に表示し、カード下部のチェック「次回から表示しない」（EN "Don't show next time"、44px以上、保存 'howtoSkip'）で止められる。'howtoSeen' は廃止。MISSION HOLD の HOW TO PLAY ボタンは存続し、そこでもチェックは同じ設定。言語・操作の向きの設定はカードに残す。UPDATE INFORMATION（beta.6）は5項目（「操作説明は毎回表示（次回から非表示も可）」）。版は beta.6 のまま。
 
 ## 7j. 決定（2026-10-26）
 - 名称は **LANDER v1.1 BETA**（正式リリース前と明記）。画面表示は「**BETA v1.1**」（BETA を先に目立たせる、ユーザー意図）、内部の版番号は semver 慣習の `1.1.0-beta`。起動画面の WHAT'S NEW の下に小さく「build 1.1.0-beta」（不具合報告で版を特定するため、ユーザー了承）。フォルダ／URL は `lander-1.1/`。現行版は v1.0 として `lander/` に据え置き。

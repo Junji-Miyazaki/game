@@ -30,7 +30,7 @@ function makeCtx() {
   });
   return { ctx, st };
 }
-const store = new Map();
+const store = new Map([['howtoSkip', '1']]);
 function makeEngine(ctx) {
   const e = { ctx, audio: new Proxy({}, { get: () => noop }),
     storage: { getHigh: () => 0, setHigh: () => false, get: (k, d = null) => store.has(k) ? store.get(k) : d, set: (k, v) => store.set(k, String(v)) },

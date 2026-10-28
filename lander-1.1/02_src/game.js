@@ -17,7 +17,7 @@ import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor,
 import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
 import { i18nBind, i18nLang, i18nInverted } from './core/i18n.js';
-import { HtCard } from './howto.js';
+import { HtCard, htSkipGet } from './howto.js';
 import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawEmergencyBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine } from './art.js';
 
 export const meta = {
@@ -443,21 +443,18 @@ export class Game extends Scene {
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
-  // ---- HOW TO PLAY（'howtoSeen' が無い端末で1回だけ自動表示。既存プレイヤーにも1回出す＝操作に迷った人に届けるため（リーダー判断）。物理は凍結）----
+  // ---- HOW TO PLAY: ラン開始のたびに表示（new run / CONTINUE / MAP。ステージ間は出さない）。カードの「次回から表示しない」('howtoSkip') で止める。物理は凍結 ----
   _maybeShowHowto() {
-    const st = this.engine.storage;
     if (this.state !== 'play') return false;
-    let seen = null; try { seen = st.get('howtoSeen', null); } catch (_) { /* ignore */ }
-    if (seen) return false;
+    if (htSkipGet(this.engine.storage)) return false;
     this._openHowto(true);
     return true;
   }
   // first=true: ラン開始前の自動表示（閉じたら計器ヒントへ）。false: MISSION HOLD から（閉じたら HOLD に戻る）
   _openHowto(first) {
-    try { this.engine.storage.set('howtoSeen', '1'); } catch (_) { /* ignore */ }
     this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
-    this._ht = new HtCard({ onTap: () => this._uiTap(), onClose: () => {
+    this._ht = new HtCard({ storage: this.engine.storage, onTap: () => this._uiTap(), onClose: () => {
       this._ht = null;
       this._holdGrace = HOLD_GRACE_S;
       if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
