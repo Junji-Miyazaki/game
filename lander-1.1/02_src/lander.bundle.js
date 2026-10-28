@@ -3181,38 +3181,49 @@ function drawShieldBubble(ctx, x, y, r, k, t, hit) {
   ctx.restore();
 }
 // 画面下の SHIELD ボタン（満タンのときだけ出る非常ボタン。赤/琥珀の脈動・わずかな震え）。b={x,y,w,h}
-// SHIELD ボタン＝ゲージ。frac: 充填 0..1、onFrac: 泡の残り 0..1（0 なら泡なし）
-// 充填中は暗い枠の中を紫が左から満ちる。満タンで赤と琥珀に点滅。泡の間は白い帯が減っていく。
-function drawShieldButton(ctx, b, t, frac = 1, onFrac = 0) {
+// SHIELD ボタン＝ゲージ。frac: 充填 0..1、onFrac: 泡の残り 0..1（0 なら泡なし）、readyT: 満タンになってからの秒（膨らむ演出）
+// 充填中・泡の間は 0.72 倍に縮めて薄く（地表やパッドとの被りを減らす）。文字は明るい色＋暗い影で読めるように。
+// 満タン: 0.32 秒で膨らんで（行き過ぎてから戻る）元の大きさ＋縁の光、以後は赤と琥珀の点滅。
+const SHIELD_BTN_SMALL = 0.72;
+function shieldBtnRect(b, k) { const cx = b.x + b.w / 2, cy = b.y + b.h / 2, w = b.w * k, h = b.h * k; return { x: cx - w / 2, y: cy - h / 2, w, h }; }
+function shieldPopScale(readyT) {
+  const k = Math.max(0, Math.min(1, (readyT == null ? 9 : readyT) / 0.32)), u = k - 1;
+  return SHIELD_BTN_SMALL + (1 - SHIELD_BTN_SMALL) * (1 + 2.70158 * u * u * u + 1.70158 * u * u);   // easeOutBack
+}
+function drawShieldButton(ctx, b0, t, frac = 1, onFrac = 0, readyT = 9) {
   const p = P();
   if (onFrac > 0 || frac < 1) {
+    const b = shieldBtnRect(b0, SHIELD_BTN_SMALL), rad = 24 * SHIELD_BTN_SMALL;
     const on = onFrac > 0, f = Math.max(0, Math.min(1, on ? onFrac : frac));
     const col = on ? p.hi : p.violet;   // 燃料（ティール/琥珀）と別の色
-    ctx.save();
-    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.fillStyle = rgba(p.bg, 0.35); ctx.fill();
-    ctx.save(); rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.clip();
+    ctx.save(); ctx.globalAlpha = 0.6;   // 全体を薄く
+    rr(ctx, b.x, b.y, b.w, b.h, rad); ctx.fillStyle = rgba(p.bg, 0.35); ctx.fill();
+    ctx.save(); rr(ctx, b.x, b.y, b.w, b.h, rad); ctx.clip();
     if (f > 0) { ctx.fillStyle = rgba(col, on ? 0.30 : 0.14 + 0.16 * f); ctx.fillRect(b.x, b.y, b.w * f, b.h); }
     ctx.restore();
-    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(on ? p.hi : p.fg, on ? 0.6 : 0.28); ctx.stroke();
+    rr(ctx, b.x, b.y, b.w, b.h, rad); ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(on ? p.hi : p.fg, on ? 0.6 : 0.35); ctx.stroke();
     // 下端の細いゲージ線
-    const lx = b.x + 16, lw = b.w - 32, ly = b.y + b.h - 13;
-    rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+    const lx = b.x + 11, lw = b.w - 22, ly = b.y + b.h - 10;
+    rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.18); ctx.fill();
     if (f > 0) { rr(ctx, lx, ly, Math.max(3, lw * f), 3, 1.5); ctx.fillStyle = col; ctx.fill(); }
     ctx.restore();
-    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 9, 11, on ? p.hi : p.dim, 'center', { sp: 3, w: 600, a: on ? 1 : 0.75 });
+    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 7, 9, p.fg, 'center', { sp: 2.5, w: 700, a: on ? 0.95 : 0.85, sh: true });
     return;
   }
+  const sc = shieldPopScale(readyT), b = shieldBtnRect(b0, sc), rad = 24 * sc;
+  const flash = Math.max(0, 1 - (readyT == null ? 9 : readyT) / 0.6);   // 満タン直後の光
   const pulse = 0.5 + 0.5 * Math.sin(t * 7);
   const sx = Math.sin(t * 46) * 0.9, sy = Math.cos(t * 39) * 0.6;
   const col = pulse > 0.5 ? p.bad : p.warn;
   ctx.save();
   ctx.translate(sx, sy);
-  rr(ctx, b.x, b.y, b.w, b.h, 24);
-  ctx.fillStyle = rgba(col, 0.16 + 0.22 * pulse); ctx.fill();
-  ctx.lineWidth = 1.6 + pulse; ctx.strokeStyle = rgba(col, 0.55 + 0.45 * pulse); ctx.stroke();
+  if (flash > 0) { ctx.shadowColor = p.warn; ctx.shadowBlur = 26 * flash; }
+  rr(ctx, b.x, b.y, b.w, b.h, rad);
+  ctx.fillStyle = rgba(col, Math.min(0.8, 0.16 + 0.22 * pulse + 0.4 * flash)); ctx.fill();
+  ctx.lineWidth = 1.6 + pulse + 1.5 * flash; ctx.strokeStyle = rgba(col, Math.min(1, 0.55 + 0.45 * pulse + flash)); ctx.stroke();
   ctx.restore();
-  ctx.save(); ctx.globalAlpha = 0.5 + 0.5 * pulse; ctx.shadowColor = col; ctx.shadowBlur = 10 + 10 * pulse;
-  txt(ctx, 'SHIELD', b.x + b.w / 2 + sx, b.y + b.h / 2 - 5 + sy, 12, p.hi, 'center', { sp: 3, w: 700 });
+  ctx.save(); ctx.globalAlpha = Math.min(1, 0.6 + 0.4 * pulse + flash); ctx.shadowColor = col; ctx.shadowBlur = 10 + 10 * pulse;
+  txt(ctx, 'SHIELD', b.x + b.w / 2 + sx, b.y + b.h / 2 - 5 + sy, 12 * sc, p.hi, 'center', { sp: 3, w: 700 });
   ctx.restore();
 }
 // SHIELD 発動のバナー。a: 0..1
@@ -5326,6 +5337,13 @@ const Music = {
       _musSfxTone('sawtooth', 220, t, 0.28, 0.18, 0);
       _musSfxTone('triangle', 660, t + 0.05, 0.4, 0.3, 1.5);
       _musSfxTone('sine', 990, t + 0.14, 0.5, 0.28, 1.5);
+    },
+    // SHIELD ゲージ満タン: 短く明るい「ポン」（二音、控えめ）
+    shieldReady() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.01;
+      _musSfxTone('sine', 880, t, 0.16, 0.16, 0);
+      _musSfxTone('sine', 1320, t + 0.07, 0.24, 0.14, 0);
     },
     landing() {
       if (!_musSfxReady()) return;
@@ -7675,6 +7693,8 @@ const THREAT_T = 1.5, THREAT_STEPS = 15, THREAT_PAD = 6, SHIP_R = 14;   // 衝�
 const SH_FULL_S = 20, SH_DUR_S = 5, SH_BUBBLE_R = 28, SH_BANNER_S = 1.6;
 const SH_BTN = { x: 138, y: 500, w: 84, h: 56 };          // 画面下の SHIELD ボタン（メイン噴射ボタンの真上。3つの操作ボタン y>=570 とは重ならない）
 const SH_HIT = { x: 130, y: 492, w: 100, h: 67 };         // 当たり判定（見た目より少し広い。下端 y=559 は操作帯 y>=560 の手前）
+const SH_SMALL = SHIELD_BTN_SMALL;                                        // 充填中・泡の間のボタンの縮尺（中心は同じ）
+const SH_HIT_SMALL = (() => { const cx = SH_BTN.x + SH_BTN.w / 2, cy = SH_BTN.y + SH_BTN.h / 2, w = SH_BTN.w * SH_SMALL, h = SH_BTN.h * SH_SMALL; return { x: cx - w / 2, y: cy - h / 2, w, h }; })();   // 充填中に「押しても噴射しない」範囲＝小さい見た目
 const SH_CTL_Y = 560;                                      // これより下は操作ボタン帯（マウスの「どこでもクリック」では発動しない）
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
 const GRADE_TABLE = [
@@ -8050,6 +8070,7 @@ class Game extends Scene {
   _shieldFull() { return (this._gauge || 0) >= SH_FULL_S; }
   _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }   // 発動できる（点滅）
   _shieldBtnVisible() { return this._live() && !this._ht; }   // ボタン＝ゲージは充填中・泡の間も表示
+  _shieldHit() { return this._shieldBtnShown() ? SH_HIT : SH_HIT_SMALL; }   // 満タンは大きい当たり判定、充填中・泡の間は小さい見た目の範囲
   _tryShield() {
     if (!this._live() || this._ht || !this._shieldFull() || this._shT > 0) return false;
     this._gauge = 0; this._shT = SH_DUR_S; this._shBannerT = SH_BANNER_S; this._shHitT = 0;
@@ -8208,7 +8229,7 @@ class Game extends Scene {
     if (this._live()) {
       if (action === 'down' && !(data && data.swipe)) { this._tryShield(); return; }
       if (action === 'tap' && data && !(data.t0 < this._overlayAt)) {
-        if (this._shieldBtnVisible() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }   // 充填中のタップは何もしない
+        if (this._shieldBtnVisible() && this._inRect(this._shieldHit(), data)) { this._tryShield(); return; }   // 充填中のタップは何もしない
         if (data.mouse && data.y < SH_CTL_Y && !(isDebug() && this._inRect(this._dbgBtnRect(), data))) { this._tryShield(); return; }
       }
     }
@@ -8639,7 +8660,7 @@ class Game extends Scene {
     for (const pt of pts) {
       if (!(pt.y > CONTROL_Y_MIN)) continue;
       if (isDebug() && this._inRect(this._dbgBtnRect(), pt)) continue;
-      if (this._shieldBtnVisible() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない（充填中も）
+      if (this._shieldBtnVisible() && this._inRect(this._shieldHit(), pt)) continue;   // SHIELD ボタンは噴射にしない（充填中も）
       if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
       else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
       else                        this._thrustMain = true;
@@ -8687,7 +8708,13 @@ class Game extends Scene {
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
     if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
     // SHIELD ゲージ: 操縦できる状態（play / grounded）の時間だけ貯まる。HOLD・HOW TO PLAY・ヒント・結果・選択画面は上で return 済み
-    this._gauge = Math.min(SH_FULL_S, (this._gauge || 0) + dt);
+    const gWas = this._gauge || 0;
+    this._gauge = Math.min(SH_FULL_S, gWas + dt);
+    if (gWas < SH_FULL_S && this._gauge >= SH_FULL_S) {   // 満タンになった瞬間: ボタンが膨らむ＋短い音
+      this._shReadyT = 0;
+      try { const m = musicOf(this.engine); if (!isMuted(this.engine) && m.sfx && m.sfx.shieldReady) m.sfx.shieldReady(); } catch (_) { /* 音の失敗はゲームに影響させない */ }
+    }
+    if (this._shReadyT != null) this._shReadyT += dt;
     if (this._shT > 0) this._shT = Math.max(0, this._shT - dt);
     if (this._shBannerT > 0) this._shBannerT = Math.max(0, this._shBannerT - dt);
     if (this._shHitT > 0) this._shHitT = Math.max(0, this._shHitT - dt);
@@ -9594,7 +9621,7 @@ class Game extends Scene {
 
     // Bottom button controls
     this._drawButtons(ctx);
-    if (this._shieldBtnVisible() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0, Math.min(1, (this._gauge || 0) / SH_FULL_S), this._shT > 0 ? this._shT / SH_DUR_S : 0);
+    if (this._shieldBtnVisible() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0, Math.min(1, (this._gauge || 0) / SH_FULL_S), this._shT > 0 ? this._shT / SH_DUR_S : 0, this._shReadyT == null ? 9 : this._shReadyT);
 
     // Result overlays
     if (this.state === 'cleared') {

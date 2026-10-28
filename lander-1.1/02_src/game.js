@@ -18,7 +18,7 @@ import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
 import { i18nBind, i18nLang, i18nInverted } from './core/i18n.js';
 import { HtCard, htSkipGet } from './howto.js';
-import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawShieldBubble, drawShieldButton, drawShieldBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine } from './art.js';
+import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawShieldBubble, drawShieldButton, SHIELD_BTN_SMALL, drawShieldBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -124,6 +124,8 @@ const THREAT_T = 1.5, THREAT_STEPS = 15, THREAT_PAD = 6, SHIP_R = 14;   // 衝�
 export const SH_FULL_S = 20, SH_DUR_S = 5, SH_BUBBLE_R = 28, SH_BANNER_S = 1.6;
 export const SH_BTN = { x: 138, y: 500, w: 84, h: 56 };          // 画面下の SHIELD ボタン（メイン噴射ボタンの真上。3つの操作ボタン y>=570 とは重ならない）
 export const SH_HIT = { x: 130, y: 492, w: 100, h: 67 };         // 当たり判定（見た目より少し広い。下端 y=559 は操作帯 y>=560 の手前）
+export const SH_SMALL = SHIELD_BTN_SMALL;                                        // 充填中・泡の間のボタンの縮尺（中心は同じ）
+export const SH_HIT_SMALL = (() => { const cx = SH_BTN.x + SH_BTN.w / 2, cy = SH_BTN.y + SH_BTN.h / 2, w = SH_BTN.w * SH_SMALL, h = SH_BTN.h * SH_SMALL; return { x: cx - w / 2, y: cy - h / 2, w, h }; })();   // 充填中に「押しても噴射しない」範囲＝小さい見た目
 const SH_CTL_Y = 560;                                      // これより下は操作ボタン帯（マウスの「どこでもクリック」では発動しない）
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
 export const GRADE_TABLE = [
@@ -499,6 +501,7 @@ export class Game extends Scene {
   _shieldFull() { return (this._gauge || 0) >= SH_FULL_S; }
   _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }   // 発動できる（点滅）
   _shieldBtnVisible() { return this._live() && !this._ht; }   // ボタン＝ゲージは充填中・泡の間も表示
+  _shieldHit() { return this._shieldBtnShown() ? SH_HIT : SH_HIT_SMALL; }   // 満タンは大きい当たり判定、充填中・泡の間は小さい見た目の範囲
   _tryShield() {
     if (!this._live() || this._ht || !this._shieldFull() || this._shT > 0) return false;
     this._gauge = 0; this._shT = SH_DUR_S; this._shBannerT = SH_BANNER_S; this._shHitT = 0;
@@ -657,7 +660,7 @@ export class Game extends Scene {
     if (this._live()) {
       if (action === 'down' && !(data && data.swipe)) { this._tryShield(); return; }
       if (action === 'tap' && data && !(data.t0 < this._overlayAt)) {
-        if (this._shieldBtnVisible() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }   // 充填中のタップは何もしない
+        if (this._shieldBtnVisible() && this._inRect(this._shieldHit(), data)) { this._tryShield(); return; }   // 充填中のタップは何もしない
         if (data.mouse && data.y < SH_CTL_Y && !(isDebug() && this._inRect(this._dbgBtnRect(), data))) { this._tryShield(); return; }
       }
     }
@@ -1088,7 +1091,7 @@ export class Game extends Scene {
     for (const pt of pts) {
       if (!(pt.y > CONTROL_Y_MIN)) continue;
       if (isDebug() && this._inRect(this._dbgBtnRect(), pt)) continue;
-      if (this._shieldBtnVisible() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない（充填中も）
+      if (this._shieldBtnVisible() && this._inRect(this._shieldHit(), pt)) continue;   // SHIELD ボタンは噴射にしない（充填中も）
       if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
       else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
       else                        this._thrustMain = true;
@@ -1136,7 +1139,13 @@ export class Game extends Scene {
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
     if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
     // SHIELD ゲージ: 操縦できる状態（play / grounded）の時間だけ貯まる。HOLD・HOW TO PLAY・ヒント・結果・選択画面は上で return 済み
-    this._gauge = Math.min(SH_FULL_S, (this._gauge || 0) + dt);
+    const gWas = this._gauge || 0;
+    this._gauge = Math.min(SH_FULL_S, gWas + dt);
+    if (gWas < SH_FULL_S && this._gauge >= SH_FULL_S) {   // 満タンになった瞬間: ボタンが膨らむ＋短い音
+      this._shReadyT = 0;
+      try { const m = musicOf(this.engine); if (!isMuted(this.engine) && m.sfx && m.sfx.shieldReady) m.sfx.shieldReady(); } catch (_) { /* 音の失敗はゲームに影響させない */ }
+    }
+    if (this._shReadyT != null) this._shReadyT += dt;
     if (this._shT > 0) this._shT = Math.max(0, this._shT - dt);
     if (this._shBannerT > 0) this._shBannerT = Math.max(0, this._shBannerT - dt);
     if (this._shHitT > 0) this._shHitT = Math.max(0, this._shHitT - dt);
@@ -2043,7 +2052,7 @@ export class Game extends Scene {
 
     // Bottom button controls
     this._drawButtons(ctx);
-    if (this._shieldBtnVisible() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0, Math.min(1, (this._gauge || 0) / SH_FULL_S), this._shT > 0 ? this._shT / SH_DUR_S : 0);
+    if (this._shieldBtnVisible() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0, Math.min(1, (this._gauge || 0) / SH_FULL_S), this._shT > 0 ? this._shT / SH_DUR_S : 0, this._shReadyT == null ? 9 : this._shReadyT);
 
     // Result overlays
     if (this.state === 'cleared') {

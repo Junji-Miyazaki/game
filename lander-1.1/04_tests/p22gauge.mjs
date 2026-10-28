@@ -2,7 +2,8 @@
 // 実行: node 04_tests/p22gauge.mjs（lander-1.1/ から）
 import './p10setup.mjs';
 import fs from 'node:fs';
-import { Game, SH_BTN, SH_HIT, SH_FULL_S, SH_DUR_S, SH_BUBBLE_R } from '../02_src/game.js';
+import { Game, SH_BTN, SH_HIT, SH_HIT_SMALL, SH_SMALL, SH_FULL_S, SH_DUR_S, SH_BUBBLE_R } from '../02_src/game.js';
+import { shieldPopScale, shieldBtnRect } from '../02_src/art.js';
 import { htContent } from '../02_src/howto.js';
 import { MUTE_KEY } from '../02_src/title.js';
 import { i18nBind, i18nSetLang } from '../02_src/core/i18n.js';
@@ -282,5 +283,34 @@ const hudText = (g) => shieldTexts(g).find((t) => t.y < 80);
   i18nSetLang('en');
 }
 
+// ================================================================ 改訂: 充填中は小さく薄く、満タンで膨らむ＋音、文字は明るい色
+{
+  ok(SH_SMALL > 0.6 && SH_SMALL < 0.8, 'small scale ' + SH_SMALL);
+  const r = shieldBtnRect(SH_BTN, SH_SMALL);
+  ok(near(SH_HIT_SMALL.x, r.x, 1e-9) && near(SH_HIT_SMALL.w, r.w, 1e-9) && near(SH_HIT_SMALL.y + SH_HIT_SMALL.h / 2, SH_BTN.y + SH_BTN.h / 2, 1e-9), 'charging hit box = the small visible button, same center');
+  // 充填中: 小さいボタンの外（元の大きい範囲の端）は噴射できる
+  const g = air().g; g.vy = 0; g.engine.touches = [{ x: 180, y: SH_BTN.y + 2 }]; run(g, 0.2);
+  ok(g._thrustMain === true, 'charging: the edge of the old big area thrusts again');
+  g.engine.touches = [{ x: 180, y: SH_BTN.y + SH_BTN.h / 2 }]; g._thrustMain = false; run(g, 0.2); ok(g._thrustMain === false, 'charging: the small button itself does not thrust');
+  g.engine.touches = [];
+  // 満タン: 大きい当たり判定に戻る
+  const f = air().g; full(f); f.vy = 0; f.engine.touches = [{ x: 180, y: SH_BTN.y + 2 }]; run(f, 0.2); ok(f._thrustMain === false, 'full: big hit box again (no thrust at the edge)');
+  f.engine.touches = [];
+  // 膨らむ演出: 0 → 小、行き過ぎ、0.32 s 以降は 1
+  ok(near(shieldPopScale(0), SH_SMALL, 1e-9) && near(shieldPopScale(0.32), 1, 1e-9) && near(shieldPopScale(5), 1, 1e-9), 'pop scale: small -> 1');
+  let mx = 0; for (let k = 0; k <= 32; k++) mx = Math.max(mx, shieldPopScale(k / 100)); ok(mx > 1.02 && mx < 1.2, 'pop overshoots a little (' + mx.toFixed(3) + ')');
+  // 満タンの瞬間に音 1 回、_shReadyT が始まる
+  const { g: a, e } = air(); a._gauge = SH_FULL_S - 0.1; e.sfxLog.length = 0; run(a, 0.5);
+  ok(a._shieldFull() && a._shReadyT > 0.3 && a._shReadyT < 0.5, 'ready timer starts when it fills (' + (a._shReadyT || 0).toFixed(2) + ')');
+  // 文字: 充填中は象牙色（暗い灰ではない）
+  const h = air().g; run(h, 5); const rec = render(h); const bt = rec.texts.find((t) => t.s === 'SHIELD' && t.y >= 480);
+  ok(!!bt && bt.y > r.y && bt.y < r.y + r.h, 'charging label inside the small button');
+}
+{ // 満タンの音（Music.sfx.shieldReady）: 1 回だけ、ミュート時は鳴らない、満タンのまま再び鳴らない
+  let n = 0; const r1 = air(); r1.g.engine.music.sfx.shieldReady = () => n++; r1.g._gauge = SH_FULL_S - 0.1; run(r1.g, 1); ok(n === 1, 'ready sfx played once when it fills');
+  run(r1.g, 3); ok(n === 1, 'not repeated while full');
+  let m = 0; const r2 = air(); r2.g.engine.music.sfx.shieldReady = () => m++; r2.e.store.set(MUTE_KEY, '1'); r2.g._gauge = SH_FULL_S - 0.1; run(r2.g, 1);
+  ok(r2.g._shieldFull() && m === 0, 'muted: fills, no sound');
+}
 console.log('p22gauge: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));
 process.exit(fail ? 1 : 0);

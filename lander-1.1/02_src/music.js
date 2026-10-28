@@ -860,6 +860,13 @@ export const Music = {
       _musSfxTone('triangle', 660, t + 0.05, 0.4, 0.3, 1.5);
       _musSfxTone('sine', 990, t + 0.14, 0.5, 0.28, 1.5);
     },
+    // SHIELD ゲージ満タン: 短く明るい「ポン」（二音、控えめ）
+    shieldReady() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.01;
+      _musSfxTone('sine', 880, t, 0.16, 0.16, 0);
+      _musSfxTone('sine', 1320, t + 0.07, 0.24, 0.14, 0);
+    },
     landing() {
       if (!_musSfxReady()) return;
       const t = _musS.ctx.currentTime + 0.01;

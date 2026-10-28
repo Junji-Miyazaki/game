@@ -1463,38 +1463,49 @@ export function drawShieldBubble(ctx, x, y, r, k, t, hit) {
   ctx.restore();
 }
 // 画面下の SHIELD ボタン（満タンのときだけ出る非常ボタン。赤/琥珀の脈動・わずかな震え）。b={x,y,w,h}
-// SHIELD ボタン＝ゲージ。frac: 充填 0..1、onFrac: 泡の残り 0..1（0 なら泡なし）
-// 充填中は暗い枠の中を紫が左から満ちる。満タンで赤と琥珀に点滅。泡の間は白い帯が減っていく。
-export function drawShieldButton(ctx, b, t, frac = 1, onFrac = 0) {
+// SHIELD ボタン＝ゲージ。frac: 充填 0..1、onFrac: 泡の残り 0..1（0 なら泡なし）、readyT: 満タンになってからの秒（膨らむ演出）
+// 充填中・泡の間は 0.72 倍に縮めて薄く（地表やパッドとの被りを減らす）。文字は明るい色＋暗い影で読めるように。
+// 満タン: 0.32 秒で膨らんで（行き過ぎてから戻る）元の大きさ＋縁の光、以後は赤と琥珀の点滅。
+export const SHIELD_BTN_SMALL = 0.72;
+export function shieldBtnRect(b, k) { const cx = b.x + b.w / 2, cy = b.y + b.h / 2, w = b.w * k, h = b.h * k; return { x: cx - w / 2, y: cy - h / 2, w, h }; }
+export function shieldPopScale(readyT) {
+  const k = Math.max(0, Math.min(1, (readyT == null ? 9 : readyT) / 0.32)), u = k - 1;
+  return SHIELD_BTN_SMALL + (1 - SHIELD_BTN_SMALL) * (1 + 2.70158 * u * u * u + 1.70158 * u * u);   // easeOutBack
+}
+export function drawShieldButton(ctx, b0, t, frac = 1, onFrac = 0, readyT = 9) {
   const p = P();
   if (onFrac > 0 || frac < 1) {
+    const b = shieldBtnRect(b0, SHIELD_BTN_SMALL), rad = 24 * SHIELD_BTN_SMALL;
     const on = onFrac > 0, f = Math.max(0, Math.min(1, on ? onFrac : frac));
     const col = on ? p.hi : p.violet;   // 燃料（ティール/琥珀）と別の色
-    ctx.save();
-    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.fillStyle = rgba(p.bg, 0.35); ctx.fill();
-    ctx.save(); rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.clip();
+    ctx.save(); ctx.globalAlpha = 0.6;   // 全体を薄く
+    rr(ctx, b.x, b.y, b.w, b.h, rad); ctx.fillStyle = rgba(p.bg, 0.35); ctx.fill();
+    ctx.save(); rr(ctx, b.x, b.y, b.w, b.h, rad); ctx.clip();
     if (f > 0) { ctx.fillStyle = rgba(col, on ? 0.30 : 0.14 + 0.16 * f); ctx.fillRect(b.x, b.y, b.w * f, b.h); }
     ctx.restore();
-    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(on ? p.hi : p.fg, on ? 0.6 : 0.28); ctx.stroke();
+    rr(ctx, b.x, b.y, b.w, b.h, rad); ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(on ? p.hi : p.fg, on ? 0.6 : 0.35); ctx.stroke();
     // 下端の細いゲージ線
-    const lx = b.x + 16, lw = b.w - 32, ly = b.y + b.h - 13;
-    rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+    const lx = b.x + 11, lw = b.w - 22, ly = b.y + b.h - 10;
+    rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.18); ctx.fill();
     if (f > 0) { rr(ctx, lx, ly, Math.max(3, lw * f), 3, 1.5); ctx.fillStyle = col; ctx.fill(); }
     ctx.restore();
-    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 9, 11, on ? p.hi : p.dim, 'center', { sp: 3, w: 600, a: on ? 1 : 0.75 });
+    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 7, 9, p.fg, 'center', { sp: 2.5, w: 700, a: on ? 0.95 : 0.85, sh: true });
     return;
   }
+  const sc = shieldPopScale(readyT), b = shieldBtnRect(b0, sc), rad = 24 * sc;
+  const flash = Math.max(0, 1 - (readyT == null ? 9 : readyT) / 0.6);   // 満タン直後の光
   const pulse = 0.5 + 0.5 * Math.sin(t * 7);
   const sx = Math.sin(t * 46) * 0.9, sy = Math.cos(t * 39) * 0.6;
   const col = pulse > 0.5 ? p.bad : p.warn;
   ctx.save();
   ctx.translate(sx, sy);
-  rr(ctx, b.x, b.y, b.w, b.h, 24);
-  ctx.fillStyle = rgba(col, 0.16 + 0.22 * pulse); ctx.fill();
-  ctx.lineWidth = 1.6 + pulse; ctx.strokeStyle = rgba(col, 0.55 + 0.45 * pulse); ctx.stroke();
+  if (flash > 0) { ctx.shadowColor = p.warn; ctx.shadowBlur = 26 * flash; }
+  rr(ctx, b.x, b.y, b.w, b.h, rad);
+  ctx.fillStyle = rgba(col, Math.min(0.8, 0.16 + 0.22 * pulse + 0.4 * flash)); ctx.fill();
+  ctx.lineWidth = 1.6 + pulse + 1.5 * flash; ctx.strokeStyle = rgba(col, Math.min(1, 0.55 + 0.45 * pulse + flash)); ctx.stroke();
   ctx.restore();
-  ctx.save(); ctx.globalAlpha = 0.5 + 0.5 * pulse; ctx.shadowColor = col; ctx.shadowBlur = 10 + 10 * pulse;
-  txt(ctx, 'SHIELD', b.x + b.w / 2 + sx, b.y + b.h / 2 - 5 + sy, 12, p.hi, 'center', { sp: 3, w: 700 });
+  ctx.save(); ctx.globalAlpha = Math.min(1, 0.6 + 0.4 * pulse + flash); ctx.shadowColor = col; ctx.shadowBlur = 10 + 10 * pulse;
+  txt(ctx, 'SHIELD', b.x + b.w / 2 + sx, b.y + b.h / 2 - 5 + sy, 12 * sc, p.hi, 'center', { sp: 3, w: 700 });
   ctx.restore();
 }
 // SHIELD 発動のバナー。a: 0..1
