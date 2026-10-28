@@ -3207,7 +3207,7 @@ function drawShieldButton(ctx, b0, t, frac = 1, onFrac = 0, readyT = 9) {
     rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.18); ctx.fill();
     if (f > 0) { rr(ctx, lx, ly, Math.max(3, lw * f), 3, 1.5); ctx.fillStyle = col; ctx.fill(); }
     ctx.restore();
-    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 7, 9, p.fg, 'center', { sp: 2.5, w: 700, a: on ? 0.95 : 0.85, sh: true });
+    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 8, 10, p.hi, 'center', { sp: 2.2, w: 700, a: 0.95, sh: true });   // 充填中も読める明るさ（ユーザー指摘）
     return;
   }
   const sc = shieldPopScale(readyT), b = shieldBtnRect(b0, sc), rad = 24 * sc;
