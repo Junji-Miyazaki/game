@@ -13,6 +13,7 @@ import { stageInfo } from './bodies.js';
 import { WHATSNEW, whatsnewItems } from './whatsnew.js';
 import { i18nBind, i18nLang } from './core/i18n.js';
 import { BootFx } from './bootfx.js';
+import { HtCard } from './howto.js';
 import { starsSummary } from './stars.js';
 import { patchesSummary, patchCount, PATCH_COUNT } from './patches.js';
 import { SolarMap } from './solarmap.js';
@@ -326,9 +327,14 @@ export class BootScene extends Scene {
     this.scroll = 0;      // UPDATE INFORMATION の縦スクロール量(px)
     this._headW = 0;
   }
+  blocksBack() { return !!this.ht; }
+  // 起動画面の HOW TO PLAY（ラン開始時と同じカード。設定・「次回から表示しない」も共通）
+  openHowto() { this.ht = new HtCard({ storage: this.engine.storage, onClose: () => { this.ht = null; } }); }
   onInput(action, data) {
     if (this.done) return;
+    if (this.ht) { this.ht.input(action, data); return; }   // カード表示中は全入力を消費
     if (data && data.repeat) return;
+    if (action === 'tap' && data && hitRect(this.newsLayout().howtoHit, data)) { this.openHowto(); return; }
     if (action === 'up') { this.scrollBy(-NEWS_STEP); return; }
     if (action === 'down') { this.scrollBy(NEWS_STEP); return; }
     if (action === 'tap' || action === 'confirm') {
@@ -338,16 +344,17 @@ export class BootScene extends Scene {
     }
   }
   // ---- UPDATE INFORMATION のスクロール ----
-  dragZone(pt) { const f = NEWS_FRAME; return !!pt && pt.x >= f.x && pt.x <= f.x + f.w && pt.y >= f.y && pt.y <= f.y + f.h; }
+  dragZone(pt) { if (this.ht) return false; const f = NEWS_FRAME; return !!pt && pt.x >= f.x && pt.x <= f.x + f.w && pt.y >= f.y && pt.y <= f.y + f.h; }
   onDrag(d) { if (!this.done) this.scrollBy(-d.dy); }     // 指に内容が付いてくる向き
-  onWheel(d) { if (!this.done) this.scrollBy(d.dy); }
+  onWheel(d) { if (!this.done && !this.ht) this.scrollBy(d.dy); }
   scrollMax() { return Math.max(0, newsContentH() - NEWS_VIEW.h); }
   scrollBy(d) { this.scroll = Math.max(0, Math.min(this.scrollMax(), this.scroll + d)); }
   // 配置（360x640。ロゴ y~256 / TAP TO BEGIN y~384 / SOUND ON y~412 の下。枠は固定高）
   newsLayout() {
     const hw = this._headW || 150;
     return { head: { x: W / 2 - hw / 2, y: NEWS_HEAD_Y, w: hw, h: 9 }, pill: { x: W / 2 + hw / 2 + 10, y: NEWS_HEAD_Y - 2, w: 28, h: 13 },
-      frame: NEWS_FRAME, view: NEWS_VIEW, bottom: NEWS_FRAME.y + NEWS_FRAME.h, build: { x: W / 2 - 60, y: NEWS_FRAME.y + NEWS_FRAME.h + 8, w: 120, h: 8 } };
+      frame: NEWS_FRAME, view: NEWS_VIEW, bottom: NEWS_FRAME.y + NEWS_FRAME.h, build: { x: W / 2 - 60, y: NEWS_FRAME.y + NEWS_FRAME.h + 8, w: 120, h: 8 },
+      howto: HOWTO_BTN, howtoHit: HOWTO_HIT };
   }
   isNewVersion() {
     let seen = null; try { seen = this.engine.storage.get('seenVersion', null); } catch (_) { /* ignore */ }
@@ -414,13 +421,21 @@ export class BootScene extends Scene {
       ctx.save(); ctx.globalAlpha = nf; rr(ctx, f.x + f.w - 5, ty, 2, th, 1); ctx.fillStyle = rgba(p.fg, 0.35); ctx.fill(); ctx.restore();
     }
     txt(ctx, APP_BUILD_TEXT, W / 2, nw.build.y, 7, p.dim, 'center', { sp: 2, w: 400, a: 0.55 * nf });
+    // HOW TO PLAY（文字のボタン。枠の下）
+    const hb = nw.howto;
+    ctx.save(); ctx.globalAlpha = nf; pill(ctx, hb.x, hb.y, hb.w, hb.h, rgba(p.fg, 0.05), rgba(p.fg, 0.4)); ctx.restore();
+    txt(ctx, 'HOW TO PLAY', W / 2, hb.y + hb.h / 2 - 4.5, 9, p.fg, 'center', { sp: 4, w: 600, a: 0.85 * nf });
+    if (this.ht) this.ht.render(ctx);
   }
 }
+const hitRect = (r, d) => d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h;
 // UPDATE INFORMATION の寸法（論理座標 360x640）
 const NEWS_TITLE = 'UPDATE INFORMATION';
-const NEWS_HEAD_Y = 436, NEWS_STEP = 36;
-const NEWS_FRAME = { x: 20, y: 452, w: 320, h: 136 };
-const NEWS_VIEW = { x: 32, y: 458, w: 296, h: 124 };   // 枠の内側（余白つき）
+const NEWS_HEAD_Y = 432, NEWS_STEP = 36;
+const NEWS_FRAME = { x: 20, y: 448, w: 320, h: 130 };
+const NEWS_VIEW = { x: 32, y: 454, w: 296, h: 118 };   // 枠の内側（余白つき）
+const HOWTO_BTN = { x: W / 2 - 66, y: 600, w: 132, h: 26 };   // build 表記（y~586）の下
+const HOWTO_HIT = { x: W / 2 - 90, y: 594, w: 180, h: 46 };   // 当たり判定（高さ 44 以上。画面下端まで）
 const NEWS_DATE_H = 16, NEWS_LINE = 18, NEWS_GAP = 10, NEWS_INDENT = 12;
 function newsContentH() {
   let h = 0;

@@ -7,10 +7,12 @@ export const WHATSNEW_ENTRIES = [
     'シールドゲージ：20秒で満タン、ボタンで発動',
     '緊急シールド（2回墜落）は廃止',
     'ゲージはボタンの中、満タンで点滅',
+    '起動画面から操作説明を開ける',
   ], itemsEn: [
     'Shield gauge: fills in 20 s, tap to use',
     'Emergency shield (2 crashes) removed',
     'Gauge fills the button; flashes full',
+    'HOW TO PLAY on the start screen',
   ] },
   { version: '1.1.0-beta.6', date: '2026.10.27', items: [
     '操作説明（HOW TO PLAY）を追加',
