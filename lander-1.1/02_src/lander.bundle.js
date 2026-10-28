@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.6';
+const APP_VERSION = '1.1.0-beta.7';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -361,11 +361,11 @@ class Engine {
       const adx = Math.abs(dx), ady = Math.abs(dy);
       if (adx < SWIPE && ady < SWIPE) {
         if (nowMs() - g.t0 > TAP_MAX_MS) return;   // 長押し解除はタップではない
-        const d = toLogical(cx, cy); d.t0 = g.t0;  // 押下時刻（結果画面側が「入る前から押していた指」を弾くのに使う）
+        const d = toLogical(cx, cy); d.t0 = g.t0; if (id === 'mouse') d.mouse = true;  // 押下時刻（結果画面側が「入る前から押していた指」を弾くのに使う）
         dispatch('tap', d);
       }
       else if (adx > ady) dispatch(dx > 0 ? 'right' : 'left');
-      else dispatch(dy > 0 ? 'down' : 'up');
+      else dispatch(dy > 0 ? 'down' : 'up', { swipe: true });
     };
     this._clearPointers = () => {
       this._touchMap.clear();
@@ -2952,6 +2952,17 @@ function drawHUD(ctx, h) {
   rr(ctx, 72, 50.5, 100, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
   if (fr > 0) { ctx.globalAlpha = lowPulse; rr(ctx, 72, 50.5, Math.max(3, 100 * fr), 3, 1.5); ctx.fillStyle = fcol; ctx.fill(); }
   ctx.restore();
+  if (h.shield != null) {   // SHIELD ゲージ（3区画。満タンで脈動、泡の間は点灯）
+    const full = h.shield >= 1, on = !!h.shieldOn, pul = full ? 0.55 + 0.45 * Math.sin(t * 7) : 1;
+    txt(ctx, 'SHIELD', 68, 55, 6, full ? p.hi : p.dim, 'right', { sp: 1.2, w: 500 });
+    for (let i = 0; i < 3; i++) {
+      const x0 = 72 + i * 34, f = Math.max(0, Math.min(1, h.shield * 3 - i));
+      ctx.save();
+      rr(ctx, x0, 57, 32, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+      if (f > 0) { ctx.globalAlpha = on ? 1 : pul; rr(ctx, x0, 57, Math.max(3, 32 * f), 3, 1.5); ctx.fillStyle = full || on ? p.warn : p.mid; ctx.fill(); }
+      ctx.restore();
+    }
+  }
   const nIcons = Math.min(h.continues || 0, 3);
   for (let i = 0; i < nIcons; i++) icoShipMini(ctx, 192 + i * 14, 52, 0.9, p.fg);
   if ((h.continues || 0) > 3) txt(ctx, '×' + h.continues, 192 + 3 * 14 - 4, 47, 9, p.fg, 'left', { w: 500 });
@@ -3167,14 +3178,42 @@ function drawLandableLabels(ctx, spots, alphas) {
     txt(ctx, 'LANDABLE', (s.x0 + s.x1) / 2, s.y - 24, 7, '#7fd0c2', 'center', { sp: 2.2, w: 500, a: a * 0.9, sh: 1 });
   }
 }
-// 緊急シールド（同じステージで隕石に2回墜落した次の挑戦）のバナー。a: 0..1
-function drawEmergencyBanner(ctx, a) {
+// SHIELD ゲージの泡: 機体のまわりのエネルギーの球。k=残り時間の割合(1→0)。残りわずかは点滅。hit>0 で隕石を弾いた直後の閃光
+function drawShieldBubble(ctx, x, y, r, k, t, hit) {
+  const p = P();
+  const blink = k < 0.25 ? (0.55 + 0.45 * Math.sin(t * 22)) : 1;
+  ctx.save();
+  ctx.globalAlpha = blink;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
+  ctx.fillStyle = rgba(p.mid, hit > 0 ? 0.30 : 0.13); ctx.fill();
+  ctx.lineWidth = hit > 0 ? 3 : 1.5; ctx.strokeStyle = rgba(hit > 0 ? p.hi : p.mid, hit > 0 ? 0.95 : 0.6); ctx.stroke();
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = rgba(p.hi, 0.95);   // 残り時間のリング（12時から時計回りに減る）
+  ctx.beginPath(); ctx.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, Math.min(1, k))); ctx.stroke();
+  ctx.restore();
+}
+// 画面下の SHIELD ボタン（満タンのときだけ出る非常ボタン。赤/琥珀の脈動・わずかな震え）。b={x,y,w,h}
+function drawShieldButton(ctx, b, t) {
+  const p = P();
+  const pulse = 0.5 + 0.5 * Math.sin(t * 7);
+  const sx = Math.sin(t * 46) * 0.9, sy = Math.cos(t * 39) * 0.6;
+  const col = pulse > 0.5 ? p.bad : p.warn;
+  ctx.save();
+  ctx.translate(sx, sy);
+  rr(ctx, b.x, b.y, b.w, b.h, 24);
+  ctx.fillStyle = rgba(col, 0.16 + 0.22 * pulse); ctx.fill();
+  ctx.lineWidth = 1.6 + pulse; ctx.strokeStyle = rgba(col, 0.55 + 0.45 * pulse); ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = 0.5 + 0.5 * pulse; ctx.shadowColor = col; ctx.shadowBlur = 10 + 10 * pulse;
+  txt(ctx, 'SHIELD', b.x + b.w / 2 + sx, b.y + b.h / 2 - 5 + sy, 12, p.hi, 'center', { sp: 3, w: 700 });
+  ctx.restore();
+}
+// SHIELD 発動のバナー。a: 0..1
+function drawShieldBanner(ctx, a) {
   const p = P();
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
-  panel(ctx, 70, 186, AW - 140, 44, { a: 0.78, border: p.mid, ba: 0.5 });
+  panel(ctx, 90, 244, AW - 180, 36, { a: 0.78, border: p.mid, ba: 0.5 });
   ctx.restore();
-  txt(ctx, 'EMERGENCY SHIELD', AW / 2, 202, 11, p.hi, 'center', { sp: 3, w: 600, a });
-  txt(ctx, '+1 SHIELD CHARGE', AW / 2, 218, 7, p.mid, 'center', { sp: 2.5, w: 500, a: a * 0.9 });
+  txt(ctx, 'SHIELD', AW / 2, 255, 13, p.hi, 'center', { sp: 5, w: 600, a });
 }
 // 機体の真下の地面マーカー。kind: 'ok'(ティール=この速度で着地可) / 'caution'(琥珀=平地だが速い/傾き) / 'bad'(赤=急斜面)
 function groundShadowColor(kind) {
@@ -4044,6 +4083,7 @@ function htContent(lang, inv, touch) {
     thrust: ja ? (touch ? '中央のボタンで噴射（落下をゆるめる・傾けて噴射すると横へ進む）' : '↑ / Space で噴射（落下をゆるめる・傾けて噴射すると横へ進む）')
                : (touch ? 'CENTER BUTTON = MAIN THRUST: SLOWS THE FALL. TILT, THEN THRUST TO MOVE SIDEWAYS.' : '↑ / SPACE = MAIN THRUST: SLOWS THE FALL. TILT, THEN THRUST TO MOVE SIDEWAYS.'),
     pause: ja ? '一時停止：画面上部の ‖ ボタン' + (touch ? '' : '（Esc はタイトルへ戻る）') : 'PAUSE: THE ‖ BUTTON AT THE TOP' + (touch ? '' : ' (ESC LEAVES TO THE TITLE)'),
+    shield: ja ? '満タンで SHIELD（タップ／クリック／↓）：隕石を5秒防ぐ' : 'When the gauge is full: SHIELD (tap / click / ↓) blocks meteors for 5 s',
     noWeapons: ja ? '武器はありません。隕石はよけてください' : 'THERE ARE NO WEAPONS. DODGE THE METEORS.',
     goal: ja ? 'パッドにゆっくり・まっすぐ着地（速さと傾きの上限はHUDに表示）' : 'LAND SLOWLY AND UPRIGHT ON THE PAD. SPEED AND TILT LIMITS ARE SHOWN ON THE HUD.',
     flat: ja ? 'パッド以外の平地は得点なしで接地できる。噴射で離陸' : 'FLAT GROUND ELSEWHERE: TOUCH DOWN WITHOUT SCORE, THRUST TO LIFT OFF.',
@@ -4138,6 +4178,7 @@ class HtCard {
     para(c.pause, p.fg, 0.8);
     y += 2;
     para(c.noWeapons, p.warn, 1);
+    para(c.shield, p.mid, 0.95);
     para(c.goal, p.fg, 0.95);
     para(c.flat, p.fg, 0.85);
     para(c.rings, p.fg, 0.8);
@@ -5270,6 +5311,14 @@ const Music = {
   jingleInfo: { root: _MUS_J_ROOT, scale: _MUS_J_SCALE.slice(), barLength: _MUS_J_BAR, accents: _MUS_J_ACCENTS.slice(), tempos: _MUS_J_TEMPO.slice() },
 
   sfx: {
+    // SHIELD ゲージ発動: 低→高へ立ち上がるシュッという上昇音＋澄んだ二音。ミュート時は _musSfxReady で無音
+    shield() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.01;
+      _musSfxTone('sawtooth', 220, t, 0.28, 0.18, 0);
+      _musSfxTone('triangle', 660, t + 0.05, 0.4, 0.3, 1.5);
+      _musSfxTone('sine', 990, t + 0.14, 0.5, 0.28, 1.5);
+    },
     landing() {
       if (!_musSfxReady()) return;
       const t = _musS.ctx.currentTime + 0.01;
@@ -5402,7 +5451,14 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // 起動画面（TAP TO BEGIN）の UPDATE INFORMATION。新しい順。先頭の version が APP_VERSION（NEW 表示・seenVersion の基準）。
 // items = 日本語の短文（22字まで）、itemsEn = 同じ順の英語（34字まで）。表示は設定の言語（i18nLang）で切り替える（既定は navigator.language）。
 const WHATSNEW_ENTRIES = [
-  { version: APP_VERSION, date: '2026.10.27', items: [
+  { version: APP_VERSION, date: '2026.10.28', items: [
+    'シールドゲージ：20秒で満タン、ボタンで発動',
+    '緊急シールド（2回墜落）は廃止',
+  ], itemsEn: [
+    'Shield gauge: fills in 20 s, tap to use',
+    'Emergency shield (2 crashes) removed',
+  ] },
+  { version: '1.1.0-beta.6', date: '2026.10.27', items: [
     '操作説明（HOW TO PLAY）を追加',
     '説明文を日本語・英語で切替',
     '左右の操作の向きを設定で反転',
@@ -7589,7 +7645,11 @@ const SIDE_LEVEL_K = 8;          // SIDE THRUST: 機体を水平に保つ強さ�
 const LABEL_ALT = 150;           // LANDABLE の文字を出す、平地の上の高度(px)未満
 const LABEL_FADE = 6;            // LANDABLE のフェード速度(1/秒)
 const THREAT_T = 1.5, THREAT_STEPS = 15, THREAT_PAD = 6, SHIP_R = 14;   // 衝突コース警告: 先読み秒数・分割数・余白・機体の半径（当たり判定と同じ 14）
-const ES_CRASHES = 2, ES_BANNER_S = 2.6;   // 緊急シールド: 同じステージで隕石に墜落した回数のしきい値 / バナー秒数
+// SHIELD ゲージ: 稼働中の時間（play / grounded）で SH_FULL_S 秒かけて満タン。発動で SH_DUR_S 秒、機体のまわりに隕石だけを弾く泡（地面の衝撃は従来どおり）
+const SH_FULL_S = 20, SH_DUR_S = 5, SH_BUBBLE_R = 28, SH_BANNER_S = 1.6;
+const SH_BTN = { x: 138, y: 500, w: 84, h: 56 };          // 画面下の SHIELD ボタン（メイン噴射ボタンの真上。3つの操作ボタン y>=570 とは重ならない）
+const SH_HIT = { x: 130, y: 492, w: 100, h: 67 };         // 当たり判定（見た目より少し広い。下端 y=559 は操作帯 y>=560 の手前）
+const SH_CTL_Y = 560;                                      // これより下は操作ボタン帯（マウスの「どこでもクリック」では発動しない）
 // グレード表（上から評価。接地の瞬間の vy/vx(px/s)・傾き(度)・角速度(度/s)・パッド中心からの距離(パッド半幅=1)がすべて以下なら該当）。どれも満たさなければ C。
 const GRADE_TABLE = [
   { g: 'PERFECT', vy: 8,  vx: 3,  ang: 5,  om: 6,  dist: 0.25 },
@@ -7904,6 +7964,7 @@ class Game extends Scene {
     }
     i18nBind(this.engine.storage);
     this._ht = null;
+    this._gauge = 0;   // 新しいラン（CONTINUE・MAP 開始を含む）は SHIELD ゲージ 0 から
     this._initStage();
     if (!this._maybeShowHowto()) this._maybeShowTip();
   }
@@ -7959,10 +8020,15 @@ class Game extends Scene {
   _bounceVy() { return BOUNCE_VY + BOUNCE_VY_PER_LEVEL * this._lvl('shock'); }
   _hasRadar() { return this._lvl('radar') > 0 || !!this._powerRadar; }   // RADAR モジュール、または特典の輪の RADAR（そのステージ中）
 
-  // 緊急シールド用の墜落カウンタ（エンジンに保持＝新しいラン/Continue をまたぐ。保存しない）
-  _obsCrashes(stage) { const m = this.engine._obsCrash; return (m && m[stage]) | 0; }
-  _countObsCrash() { const m = this.engine._obsCrash || (this.engine._obsCrash = {}); m[this.stage] = (m[this.stage] | 0) + 1; }
-  _clearObsCrash() { if (this.engine._obsCrash) delete this.engine._obsCrash[this.stage]; }
+  // ---- SHIELD ゲージ（時間で満タン→発動で泡）----
+  _shieldFull() { return (this._gauge || 0) >= SH_FULL_S; }
+  _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }
+  _tryShield() {
+    if (!this._live() || this._ht || !this._shieldFull() || this._shT > 0) return false;
+    this._gauge = 0; this._shT = SH_DUR_S; this._shBannerT = SH_BANNER_S; this._shHitT = 0;
+    try { const m = musicOf(this.engine); if (!isMuted(this.engine) && m.sfx && m.sfx.shield) m.sfx.shield(); } catch (_) { /* 音の失敗はゲームに影響させない */ }
+    return true;
+  }
 
   // ---- Initialize one stage ----
   // this.stage / this.bonus から再構築する。Continue 時も同じステージ番号（＝同じパラメータ）で呼ぶ。
@@ -7996,10 +8062,7 @@ class Game extends Scene {
     this._windT    = 0;
     this._windAccel = 0;
     this._shieldCharges = this._lvl('shield');          // SHIELD: レベル＝このステージで吸収できる被弾回数
-    // 緊急シールド: 同じステージで 'HIT AN OBSTACLE' の墜落が2回以上（セッション内・エンジン保持。クリアで0に戻る）→ 次の挑戦は +1 回。モジュール分に重なる（最大 max+1）。ボーナスは対象外
-    this._emerg = !mission && this._obsCrashes(this.stage) >= ES_CRASHES;
-    if (this._emerg) this._shieldCharges += 1;
-    this._esT = this._emerg ? ES_BANNER_S : 0;
+    this._shT = 0; this._shBannerT = 0; this._shHitT = 0;   // SHIELD ゲージの泡はステージをまたがない（ゲージ本体 _gauge はラン内で持ち越す）
     this._shieldReady = this._shieldCharges > 0;
     this._shieldFlash = 0;
     // 天体の最初のステージ、またはランの開始ステージ（天体の途中から始めた場合も）で天体紹介を出す
@@ -8114,6 +8177,14 @@ class Game extends Scene {
     if (this.state === 'debug') { this._debugInput(action, data); return; }
     if (action === 'tap' && data && this._inRect(this._muteRect(), data)) { toggleMute(this.engine); if (!isMuted(this.engine)) musicOf(this.engine).sfx.uiTap(); return; }
     if (action === 'tap' && data && this._live() && this._inRect(this._holdRect(), data)) { this._enterHold(); return; }
+    // SHIELD ゲージ: ↓ / S（スワイプの下はキー扱いにしない）、SHIELD ボタンのタップ、マウスのクリック（操作ボタン帯以外）で発動
+    if (this._live()) {
+      if (action === 'down' && !(data && data.swipe)) { this._tryShield(); return; }
+      if (action === 'tap' && data && !(data.t0 < this._overlayAt)) {
+        if (this._shieldBtnShown() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }
+        if (data.mouse && data.y < SH_CTL_Y && !(isDebug() && this._inRect(this._dbgBtnRect(), data))) { this._tryShield(); return; }
+      }
+    }
     if (isDebug() && action === 'tap' && data && DBG_STATES.indexOf(this.state) >= 0 && this._inRect(this._dbgBtnRect(), data)) {
       this._dbgPrev = this.state;
       this.state = 'debug';
@@ -8541,6 +8612,7 @@ class Game extends Scene {
     for (const pt of pts) {
       if (!(pt.y > CONTROL_Y_MIN)) continue;
       if (isDebug() && this._inRect(this._dbgBtnRect(), pt)) continue;
+      if (this._shieldBtnShown() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない
       if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
       else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
       else                        this._thrustMain = true;
@@ -8587,7 +8659,11 @@ class Game extends Scene {
     if (this._shieldFlash > 0) this._shieldFlash = Math.max(0, this._shieldFlash - dt);
     if (this._slowT > 0) this._slowT = Math.max(0, this._slowT - dt);
     if (this._sideT > 0) this._sideT = Math.max(0, this._sideT - dt);
-    if (this._esT > 0) this._esT = Math.max(0, this._esT - dt);
+    // SHIELD ゲージ: 操縦できる状態（play / grounded）の時間だけ貯まる。HOLD・HOW TO PLAY・ヒント・結果・選択画面は上で return 済み
+    this._gauge = Math.min(SH_FULL_S, (this._gauge || 0) + dt);
+    if (this._shT > 0) this._shT = Math.max(0, this._shT - dt);
+    if (this._shBannerT > 0) this._shBannerT = Math.max(0, this._shBannerT - dt);
+    if (this._shHitT > 0) this._shHitT = Math.max(0, this._shHitT - dt);
     if (this._wpBannerT > 0) this._wpBannerT = Math.max(0, this._wpBannerT - dt);
     if (this._wp) this._wp.t += dt;
     if (this._pbT > 0) this._pbT = Math.max(0, this._pbT - dt);
@@ -8758,7 +8834,15 @@ class Game extends Scene {
         if (ob.spent || this._auto) continue;   // AUTO LAND中は障害物を無視（デバッグ専用）
         const dx = this.x - ob.x;
         const dy = this.y - ob.y;
-        if (Math.sqrt(dx * dx + dy * dy) < craftR + ob.r) {
+        if (Math.sqrt(dx * dx + dy * dy) < (this._shT > 0 ? SH_BUBBLE_R : craftR) + ob.r) {
+          if (this._shT > 0) {              // SHIELD ゲージの泡: 隕石を弾く（墜落なし・モジュールの回数も減らさない）
+            const R = SH_BUBBLE_R + ob.r, dy2 = Math.min(Math.abs(dy), R - 1);
+            const side = dx === 0 ? (ob.vx >= 0 ? -1 : 1) : (dx > 0 ? 1 : -1);   // 機体が隕石の右(+1)か左(-1)か
+            ob.x = this.x - side * Math.sqrt(R * R - dy2 * dy2);
+            ob.vx = -side * Math.max(Math.abs(ob.vx), 40);
+            this._shHitT = 0.25;
+            continue;
+          }
           if (this._shieldCharges > 0) {    // SHIELD: 残り回数があれば被弾を吸収（その障害物はこのステージ中は無効）
             this._shieldCharges -= 1;
             this._shieldReady = this._shieldCharges > 0;
@@ -9165,7 +9249,6 @@ class Game extends Scene {
 
     const sp        = stageParams(this.stage);
     const fuelBonus = Math.round((this.fuel || 0) * 10);
-    if (!this.bonus) this._clearObsCrash();   // ステージをクリアしたので緊急シールドのカウンタを戻す
 
     if (this.bonus) {
       // ボーナスミッション: round((600 + 残燃料*10) * 倍率)。通常のステージ得点・誘導線ボーナスは付かない。
@@ -9300,7 +9383,6 @@ class Game extends Scene {
     musicOf(this.engine).stopAll(0.4); this._bgmOn = false;   // クラッシュ: BGM無音（再開は _initStage で）
     this._crashReason = reason || 'CRASHED';
     this._crashDetail = detail || null;
-    if (reason === 'HIT AN OBSTACLE' && !this.bonus && !this._isDebugRun()) this._countObsCrash();   // 緊急シールド用（同じステージで2回）
     this._contact0 = null;
     this._bouncing = false;
     this._bounceTime = 0;
@@ -9433,6 +9515,9 @@ class Game extends Scene {
       this._drawLander(ctx, this.x, this.y, this.angle);
     }
 
+    // SHIELD ゲージの泡（残り時間のリング）
+    if (this._live() && this._shT > 0) drawShieldBubble(ctx, this.x, this.y, SH_BUBBLE_R, this._shT / SH_DUR_S, this._clock || 0, this._shHitT);
+
     // SHIELD: 準備完了のリング / 吸収時のフラッシュ
     if (this._live() && (this._shieldReady || this._shieldFlash > 0)) {
       drawShieldRing(ctx, this.x, this.y, this._shieldFlash, this._shieldReady, this._shieldCharges);
@@ -9475,13 +9560,14 @@ class Game extends Scene {
     if (this.state === 'play' && !this._tipOn && this._pbT > 0 && this._pbKind && POWER_DEFS[this._pbKind]) drawPowerBanner(ctx, this._pbKind, POWER_DEFS[this._pbKind], Math.min(1, this._pbT / 0.4, (POWER_BANNER_S - this._pbT) / 0.25));
 
     // 緊急シールドのバナー
-    if (this.state === 'play' && !this._tipOn && this._esT > 0) drawEmergencyBanner(ctx, Math.min(1, this._esT / 0.4, (ES_BANNER_S - this._esT) / 0.25));
+    if (this._live() && !this._tipOn && this._shBannerT > 0) drawShieldBanner(ctx, Math.min(1, this._shBannerT / 0.3, (SH_BANNER_S - this._shBannerT) / 0.2));
 
     // Bonus mission banner
     if (this.state === 'play' && this.bonus && this._bannerT > 0) drawBonusBanner(ctx, (this._mission || missionOf(this.bonus.type)).name, this._bannerT, (this._mission || missionOf(this.bonus.type)).stars);
 
     // Bottom button controls
     this._drawButtons(ctx);
+    if (this._shieldBtnShown() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0);
 
     // Result overlays
     if (this.state === 'cleared') {
@@ -9666,6 +9752,7 @@ class Game extends Scene {
     h.mission = (this.bonus && this._mission) ? this._mission.name : '';
     h.total = this.totalScore; h.high = this.high || 0;
     h.fuel = (this.fuel || 0) / this._fuelMax();
+    h.shield = Math.min(1, (this._gauge || 0) / SH_FULL_S); h.shieldOn = this._shT > 0;
     h.continues = this.continues || 0;
     h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
     h.debug = isDebug(); h.play = this._live();

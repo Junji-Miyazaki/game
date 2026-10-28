@@ -1234,6 +1234,17 @@ export function drawHUD(ctx, h) {
   rr(ctx, 72, 50.5, 100, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
   if (fr > 0) { ctx.globalAlpha = lowPulse; rr(ctx, 72, 50.5, Math.max(3, 100 * fr), 3, 1.5); ctx.fillStyle = fcol; ctx.fill(); }
   ctx.restore();
+  if (h.shield != null) {   // SHIELD ゲージ（3区画。満タンで脈動、泡の間は点灯）
+    const full = h.shield >= 1, on = !!h.shieldOn, pul = full ? 0.55 + 0.45 * Math.sin(t * 7) : 1;
+    txt(ctx, 'SHIELD', 68, 55, 6, full ? p.hi : p.dim, 'right', { sp: 1.2, w: 500 });
+    for (let i = 0; i < 3; i++) {
+      const x0 = 72 + i * 34, f = Math.max(0, Math.min(1, h.shield * 3 - i));
+      ctx.save();
+      rr(ctx, x0, 57, 32, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+      if (f > 0) { ctx.globalAlpha = on ? 1 : pul; rr(ctx, x0, 57, Math.max(3, 32 * f), 3, 1.5); ctx.fillStyle = full || on ? p.warn : p.mid; ctx.fill(); }
+      ctx.restore();
+    }
+  }
   const nIcons = Math.min(h.continues || 0, 3);
   for (let i = 0; i < nIcons; i++) icoShipMini(ctx, 192 + i * 14, 52, 0.9, p.fg);
   if ((h.continues || 0) > 3) txt(ctx, '×' + h.continues, 192 + 3 * 14 - 4, 47, 9, p.fg, 'left', { w: 500 });
@@ -1449,14 +1460,42 @@ export function drawLandableLabels(ctx, spots, alphas) {
     txt(ctx, 'LANDABLE', (s.x0 + s.x1) / 2, s.y - 24, 7, '#7fd0c2', 'center', { sp: 2.2, w: 500, a: a * 0.9, sh: 1 });
   }
 }
-// 緊急シールド（同じステージで隕石に2回墜落した次の挑戦）のバナー。a: 0..1
-export function drawEmergencyBanner(ctx, a) {
+// SHIELD ゲージの泡: 機体のまわりのエネルギーの球。k=残り時間の割合(1→0)。残りわずかは点滅。hit>0 で隕石を弾いた直後の閃光
+export function drawShieldBubble(ctx, x, y, r, k, t, hit) {
+  const p = P();
+  const blink = k < 0.25 ? (0.55 + 0.45 * Math.sin(t * 22)) : 1;
+  ctx.save();
+  ctx.globalAlpha = blink;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
+  ctx.fillStyle = rgba(p.mid, hit > 0 ? 0.30 : 0.13); ctx.fill();
+  ctx.lineWidth = hit > 0 ? 3 : 1.5; ctx.strokeStyle = rgba(hit > 0 ? p.hi : p.mid, hit > 0 ? 0.95 : 0.6); ctx.stroke();
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = rgba(p.hi, 0.95);   // 残り時間のリング（12時から時計回りに減る）
+  ctx.beginPath(); ctx.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, Math.min(1, k))); ctx.stroke();
+  ctx.restore();
+}
+// 画面下の SHIELD ボタン（満タンのときだけ出る非常ボタン。赤/琥珀の脈動・わずかな震え）。b={x,y,w,h}
+export function drawShieldButton(ctx, b, t) {
+  const p = P();
+  const pulse = 0.5 + 0.5 * Math.sin(t * 7);
+  const sx = Math.sin(t * 46) * 0.9, sy = Math.cos(t * 39) * 0.6;
+  const col = pulse > 0.5 ? p.bad : p.warn;
+  ctx.save();
+  ctx.translate(sx, sy);
+  rr(ctx, b.x, b.y, b.w, b.h, 24);
+  ctx.fillStyle = rgba(col, 0.16 + 0.22 * pulse); ctx.fill();
+  ctx.lineWidth = 1.6 + pulse; ctx.strokeStyle = rgba(col, 0.55 + 0.45 * pulse); ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = 0.5 + 0.5 * pulse; ctx.shadowColor = col; ctx.shadowBlur = 10 + 10 * pulse;
+  txt(ctx, 'SHIELD', b.x + b.w / 2 + sx, b.y + b.h / 2 - 5 + sy, 12, p.hi, 'center', { sp: 3, w: 700 });
+  ctx.restore();
+}
+// SHIELD 発動のバナー。a: 0..1
+export function drawShieldBanner(ctx, a) {
   const p = P();
   ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
-  panel(ctx, 70, 186, AW - 140, 44, { a: 0.78, border: p.mid, ba: 0.5 });
+  panel(ctx, 90, 244, AW - 180, 36, { a: 0.78, border: p.mid, ba: 0.5 });
   ctx.restore();
-  txt(ctx, 'EMERGENCY SHIELD', AW / 2, 202, 11, p.hi, 'center', { sp: 3, w: 600, a });
-  txt(ctx, '+1 SHIELD CHARGE', AW / 2, 218, 7, p.mid, 'center', { sp: 2.5, w: 500, a: a * 0.9 });
+  txt(ctx, 'SHIELD', AW / 2, 255, 13, p.hi, 'center', { sp: 5, w: 600, a });
 }
 // 機体の真下の地面マーカー。kind: 'ok'(ティール=この速度で着地可) / 'caution'(琥珀=平地だが速い/傾き) / 'bad'(赤=急斜面)
 export function groundShadowColor(kind) {

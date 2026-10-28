@@ -3,7 +3,14 @@
 import { APP_VERSION } from './version.js';
 import { i18nLang } from './core/i18n.js';
 export const WHATSNEW_ENTRIES = [
-  { version: APP_VERSION, date: '2026.10.27', items: [
+  { version: APP_VERSION, date: '2026.10.28', items: [
+    'シールドゲージ：20秒で満タン、ボタンで発動',
+    '緊急シールド（2回墜落）は廃止',
+  ], itemsEn: [
+    'Shield gauge: fills in 20 s, tap to use',
+    'Emergency shield (2 crashes) removed',
+  ] },
+  { version: '1.1.0-beta.6', date: '2026.10.27', items: [
     '操作説明（HOW TO PLAY）を追加',
     '説明文を日本語・英語で切替',
     '左右の操作の向きを設定で反転',

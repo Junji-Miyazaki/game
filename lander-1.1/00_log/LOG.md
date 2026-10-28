@@ -198,3 +198,12 @@ v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/
   - `whatsnew.js`: 最新 entry に `失敗理由に速さ・傾きの数値を表示` を追加（6項目）。`p18assist` の項目一覧アサーションを更新。
 - テスト: 新規 `04_tests/p19crash.mjs`（27）。全スイート PASS、`node build.js`・`node --check` OK。
 - 未確認: 実機での見え方（目視は未実施）、360 幅の実描画の重なりはテキスト座標のみで確認。
+
+## 2026-10-28 SHIELD ゲージ（1.1.0-beta.7、緊急シールドを置換）
+- 実施（PLAN §7r）:
+  - `game.js`: `_gauge`（秒、0..20 `SH_FULL_S`）を update の「操縦できる状態」で加算（HOLD/HOW TO PLAY/tip/結果の各 return の後なので止まる）。`_tryShield()`＝満タン・live・非 HOW TO PLAY・泡なしのとき `_gauge=0`、`_shT=5`、バナー、`sfx.shield`。入力は onInput で `down`（`swipe` フラグなし）／SHIELD ボタンのタップ（`SH_HIT`）／`mouse:true` のタップ（y<560）。`_readPointerControls` は満タン時のボタン上の指を噴射にしない。隕石衝突は泡の間は半径 28 で判定し、弾く（位置を泡の外へ・vx 反転）。モジュール SHIELD の `_shieldCharges` は触らない。緊急シールド（`_obsCrash` 系、`_emerg`、`_esT`、バナー）を削除。新ラン（`enter`）で `_gauge=0`、ステージ間は持ち越し、`_initStage` で泡のみ消去。
+  - `core/engine.js`: マウス由来のタップに `mouse:true`、スワイプの `down` に `{swipe:true}`（他シーンは data を見ないので影響なし。全テスト通過）。
+  - `art.js`: `drawShieldBubble`/`drawShieldButton`/`drawShieldBanner` 追加、`drawEmergencyBanner` 削除、HUD の燃料バー下に 3 区画ゲージ。`music.js`: `sfx.shield`。`howto.js`: SHIELD の 1 行。`whatsnew.js`/`version.js`: beta.7（2026.10.28）。
+- テスト: 新規 `04_tests/p22gauge.mjs`（110: 20 秒・grounded 計上・各停止状態・持ち越し/リセット/使用/墜落・ボタン配置(≥56px・操作ボタンと非重複)・タップ/マウス/↓/S（実エンジン経由）・Space/↑は噴射のみ・スワイプ下と指のタップで誤発動しない・泡 5 秒・隕石の弾き返しと墜落なし・泡切れ後は被弾・モジュール SHIELD 独立・地面衝撃は従来どおり失敗・AUTO LAND 不発動・HOW TO PLAY の行とレイアウト・バナー/音/ミュート）。更新: p18assist（緊急シールド節を「廃止の確認」に置換、版/UPDATE 位置）、p10touch・p12v11・p13rings・p19crash・p20pluto・p21howto（版 beta.7、entries のインデックスを +1、新 entry は 2 項目可、EN 上限 40）。全スイート PASS（smoke 2, p1, p2a/b/j/m, p3fix, p4*, p5hud 1715, p6bonus 383, p7〜p9*, p10touch 264, p11net, p12v11 119, p13rings 261, p14boot 42, p15 424, p15map, p16mapbtn, p17patch 98, p18assist 95, p19crash, p20pluto 92, p21howto, p22gauge）。`node build.js` OK。
+- 目視（preview lander-1.1、375x812、一時ハーネスで Game を直接起動→削除済み）: ゲージ（燃料バー下、満タンで琥珀）、SHIELD ボタン（メイン噴射ボタンの真上・親指の届く位置・重ならない）、クリックで泡＋残り時間リング＋バナー。バナーが開始1文のピルと重なったので y244 に下げた（再目視は未実施、テストは座標のみ）。localStorage は消去、ビューポート復元。
+- 未確認: 実機タッチ（親指位置・震えの見え方）、効果音の音色、泡の見え方（昼間の明るい天体）、PC マウスの「どこでもクリック」が噴射用クリックと紛れる体感（噴射は押し続けるので短いクリックで発動する）。

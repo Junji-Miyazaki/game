@@ -82,13 +82,14 @@ const c = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
 // ================================================================ 2. UPDATE INFORMATION（JA/EN）
 {
   const E = WHATSNEW.entries;
-  ok(APP_VERSION === '1.1.0-beta.6' && E[0].version === APP_VERSION && E[0].date === '2026.10.27' && WHATSNEW.version === APP_VERSION, 'beta.6 is the newest entry (2026.10.27)');
-  ok(E[0].items.slice(0, 3).join('|') === '操作説明（HOW TO PLAY）を追加|説明文を日本語・英語で切替|左右の操作の向きを設定で反転', 'beta.6 JA items (first three as specified)');
-  ok(E[0].items.includes('操作説明は毎回表示（次回から非表示も可）') && E[0].itemsEn.includes('How-to shows each run (can hide)'), 'beta.7-change item present (JA/EN)');
-  ok(E[0].items.includes('ステージ開始時にやることを1文で表示') && E[0].itemsEn.includes('One-line goal at each stage start') && E[0].items.length <= 6, 'beta.6 has the stage-goal item, <= 6 items');
+  ok(APP_VERSION === '1.1.0-beta.7' && E[0].version === APP_VERSION && E[0].date === '2026.10.28' && WHATSNEW.version === APP_VERSION, 'beta.7 is the newest entry (2026.10.28)');
+  ok(E[1].version === '1.1.0-beta.6' && E[1].date === '2026.10.27', 'beta.6 is the second entry (2026.10.27)');
+  ok(E[1].items.slice(0, 3).join('|') === '操作説明（HOW TO PLAY）を追加|説明文を日本語・英語で切替|左右の操作の向きを設定で反転', 'beta.6 JA items (first three as specified)');
+  ok(E[1].items.includes('操作説明は毎回表示（次回から非表示も可）') && E[1].itemsEn.includes('How-to shows each run (can hide)'), 'beta.7-change item present (JA/EN)');
+  ok(E[1].items.includes('ステージ開始時にやることを1文で表示') && E[1].itemsEn.includes('One-line goal at each stage start') && E[1].items.length <= 6, 'beta.6 has the stage-goal item, <= 6 items');
   ok(E.every((en) => Array.isArray(en.itemsEn) && en.itemsEn.length === en.items.length), 'every entry: itemsEn parallel to items');
-  ok(E.every((en) => en.items.every((l) => l.length <= 22) && en.itemsEn.every((l) => l.length <= 34 && /^[\x20-\x7e]+$/.test(l))), 'JA <= 22 chars, EN <= 34 chars ASCII: max EN ' + Math.max(...E.flatMap((en) => en.itemsEn.map((l) => l.length))));
-  ok(E[0].itemsEn.join('|').includes('HOW TO PLAY') && E[0].itemsEn.some((l) => /invert/i.test(l)), 'beta.6 EN equivalents');
+  ok(E.every((en) => en.items.every((l) => l.length <= 22) && en.itemsEn.every((l) => l.length <= 40 && /^[\x20-\x7e]+$/.test(l))), 'JA <= 22 chars, EN <= 40 chars ASCII (beta.7 user-specified text is 39): max EN ' + Math.max(...E.flatMap((en) => en.itemsEn.map((l) => l.length))));
+  ok(E[1].itemsEn.join('|').includes('HOW TO PLAY') && E[1].itemsEn.some((l) => /invert/i.test(l)), 'beta.6 EN equivalents');
   const e = makeEngine(); i18nBind(e.storage); setNav('en-US'); i18nSetLang('ja');
   ok(whatsnewItems(E[0]) === E[0].items, 'JA -> items'); i18nSetLang('en'); ok(whatsnewItems(E[0]) === E[0].itemsEn, 'EN -> itemsEn');
   ok(whatsnewItems({ items: ['a'], itemsEn: [] }, 'en').join() === 'a', 'missing EN falls back to JA');

@@ -27,6 +27,7 @@ export function htContent(lang, inv, touch) {
     thrust: ja ? (touch ? '中央のボタンで噴射（落下をゆるめる・傾けて噴射すると横へ進む）' : '↑ / Space で噴射（落下をゆるめる・傾けて噴射すると横へ進む）')
                : (touch ? 'CENTER BUTTON = MAIN THRUST: SLOWS THE FALL. TILT, THEN THRUST TO MOVE SIDEWAYS.' : '↑ / SPACE = MAIN THRUST: SLOWS THE FALL. TILT, THEN THRUST TO MOVE SIDEWAYS.'),
     pause: ja ? '一時停止：画面上部の ‖ ボタン' + (touch ? '' : '（Esc はタイトルへ戻る）') : 'PAUSE: THE ‖ BUTTON AT THE TOP' + (touch ? '' : ' (ESC LEAVES TO THE TITLE)'),
+    shield: ja ? '満タンで SHIELD（タップ／クリック／↓）：隕石を5秒防ぐ' : 'When the gauge is full: SHIELD (tap / click / ↓) blocks meteors for 5 s',
     noWeapons: ja ? '武器はありません。隕石はよけてください' : 'THERE ARE NO WEAPONS. DODGE THE METEORS.',
     goal: ja ? 'パッドにゆっくり・まっすぐ着地（速さと傾きの上限はHUDに表示）' : 'LAND SLOWLY AND UPRIGHT ON THE PAD. SPEED AND TILT LIMITS ARE SHOWN ON THE HUD.',
     flat: ja ? 'パッド以外の平地は得点なしで接地できる。噴射で離陸' : 'FLAT GROUND ELSEWHERE: TOUCH DOWN WITHOUT SCORE, THRUST TO LIFT OFF.',
@@ -121,6 +122,7 @@ export class HtCard {
     para(c.pause, p.fg, 0.8);
     y += 2;
     para(c.noWeapons, p.warn, 1);
+    para(c.shield, p.mid, 0.95);
     para(c.goal, p.fg, 0.95);
     para(c.flat, p.fg, 0.85);
     para(c.rings, p.fg, 0.8);

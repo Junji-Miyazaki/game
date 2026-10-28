@@ -209,11 +209,11 @@ export class Engine {
       const adx = Math.abs(dx), ady = Math.abs(dy);
       if (adx < SWIPE && ady < SWIPE) {
         if (nowMs() - g.t0 > TAP_MAX_MS) return;   // 長押し解除はタップではない
-        const d = toLogical(cx, cy); d.t0 = g.t0;  // 押下時刻（結果画面側が「入る前から押していた指」を弾くのに使う）
+        const d = toLogical(cx, cy); d.t0 = g.t0; if (id === 'mouse') d.mouse = true;  // 押下時刻（結果画面側が「入る前から押していた指」を弾くのに使う）
         dispatch('tap', d);
       }
       else if (adx > ady) dispatch(dx > 0 ? 'right' : 'left');
-      else dispatch(dy > 0 ? 'down' : 'up');
+      else dispatch(dy > 0 ? 'down' : 'up', { swipe: true });
     };
     this._clearPointers = () => {
       this._touchMap.clear();

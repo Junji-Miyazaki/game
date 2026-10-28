@@ -852,6 +852,14 @@ export const Music = {
   jingleInfo: { root: _MUS_J_ROOT, scale: _MUS_J_SCALE.slice(), barLength: _MUS_J_BAR, accents: _MUS_J_ACCENTS.slice(), tempos: _MUS_J_TEMPO.slice() },
 
   sfx: {
+    // SHIELD ゲージ発動: 低→高へ立ち上がるシュッという上昇音＋澄んだ二音。ミュート時は _musSfxReady で無音
+    shield() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.01;
+      _musSfxTone('sawtooth', 220, t, 0.28, 0.18, 0);
+      _musSfxTone('triangle', 660, t + 0.05, 0.4, 0.3, 1.5);
+      _musSfxTone('sine', 990, t + 0.14, 0.5, 0.28, 1.5);
+    },
     landing() {
       if (!_musSfxReady()) return;
       const t = _musS.ctx.currentTime + 0.01;

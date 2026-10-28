@@ -245,51 +245,18 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
   ok(normal === true && g3._threats[0] === false, 'game prediction respects SLOW-MO');
 }
 
-// ================================================================ 4. 緊急シールド
+// ================================================================ 4. 緊急シールド（beta.7 で廃止 → SHIELD ゲージ。詳細は p22gauge.mjs）
 {
-  const { e, g } = stageGame(4);           // stage 4: 隕石あり
-  const keys0 = [...e.store.keys()].sort().join();
-  ok(g._shieldCharges === 0 && !g._emerg, 'baseline: no shield');
-  g._doCrash('TIPPED OVER'); ok((e._obsCrash || {})[4] === undefined, 'other crash reasons do not count');
-  g._continue();
-  g._doCrash('HIT AN OBSTACLE'); ok(e._obsCrash[4] === 1, '1st obstacle crash counted');
-  g._continue(); ok(g._shieldCharges === 0 && !g._emerg && g._esT === 0, 'after 1 crash: still no shield');
-  g._doCrash('HIT AN OBSTACLE'); ok(e._obsCrash[4] === 2, '2nd obstacle crash counted');
-  g._continue();
-  ok(g._emerg && g._shieldCharges === 1 && g._shieldReady && g._esT > 2, 'after 2 crashes: next attempt starts with +1 shield + banner timer');
-  ok(render(g).texts.some((t) => t.s === 'EMERGENCY SHIELD'), 'banner EMERGENCY SHIELD shown');
-  run(g, 3); ok(g._esT === 0 && !render(g).texts.some((t) => t.s === 'EMERGENCY SHIELD'), 'banner goes away after ~2.6 s');
-  const g1 = stageGame(4, []); // 新しい Game だが別エンジン → カウンタなし
-  ok(g1.g._shieldCharges === 0, 'counter is engine-level (a different engine has none)');
-  // 吸収の確認（同じエンジンで再開）
-  g._continue(); g.obstacles = [{ x: 180, y: 200, vx: 0, r: 12, style: 'rock' }]; g.x = 180; g.y = 200; g.vx = 0; g.vy = 0; g._gravity = 0; g.update(DT);
-  ok(g.state === 'play' && g._shieldCharges === 0 && g.obstacles[0].spent, 'emergency shield absorbed one hit');
-  g.obstacles.push({ x: 180, y: 200, vx: 0, r: 12, style: 'rock' }); g.update(DT);
-  ok(g.state === 'crashed' || g.state === 'gameover', 'a second hit still crashes');
-  // 3 回目の挑戦以降もクリアまで付く（カウンタは 3 に増える）
-  ok(e._obsCrash[4] >= 3, 'counter keeps counting: ' + e._obsCrash[4]);
-  g._continue(); ok(g._emerg && g._shieldCharges === 1, 'still protected while the stage is not cleared');
-  // 新しいラン（同じエンジン、同じステージから開始）でも引き継ぐ
-  const g2 = new Game(e); g2.enter(); g2.stage = 4; g2.bonus = null; g2._initStage();
-  ok(g2._emerg && g2._shieldCharges === 1, 'a new run started at that stage keeps the emergency shield (same session)');
-  // 別ステージには付かない
-  g2.stage = 5; g2._initStage(); ok(!g2._emerg && g2._shieldCharges === 0, 'other stages unaffected');
-  // クリアでリセット
-  g2.stage = 4; g2._initStage(); g2.x = g2.pad.x + g2.pad.w / 2; g2.y = g2._terrainYAt(g2.x) - 16; g2.vx = 0; g2.vy = 1; g2.angle = 0; g2.omega = 0; g2._doSuccess(0, 0);
-  ok(e._obsCrash[4] === undefined, 'counter reset when the stage is cleared');
-  g2.stage = 4; g2._initStage(); ok(!g2._emerg && g2._shieldCharges === 0, 'next attempt after clearing: no shield');
-  // モジュールと重なる（最大 max+1）
-  for (const lv of [1, moduleDef('shield').max]) {
-    const r = stageGame(6); r.e._obsCrash = { 6: 2 }; r.g.modules.shield = lv; r.g._initStage();
-    ok(r.g._shieldCharges === lv + 1, 'stacks with module level ' + lv + ' -> ' + r.g._shieldCharges + (lv === moduleDef('shield').max ? ' (= max+1)' : ''));
-  }
-  // ボーナスは対象外（カウントしない・付けない）
-  const bn = newGame(); bn.g.stage = 3; bn.g.bonus = { type: 'CALM' }; bn.g._initStage();
-  bn.g._doCrash('HIT AN OBSTACLE'); ok(!bn.e._obsCrash || bn.e._obsCrash[3] === undefined, 'bonus crash is not counted');
-  bn.e._obsCrash = { 3: 5 }; bn.g._continue ? 0 : 0; bn.g.bonus = { type: 'CALM' }; bn.g._initStage();
-  ok(!bn.g._emerg && bn.g._shieldCharges === 0, 'bonus stages never get an emergency shield');
-  // セッションのみ: 保存領域は変わらない
-  const added = [...e.store.keys()].filter((k) => !keys0.split(',').includes(k)); ok(!added.some((k) => /obs|emerg|shield|crash/i.test(k)) && !JSON.stringify([...e.store.values()]).match(/_obsCrash|emerg/i), 'emergency counter never persisted (new keys: ' + added.join('|') + ')');
+  const { e, g } = stageGame(4);
+  for (let k = 0; k < 3; k++) { g._doCrash('HIT AN OBSTACLE'); g._continue(); }
+  ok(g._shieldCharges === 0 && g._emerg === undefined && g._esT === undefined, 'emergency shield removed: 3 obstacle crashes give no extra charge');
+  ok(e._obsCrash === undefined, 'no crash counter kept');
+  ok(!render(g).texts.some((t) => t.s === 'EMERGENCY SHIELD'), 'no EMERGENCY SHIELD banner');
+  const src = ['art.js', 'game.js'].map((f) => fs.readFileSync(new URL('../02_src/' + f, import.meta.url), 'utf8')).join('\n').replace(/\/\/[^\n]*/g, '');
+  ok(!/EMERGENCY SHIELD|_obsCrash|ES_CRASHES|drawEmergencyBanner/.test(src), 'no emergency-shield identifiers left in source');
+  // モジュール SHIELD は従来どおり
+  const r = stageGame(6); r.g.modules.shield = moduleDef('shield').max; r.g._initStage();
+  ok(r.g._shieldCharges === moduleDef('shield').max, 'module shield: charges = level (no +1)');
 }
 
 // ================================================================ 5. 序盤の隕石数
@@ -308,13 +275,13 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
 
 // ================================================================ 6. 版・UPDATE INFORMATION
 {
-  ok(APP_VERSION === '1.1.0-beta.6', 'APP_VERSION 1.1.0-beta.6');
+  ok(APP_VERSION === '1.1.0-beta.7', 'APP_VERSION 1.1.0-beta.7');
   const E = WHATSNEW.entries;
-  ok(E[0].version === '1.1.0-beta.6' && E[0].date === '2026.10.27' && WHATSNEW.version === '1.1.0-beta.6', 'newest entry = beta.6 (2026.10.27)');
-  ok(E[2].version === '1.1.0-beta.4' && E[2].date === '2026.10.26', 'beta.4 is the third entry');
-  ok(E[2].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [2])');
+  ok(E[0].version === '1.1.0-beta.7' && E[0].date === '2026.10.28' && WHATSNEW.version === '1.1.0-beta.7', 'newest entry = beta.7 (2026.10.28)');
+  ok(E[3].version === '1.1.0-beta.4' && E[3].date === '2026.10.26', 'beta.4 is the fourth entry');
+  ok(E[3].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [3])');
   ok(E.every((en) => en.items.every((l) => l.length <= 22)), 'every item <= 22 chars: ' + E[0].items.map((l) => l.length).join(','));
-  ok(E.map((en) => en.version).join() === '1.1.0-beta.6,1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
+  ok(E.map((en) => en.version).join() === '1.1.0-beta.7,1.1.0-beta.6,1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
 }
 
 console.log('p18assist: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));
