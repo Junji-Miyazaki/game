@@ -1234,17 +1234,6 @@ export function drawHUD(ctx, h) {
   rr(ctx, 72, 50.5, 100, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
   if (fr > 0) { ctx.globalAlpha = lowPulse; rr(ctx, 72, 50.5, Math.max(3, 100 * fr), 3, 1.5); ctx.fillStyle = fcol; ctx.fill(); }
   ctx.restore();
-  if (h.shield != null) {   // SHIELD ゲージ（3区画。満タンで脈動、泡の間は点灯）
-    const full = h.shield >= 1, on = !!h.shieldOn, pul = full ? 0.55 + 0.45 * Math.sin(t * 7) : 1;
-    txt(ctx, 'SHIELD', 68, 55, 6, full ? p.hi : p.dim, 'right', { sp: 1.2, w: 500 });
-    for (let i = 0; i < 3; i++) {
-      const x0 = 72 + i * 34, f = Math.max(0, Math.min(1, h.shield * 3 - i));
-      ctx.save();
-      rr(ctx, x0, 57, 32, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
-      if (f > 0) { ctx.globalAlpha = on ? 1 : pul; rr(ctx, x0, 57, Math.max(3, 32 * f), 3, 1.5); ctx.fillStyle = full || on ? p.warn : p.mid; ctx.fill(); }
-      ctx.restore();
-    }
-  }
   const nIcons = Math.min(h.continues || 0, 3);
   for (let i = 0; i < nIcons; i++) icoShipMini(ctx, 192 + i * 14, 52, 0.9, p.fg);
   if ((h.continues || 0) > 3) txt(ctx, '×' + h.continues, 192 + 3 * 14 - 4, 47, 9, p.fg, 'left', { w: 500 });
@@ -1474,8 +1463,27 @@ export function drawShieldBubble(ctx, x, y, r, k, t, hit) {
   ctx.restore();
 }
 // 画面下の SHIELD ボタン（満タンのときだけ出る非常ボタン。赤/琥珀の脈動・わずかな震え）。b={x,y,w,h}
-export function drawShieldButton(ctx, b, t) {
+// SHIELD ボタン＝ゲージ。frac: 充填 0..1、onFrac: 泡の残り 0..1（0 なら泡なし）
+// 充填中は暗い枠の中を紫が左から満ちる。満タンで赤と琥珀に点滅。泡の間は白い帯が減っていく。
+export function drawShieldButton(ctx, b, t, frac = 1, onFrac = 0) {
   const p = P();
+  if (onFrac > 0 || frac < 1) {
+    const on = onFrac > 0, f = Math.max(0, Math.min(1, on ? onFrac : frac));
+    const col = on ? p.hi : p.violet;   // 燃料（ティール/琥珀）と別の色
+    ctx.save();
+    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.fillStyle = rgba(p.bg, 0.35); ctx.fill();
+    ctx.save(); rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.clip();
+    if (f > 0) { ctx.fillStyle = rgba(col, on ? 0.30 : 0.14 + 0.16 * f); ctx.fillRect(b.x, b.y, b.w * f, b.h); }
+    ctx.restore();
+    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(on ? p.hi : p.fg, on ? 0.6 : 0.28); ctx.stroke();
+    // 下端の細いゲージ線
+    const lx = b.x + 16, lw = b.w - 32, ly = b.y + b.h - 13;
+    rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+    if (f > 0) { rr(ctx, lx, ly, Math.max(3, lw * f), 3, 1.5); ctx.fillStyle = col; ctx.fill(); }
+    ctx.restore();
+    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 9, 11, on ? p.hi : p.dim, 'center', { sp: 3, w: 600, a: on ? 1 : 0.75 });
+    return;
+  }
   const pulse = 0.5 + 0.5 * Math.sin(t * 7);
   const sx = Math.sin(t * 46) * 0.9, sy = Math.cos(t * 39) * 0.6;
   const col = pulse > 0.5 ? p.bad : p.warn;

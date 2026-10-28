@@ -2952,17 +2952,6 @@ function drawHUD(ctx, h) {
   rr(ctx, 72, 50.5, 100, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
   if (fr > 0) { ctx.globalAlpha = lowPulse; rr(ctx, 72, 50.5, Math.max(3, 100 * fr), 3, 1.5); ctx.fillStyle = fcol; ctx.fill(); }
   ctx.restore();
-  if (h.shield != null) {   // SHIELD ゲージ（3区画。満タンで脈動、泡の間は点灯）
-    const full = h.shield >= 1, on = !!h.shieldOn, pul = full ? 0.55 + 0.45 * Math.sin(t * 7) : 1;
-    txt(ctx, 'SHIELD', 68, 55, 6, full ? p.hi : p.dim, 'right', { sp: 1.2, w: 500 });
-    for (let i = 0; i < 3; i++) {
-      const x0 = 72 + i * 34, f = Math.max(0, Math.min(1, h.shield * 3 - i));
-      ctx.save();
-      rr(ctx, x0, 57, 32, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
-      if (f > 0) { ctx.globalAlpha = on ? 1 : pul; rr(ctx, x0, 57, Math.max(3, 32 * f), 3, 1.5); ctx.fillStyle = full || on ? p.warn : p.mid; ctx.fill(); }
-      ctx.restore();
-    }
-  }
   const nIcons = Math.min(h.continues || 0, 3);
   for (let i = 0; i < nIcons; i++) icoShipMini(ctx, 192 + i * 14, 52, 0.9, p.fg);
   if ((h.continues || 0) > 3) txt(ctx, '×' + h.continues, 192 + 3 * 14 - 4, 47, 9, p.fg, 'left', { w: 500 });
@@ -3192,8 +3181,27 @@ function drawShieldBubble(ctx, x, y, r, k, t, hit) {
   ctx.restore();
 }
 // 画面下の SHIELD ボタン（満タンのときだけ出る非常ボタン。赤/琥珀の脈動・わずかな震え）。b={x,y,w,h}
-function drawShieldButton(ctx, b, t) {
+// SHIELD ボタン＝ゲージ。frac: 充填 0..1、onFrac: 泡の残り 0..1（0 なら泡なし）
+// 充填中は暗い枠の中を紫が左から満ちる。満タンで赤と琥珀に点滅。泡の間は白い帯が減っていく。
+function drawShieldButton(ctx, b, t, frac = 1, onFrac = 0) {
   const p = P();
+  if (onFrac > 0 || frac < 1) {
+    const on = onFrac > 0, f = Math.max(0, Math.min(1, on ? onFrac : frac));
+    const col = on ? p.hi : p.violet;   // 燃料（ティール/琥珀）と別の色
+    ctx.save();
+    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.fillStyle = rgba(p.bg, 0.35); ctx.fill();
+    ctx.save(); rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.clip();
+    if (f > 0) { ctx.fillStyle = rgba(col, on ? 0.30 : 0.14 + 0.16 * f); ctx.fillRect(b.x, b.y, b.w * f, b.h); }
+    ctx.restore();
+    rr(ctx, b.x, b.y, b.w, b.h, 24); ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(on ? p.hi : p.fg, on ? 0.6 : 0.28); ctx.stroke();
+    // 下端の細いゲージ線
+    const lx = b.x + 16, lw = b.w - 32, ly = b.y + b.h - 13;
+    rr(ctx, lx, ly, lw, 3, 1.5); ctx.fillStyle = rgba(p.fg, 0.14); ctx.fill();
+    if (f > 0) { rr(ctx, lx, ly, Math.max(3, lw * f), 3, 1.5); ctx.fillStyle = col; ctx.fill(); }
+    ctx.restore();
+    txt(ctx, 'SHIELD', b.x + b.w / 2, b.y + b.h / 2 - 9, 11, on ? p.hi : p.dim, 'center', { sp: 3, w: 600, a: on ? 1 : 0.75 });
+    return;
+  }
   const pulse = 0.5 + 0.5 * Math.sin(t * 7);
   const sx = Math.sin(t * 46) * 0.9, sy = Math.cos(t * 39) * 0.6;
   const col = pulse > 0.5 ? p.bad : p.warn;
@@ -5454,9 +5462,11 @@ const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.10.28', items: [
     'シールドゲージ：20秒で満タン、ボタンで発動',
     '緊急シールド（2回墜落）は廃止',
+    'ゲージはボタンの中、満タンで点滅',
   ], itemsEn: [
     'Shield gauge: fills in 20 s, tap to use',
     'Emergency shield (2 crashes) removed',
+    'Gauge fills the button; flashes full',
   ] },
   { version: '1.1.0-beta.6', date: '2026.10.27', items: [
     '操作説明（HOW TO PLAY）を追加',
@@ -8022,7 +8032,8 @@ class Game extends Scene {
 
   // ---- SHIELD ゲージ（時間で満タン→発動で泡）----
   _shieldFull() { return (this._gauge || 0) >= SH_FULL_S; }
-  _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }
+  _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }   // 発動できる（点滅）
+  _shieldBtnVisible() { return this._live() && !this._ht; }   // ボタン＝ゲージは充填中・泡の間も表示
   _tryShield() {
     if (!this._live() || this._ht || !this._shieldFull() || this._shT > 0) return false;
     this._gauge = 0; this._shT = SH_DUR_S; this._shBannerT = SH_BANNER_S; this._shHitT = 0;
@@ -8181,7 +8192,7 @@ class Game extends Scene {
     if (this._live()) {
       if (action === 'down' && !(data && data.swipe)) { this._tryShield(); return; }
       if (action === 'tap' && data && !(data.t0 < this._overlayAt)) {
-        if (this._shieldBtnShown() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }
+        if (this._shieldBtnVisible() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }   // 充填中のタップは何もしない
         if (data.mouse && data.y < SH_CTL_Y && !(isDebug() && this._inRect(this._dbgBtnRect(), data))) { this._tryShield(); return; }
       }
     }
@@ -8612,7 +8623,7 @@ class Game extends Scene {
     for (const pt of pts) {
       if (!(pt.y > CONTROL_Y_MIN)) continue;
       if (isDebug() && this._inRect(this._dbgBtnRect(), pt)) continue;
-      if (this._shieldBtnShown() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない
+      if (this._shieldBtnVisible() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない（充填中も）
       if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
       else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
       else                        this._thrustMain = true;
@@ -9567,7 +9578,7 @@ class Game extends Scene {
 
     // Bottom button controls
     this._drawButtons(ctx);
-    if (this._shieldBtnShown() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0);
+    if (this._shieldBtnVisible() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0, Math.min(1, (this._gauge || 0) / SH_FULL_S), this._shT > 0 ? this._shT / SH_DUR_S : 0);
 
     // Result overlays
     if (this.state === 'cleared') {
@@ -9752,7 +9763,7 @@ class Game extends Scene {
     h.mission = (this.bonus && this._mission) ? this._mission.name : '';
     h.total = this.totalScore; h.high = this.high || 0;
     h.fuel = (this.fuel || 0) / this._fuelMax();
-    h.shield = Math.min(1, (this._gauge || 0) / SH_FULL_S); h.shieldOn = this._shT > 0;
+    h.shield = Math.min(1, (this._gauge || 0) / SH_FULL_S); h.shieldOn = this._shT > 0;   // 値のみ（HUD には描かない。表示は SHIELD ボタン）
     h.continues = this.continues || 0;
     h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
     h.debug = isDebug(); h.play = this._live();

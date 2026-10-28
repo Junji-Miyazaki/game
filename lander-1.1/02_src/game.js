@@ -497,7 +497,8 @@ export class Game extends Scene {
 
   // ---- SHIELD ゲージ（時間で満タン→発動で泡）----
   _shieldFull() { return (this._gauge || 0) >= SH_FULL_S; }
-  _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }
+  _shieldBtnShown() { return this._live() && !this._ht && this._shieldFull() && !(this._shT > 0); }   // 発動できる（点滅）
+  _shieldBtnVisible() { return this._live() && !this._ht; }   // ボタン＝ゲージは充填中・泡の間も表示
   _tryShield() {
     if (!this._live() || this._ht || !this._shieldFull() || this._shT > 0) return false;
     this._gauge = 0; this._shT = SH_DUR_S; this._shBannerT = SH_BANNER_S; this._shHitT = 0;
@@ -656,7 +657,7 @@ export class Game extends Scene {
     if (this._live()) {
       if (action === 'down' && !(data && data.swipe)) { this._tryShield(); return; }
       if (action === 'tap' && data && !(data.t0 < this._overlayAt)) {
-        if (this._shieldBtnShown() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }
+        if (this._shieldBtnVisible() && this._inRect(SH_HIT, data)) { this._tryShield(); return; }   // 充填中のタップは何もしない
         if (data.mouse && data.y < SH_CTL_Y && !(isDebug() && this._inRect(this._dbgBtnRect(), data))) { this._tryShield(); return; }
       }
     }
@@ -1087,7 +1088,7 @@ export class Game extends Scene {
     for (const pt of pts) {
       if (!(pt.y > CONTROL_Y_MIN)) continue;
       if (isDebug() && this._inRect(this._dbgBtnRect(), pt)) continue;
-      if (this._shieldBtnShown() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない
+      if (this._shieldBtnVisible() && this._inRect(SH_HIT, pt)) continue;   // SHIELD ボタンは噴射にしない（充填中も）
       if (pt.x < ZONE_L_MAX)      this._thrustRcsL = true;
       else if (pt.x > ZONE_R_MIN) this._thrustRcsR = true;
       else                        this._thrustMain = true;
@@ -2042,7 +2043,7 @@ export class Game extends Scene {
 
     // Bottom button controls
     this._drawButtons(ctx);
-    if (this._shieldBtnShown() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0);
+    if (this._shieldBtnVisible() && !this._tipOn) drawShieldButton(ctx, SH_BTN, this._clock || 0, Math.min(1, (this._gauge || 0) / SH_FULL_S), this._shT > 0 ? this._shT / SH_DUR_S : 0);
 
     // Result overlays
     if (this.state === 'cleared') {
@@ -2227,7 +2228,7 @@ export class Game extends Scene {
     h.mission = (this.bonus && this._mission) ? this._mission.name : '';
     h.total = this.totalScore; h.high = this.high || 0;
     h.fuel = (this.fuel || 0) / this._fuelMax();
-    h.shield = Math.min(1, (this._gauge || 0) / SH_FULL_S); h.shieldOn = this._shT > 0;
+    h.shield = Math.min(1, (this._gauge || 0) / SH_FULL_S); h.shieldOn = this._shT > 0;   // 値のみ（HUD には描かない。表示は SHIELD ボタン）
     h.continues = this.continues || 0;
     h.modDefs = MODULE_DEFS; h.mods = this.modules || {};
     h.debug = isDebug(); h.play = this._live();

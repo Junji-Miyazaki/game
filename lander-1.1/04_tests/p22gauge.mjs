@@ -80,8 +80,9 @@ const hudText = (g) => shieldTexts(g).find((t) => t.y < 80);
   run(g, 5); ok(g._gauge === SH_FULL_S, 'stays at the cap');
   render(g); ok(g._hud.shield === 1, 'HUD value is 1 when full');
   const h = air().g; run(h, 10); render(h); ok(Math.abs(h._hud.shield - 0.5) < 0.01, 'HUD value ~0.5 at 10 s');
-  ok(!!hudText(h), 'HUD gauge label SHIELD drawn near the fuel bar (y=' + (hudText(h) || {}).y + ')');
-  ok(hudText(h).y > 50 && hudText(h).y < 62, 'label sits at the fuel row');
+  ok(!hudText(h), 'no SHIELD gauge in the top HUD (it lives in the button)');
+  const bh = btnText(h); ok(!!bh && bh.x > SH_BTN.x && bh.x < SH_BTN.x + SH_BTN.w, 'charging button drawn at the bottom (half full)');
+  const vf = render(h).fills.filter((f) => /^rgba\(167,155,255/i.test(f) || /#A79BFF/i.test(f)).length; ok(vf > 0, 'charging fill uses violet (not the fuel colors)');
 }
 // grounded も数える（平地で待つ戦略）
 {
@@ -127,7 +128,7 @@ const hudText = (g) => shieldTexts(g).find((t) => t.y < 80);
 {
   // 満タンでないとボタンは出ず、どの入力でも発動しない
   const { g } = air(); run(g, 5);
-  ok(!btnText(g), 'button hidden while not full (HUD gauge only)');
+  ok(!!btnText(g) && !g._shieldBtnShown(), 'button shown as a charging gauge while not full (not ready)');
   g.onInput('down'); tap(g, 180, 530); tap(g, 100, 300, { mouse: true });
   ok(g._shT === 0 && g._gauge > 4.9, 'not full: nothing activates, gauge untouched');
   full(g); run(g, 0.05);
@@ -151,8 +152,9 @@ const hudText = (g) => shieldTexts(g).find((t) => t.y < 80);
   g.engine.touches = [{ x: 180, y: 530 }]; run(g, 0.5); ok(g._thrustMain === false && g.vy === 0, 'holding the SHIELD button does not fire the main engine');
   g.engine.touches = [{ x: 180, y: 600 }]; run(g, 0.2); ok(g._thrustMain === true, 'but the main-thrust button still does');
   g.engine.touches = [];
-  // 満タンでなければボタン位置の押下は従来どおり噴射
-  const h = air().g; h.engine.touches = [{ x: 180, y: 530 }]; run(h, 0.2); ok(h._thrustMain === true, 'not full: that spot is the normal thrust zone');
+  // 充填中もボタン位置の押下は噴射にしない（ボタンは常に見えている）
+  const h = air().g; h.vy = 0; h.engine.touches = [{ x: 180, y: 530 }]; run(h, 0.2); ok(h._thrustMain === false && h._shT === 0, 'charging: pressing the button neither thrusts nor activates');
+  h.engine.touches = [];
 }
 { // マウスのクリック（操作ボタン帯以外のどこでも）
   const { g } = air(); full(g); tap(g, 40, 300, { mouse: true });
@@ -184,7 +186,7 @@ const hudText = (g) => shieldTexts(g).find((t) => t.y < 80);
   ok(typeof g.engine.music.sfx.shield === 'function', 'sfx.shield exists');
   const rec = render(g); ok(rec.texts.some((t) => t.s === 'SHIELD' && t.y > 240 && t.y < 290), 'SHIELD banner shown');
   ok(rec.arcs.some((a) => near(a.r, SH_BUBBLE_R, 1e-9)) && rec.arcs.some((a) => near(a.r, SH_BUBBLE_R + 4, 1e-9)), 'bubble + remaining-time ring drawn');
-  ok(!btnText(g) , 'button hidden while the bubble is up');
+  ok(!!btnText(g) && !g._shieldBtnShown(), 'button shows the draining bubble time (not ready)');
   run(g, 1.8); ok(!render(g).texts.some((t) => t.s === 'SHIELD' && t.y > 240 && t.y < 290), 'banner gone after ~1.6 s');
   ok(render(g).arcs.some((a) => near(a.r, SH_BUBBLE_R, 1e-9)), 'bubble still drawn');
   run(g, 3.5); ok(!render(g).arcs.some((a) => near(a.r, SH_BUBBLE_R, 1e-9)), 'bubble gone after 5 s');
