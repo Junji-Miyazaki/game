@@ -1,6 +1,6 @@
 // harness の動作確認デモ: 平らな地面 + 1つのパッドに着陸 / 離陸を繰り返す。物理スライダーを触って感触を見る。
-import { createLab, W } from './harness.js?v=ff32a905ee';
-import { txt } from '../../../02_src/art.js?v=86285db95f';
+import { createLab, W } from './harness.js?v=b436b67e4f';
+import { txt } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
 
 const terrain = [];

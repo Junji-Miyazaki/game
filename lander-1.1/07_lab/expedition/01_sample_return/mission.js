@@ -1,9 +1,9 @@
 // EXPEDITION #1 PHOBOS SAMPLE RETURN（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
 // 着陸 → その場で2秒静止して採取 → 離陸 → 母船のドッキング枠に低速で入る。
-import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=ff32a905ee';
-import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
+import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
+import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=080a6ac4af';
+import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=8c171d55ee';
 
 const SITE = { x: 190, y: 512, w: 64, id: 'site' };
 const SAMPLE_S = 2.0;          // 採取に必要な静止秒数

@@ -1,4 +1,4 @@
-# EXPEDITION 試作（v1.2 R&D）
+# EXPEDITION 試作（R&D。本実装は v1.1 の同じアドレスに追加 = PLAN §7s）
 
 仕様: `01_docs/EXPEDITION_MISSIONS.md`（正）/ PLAN §7m。ゲーム本体（02_src, 04_tests）・`../lander/` は無変更。サーバ: preview 設定 `lander-1.1`（port 4177）。URL は `index.html` まで書く。
 
@@ -7,6 +7,7 @@
 | 00_harness | http://localhost:4177/07_lab/expedition/00_harness/index.html | 共通試作台のデモ。API は 00_harness/README.md |
 | 01_sample_return | http://localhost:4177/07_lab/expedition/01_sample_return/index.html | #1 PHOBOS SAMPLE RETURN |
 | 02_geyser_run | http://localhost:4177/07_lab/expedition/02_geyser_run/index.html | #2 ENCELADUS GEYSER RUN（間欠泉） |
+| 03_touch_and_go | http://localhost:4177/07_lab/expedition/03_touch_and_go/index.html | #3 RYUGU TOUCH-AND-GO（ほぼ無重力・低速接触・離脱） |
 
 ## 共通シェル（00_harness/shell.js）
 #1 で承認済みの枠組みを共通化。メニュー（PRACTICE / MISSION、BEST・累積★）・3 ライフ（×1.0/0.8/0.6）・タイムトライアル（max(0,1500−10×秒)）・ベストの保存（`lander11.exp.<id>.best / .besttime`、★は和集合）・結果 / MISSION FAILED / LIFE LOST 画面・HUD 右上（タイマー / チェック行 / PRACTICE タグ or ライフ）・ヒント行・足元の傾斜マーカー・R キーのライフ消費（**createLab より前に登録**するのでブラウザの発火順に依存しない）。`createShell({id, expLabel, title, options})` → `sh.sess / begin / onLoss / complete(f, [★1,★2,★3]) / tap / drawMenu / drawResult / drawCorner / drawHint`。ミッションは `lab.m` に menu / result / resultT / lifeLost / failed / final / reason / detail を置く。#1・#2 とも使用（#1 は移行後も autotest の `score()` `five()` 全通過）。
@@ -41,6 +42,16 @@ URL パラメータ（共通 + 固有）: `g=0.04 thrust=5.2 ang=28 damp=0.82 dr
 - 失敗: 地面への墜落（v1.1 と同じ閾値、急斜面含む）/ 画面外 / 燃料 0 のまま 2 秒（STRANDED）。オフサイト着地（傾斜 ≤10° = grounded）と足元の傾斜マーカーは #1 と同じ。時間 = タップで開始 → パッド着地（ライフ喪失で 0 から）。
 - 調整（デバッグパネル / URL）: `push`（口での押し px/s²、既定 13）/ `hp`（柱の高さ px、既定 290）/ `ph0`（全噴気の位相ずらし秒）+ 共通 `g thrust ang damp drag fuel rcs vec`。`?mode=practice|mission`、`dbg=1`、`test=1`。
 - テスト（`?test=1`）: `__auto.physics()` = 噴気の押し（口付近 9〜14・頂上≈4・柱の外 0）/ 前触れ / 周期・噴出 5.0 s / 口でのバウンス / 接地中の噴出 / 試料（`linger`: 出現・噴出後 6 s 残る・落下・期限切れ・次の噴出で再出現、`sample`/`respawn`: 取得・1 回だけ・3 本）/ パッドのロック / 失敗 3 種、`__auto.score()` = メニュー〜ライフ〜永続化〜R キー、`__auto.five()` = 位相 6 通りの通常クリア（試料 1 / 3 個。3 個は噴出中は柱の外で待ち、終わってから残った試料を取りに行く。`run({trace:[]})` で位置・燃料のログ）。`score()` にブリーフィング（?・選択直後・SKIP 保存）の検査を含む、`__auto.run({mode, ph0, want})`。自動操縦は姿勢と横速度を理想化（人間の腕前の保証ではない。噴気・衝突・試料・ロックは本物の物理）。
+
+## 03 TOUCH-AND-GO（RYUGU）
+流れ: 左上から斜めに進入（開始待ち: **TAP TO START**。開始で vx=+8・vy=+16 px/s を与える = 横と縦の流れを止めるのが課題）→ 岩の間の**目標円**（x=187、半径 18px、平らな空き地）に **合成速度 ≤8 px/s・傾き ≤20°** で触れると自動で採取（弾丸発射の閃光 + 砂の飛散 + 「ドン」）→ 反動で上向き 6 px/s → **6 秒以内に安全高度の線（目標の地面から 64px 上、点線）より足元を上げる** = MISSION COMPLETE。
+- **接触の規則は一つ**:「8 px/s 以下ならどこに触れても壊れない」。目標円 = 採取 / 岩（足元の傾斜 >10°）= 法線方向に押し返す（BUMP、反発 0.5、外向き最低 3 px/s）/ 平地 = 接地（grounded、推力で離陸）。8 px/s を超えると: 目標円では跳ね返る（'TOO FAST · NO SAMPLE'、採取なし・墜落なし。BOUNCE 上限を超えると HARD IMPACT）、岩では従来どおり墜落（STEEP GROUND など）。目標円で傾き >20° も跳ね返る（'TILTED · NO SAMPLE'）。採取後に目標円へ触れても跳ね返るだけ。
+- **離脱**: 採取後、砂ぼこりが目標から昇り、制限時間ちょうどで線に届く（残り時間が目で分かる）。線の右に 'LEAVE ↑ 残り秒'（2 秒未満で赤）。時間切れ = 'CAUGHT IN DEBRIS'。何もしなければ反動だけでは届かない。理想的な離脱（直立で全推力）で約 3.9 秒。
+- **世界**: 重力 0.03 px/s²（共通方針の下限）、抗力なし、他は #1・#2 と同じ。暗い炭色の礫の地表、岩 6 個（目標の左右に大小）、太陽のにじみ、遠い地球。
+- **HUD**: 左上を SPEED（合成速度、≤8 緑）/ TILT（≤20° 緑）/ SPIN / ALT に置換（標準 HUD の DESC/DRIFT は 22/13 基準でこのミッションに合わないため）。機体が地面から 140px 以内では機体の横に速度（≤8 緑、PERFECT 範囲で金 + 'PERFECT'）。目標の上に 'TARGET ≤ 8 px/s'（機体が近いと薄く）。足元の傾斜マーカーは目標円の中は常に青緑。
+- ★1 = 完了 / ★2 = 目標の**中心**（ずれ ≤5px）に触れる / ★3 = **PERFECT タッチ**（速度 ≤3 px/s・傾き ≤5°・回転 ≤6°/s）。得点 = (1000 + 燃料%×10 + [PERFECT 300 / 他 100] + 時間ボーナス) × ライフ倍率（共通）。時間 = タップで開始 → 線を越える。
+- 調整（デバッグパネル / URL）: `vtouch`（採取の速度上限、既定 8）/ `leave`（離脱の制限秒、既定 6）/ `alt`（安全高度 px、既定 64）+ 共通。`?mode=practice|mission`、`dbg=1`、`test=1`。
+- テスト（`?test=1`）: `__auto.physics()` = 採取（中心・PERFECT・斜めの合成速度・傾き 8° は PERFECT でない）/ 速すぎ・傾きすぎの跳ね返り / 50 px/s は墜落 / 岩 5 px/s は押し返し・15 px/s は墜落 / 平地の接地と離陸 / 離脱の時間切れと成功 / 失敗 2 種、`__auto.score()` = メニュー〜ライフ〜永続化〜R キー〜ブリーフィング、`__auto.five()` = 接触速度とずれ 6 通りの通常クリア。自動操縦は姿勢と横速度を理想化（人間の腕前の保証ではない）。
 
 ## 試遊で評価すること（仕様の残す基準）
 1. 説明なしで 30 秒以内に何をすればよいか分かるか（画面の英語は冒頭1行と SAMPLE SITE / DOCK の表示のみ）。

@@ -1,10 +1,10 @@
 // EXPEDITION #2 ENCELADUS GEYSER RUN（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
 // 氷の割れ目から周期的に噴気。噴気の頂上を通って試料を集め（最低1つ）、噴気の間のパッドに着地する。
 // 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
-import { createLab, W, H, C } from '../00_harness/harness.js?v=ff32a905ee';
-import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
+import { createLab, W, H, C } from '../00_harness/harness.js?v=b436b67e4f';
+import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=080a6ac4af';
+import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=8c171d55ee';
 
 const sh = createShell({ id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN',
   brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す' } });

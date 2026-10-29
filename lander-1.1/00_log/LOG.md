@@ -3,6 +3,15 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-10-29 EXPEDITION #3 RYUGU TOUCH-AND-GO 試作 / v1.2 を作らない決定
+- ユーザー決定（PLAN §7s）: v1.2 を別版・別 URL にせず、EXPEDITION は v1.1 の同じアドレス（lander-1.1/）に追加する。保存キー（`lander11.`）・ツアーの世界ランキング（`top-v1.1.json`）・パイロット名と PIN を継続。理由（ユーザー）: 操作は変わらず新しいステージが加わるだけでツアーに影響しない、最高得点などの記録を継続したい。EXPEDITION_MISSIONS.md・expedition/README.md の見出しも合わせた。
+- 実施: `07_lab/expedition/03_touch_and_go/`（index.html / mission.js / autotest.js）。共通試作台・共通シェルを使用。仕様は expedition/README.md「03 TOUCH-AND-GO」。要点: 重力 0.03、左上から vx+8・vy+16 で進入、目標円（半径 18）に合成速度 ≤8・傾き ≤20° で触れると採取、反動 6 px/s、6 秒以内に 64px 上の線を越えて完了。接触の規則は「8 以下ならどこに触れても壊れない」（目標 = 採取 / 岩 = 押し返し / 平地 = 接地）。★2 = 中心（≤5px）、★3 = PERFECT タッチ（≤3 px/s・≤5°・≤6°/s）。HUD は SPEED/TILT/SPIN/ALT に置換。
+- テスト: `__auto.physics()` 全通過（sample 9 / fast 5 / tilt 4 / rock 5 / flat 5 / leave 5 / fail 3）、`__auto.five()` 6 本全勝（38〜49 秒、燃料残 61〜66%、理想の離脱 3.9 秒）、`__auto.score()` 全通過。#1 score・#2 physics も再確認で通過。本体の 31 ファイル全通過（本体は無変更）。
+- 目視（preview）: 降下中・採取後の離脱中・結果画面・ブリーフィング。速度の読みが TARGET の文字と重なったので機体の横へ移し、機体が近いと TARGET の文字を薄くした。足元の傾斜マーカーが目標円の中で赤くなる（18px の足幅が隣の岩にかかる）ので、目標円の中は常に青緑にした。
+- stamp: art.js が beta.7 で変わっていたため、#1・#2・harness なども刻み直された（内容は無変更）。
+- 判断: ★2 は仕様どおり「中心」、★3 は共通の形に合わせ「PERFECT タッチ」。速すぎの接触を墜落でなく跳ね返りにしたのは、無重力の低速域で即墜落は理不尽で、#4（67P 錨の跳ね返り）の土台にもなるため。
+- 未確認: 人間の操作で 6 秒の離脱が厳しすぎないか（理想 3.9 秒、余裕 2.1 秒）、進入の初速（横 8・縦 16）の難しさ、岩の押し返しの感触、実機の音。
+
 ## 2026-10-28 SHIELD ボタン: 充填中は小さく薄く、満タンで膨らむ＋音（版は 1.1.0-beta.7 のまま）
 - 実施: art.js `drawShieldButton` に縮尺（`SHIELD_BTN_SMALL`=0.72）・濃さ 0.6・文字を象牙色＋影に。`shieldPopScale`（満タン後 0.32 秒の easeOutBack）と縁の光。game.js `_shReadyT`（満タンになった瞬間から計時）、`_shieldHit()`（満タン=SH_HIT、それ以外=SH_HIT_SMALL）。music.js `sfx.shieldReady`。
 - テスト: p22gauge 123/123（小さい当たり判定・端は噴射可・満タンで大きい判定・膨らみの値・音 1 回・ミュート無音・文字位置）。全 31 ファイル通過。

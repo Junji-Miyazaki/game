@@ -1,13 +1,13 @@
 # LANDER 引き継ぎ書（新セッションはここから読む）
 
-更新: 2026-10-29（リーダー Opus 5.5）。詳細の経緯は `00_log/LOG.md`（新しい順）、決定事項は `01_docs/PLAN.md`（§7h〜§7r）。
+更新: 2026-10-29（リーダー Opus 5.5）。詳細の経緯は `00_log/LOG.md`（新しい順）、決定事項は `01_docs/PLAN.md`（§7h〜§7s）。
 
 ## 1. 構成
 | 対象 | 場所 | 公開 URL | 状態 |
 |---|---|---|---|
 | v1.0（公開中・安定版） | `../lander/` | https://junji-miyazaki.github.io/game/lander/index.html | 致命的不具合のみ修正 |
 | BETA v1.1（主開発） | `lander-1.1/` | https://junji-miyazaki.github.io/game/lander-1.1/index.html | 版 `1.1.0-beta.7`、表示「BETA v1.1」 |
-| v1.2 EXPEDITION 試作 | `lander-1.1/07_lab/expedition/` | 同 URL 配下 `07_lab/expedition/…` | #1 PHOBOS・#2 ENCELADUS 試作済み |
+| EXPEDITION 試作（本実装は v1.1 に追加、§7s） | `lander-1.1/07_lab/expedition/` | 同 URL 配下 `07_lab/expedition/…` | #1 PHOBOS・#2 ENCELADUS・#3 RYUGU 試作済み |
 | 中継 Worker（両版共通の正本） | `../lander/06_server/ranking-worker.js` | https://lander-ranking.euler057721.workers.dev | ユーザーが Cloudflare で貼り替え |
 
 フォルダ規約: `00_log/ 01_docs/ 02_src/ 03_assets/ 04_tests/ 05_legacy/ 06_server/ 07_lab/`。
@@ -49,9 +49,11 @@
 - INVERTED 操作の感触、冥王星の滑りと中継着陸の所要時間（自動操縦の中央値 約 270 秒）、Hall of Fame の音。
 - 起動画面の HOW TO PLAY ボタンの押しやすさ（画面最下部）。
 - EXPEDITION #2（間欠泉）: 噴気の押す強さ、試料の残り時間、3 つ全部が取れるか。
+- EXPEDITION #3（RYUGU）: 6 秒の離脱が厳しすぎないか、進入の初速（横 8・縦 16）、岩の押し返しの感触。
 
 ## 6. 次の候補（未着手・ユーザー判断待ち）
-- v1.2 EXPEDITION: 試作の次は #3 RYUGU タッチ・アンド・ゴー、次に #4 67P 錨（`01_docs/EXPEDITION_MISSIONS.md`）。本実装はツアー中のミッション POD で解放＋天体が大写しになる演出、ミッション別の最速タイムの世界ランキング（Worker の更新とユーザーの再デプロイが必要）、lab の説明カードの JA/EN。
+- **v1.2 は作らない**（2026-10-29 ユーザー決定、PLAN §7s）。EXPEDITION は v1.1 の同じアドレスに追加し、保存・ツアーのランキング・名前と PIN を継続する。
+- EXPEDITION: 試作の次は #4 67P 錨（#3 の跳ね返りの仕組みが土台、`01_docs/EXPEDITION_MISSIONS.md`）。本実装はツアー中のミッション POD で解放＋天体が大写しになる演出、ミッション別の最速タイムの世界ランキング（Worker の更新とユーザーの再デプロイが必要）、lab の説明カードの JA/EN。
 - 保留: TERRA ROVER のパッド速度の調整（必要なら）。
 
 ## 7. 既知の注意点

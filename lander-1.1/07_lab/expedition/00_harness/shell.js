@@ -4,9 +4,9 @@
 // ミッション固有の状態は lab.m に置く。シェルが読む lab.m のフィールド:
 //   m.menu / m.result('win'|'lose') / m.resultT / m.lifeLost / m.failed / m.final / m.reason / m.detail
 // 使い方: const sh = createShell({ id, expLabel:'EXPEDITION 02', title, options:[{key,label,btn,param}] });
-import { txt, rgba, rr } from '../../../02_src/art.js?v=86285db95f';
+import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { W, C, footSlopeDeg } from './harness.js?v=ff32a905ee';
+import { W, C, footSlopeDeg } from './harness.js?v=b436b67e4f';
 
 export const LIVES0 = 3;
 export const LIFE_MULT = { 3: 1.0, 2: 0.8, 1: 0.6 };
