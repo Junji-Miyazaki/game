@@ -3,6 +3,11 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-11-03 #4 のタイトル / 燃料切れを全ミッションで「流れて LOST CONTROL」に / push
+- ユーザー承認「すべてOK」: たまっていた 7 件を push（a8f9786..a901fc2）。タイトル案と燃料切れ案も承認。
+- 実施: #4 のタイトルを COMET 67P ANCHOR に（メニュー・結果・説明カード 'COMET 67P — ANCHOR'・ページのタイトル）。燃料切れ: `shell.js` に `fuelOut`/`drawFuelOut`、`DRIFT_S` = 5 秒・`DRIFT_SPIN` = 10°/s。燃料 0 で操作が効かないまま流れ、5 秒で機体を止めて LOST CONTROL（爆発なし・機体は見えたまま・失敗扱い）。#1〜#4 の STRANDED（2 秒で爆発）を置き換え。
+- テスト: #1 score に fuelOut 項目を追加、#2〜#4 の fail を書き換え（#3 は既存の y0 と変数名が重なり autotest が読み込めなかったので fx0/fy0 に）。#1 score・five、#2〜#4 physics・score・five すべて通過。目視（#4）: 流れている間の表示、LOST CONTROL の結果カード。
+
 ## 2026-11-03 EXPEDITION #4 67P ANCHOR 試作
 - ユーザー指示: #4 を試作。#3 は今の形で OK。
 - 実施: `07_lab/expedition/04_anchor/`（index.html・mission.js・autotest.js）。二つの塊がくびれでつながった核、くびれの底の目標に ≤10 px/s・傾き ≤20° で触れると錨が刺さって成功（演出 1.8 秒）。塊の壁 2 か所から横向きのガス（周期 10 秒・左右交互、前触れ 1.2 秒）。目標で速すぎ・傾きすぎは大きく跳ね返る（墜落ではない）。壁に横から当たると 10 px/s 以下は押し返し、超えると HIT THE CLIFF。★2 = 跳ね返りなし。開始位置は右上の表示と太陽に重なったので (284,150) へ下げた。詳細は `07_lab/expedition/README.md`「04 ANCHOR」。

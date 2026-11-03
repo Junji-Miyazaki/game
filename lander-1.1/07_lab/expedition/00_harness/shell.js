@@ -14,6 +14,7 @@ export const lifeMult = (lives) => LIFE_MULT[lives] || 0.6;
 export const TIME_BONUS_MAX = 1500, TIME_BONUS_RATE = 10;   // 時間ボーナス = max(0, 1500 − 10×秒)
 export const timeBonus = (sec) => Math.max(0, Math.round(TIME_BONUS_MAX - TIME_BONUS_RATE * sec));
 export const LIFE_LOST_S = 1.6;
+export const DRIFT_S = 5.0, DRIFT_SPIN = 10;   // 燃料切れ: 流れる秒数 / ゆっくり回る角速度 °/s
 export const HINT_Y = 84;   // ヒント行（右上のタイマー / チェック / PRACTICE・ライフ行の下。重ならない高さ）
 export const mmss = (t) => { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(1).padStart(4, '0'); };
 
@@ -66,6 +67,21 @@ export function createShell(cfg) {
   const skipOn = () => lsGet(KEY_S) === '1';
   const sh = { KEY_S, skipOn, id, sess, BTN, KEY_B, KEY_T, loadBest, loadBestTime, lsGet, lsSet, lifeMult, timeBonus, LIFE_LOST_S, HINT_Y, mmss, star, button, hit };
   sh.score = (base, lives, sec = 1e9) => Math.round((base + timeBonus(sec)) * lifeMult(lives));
+  // 燃料切れ（全ミッション共通）: 推力・回転は燃料 0 で出ないので操作は効かない。機体は勢いのまま流れ、ゆっくり回る（外力も受ける）。
+  // DRIFT_S 秒たつと爆発せずに終了 = LOST CONTROL（失敗・ライフ -1）。その間にそっと目標へ触れれば各ミッションの判定どおり成功、速く当たれば通常の墜落。
+  // onUpdate から毎フレーム呼ぶ。onCrash = ミッションの失敗処理。戻り値 true = 終了した
+  sh.fuelOut = (l, dt, onCrash) => {
+    const m = l.m, s = l.ship;
+    if (s.fuel > 0.0001) { m.strandT = 0; return false; }
+    m.strandT += dt;
+    if (l.state === 'play' && Math.abs(s.omega) < DRIFT_SPIN) s.omega = (s.omega < 0 ? -1 : 1) * DRIFT_SPIN;
+    if (m.strandT < DRIFT_S) return false;
+    l.frozen = true; onCrash(l, 'LOST CONTROL', 'Out of fuel · drifted ' + DRIFT_S + ' s'); return true;
+  };
+  sh.drawFuelOut = (ctx, l) => {
+    const m = l.m; if (m.result || l.ship.fuel > 0.0001 || !m.strandT) return;
+    txt(ctx, 'NO FUEL · DRIFTING  ' + Math.max(0, DRIFT_S - m.strandT).toFixed(1), 180, 256, 11, P().bad, 'center', { w: 800, sp: 1.2, a: 0.6 + 0.4 * Math.sin(l.clock * 8) });
+  };
 
   // ---- セッション ----
   sh.onStart = (prev) => { if (sess.mode === 'mission' && prev && (prev.result === 'win' || prev.failed)) sess.lives = LIVES0; };   // R で結果画面から再開 = 新しい3ライフ

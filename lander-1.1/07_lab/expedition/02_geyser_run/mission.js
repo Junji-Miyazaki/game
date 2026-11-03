@@ -4,12 +4,11 @@
 import { createLab, W, H, C } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=8c171d55ee';
+import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=9cd86c60ea';
 
 const sh = createShell({ id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN',
   brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す' } });
 const sess = sh.sess;
-const STRAND_S = 2.0;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 520;                        // 地表の基準高さ
 const PAD = { x: 200, y: 518, w: 60, id: 'pad' };
@@ -175,7 +174,7 @@ function onUpdate(l, dt) {
   // 範囲外
   if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
   // 燃料切れ
-  if (s.fuel <= 0.0001) { m.strandT += dt; if (m.strandT >= STRAND_S) return l.crash('STRANDED', 'Out of fuel'); } else m.strandT = 0;
+  if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
   // 噴出の音・接地中に噴出口が噴いたら押し上げる
   for (let i = 0; i < VENTS.length; i++) {
     const v = VENTS[i], st = m.vs[i];
@@ -378,7 +377,7 @@ function onDrawFront(ctx, l) {
   if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
   if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
   if (m.toastT > 0 && !m.waiting) txt(ctx, m.toast, 180, 236, 10, m.lockedT > 0 ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
-  if (!m.result && s.fuel <= 0.0001) txt(ctx, 'OUT OF FUEL  ' + Math.max(0, STRAND_S - m.strandT).toFixed(1), 180, 256, 11, p.bad, 'center', { w: 800, sp: 1.2 });
+  sh.drawFuelOut(ctx, l);
   if (!m.result && m.started) {
     const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 30 && s.vy < 4));
     if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
@@ -392,7 +391,7 @@ function onDrawFront(ctx, l) {
 
 sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=2fec28e92b').then((mod) => mod.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=71edaca025').then((mod) => mod.install(lab));
 window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
 window.__geyser = { VENTS, PAD, ventAt, samplePos, sampleAt, LINGER_S, SAMPLE_LIFE, ERUPT_S, RISE, PEAK, FADE, TELE_S, SAMPLE_R, VENT_W, HP, plumeHalf, F_TOP };

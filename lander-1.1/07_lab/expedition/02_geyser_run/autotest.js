@@ -126,7 +126,7 @@ export function install(lab) {
     // 失敗: 地面への強い衝突 / 画面外 / 燃料 0 のまま 2 秒
     lab.reset(); step(1); F().tap(180, 320); lab.script = null; lab.frozen = false; Object.assign(lab.ship, { x: 100, y: lab.terrainY(100) - 30, vx: 0, vy: 60 }); lab.state = 'play'; step(0.5); ok.fail = [lab.m.result === 'lose', lab.m.reason === 'HARD IMPACT'];
     lab.reset(); step(1); F().tap(180, 320); lab.script = null; lab.frozen = false; Object.assign(lab.ship, { x: 100, y: -40, vx: 0, vy: -5 }); step(0.2); ok.fail.push(lab.m.reason === 'LEFT THE AREA');
-    lab.reset(); step(1); F().tap(180, 320); lab.script = null; lab.ship.fuel = 0; step(1.5); ok.fail.push(!lab.m.result); step(1); ok.fail.push(lab.m.reason === 'STRANDED');
+    lab.reset(); step(1); F().tap(180, 320); lab.script = null; lab.ship.fuel = 0; const fx0 = lab.ship.x, fy0 = lab.ship.y; step(1.5); ok.fail.push(!lab.m.result, Math.hypot(lab.ship.x - fx0, lab.ship.y - fy0) > 3, Math.abs(lab.ship.omega) >= 9); step(4); ok.fail.push(lab.m.reason === 'LOST CONTROL', lab.state !== 'crashed', !lab.hideShip, lab.frozen === true);   // 燃料切れ: 爆発せず流れて 5 秒で LOST CONTROL
     lab.script = null; lab.params.ph0 = 0; F().begin('menu');
     const flat = Object.entries(ok).map(([k, v]) => [k, v.every(Boolean), v.map((x) => (x ? 1 : 0)).join('')]);
     return { pass: flat.every((x) => x[1]), detail: flat.map((x) => x[0] + ':' + x[2]).join(' '), nearV, topV, outV };

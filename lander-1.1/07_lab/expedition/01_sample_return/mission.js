@@ -3,11 +3,10 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=8c171d55ee';
+import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=9cd86c60ea';
 
 const SITE = { x: 190, y: 512, w: 64, id: 'site' };
 const SAMPLE_S = 2.0;          // 採取に必要な静止秒数
-const STRAND_S = 2.0;          // 燃料 0 のまま放置してよい秒数
 const MS_Y = 130, MS_AMP = 90;              // 母船の高さ
 const RING_DY = 31, RING_R = 17;   // ドッキング枠: 母船の中心からの下方向オフセットと半径（円形判定の半径）
 const DOCK_REL = 10, DOCK_TILT = 20;
@@ -143,7 +142,7 @@ function onUpdate(l, dt) {
   // 範囲外
   if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return lose(l, 'LEFT THE AREA', 'You drifted out of range');
   // 燃料切れ（ドッキング前）
-  if (s.fuel <= 0.0001) { m.strandT += dt; if (m.strandT >= STRAND_S) return lose(l, 'STRANDED', 'Out of fuel before docking'); } else m.strandT = 0;
+  if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
   // 採取
   const onSite = l.state === 'grounded' && l.padAt(s.x) === SITE;
   if (onSite && !m.sampled) {
@@ -379,7 +378,7 @@ function onDrawFront(ctx, l) {
   if (m.docked && !m.menu && !m.result) txt(ctx, 'TAP TO RELEASE', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
   if (m.toastT > 0) txt(ctx, m.toast, 180, 236, 10, p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
   // 燃料切れの警告 / 範囲外の警告
-  if (!m.result && s.fuel <= 0.0001) txt(ctx, 'OUT OF FUEL  ' + Math.max(0, STRAND_S - m.strandT).toFixed(1), 180, 256, 11, p.bad, 'center', { w: 800, sp: 1.2 });
+  sh.drawFuelOut(ctx, l);
   if (!m.result) {
     const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 16 && s.vy < 2));
     if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
@@ -394,7 +393,7 @@ function onDrawFront(ctx, l) {
 
 sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=85afc2baa5').then((m) => m.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=b92c2829f5').then((m) => m.install(lab));
 window.__score = { mult: lifeMult, score: missionScore, timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN, LIFE_LOST_S };
 lab.start();

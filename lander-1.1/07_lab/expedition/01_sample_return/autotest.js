@@ -88,6 +88,10 @@ export function install(lab) {
     // 練習: 失敗は何度でも・ライフ不変・保存なし
     kill(); step(1); ok.pracFail = [lab.m.result === 'lose', lab.m.lifeLost === false, lab.m.failed === false, F.sess.lives === 3];
     lab.reset(); ok.pracRetry = [F.sess.mode === 'practice', lab.m.docked && !lab.m.result];
+    // 燃料切れ: 爆発せず流れて 5 秒で LOST CONTROL（練習なのでライフ不変）
+    F.tap(180, 320); step(0.5); lab.ship.fuel = 0; { const x0 = lab.ship.x, y0 = lab.ship.y; step(1.5); ok.fuelOut = [!lab.m.result, Math.hypot(lab.ship.x - x0, lab.ship.y - y0) > 3, Math.abs(lab.ship.omega) >= 9]; step(4);
+      ok.fuelOut.push(lab.m.result === 'lose', lab.m.reason === 'LOST CONTROL', lab.state !== 'crashed', !lab.hideShip, F.sess.lives === 3); }
+    lab.reset();
     const pw = run({ mode: 'practice' }); ok.pracWin = [pw.result === 'win', pw.final.practice === true, get() === null, getT() === null, pw.final.newBestTime === false];
     // オフサイト着地: 平らな別地点 = grounded（失敗ではない・採取なし）→ 推力で離陸。急な岩 = STEEP GROUND
     ok.offsite = offsite();

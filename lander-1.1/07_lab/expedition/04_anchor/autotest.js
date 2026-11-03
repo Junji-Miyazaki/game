@@ -81,7 +81,7 @@ export function install(lab) {
     ok.jet.push(lab.ship.vx > 1, !lab.m.result);
     // 失敗: 画面外 / 燃料 0 のまま 2 秒
     fresh(); Object.assign(lab.ship, { x: 100, y: -40, vx: 0, vy: -5 }); step(0.2); ok.fail = [lab.m.reason === 'LEFT THE AREA'];
-    fresh(); lab.ship.fuel = 0; lab.ship.y = 200; step(1.5); ok.fail.push(!lab.m.result); step(1); ok.fail.push(lab.m.reason === 'STRANDED');
+    fresh(); lab.ship.fuel = 0; lab.ship.y = 200; const fx0 = lab.ship.x, fy0 = lab.ship.y; step(1.5); ok.fail.push(!lab.m.result, Math.hypot(lab.ship.x - fx0, lab.ship.y - fy0) > 3, Math.abs(lab.ship.omega) >= 9); step(4); ok.fail.push(lab.m.reason === 'LOST CONTROL', lab.state !== 'crashed', !lab.hideShip, lab.frozen === true);   // 燃料切れ: 爆発せず流れて 5 秒で LOST CONTROL
     lab.params.jet = jet0; lab.script = null; F().begin('menu');
     const flat = Object.entries(ok).map(([k, v]) => [k, v.every(Boolean), v.map((x) => (x ? 1 : 0)).join('')]);
     return { pass: flat.every((x) => x[1]), detail: flat.map((x) => x[0] + ':' + x[2]).join(' ') };

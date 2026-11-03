@@ -7,12 +7,11 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=8c171d55ee';
+import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=9cd86c60ea';
 
-const sh = createShell({ id: 'anchor', expLabel: 'EXPEDITION 04', title: '67P ANCHOR',
-  brief: { title: '67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が舞うとガスが来る。押されたら逆へ噴く' } });
+const sh = createShell({ id: 'anchor', expLabel: 'EXPEDITION 04', title: 'COMET 67P ANCHOR',
+  brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が舞うとガスが来る。押されたら逆へ噴く' } });
 const sess = sh.sess;
-const STRAND_S = 2.0;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 524;                               // くびれの底の高さ（目標はここで平ら）
 const TGT = { x: 199, r: 20, c: 5 };          // 目標: 中心 x / 錨が刺さる半径 / ★ 中心の半径（記録のみ）
@@ -73,7 +72,7 @@ function jetForce(j, x, y, T, f) {
 
 const lab = createLab({
   canvas: document.getElementById('c'),
-  title: '67P ANCHOR',
+  title: 'COMET 67P ANCHOR',
   defaults: { g: 0.03, thrust: 5.2, ang: 28, damp: 0.82, drag: 0, fuel: 100, rcs: 2.5, vec: 1 },
   extraParams: [
     { key: 'vtouch', label: 'anchor speed limit px/s', min: 4, max: 16, step: 0.5, def: 10 },
@@ -194,7 +193,7 @@ function onUpdate(l, dt) {
   m.flyT += dt;
   JETS.forEach((j, i) => { const a = jetAt(j, m.flyT); if (a.a >= 0 && m.hissed[i] !== Math.floor((m.flyT - j.O) / j.P)) { m.hissed[i] = Math.floor((m.flyT - j.O) / j.P); hiss(); } });
   if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
-  if (s.fuel <= 0.0001) { m.strandT += dt; if (m.strandT >= STRAND_S) return l.crash('STRANDED', 'Out of fuel'); } else m.strandT = 0;
+  if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
   if (m.bumpT > 0) m.bumpT -= dt;
   if (m.shakeT > 0) m.shakeT -= dt;
   lab.canvas.style.transform = m.shakeT > 0 ? 'translate(' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px,' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px)' : '';
@@ -388,7 +387,7 @@ function onDrawFront(ctx, l) {
   if (m.bounceT > 0 && !m.result && !m.phase) txt(ctx, 'BOUNCED!', s.x, s.y - 34 - (1.2 - m.bounceT) * 16, 12, p.bad, 'center', { w: 900, sp: 1.5, a: Math.min(1, m.bounceT * 2) });
   if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
   if (m.toastT > 0 && !m.waiting && !m.phase) txt(ctx, m.toast, 180, 236, 10, m.toastBad ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
-  if (!m.result && s.fuel <= 0.0001) txt(ctx, 'OUT OF FUEL  ' + Math.max(0, STRAND_S - m.strandT).toFixed(1), 180, 256, 11, p.bad, 'center', { w: 800, sp: 1.2 });
+  sh.drawFuelOut(ctx, l);
   if (!m.result && m.started && !m.phase) {
     const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 30 && s.vy < 4));
     if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
@@ -403,7 +402,7 @@ function onDrawFront(ctx, l) {
 
 sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=b6d89daed7').then((mod) => mod.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=24a7fba2c8').then((mod) => mod.install(lab));
 window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
 window.__tag = { GY, TGT, CLEAR, LOBES, BOULDERS, JETS, JET, ENTRY, PERFECT, TOUCH_TILT, ANCHOR_S, HULL, jetAt, jetForce, terrain, terrainFn, footSlopeDeg };

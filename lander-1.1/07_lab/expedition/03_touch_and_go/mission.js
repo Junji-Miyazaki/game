@@ -6,12 +6,11 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=8c171d55ee';
+import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=9cd86c60ea';
 
 const sh = createShell({ id: 'touch_and_go', expLabel: 'EXPEDITION 03', title: 'RYUGU TOUCH-AND-GO',
   brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる' } });
 const sess = sh.sess;
-const STRAND_S = 2.0;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 524;                               // 地表の基準高さ（目標の空き地はこの高さで平ら）
 const TGT = { x: 187, r: 18, c: 5 };          // 目標円: 中心 x / 触れて採取できる半径 / ★2 の中心半径
@@ -177,7 +176,7 @@ function onUpdate(l, dt) {
     return;
   }
   if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
-  if (s.fuel <= 0.0001) { m.strandT += dt; if (m.strandT >= STRAND_S) return l.crash('STRANDED', 'Out of fuel'); } else m.strandT = 0;
+  if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
   if (m.phase === 'settle') {
     m.settleT += dt;
     if (m.settleT >= SETTLE.s) { m.phase = 'leave'; m.promptT = 0; l.controlsEnabled = true; alarm(); }
@@ -404,7 +403,7 @@ function onDrawFront(ctx, l) {
   }
   if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
   if (m.toastT > 0 && !m.waiting && !m.phase) txt(ctx, m.toast, 180, 236, 10, m.toastBad ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
-  if (!m.result && s.fuel <= 0.0001) txt(ctx, 'OUT OF FUEL  ' + Math.max(0, STRAND_S - m.strandT).toFixed(1), 180, 256, 11, p.bad, 'center', { w: 800, sp: 1.2 });
+  sh.drawFuelOut(ctx, l);
   if (!m.result && m.started && m.phase !== 'away') {   // 去る演出で画面の上へ抜けるのは正常（警告しない）
     const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 30 && s.vy < 4));
     if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
@@ -419,7 +418,7 @@ function onDrawFront(ctx, l) {
 
 sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=3b89f2e052').then((mod) => mod.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=62954a6e44').then((mod) => mod.install(lab));
 window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
 window.__tag = { GY, TGT, CLEAR, ROCKS, ENTRY, CURVE, arcY, REBOUND, SETTLE, AWAY, PERFECT, TOUCH_TILT, LINE_Y, terrain, footSlopeDeg };
