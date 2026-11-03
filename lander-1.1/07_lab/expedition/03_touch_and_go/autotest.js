@@ -1,5 +1,5 @@
 // テスト専用（?test=1 のときだけ mission.js が読み込む）。window.__auto に検証用の自動操縦を置く。
-// 流れ: waiting(タップで開始) → 岩より上の高さで目標の真上へ → 降下して touchV で接触 → 自動静止（操作なし）→ LIFT OFF で直立・全推力 → 線を越えて CLEAR → 自動帰還 → 勝利。
+// 流れ: waiting(母艦に係留。タップで切り離し) → 岩より上の高さで目標の真上へ → 降下して touchV で接触 → 自動静止（操作なし）→ LIFT OFF で直立・全推力 → 線を越えて CLEAR → 自動帰還 → 勝利。
 // 注意: 姿勢と横速度は「理想的に」直接セットする（流れ・判定・燃料の確認用であって人間の腕前の保証ではない）。
 // 接触（採取・跳ね返り・岩の押し返し）・離脱の制限時間は理想化せず本物の物理で動く。
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -104,7 +104,7 @@ export function install(lab) {
     ok.formula = [A.mult(3) === 1, A.mult(2) === 0.8, A.mult(1) === 0.6, A.timeBonus(0) === 1500, A.timeBonus(30) === 1200, A.timeBonus(150) === 0];
     Fw.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44];
     localStorage.removeItem(A.KEY_S); Fw.tap(...center(B.practice)); ok.menu.push(Fw.sess.mode === 'practice' && lab.m.waiting === true, Fw.sess.brief === 'start'); Fw.tap(180, 320); ok.menu.push(!Fw.sess.brief && lab.m.waiting === true);
-    step(4); ok.wait = [lab.m.waiting === true, lab.m.flyT === 0, !lab.m.result, lab.frozen === true]; Fw.tap(180, 320); step(1); ok.wait.push(!lab.m.waiting, lab.m.flyT > 0.9, lab.ship.y > 110, lab.ship.x > 60);
+    step(4); ok.wait = [lab.m.waiting === true, lab.m.flyT === 0, !lab.m.result, lab.frozen === true]; Fw.tap(180, 320); ok.wait.push(lab.controlsEnabled === false); step(1); ok.wait.push(!lab.m.waiting, lab.m.flyT > 0.9, lab.ship.y > T.ENTRY.y + 10, lab.ship.x > T.ENTRY.x + 4, lab.controlsEnabled === true);   // 切り離し: 少しの間は操作なし → 右下へ流れる
     lab.reset(); kd(' '); ok.wait.push(!lab.m.waiting); lab.reset(); kd('ArrowUp'); ok.wait.push(!lab.m.waiting); lab.reset();
     kill(); step(1); ok.pracFail = [lab.m.result === 'lose', lab.m.lifeLost === false, lab.m.failed === false, Fw.sess.lives === 3];
     const pw = run({ mode: 'practice' }); ok.pracWin = [pw.result === 'win', pw.final.practice === true, get() === null, getT() === null];

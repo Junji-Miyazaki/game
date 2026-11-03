@@ -1,6 +1,6 @@
 // EXPEDITION #3 RYUGU TOUCH-AND-GO（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
-// ほぼ無重力。岩の間の目標円に 8 px/s 以下でそっと触れると自動で採取（弾丸発射の演出）→ 小さく弾んでほぼ静止（自動）→
-// LIFT OFF の合図から 7.5 秒以内に安全高度の線より上へ → CLEAR、母艦まで自動で帰還してから結果。
+// 左上の母艦に係留した状態で開始 → タップで切り離し（右下へ流れながら降りる）。ほぼ無重力。岩の間の目標円に 8 px/s 以下でそっと触れると自動で採取（弾丸発射の演出）→ 小さく弾んでほぼ静止（自動）→
+// LIFT OFF の合図から 9 秒以内に安全高度の線（104px 上）より上へ → CLEAR、母艦まで自動で帰還してから結果。
 // 接触の規則は一つ:「8 px/s 以下ならどこに触れても壊れない」（目標円 = 採取 / 岩 = 押し返される / 平地 = 接地）。
 // 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
@@ -9,7 +9,7 @@ import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
 import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=8c171d55ee';
 
 const sh = createShell({ id: 'touch_and_go', expLabel: 'EXPEDITION 03', title: 'RYUGU TOUCH-AND-GO',
-  brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で上昇。点線を越えたら', '　母艦へ自動で帰還'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる' } });
+  brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・タップで母艦から切り離す', '・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる' } });
 const sess = sh.sess;
 const STRAND_S = 2.0;
 const OUT = { x0: -10, x1: 370, y0: -30 };
@@ -20,9 +20,10 @@ const TOUCH_TILT = 20;                        // 採取できる傾きの上限�
 const PERFECT = { sp: 3, ang: 5, om: 6 };     // ★3
 const REBOUND = 14;                           // 採取の瞬間の上向き速度（小さく弾む。すぐ自動で止まる）
 const SETTLE = { s: 0.9, free: 0.3, k: 6 };   // 採取後の自動静止: 合計秒 / 最初は減衰なし（弾みが見える）/ 減衰の速さ。この間は操作なし
-const HOME = { s: 3.0, fly0: 0.4, fly1: 2.4 }; // 線を越えた後の自動帰還の演出（秒）: 母艦が降りてくる → 機体が飛んで収容 → 結果
-const MS = { x: 180, y: 96 };                 // 帰還時の母艦の位置
-const ENTRY = { x: 60, y: 110, vx: 8, vy: 16 };   // 左上から斜めに進入（横の流れを止めるのが課題）
+const HOME = { s: 3.0, fly0: 0.4, fly1: 2.4 }; // 線を越えた後の自動帰還の演出（秒）: 機体が母艦へ飛んで収容 → 結果
+const MS = { x: 72, y: 150 };                 // 母艦（左上に停泊。開始時はこの下に係留、最後はここへ自動で帰還）
+const ENTRY = { x: MS.x, y: MS.y + 22, vx: 8, vy: 16 };   // 切り離しの位置と初速: 右下へ流れながら降りる（横の流れを止めるのが課題）
+const RELEASE_LOCK = 0.6;                     // 切り離し直後の操作できない秒数（母艦から離れる間）
 // 岩（半円に近いこぶ。側面は急 = 傾斜 >10°）。x, 半径 r, 高さ h
 const ROCKS = [
   { x: 22, r: 24, h: 28 }, { x: 104, r: 30, h: 44 }, { x: 141, r: 12, h: 15 },
@@ -53,8 +54,8 @@ const lab = createLab({
   defaults: { g: 0.03, thrust: 5.2, ang: 28, damp: 0.82, drag: 0, fuel: 100, rcs: 2.5, vec: 1 },
   extraParams: [
     { key: 'vtouch', label: 'touch speed limit px/s', min: 4, max: 14, step: 0.5, def: 8 },
-    { key: 'leave',  label: 'time to leave s (from LIFT OFF)', min: 3, max: 12, step: 0.5, def: 7.5 },
-    { key: 'alt',    label: 'safe altitude px',       min: 30, max: 140, step: 2, def: 64 },
+    { key: 'leave',  label: 'time to leave s (from LIFT OFF)', min: 3, max: 14, step: 0.5, def: 9 },
+    { key: 'alt',    label: 'safe altitude px',       min: 30, max: 160, step: 2, def: 104 },
   ],
   world: { terrain, pads: [] },
   start, onUpdate, onTouchdown, onLiftoff, onCrash, onTap, forces,
@@ -70,15 +71,15 @@ function start(l) {
   sh.onStart(l.m);
   l.resetShip({ x: ENTRY.x, y: ENTRY.y, vx: 0, vy: 0, angle: 0 });
   l.frozen = true; l.controlsEnabled = false;   // 開始待ち
-  l.m = { menu: sess.mode === 'menu', waiting: true, started: false, flyT: 0, relT: 0, sampled: false, phase: null, settleT: 0, homeT: 0, promptT: 0, home0: null, touch: null, leaveT: 0, touchX: TGT.x,
+  l.m = { menu: sess.mode === 'menu', waiting: true, started: false, flyT: 0, relT: 0, sampled: false, relLock: 0, phase: null, settleT: 0, homeT: 0, promptT: 0, home0: null, touch: null, leaveT: 0, touchX: TGT.x,
     strandT: 0, result: null, resultT: 0, final: null, failed: false, lifeLost: false, toast: '', toastT: 0, toastBad: false, bumpT: 0, shakeT: 0, shotT: 0, bumps: 0, noSampleT: 0 };
   if (l.m.menu) l.hideShip = true;
 }
 const begin = (l, mode, opt) => sh.begin(l, mode, opt);
 const toast = (l, s, sec = 2, bad = false) => { l.m.toast = s; l.m.toastT = sec; l.m.toastBad = bad; };
-function go(l) {   // 開始待ち → 進入
+function go(l) {   // 係留 → 切り離し: 右下へ流れながら降りる。少しの間は操作できない
   const m = l.m; if (!m.waiting || m.menu || m.result) return;
-  m.waiting = false; m.started = true; l.frozen = false; l.controlsEnabled = true; l.ship.vx = ENTRY.vx; l.ship.vy = ENTRY.vy; toast(l, 'GO', 1.0); audioWake();
+  m.waiting = false; m.started = true; m.relLock = RELEASE_LOCK; l.frozen = false; l.controlsEnabled = false; l.ship.vx = ENTRY.vx; l.ship.vy = ENTRY.vy; toast(l, 'RELEASED', 1.4); audioWake();
 }
 function onTap(l, x, y) {
   const m = l.m;
@@ -108,10 +109,9 @@ function win(l) {   // 帰還の演出が終わったら結果
   sh.complete(m.final, [true, m.final.s2, m.final.s3]);
 }
 const easeIO = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
-const msY = (m) => (m.phase === 'home' || m.result === 'win' ? -40 + (MS.y + 40) * (1 - Math.pow(1 - Math.min(1, m.homeT / 0.9), 3)) : -40);
-function updateHome(l, dt) {   // 母艦が上から降りてくる → 機体が機首を向けて飛び、母艦の下に収容
+function updateHome(l, dt) {   // 機体が機首を母艦へ向けて飛び、母艦の下に収容
   const m = l.m, s = l.ship, h = m.home0; m.homeT += dt;
-  const k = Math.max(0, Math.min(1, (m.homeT - HOME.fly0) / (HOME.fly1 - HOME.fly0))), e = easeIO(k), ty = msY(m) + 20;
+  const k = Math.max(0, Math.min(1, (m.homeT - HOME.fly0) / (HOME.fly1 - HOME.fly0))), e = easeIO(k), ty = MS.y + 20;
   s.x = h.x + (MS.x - h.x) * e; s.y = h.y + (ty - h.y) * e;
   const aim = Math.atan2(MS.x - s.x, -(ty - s.y + 1e-6)) * 180 / Math.PI * (1 - e);   // 進む向きへ機首、最後は直立
   s.angle = h.a + (aim - h.a) * Math.min(1, m.homeT / 0.5);
@@ -179,6 +179,7 @@ function onUpdate(l, dt) {
   }
   if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
   if (s.fuel <= 0.0001) { m.strandT += dt; if (m.strandT >= STRAND_S) return l.crash('STRANDED', 'Out of fuel'); } else m.strandT = 0;
+  if (m.relLock > 0) { m.relLock -= dt; if (m.relLock <= 0 && !m.phase) l.controlsEnabled = true; }
   if (m.phase === 'settle') {
     m.settleT += dt;
     if (m.settleT >= SETTLE.s) { m.phase = 'leave'; m.promptT = 0; l.controlsEnabled = true; alarm(); }
@@ -314,6 +315,7 @@ function drawTarget(ctx, l) {
 function onDrawMid(ctx, l) {
   const p = P(), m = l.m, t = l.clock, ly = LINE_Y(), pr = l.params;
   if (m.menu) return;
+  drawMothership(ctx, l);
   if (m.sampled) {
     const k = Math.min(1, m.leaveT / pr.leave), top = GY - (GY - ly) * k, cx = m.touchX, fade = m.phase === 'home' ? Math.max(0, 1 - m.homeT) : m.result === 'win' ? 0 : 1;
     for (let i = 0; i < 26; i++) {
@@ -334,12 +336,11 @@ function onDrawMid(ctx, l) {
   ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke(); ctx.restore();
   if (hot) txt(ctx, 'GOAL ↑ CLIMB ABOVE THIS LINE', 8, ly - 11, 7, p.green, 'left', { w: 800, sp: 1.1 });
   else txt(ctx, 'SAFE ALTITUDE · GOAL', 8, ly - 11, 6.5, done ? p.green : p.dim, 'left', { w: 700, sp: 1.2, a: done ? 1 : 0.7 });
-  if (m.phase === 'home' || m.result === 'win') drawMothership(ctx, l);
 }
 
-// 母艦（帰還の演出だけに出る。上から降りてきて、機体を下に収容する）
+// 母艦（左上に停泊。開始時は機体を下に係留、最後は収容する）
 function drawMothership(ctx, l) {
-  const m = l.m, p = P(), t = l.clock, y = msY(m);
+  const m = l.m, p = P(), t = l.clock, y = MS.y;
   ctx.save(); ctx.translate(MS.x, y);
   for (const sx of [-1, 1]) {   // 太陽電池パネル
     ctx.save(); ctx.translate(sx * 46, -2);
@@ -355,7 +356,7 @@ function drawMothership(ctx, l) {
   ctx.fillStyle = '#16314a'; rr(ctx, 4, -6, 20, 10, 5); ctx.fill();
   ctx.fillStyle = '#9ee8ff'; ctx.beginPath(); ctx.arc(10, -1, 2, 0, 7); ctx.arc(18, -1, 2, 0, 7); ctx.fill();
   // 収容口（下）: 機体が近づくと光る
-  const near = m.phase === 'home' && m.homeT > HOME.fly0 + 1.2;
+  const near = (m.phase === 'home' && m.homeT > HOME.fly0 + 1.2) || m.waiting;
   ctx.fillStyle = near ? rgba(p.green, 0.6 + 0.4 * Math.sin(t * 12)) : rgba(p.fg, 0.35); ctx.fillRect(-9, 10, 18, 3);
   if (m.phase === 'home' && m.homeT >= HOME.fly1) {   // 収容の閃光
     const k = Math.min(1, (m.homeT - HOME.fly1) / 0.5), fg = ctx.createRadialGradient(0, 12, 1, 0, 12, 50);
@@ -390,7 +391,8 @@ function onDrawFront(ctx, l) {
     let hint = '', bad = false;
     if (m.phase === 'settle') hint = 'SAMPLING… HOLDING POSITION';
     else if (m.phase === 'leave') { hint = 'THRUST UP · CLIMB ABOVE THE GREEN LINE'; bad = true; }
-    else if (m.waiting || m.relT < 8) hint = 'NOT A LANDING · TOUCH THE TARGET, THEN LIFT OFF';
+    else if (m.waiting) hint = 'TAP TO RELEASE FROM THE MOTHERSHIP';
+    else if (m.relT < 8) hint = 'NOT A LANDING · TOUCH THE TARGET, THEN LIFT OFF';
     else if (l.state === 'grounded') hint = 'OFF TARGET · THRUST TO LIFT OFF';
     else if (alt < 150 && sp > l.params.vtouch) { hint = 'TOO FAST · SPEED ≤ ' + l.params.vtouch + ' TO SAMPLE'; bad = true; }
     else hint = 'POINT THE NOSE AGAINST YOUR DRIFT AND THRUST TO STOP';
@@ -404,11 +406,11 @@ function onDrawFront(ctx, l) {
     if (perf) txt(ctx, 'PERFECT', rx, s.y + 6, 6.5, '#FFC94D', rx < s.x ? 'right' : 'left', { w: 700, sp: 1 });
   }
   // 採取の直後: 大きな合図（中央）+ 機体の上の上向き矢印 + 機体の横の残り秒
-  if (m.phase === 'settle' && !m.result) txt(ctx, 'SAMPLE OK', 180, 404, 16, p.green, 'center', { w: 800, sp: 2, a: Math.min(1, m.settleT * 4) });
+  if (m.phase === 'settle' && !m.result) txt(ctx, 'SAMPLE OK', 180, 366, 16, p.green, 'center', { w: 800, sp: 2, a: Math.min(1, m.settleT * 4) });
   if (m.phase === 'leave' && !m.result) {
     const pop = 1 + 0.25 * Math.max(0, 1 - m.promptT / 0.25), blink = m.promptT < 1.5 || Math.sin(l.clock * 9) > -0.3;
-    txt(ctx, 'SAMPLE OK', 180, 384, 9, p.green, 'center', { w: 800, sp: 2 });
-    if (blink) txt(ctx, 'LIFT OFF!', 180, 408, 22 * pop, p.warn, 'center', { w: 900, sp: 3 });
+    txt(ctx, 'SAMPLE OK', 180, 344, 9, p.green, 'center', { w: 800, sp: 2 });
+    if (blink) txt(ctx, 'LIFT OFF!', 180, 368, 22 * pop, p.warn, 'center', { w: 900, sp: 3 });
     for (let i = 0; i < 3; i++) {   // 上向きの山形（下から順に点灯）
       const ph = (l.clock * 2.2 - i * 0.28) % 1, ay = s.y - 26 - i * 9;
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - ph) * 0.95; ctx.strokeStyle = p.warn; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -418,15 +420,15 @@ function onDrawFront(ctx, l) {
     txt(ctx, left.toFixed(1), rx, s.y - 4, 13, left < 2.5 ? p.bad : p.warn, rx < s.x ? 'right' : 'left', { w: 900, sp: 0.8 });
   }
   if (m.phase === 'home' && !m.result) {
-    txt(ctx, 'CLEAR!', 180, 330, 20, p.green, 'center', { w: 900, sp: 3, a: Math.min(1, m.homeT * 5) });
-    txt(ctx, m.homeT >= HOME.fly1 ? 'SAMPLE SECURED' : 'RETURNING TO MOTHERSHIP…', 180, 354, 8, m.homeT >= HOME.fly1 ? '#FFC94D' : p.fg, 'center', { w: 700, sp: 1.5, a: Math.min(1, m.homeT * 3) });
+    txt(ctx, 'CLEAR!', 250, 290, 20, p.green, 'center', { w: 900, sp: 3, a: Math.min(1, m.homeT * 5) });
+    txt(ctx, m.homeT >= HOME.fly1 ? 'SAMPLE SECURED' : 'RETURNING TO MOTHERSHIP…', 250, 314, 8, m.homeT >= HOME.fly1 ? '#FFC94D' : p.fg, 'center', { w: 700, sp: 1.5, a: Math.min(1, m.homeT * 3) });
   }
   if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
   if (m.shotT > 0) {   // 弾丸発射の閃光
     ctx.save(); ctx.globalAlpha = Math.min(1, m.shotT); const fg = ctx.createRadialGradient(m.touchX, GY, 1, m.touchX, GY, 40 * (1.3 - m.shotT * 0.3));
     fg.addColorStop(0, 'rgba(255,240,200,0.95)'); fg.addColorStop(1, 'rgba(255,200,120,0)'); ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(m.touchX, GY, 40, 0, 7); ctx.fill(); ctx.restore();
   }
-  if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+  if (m.waiting && !m.result) txt(ctx, 'TAP TO RELEASE', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
   if (m.toastT > 0 && !m.waiting && !m.phase) txt(ctx, m.toast, 180, 236, 10, m.toastBad ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
   if (!m.result && s.fuel <= 0.0001) txt(ctx, 'OUT OF FUEL  ' + Math.max(0, STRAND_S - m.strandT).toFixed(1), 180, 256, 11, p.bad, 'center', { w: 800, sp: 1.2 });
   if (!m.result && m.started) {
@@ -443,8 +445,8 @@ function onDrawFront(ctx, l) {
 
 sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=5df40a826e').then((mod) => mod.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=8f50df4329').then((mod) => mod.install(lab));
 window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
-window.__tag = { GY, TGT, CLEAR, ROCKS, ENTRY, REBOUND, SETTLE, HOME, PERFECT, TOUCH_TILT, LINE_Y, terrain, footSlopeDeg };
+window.__tag = { GY, TGT, CLEAR, ROCKS, ENTRY, MS, RELEASE_LOCK, REBOUND, SETTLE, HOME, PERFECT, TOUCH_TILT, LINE_Y, terrain, footSlopeDeg };
 lab.start();
