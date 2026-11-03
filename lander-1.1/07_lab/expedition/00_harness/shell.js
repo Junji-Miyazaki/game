@@ -199,6 +199,10 @@ export function createShell(cfg) {
     y += 12; txt(ctx, '★ 条件', L, y, 11, p.dim, 'left', { w: 700 }); y += 20;
     brief.stars.forEach((t, i) => { txt(ctx, '★' + (i + 1), L, y, 12, '#FFC94D', 'left', { w: 700 }); txt(ctx, t, L + 28, y, 12, p.fg, 'left', { w: 500 }); y += 21; });
     y += 12; txt(ctx, brief.tip, L, y, 12, p.green, 'left', { w: 600 });
+    if (brief.fact) {   // 実際の天体と探査の話（1〜3 行。幅は約 276px に収める）
+      y += 21; ctx.fillStyle = rgba(p.fg, 0.18); ctx.fillRect(L, y - 7, c.w - 44, 1);
+      for (const f of brief.fact) { txt(ctx, f, L, y, 10, rgba(p.fg, 0.72), 'left', { w: 500 }); y += 13.5; }
+    }
     const b = BTN.skip, on = skipOn();   // NEXT TIME SKIP チェック
     rr(ctx, b.x, b.y, b.w, b.h, 12); ctx.fillStyle = rgba(p.fg, on ? 0.12 : 0.04); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.35); ctx.lineWidth = 1; ctx.stroke();
     rr(ctx, b.x + 14, b.y + 15, 14, 14, 3); ctx.strokeStyle = on ? p.green : rgba(p.fg, 0.5); ctx.stroke();

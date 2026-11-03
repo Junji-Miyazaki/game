@@ -3,7 +3,7 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=9cd86c60ea';
+import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from '../00_harness/shell.js?v=812922afc6';
 
 const SITE = { x: 190, y: 512, w: 64, id: 'site' };
 const SAMPLE_S = 2.0;          // 採取に必要な静止秒数
@@ -18,7 +18,7 @@ export { LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus };
 export const missionScore = (fuelPct, grade, lives, sec = 1e9) => sh.score(baseScore(fuelPct, grade), lives, sec);
 const LIVES0 = 3;
 const sh = createShell({ id: 'sample_return', expLabel: 'EXPEDITION 01', title: 'PHOBOS SAMPLE RETURN',
-  brief: { title: 'PHOBOS — SAMPLE RETURN', sub: '往復', goals: ['・タップで母船から切り離す', '・採取地点に着地して2秒じっと待つ', '・母船の点線の枠に戻ればクリア'], stars: ['帰還', '燃料30%以上で帰還', '採取地点に PERFECT 着地'], tip: 'コツ：逆向きに噴射すると止まれる' },
+  brief: { title: 'PHOBOS — SAMPLE RETURN', sub: '往復', goals: ['・タップで母船から切り離す', '・採取地点に着地して2秒じっと待つ', '・母船の点線の枠に戻ればクリア'], stars: ['帰還', '燃料30%以上で帰還', '採取地点に PERFECT 着地'], tip: 'コツ：逆向きに噴射すると止まれる', fact: ['フォボス：火星の 2 つの衛星のうち大きいほう。', '日本の探査機 MMX が試料を持ち帰る計画を進めている。'] },
   options: [{ key: 'atSite', label: 'START AT SITE', btn: 'site', param: 'site' }, { key: 'nearDock', label: 'START NEAR DOCK', btn: 'near', param: 'near' }] });
 try { localStorage.removeItem('lander11.exp.sample_return.attempts'); } catch (e) { /* 旧キー（試行回数）の掃除 */ }
 const sess = sh.sess;   // menu → practice | mission（lab.reset をまたいで保持）

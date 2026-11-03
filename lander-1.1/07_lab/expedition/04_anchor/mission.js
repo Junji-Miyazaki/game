@@ -7,10 +7,10 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=9cd86c60ea';
+import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=812922afc6';
 
 const sh = createShell({ id: 'anchor', expLabel: 'EXPEDITION 04', title: 'COMET 67P ANCHOR',
-  brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が舞うとガスが来る。押されたら逆へ噴く' } });
+  brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が舞うとガスが来る。押されたら逆へ噴く', fact: ['67P はチュリュモフ・ゲラシメンコ彗星の番号。', '2014 年、着陸機フィラエは銛が作動せず、', '跳ねて日陰に止まった。'] } });
 const sess = sh.sess;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 524;                               // くびれの底の高さ（目標はここで平ら）

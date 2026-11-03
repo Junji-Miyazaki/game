@@ -4,10 +4,10 @@
 import { createLab, W, H, C } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba, rr } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=9cd86c60ea';
+import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from '../00_harness/shell.js?v=812922afc6';
 
 const sh = createShell({ id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN',
-  brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す' } });
+  brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す', fact: ['エンケラドゥス：土星の衛星。南極の割れ目から', '氷の粒を噴き出している。', '2005 年に探査機カッシーニが発見した。'] } });
 const sess = sh.sess;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 520;                        // 地表の基準高さ

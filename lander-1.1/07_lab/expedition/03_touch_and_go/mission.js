@@ -6,10 +6,10 @@
 import { createLab, W, H, C, footSlopeDeg } from '../00_harness/harness.js?v=b436b67e4f';
 import { txt, rgba } from '../../../02_src/art.js?v=0f569522c3';
 import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=9cd86c60ea';
+import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=812922afc6';
 
 const sh = createShell({ id: 'touch_and_go', expLabel: 'EXPEDITION 03', title: 'RYUGU TOUCH-AND-GO',
-  brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる' } });
+  brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる', fact: ['リュウグウ：はやぶさ2 が 2019 年に 2 回', 'タッチダウンし、2020 年に試料を地球へ届けた小惑星。'] } });
 const sess = sh.sess;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 524;                               // 地表の基準高さ（目標の空き地はこの高さで平ら）
