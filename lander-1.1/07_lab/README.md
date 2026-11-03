@@ -10,6 +10,7 @@
 | expedition #1 | http://localhost:4177/07_lab/expedition/01_sample_return/index.html | EXPEDITION 試作（共通試作台・共通シェル 00_harness + #1 PHOBOS SAMPLE RETURN）。詳細は expedition/README.md。 |
 | expedition #2 | http://localhost:4177/07_lab/expedition/02_geyser_run/index.html | #2 ENCELADUS GEYSER RUN（噴気の力・試料・パッドのロック）。同上。 |
 | expedition #3 | http://localhost:4177/07_lab/expedition/03_touch_and_go/index.html | #3 RYUGU TOUCH-AND-GO（ほぼ無重力・弧を描く地表・左上から流れ込んで開始 → 8 px/s 以下で触れて採取 → 静止 → LIFT OFF の合図から 9 秒で 104px 上の線へ → 自動で真上へ去る。母艦なし）。同上。 |
+| expedition #4 | http://localhost:4177/07_lab/expedition/04_anchor/index.html | #4 67P ANCHOR（ほぼ無重力・二つの塊のくびれの底へ降りる・壁から横向きのガスが周期的に噴く → 10 px/s 以下で触れると錨が刺さって成功、速すぎると大きく跳ね返る）。同上。 |
 
 solar_map の診断用 URL パラメータ: `?style=A|B|C|D（既定D）&skip=1（イントロ省略）&view=jupiter（ズーム状態で開始）&reduce=1&faces=1`。
 ブラウザコンソールから `window.__lab`（`gotoSys('saturn')`, `selectBody('io')`, `state` など）で操作可能。
