@@ -9,7 +9,7 @@
 | boot_backdrop | http://localhost:4177/07_lab/boot_backdrop/index.html | v1.1 起動画面(TAP TO BEGIN)の背景比較（A 星の視差+流れ星+ロゴ呼吸 / B 暗い太陽系+スクリム）。`?v=A|B&reduce=1`、上部ボタンで切替・reduce motion。 |
 | expedition #1 | http://localhost:4177/07_lab/expedition/01_sample_return/index.html | EXPEDITION 試作（共通試作台・共通シェル 00_harness + #1 PHOBOS SAMPLE RETURN）。詳細は expedition/README.md。 |
 | expedition #2 | http://localhost:4177/07_lab/expedition/02_geyser_run/index.html | #2 ENCELADUS GEYSER RUN（噴気の力・試料・パッドのロック）。同上。 |
-| expedition #3 | http://localhost:4177/07_lab/expedition/03_touch_and_go/index.html | #3 RYUGU TOUCH-AND-GO（ほぼ無重力・母艦から切り離し → 8 px/s 以下で触れて採取 → 静止 → LIFT OFF の合図から 9 秒で 104px 上の線へ → 母艦へ自動帰還）。同上。 |
+| expedition #3 | http://localhost:4177/07_lab/expedition/03_touch_and_go/index.html | #3 RYUGU TOUCH-AND-GO（ほぼ無重力・弧を描く地表・左上から流れ込んで開始 → 8 px/s 以下で触れて採取 → 静止 → LIFT OFF の合図から 9 秒で 104px 上の線へ → 自動で真上へ去る。母艦なし）。同上。 |
 
 solar_map の診断用 URL パラメータ: `?style=A|B|C|D（既定D）&skip=1（イントロ省略）&view=jupiter（ズーム状態で開始）&reduce=1&faces=1`。
 ブラウザコンソールから `window.__lab`（`gotoSys('saturn')`, `selectBody('io')`, `state` など）で操作可能。

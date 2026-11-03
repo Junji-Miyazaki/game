@@ -1,5 +1,5 @@
 // テスト専用（?test=1 のときだけ mission.js が読み込む）。window.__auto に検証用の自動操縦を置く。
-// 流れ: waiting(母艦に係留。タップで切り離し) → 岩より上の高さで目標の真上へ → 降下して touchV で接触 → 自動静止（操作なし）→ LIFT OFF で直立・全推力 → 線を越えて CLEAR → 自動帰還 → 勝利。
+// 流れ: waiting(タップで開始) → 岩より上の高さで目標の真上へ → 降下して touchV で接触 → 自動静止（操作なし）→ LIFT OFF で直立・全推力 → 線を越えて CLEAR → 真上へ去る演出 → 勝利。
 // 注意: 姿勢と横速度は「理想的に」直接セットする（流れ・判定・燃料の確認用であって人間の腕前の保証ではない）。
 // 接触（採取・跳ね返り・岩の押し返し）・離脱の制限時間は理想化せず本物の物理で動く。
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -79,11 +79,12 @@ export function install(lab) {
     fresh(); place(TGT.x, 1, 0, 2); until(() => lab.m.sampled); step(T.SETTLE.s + lab.params.leave - 0.2); ok.leave = [!lab.m.result]; step(0.4);
     ok.leave.push(lab.m.result === 'lose', lab.m.reason === 'CAUGHT IN DEBRIS');
     fresh(); place(TGT.x, 1, 0, 2); until(() => lab.m.sampled); lab.script = (l) => { l.ship.angle = 0; l.ship.omega = 0; return { main: true }; };
-    until(() => lab.m.phase === 'home', 12); lab.script = () => ({});
-    // 線を越えた: CLEAR（時間はここで止まる）→ 自動帰還の演出中は結果を出さない → 演出の後に勝利
-    const t1 = lab.m.flyT; ok.home = [lab.m.phase === 'home', !lab.m.result, !!lab.m.final, lab.controlsEnabled === false]; step(1);
-    ok.home.push(lab.m.flyT === t1, !lab.m.result, lab.state === 'play'); until(() => lab.m.result, T.HOME.s + 0.5);
-    ok.home.push(lab.m.result === 'win', lab.hideShip === true, lab.m.final.t === t1);
+    until(() => lab.m.phase === 'away', 12); lab.script = () => ({});
+    // 線を越えた: CLEAR（時間はここで止まる）→ 去る演出中は結果を出さない（機体は真上へ）→ 画面の外へ消えてから勝利
+    const t1 = lab.m.flyT, x1 = lab.ship.x, y1 = lab.ship.y; ok.away = [lab.m.phase === 'away', !lab.m.result, !!lab.m.final, lab.controlsEnabled === false]; step(1);
+    ok.away.push(lab.m.flyT === t1, !lab.m.result, lab.state === 'play', lab.ship.y < y1 - 60, Math.abs(lab.ship.x - x1) < 12, Math.abs(lab.ship.angle) < 1); until(() => lab.hideShip, 3);
+    ok.away.push(lab.hideShip === true, !lab.m.result, lab.ship.y < -40); until(() => lab.m.result, T.AWAY.s + 0.5);
+    ok.away.push(lab.m.result === 'win', lab.m.final.t === t1);
     ok.leave.push(lab.m.result === 'win', lab.m.final && lab.m.final.leaveT < lab.params.leave - 1.5, lab.m.final && lab.m.final.s2 && lab.m.final.s3);
     // 失敗: 画面外 / 燃料 0 のまま 2 秒
     fresh(); Object.assign(lab.ship, { x: 100, y: -40, vx: 0, vy: -5 }); step(0.2); ok.fail = [lab.m.reason === 'LEFT THE AREA'];
@@ -104,7 +105,7 @@ export function install(lab) {
     ok.formula = [A.mult(3) === 1, A.mult(2) === 0.8, A.mult(1) === 0.6, A.timeBonus(0) === 1500, A.timeBonus(30) === 1200, A.timeBonus(150) === 0];
     Fw.begin('menu'); ok.menu = [lab.m.menu === true, B.practice.h >= 44, B.mission.h >= 44];
     localStorage.removeItem(A.KEY_S); Fw.tap(...center(B.practice)); ok.menu.push(Fw.sess.mode === 'practice' && lab.m.waiting === true, Fw.sess.brief === 'start'); Fw.tap(180, 320); ok.menu.push(!Fw.sess.brief && lab.m.waiting === true);
-    step(4); ok.wait = [lab.m.waiting === true, lab.m.flyT === 0, !lab.m.result, lab.frozen === true]; Fw.tap(180, 320); ok.wait.push(lab.controlsEnabled === false); step(1); ok.wait.push(!lab.m.waiting, lab.m.flyT > 0.9, lab.ship.y > T.ENTRY.y + 10, lab.ship.x > T.ENTRY.x + 4, lab.controlsEnabled === true);   // 切り離し: 少しの間は操作なし → 右下へ流れる
+    step(4); ok.wait = [lab.m.waiting === true, lab.m.flyT === 0, !lab.m.result, lab.frozen === true]; Fw.tap(180, 320); ok.wait.push(lab.controlsEnabled === true); step(1); ok.wait.push(!lab.m.waiting, lab.m.flyT > 0.9, lab.ship.y > T.ENTRY.y + 10, lab.ship.x > T.ENTRY.x + 4);   // 開始: すぐ操作でき、右下へ流れる
     lab.reset(); kd(' '); ok.wait.push(!lab.m.waiting); lab.reset(); kd('ArrowUp'); ok.wait.push(!lab.m.waiting); lab.reset();
     kill(); step(1); ok.pracFail = [lab.m.result === 'lose', lab.m.lifeLost === false, lab.m.failed === false, Fw.sess.lives === 3];
     const pw = run({ mode: 'practice' }); ok.pracWin = [pw.result === 'win', pw.final.practice === true, get() === null, getT() === null];
