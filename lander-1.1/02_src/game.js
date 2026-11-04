@@ -18,7 +18,9 @@ import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
 import { i18nBind, i18nLang, i18nInverted } from './core/i18n.js';
 import { HtCard, htSkipGet } from './howto.js';
-import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawShieldBubble, drawShieldButton, SHIELD_BTN_SMALL, drawShieldBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine } from './art.js';
+import { Pod, podPlan, podRng, podUnlock } from './pods.js';
+import { xpDrawAccepted, XP_ACC } from './expscene.js';
+import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawShieldBubble, drawShieldButton, SHIELD_BTN_SMALL, drawShieldBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine , txt } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -487,7 +489,7 @@ export class Game extends Scene {
     this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
   }
-  blocksBack() { return !!this._ht || championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
+  blocksBack() { return !!this._ht || !!this._podShow || championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -611,8 +613,42 @@ export class Game extends Scene {
     }
 
     this._keys = this._keys || { left: false, right: false, up: false };
+    this._podInit();
     this._saveCheckpoint();
   }
+
+  // ---- ミッション POD（pods.js / PLAN §7m）。本編だけ（main.js が engine.pods = true）。ボーナス・デバッグ操作のランは対象外 ----
+  _podInit() {
+    this._pod = null; this._podGot = null; this._podWait = 0; this._podToastT = 0;
+    if (!this.engine.pods || this.bonus || this._isDebugRun() || !this._body) return;
+    let pilot = ''; try { const pr = getActiveProfile(this.engine.storage); pilot = (pr && pr.name) || ''; } catch (_) { pilot = ''; }
+    this._podRnd = this._podRnd || podRng((Date.now() ^ (this.stage * 2654435761)) >>> 0);
+    const plan = podPlan(this.engine.storage, pilot, this._body.id, this._podRnd);
+    if (plan) { this._pod = new Pod(plan.id, this._podRnd); this._podPilot = pilot; }
+  }
+  _podTick(dt) {
+    if (this._podToastT > 0) this._podToastT = Math.max(0, this._podToastT - dt);
+    if (this._pod && this.state === 'play') {
+      const alt = this._terrainYAt(this.x) - (this.y + 16);
+      if (this._pod.step(dt, { x: this.x, y: this.y }, alt) === 'got') {
+        podUnlock(this.engine.storage, this._podPilot, this._pod.id);
+        this._podGot = this._pod.id; this._podWait = 1.1; this._podToastT = 2.6;
+        try { musicOf(this.engine).sfx.power(); } catch (_) { /* 音なし */ }
+      }
+    }
+    // ステージが終わったら（成功・墜落とも）少し待って全画面演出。ゲームオーバー画面には重ねない（解放は保存済み・マップで正体が分かる）
+    if (this._podGot && !this._live() && this.state !== 'hold' && this.state !== 'tip' && this.state !== 'debug') {
+      if (this.state === 'gameover') { this._podGot = null; return; }
+      this._podWait -= dt;
+      if (this._podWait <= 0) { this._podShow = { id: this._podGot, t: 0, stamped: false }; this._podGot = null; this._duck(true); }
+    }
+  }
+  _podShowTick(dt) {
+    const s = this._podShow; s.t += dt;
+    if (!s.stamped && s.t >= XP_ACC.stamp) { s.stamped = true; try { musicOf(this.engine).playJingle({ tier: 2, perfect: true }); } catch (_) { /* 音なし */ } }
+    if (s.t >= XP_ACC.auto) this._podClose();
+  }
+  _podClose() { this._podShow = null; this._duck(false); this._overlayAt = (typeof performance !== 'undefined' ? performance.now() : 0); }
 
   // ステージ開始ごとに保存（ボーナス中は「ボーナスの次のステージ」を保存＝再開がボーナスの途中にならない）。デバッグ中/デバッグ操作ランは保存しない
   _saveCheckpoint() {
@@ -642,6 +678,12 @@ export class Game extends Scene {
   onInput(action, data) {
     if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（タイトルへ戻らない・下の画面に貫通しない）
     if (this._ht) { this._ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
+    if (this._podShow) {   // MISSION ACCEPTED: 印の前のタップは印まで飛ばす、印の後のタップで閉じる（キーのオートリピートは無視）
+      if ((action === 'tap' || action === 'confirm') && !(data && data.repeat)) {
+        if (this._podShow.t >= XP_ACC.close) this._podClose(); else if (this._podShow.t >= 0.8) this._podShow.t = Math.max(this._podShow.t, XP_ACC.stamp - 0.05);
+      }
+      return;
+    }
     const confirm = (action === 'tap' || action === 'confirm');
     if (RESULT_STATES.indexOf(this.state) >= 0) {
       if (data && data.repeat) return;                                            // キーのオートリピートは進行に使わない
@@ -1104,6 +1146,7 @@ export class Game extends Scene {
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
+    if (this._podShow) { this._podShowTick(dt); return; }   // MISSION ACCEPTED 表示中: 全て凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
       this._tipT -= dt; if (this._tipT <= 0) this._endTip();
@@ -1112,6 +1155,7 @@ export class Game extends Scene {
     if (this.state === 'hold') { if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt); return; }   // MISSION HOLD: 全て凍結
     this._clock = (this._clock || 0) + dt;
     if (this._shakeT > 0) this._shakeT = Math.max(0, this._shakeT - dt);
+    this._podTick(dt);
 
     if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
 
@@ -1924,6 +1968,7 @@ export class Game extends Scene {
   render(ctx) {
     this._renderMain(ctx);
     if (this._ht) this._ht.render(ctx);
+    if (this._podShow) xpDrawAccepted(ctx, this._podShow, this._clock);
   }
   _renderMain(ctx) {
     if (this.state === 'debug') {
@@ -2016,6 +2061,8 @@ export class Game extends Scene {
     if (!sel) this._drawGuide(ctx, true);   // 暗闇の天体(水星)は誘導線を暗闇の上に描く（フェアにする）
     if (body && body.id === 'mercury') drawHorizonGlare(ctx);
     if (!sel && this._rg && (this.state === 'play' || this.state === 'grounded')) this._drawRings(ctx);
+    if (this._pod && this._live()) this._pod.draw(ctx, this._clock);
+    if (this._podToastT > 0) txt(ctx, 'MISSION POD RECEIVED', W / 2, 150, 10, P().warn, 'center', { w: 800, sp: 2, a: Math.min(1, this._podToastT / 0.4, (2.6 - this._podToastT) / 0.15) });
 
     // 着陸パッドのビーコン（霧の上に常に描く）
     this._drawBeacon(ctx);

@@ -1,10 +1,13 @@
 // LANDER BETA v1.1 L3 — 太陽系マップ（CHOOSE START の置き換え）。07_lab/solar_map の D 案（B の計器表示 + C のキャラの動きを弱めたもの）を移植。
-// 入力・描画・状態はすべてこのクラスの中。タイトル（title.js）は list/summary を渡し、input() の戻り値 {start}/{close} だけを見る。
+// 入力・描画・状態はすべてこのクラスの中。タイトル（title.js）は list/summary を渡し、input() の戻り値 {start}/{close}/{expedition} だけを見る。
+// EXPEDITION（v1.1 beta.8）: 下段の列と惑星系のカードが探査ミッションの入口。未解放は「???」の影、解放済みは天体の絵と★。
+//   解放後に初めてマップを開くと「???」が光って正体が現れる（o.markSeen で記録）。★の合計はツアー 48 + 探査 12（未発見も分母に入れる）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて SM_ / SolarMap で始める。
 import { P } from './core/palette.js';
 import { drawShip, drawAstronaut, drawFlag, rgba, mixHex } from './art.js';
 import { BODIES, BODY_COUNT, STAGES_PER_BODY, stageInfo } from './bodies.js';
 import { drawMissionPatch, patchCount } from './patches.js';
+import { xpDrawBody } from './expdata.js';
 
 const SM_W = 360, SM_H = 640, SM_TAU = Math.PI * 2;
 const SM_MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -222,7 +225,11 @@ export class SolarMap {
     this.reduce = !!o.reduce;
     this.patches = Array.isArray(o.patches) ? o.patches : [];   // patchesSummary(): [{ id, name, earned }]
     this.PT = Object.create(null); for (const x of this.patches) if (x && x.id) this.PT[x.id] = !!x.earned;
-    this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）
+    this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）。探査ミッションは閲覧専用でも開始できる
+    this.exp = o.exp && Array.isArray(o.exp.list) ? o.exp : { list: [], stars: 0, max: 0 };
+    this.XP = Object.create(null); for (const e of this.exp.list) this.XP[e.id] = e;
+    this.reveal = Object.create(null);   // id → 正体を見せる演出の開始時刻（NOW）
+    { let i = 0; for (const e of this.exp.list) if (e.unlocked && !e.seen) { this.reveal[e.id] = (this.reduce ? 0.2 : 1.7) + 0.5 * (i++); if (typeof o.markSeen === 'function') o.markSeen(e.id); } }
     let mx = 1; for (const e of this.list) if (e.stage > mx) mx = e.stage;
     this.maxStage = mx;
     this.opt = new Map(); for (const e of this.list) this.opt.set(e.stage, e);
@@ -277,16 +284,17 @@ export class SolarMap {
   patchTotal() { return { n: patchCount(this.patches), of: this.patches.length || BODY_COUNT }; }
   flagged(id) { const ids = SM_SYS[id] ? SM_SYS[id].bodies : [id]; return ids.some((i) => this.B[i].any); }
   sysLocked(sys) { return SM_SYS[sys].bodies.every((i) => this.B[i].locked); }
-  sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } return { st, mx }; }
+  sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } for (const e of this.exp.list) if (e.sys === sys) { st += e.stars; mx += 3; } return { st, mx }; }
+  expTotal() { return { st: this.sum.totalStars + (this.exp.stars || 0), mx: this.sum.maxStars + (this.exp.max || 0) }; }
   backRect() { return { x: 4, y: 4, w: 86, h: 50 }; }
   startRect() { return { x: 16, y: 536, w: 328, h: 52 }; }
   chipRects() { const n = SM_SYS_ORDER.length, w = 46, g = 4, x0 = (SM_W - n * w - (n - 1) * g) / 2; return SM_SYS_ORDER.map((id, i) => ({ x: x0 + i * (w + g), y: 500, w, h: 44, sys: id })); }
-  soonRects() { return SM_SOON.map((nm, i) => ({ x: 2 + i * 60, y: 572, w: 56, h: 56, soon: nm })); }
+  soonRects() { const n = this.exp.list.length, w = 76, x0 = (SM_W - n * w - (n - 1) * 8) / 2; return this.exp.list.map((e, i) => ({ x: x0 + i * (w + 8), y: 572, w, h: 60, id: e.id })); }
   cards(sys) {
     const out = []; let y = 300;
     for (const id of SM_SYS[sys].bodies) { out.push({ kind: 'body', id, y, h: 70 }); y += 76; }
     if (SM_SYS[sys].bonus) { out.push({ kind: 'bonus', y, h: 48 }); y += 54; }
-    if (SM_SYS[sys].soon) out.push({ kind: 'soon', soon: SM_SYS[sys].soon, y, h: 48 });
+    for (const e of this.exp.list) if (e.sys === sys) { out.push({ kind: 'exp', id: e.id, y, h: 48 }); y += 54; }
     return out;
   }
   pipRect(card, i) { return { x: 168 + i * 54, y: card.y + 35 - 26, w: 48, h: 52 }; }
@@ -425,7 +433,7 @@ export class SolarMap {
       });
       if (best) return { kind: 'sys', sys: best };
       for (const r of this.chipRects()) if (SM_hit(r, x, y)) return { kind: 'sys', sys: r.sys };
-      for (const r of this.soonRects()) if (SM_hit(r, x, y)) return { kind: 'soon', soon: r.soon };
+      for (const r of this.soonRects()) if (SM_hit(r, x, y)) return { kind: 'exp', id: r.id };
       return null;
     }
     if (z === 1) {
@@ -438,7 +446,7 @@ export class SolarMap {
         const ps = this.pips(c.id);
         for (let i = 0; i < ps.length; i++) if (SM_hit(this.pipRect(c, i), x, y)) return { kind: 'pip', id: c.id, stage: ps[i].stage, state: ps[i].state };
       }
-      for (const c of cards) if (x >= 16 && x <= 344 && y >= c.y && y <= c.y + c.h) return c.kind === 'body' ? { kind: 'card', id: c.id } : { kind: c.kind, soon: c.soon };
+      for (const c of cards) if (x >= 16 && x <= 344 && y >= c.y && y <= c.y + c.h) return c.kind === 'body' ? { kind: 'card', id: c.id } : { kind: c.kind, soon: c.soon, id: c.id };
       for (const id of SM_SYS[this.camSys].bodies) {
         const q = this._zmPos(id, this.camSys); if (!q) continue;
         if (Math.hypot(x - q.x, y - q.y) < Math.max(q.r + 6, 24)) return { kind: 'body', id };
@@ -517,7 +525,12 @@ export class SolarMap {
       case 'astro': { const modes = this.reduce ? ['wave'] : ['jump', 'spin', 'wave']; this._poke(modes[this.mascot.n++ % modes.length]); this.sfx(); return null; }
       case 'back': return this._back();
       case 'sys': this.sfx(); this._gotoSys(h.sys); return null;
-      case 'soon': this.sfx(); this._say(h.soon + ' · COMING SOON v1.2'); return null;
+      case 'exp': {   // 探査ミッション: 解放済みなら開始、未解放ならどこで POD が出るか
+        const e = this.XP[h.id]; if (!e) return null;
+        this.sfx();
+        if (e.unlocked) return { expedition: e.id };
+        const b = BODIES.find((q) => q.id === e.body); this._say('??? · FIND THE MISSION POD · ' + (b ? b.name : '')); return null;
+      }
       case 'bonus': case 'hub': this._say('TERRA · BONUS MISSIONS APPEAR DURING A RUN'); return null;
       case 'start': return this._start();
       case 'orbit': this._orbit(h.id, h.d); return null;
@@ -705,7 +718,7 @@ export class SolarMap {
     SM_T(c, 'SOLAR SYSTEM', 96, 28, 13, p.fg, 'left', 600, 3);
     SM_T(c, 'BETA v1.1', SM_W - 16, 28, 9, p.warn, 'right', 700, 1.5);
     SM_T(c, 'SELECT DESTINATION', 96, 45, 9.5, p.dim, 'left', 500, 1.5);
-    SM_T(c, '★ ' + sum.totalStars + ' / ' + sum.maxStars, SM_W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6);
+    { const et = this.expTotal(); SM_T(c, '★ ' + et.st + ' / ' + et.mx, SM_W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6); }
     { const pt = this.patchTotal(); SM_T(c, 'PATCH ' + pt.n + '/' + pt.of, SM_W - 16, 62, 8, pt.n >= pt.of && pt.of > 0 ? p.warn : rgba(p.fg, 0.6), 'right', 500, 0.8); }
     const mm = Math.floor(this.T / 60) % 60, ss = Math.floor(this.T) % 60;
     SM_T(c, 'T+ 00:' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 16, 62, 8, rgba(p.mid, 0.7), 'left', 500, 1);
@@ -719,8 +732,31 @@ export class SolarMap {
       else SM_T(c, '★' + ss2.st + '/' + ss2.mx, r.x + r.w / 2, r.y + 34, 8.5, this.ringState(id) === 'gold' ? p.warn : rgba(p.fg, 0.7), 'center', 500, 0.3);
       c.restore();
     });
-    SM_T(c, 'COMING SOON · v1.2', SM_W / 2, 566, 8.5, p.dim, 'center', 600, 2.2);
-    SM_SOON.forEach((nm, i) => { const x = 30 + i * 60, y = 593; SM_silhouette(c, nm, x, y); SM_T(c, nm, x, y + 22, 7, rgba(p.dim, 0.9), 'center', 500, 0.5); });
+    if (this.exp.list.length) {
+      SM_T(c, 'EXPEDITION   ★ ' + this.exp.stars + ' / ' + this.exp.max, SM_W / 2, 566, 8.5, this.exp.list.some((e) => e.unlocked) ? p.warn : p.dim, 'center', 600, 2.2);
+      this.soonRects().forEach((r) => { const e = this.XP[r.id]; this._drawExpMark(c, e, r.x + r.w / 2, r.y + 21, 1, true); });
+    }
+    c.restore();
+  }
+  // 探査ミッションの印（下段・カード共通）。未解放 = 影と ???、解放済み = 天体の絵と名前と★。解放直後の初回は光って正体が現れる
+  _drawExpMark(c, e, x, y, k, label) {
+    const p = P(), r0 = this.reveal[e.id], age = r0 === undefined ? 9 : this.NOW - r0, R = 11 * k;
+    const shown = e.unlocked && age >= 0.7, u = SM_clamp((age - 0.7) / 0.5);
+    if (e.unlocked && age >= 0 && age < 1.6) {   // 光る輪と閃光
+      const q = SM_clamp(age / 1.6); c.strokeStyle = rgba(p.warn, 0.9 * (1 - q)); c.lineWidth = 1.4; c.beginPath(); c.arc(x, y, R + 4 + q * 26, 0, SM_TAU); c.stroke();
+      if (age < 0.8) SM_sparkle(c, x, y, R * 1.6 * Math.sin(age / 0.8 * Math.PI), 1, '#fff');
+    }
+    if (!shown) {
+      SM_silhouette(c, e.name, x, y, k);
+      if (label) SM_T(c, '???', x, y + 26 * k, 8, rgba(p.dim, 0.95), 'center', 600, 2);
+      return;
+    }
+    c.save(); c.globalAlpha *= r0 === undefined ? 1 : u;
+    xpDrawBody(c, e.id, x, y, R, this.T);
+    if (label) {
+      SM_T(c, e.name, x, y + 26 * k, 8, p.fg, 'center', 600, 1);
+      SM_T(c, '★' + e.stars + '/3', x, y + 37 * k, 7.5, e.stars >= 3 ? p.warn : rgba(p.fg, 0.7), 'center', 500, 0.3);
+    }
     c.restore();
   }
   _bodyDeco(c, id, x, y, r) {   // 完了リング・旗・選択パルス
@@ -790,6 +826,22 @@ export class SolarMap {
   }
   _drawCard(c, card) {
     const p = P(), x = 16, w = 328, h = card.h, y = card.y, cy = y + h / 2;
+    if (card.kind === 'exp') {   // 探査ミッションのカード
+      const e = this.XP[card.id]; if (!e) return;
+      c.save();
+      SM_rrect(c, x, y, w, h, 3); c.strokeStyle = rgba(e.unlocked ? p.warn : p.dim, e.unlocked ? 0.75 : 0.5); c.lineWidth = 0.8; if (!e.unlocked) c.setLineDash([3, 3]); c.stroke(); c.setLineDash([]);
+      this._drawExpMark(c, e, x + 28, cy, 1.05, false);
+      const shown = e.unlocked && (this.reveal[e.id] === undefined || this.NOW - this.reveal[e.id] >= 0.7);
+      if (shown) {
+        SM_T(c, e.name, x + 56, cy - 2, 12, p.fg, 'left', 600, 1.5); SM_T(c, 'EXPEDITION 0' + e.no + ' · ' + e.title, x + 56, cy + 12, 7.5, rgba(p.dim, 0.95), 'left', 500, 0.6);
+        for (let k = 0; k < 3; k++) { SM_starPath(c, x + 262 + k * 13, cy - 6, 4.5, 2); if (k < e.stars) { c.fillStyle = p.warn; c.fill(); } else { c.strokeStyle = rgba(p.dim, 0.7); c.lineWidth = 0.7; c.stroke(); } }
+        SM_T(c, 'PLAY ›', x + w - 12, cy + 12, 8.5, p.warn, 'right', 700, 1.2);
+      } else {
+        const b = BODIES.find((q) => q.id === e.body);
+        SM_T(c, '???', x + 56, cy - 2, 12, p.dim, 'left', 600, 3); SM_T(c, 'MISSION POD · ' + (b ? b.name : '') + ' STAGES', x + 56, cy + 12, 8, rgba(p.dim, 0.9), 'left', 500, 1);
+      }
+      c.restore(); return;
+    }
     if (card.kind === 'soon' || card.kind === 'bonus') {
       c.save(); c.globalAlpha *= 0.7;
       SM_rrect(c, x, y, w, h, 3); c.strokeStyle = rgba(p.dim, 0.5); c.lineWidth = 0.8; c.setLineDash([3, 3]); c.stroke(); c.setLineDash([]);

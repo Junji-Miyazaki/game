@@ -6,8 +6,8 @@
 | 対象 | 場所 | 公開 URL | 状態 |
 |---|---|---|---|
 | v1.0（公開中・安定版） | `../lander/` | https://junji-miyazaki.github.io/game/lander/index.html | 致命的不具合のみ修正 |
-| BETA v1.1（主開発） | `lander-1.1/` | https://junji-miyazaki.github.io/game/lander-1.1/index.html | 版 `1.1.0-beta.7`、表示「BETA v1.1」 |
-| EXPEDITION 試作（本実装は v1.1 に追加、§7s） | `lander-1.1/07_lab/expedition/` | 同 URL 配下 `07_lab/expedition/…` | #1 PHOBOS・#2 ENCELADUS・#3 RYUGU 試作済み |
+| BETA v1.1（主開発） | `lander-1.1/` | https://junji-miyazaki.github.io/game/lander-1.1/index.html | 版 `1.1.0-beta.8`、表示「BETA v1.1」 |
+| EXPEDITION（beta.8 で本編に組み込み、§7t） | 正本 `lander-1.1/02_src/expedition/`、試作ページ `07_lab/expedition/` | 本編はマップから / 試作は `07_lab/expedition/…` | #1〜#4。解放はツアー中の POD |
 | 中継 Worker（両版共通の正本） | `../lander/06_server/ranking-worker.js` | https://lander-ranking.euler057721.workers.dev | ユーザーが Cloudflare で貼り替え |
 
 フォルダ規約: `00_log/ 01_docs/ 02_src/ 03_assets/ 04_tests/ 05_legacy/ 06_server/ 07_lab/`。
@@ -44,7 +44,12 @@
 - 起動画面: UPDATE INFORMATION（JA/EN、日付つき、スクロール）、太陽系の背景、Hall of Fame（WORLD TOP 5、ファンファーレ）、太陽系マップ（MAP ボタン）。
 - ランキング: v1.1 専用ボード（`top-v1.1.json`）、名前は版共通、任意の PIN（4〜6 桁）。
 
+## 4b. beta.8（2026-11-04）EXPEDITION を本編へ（PLAN §7t）
+- マップの下段と惑星系のカードが入口。未解放は ???、POD を取ると解放。POD: 月=RYUGU・火星=PHOBOS・タイタン=ENCELADUS・冥王星=67P、30%→50%→70%→必ず。ステージ後に MISSION ACCEPTED。★は x/60。記録はパイロットごと・端末内。説明カード JA/EN。全解放 `?expedition=all`。
+- テスト: 既存 31 + `04_tests/p24expedition.mjs`（87 項目）= 32 ファイル全通過。試作ページの autotest も通る。
+
 ## 5. ユーザーの実機確認待ち
+- beta.8: POD の見つけやすさ・取りやすさ（漂う距離 50〜80px、磁石 46px）、MISSION ACCEPTED の長さ（約 4 秒、タップで先へ）、マップの ??? と正体が現れる演出、ミッションから MAP で戻る流れ、英語の説明カード。
 - SHIELD: 音と見え方は 2026-11-04 ユーザー OK。PC のクリック誤発動は未報告。
 - INVERTED 操作の感触、冥王星の滑りと中継着陸の所要時間（自動操縦の中央値 約 270 秒）、Hall of Fame の音。
 - 起動画面の HOW TO PLAY ボタンの押しやすさ（画面最下部）。
@@ -54,7 +59,7 @@
 
 ## 6. 次の候補（未着手・ユーザー判断待ち）
 - **v1.2 は作らない**（2026-10-29 ユーザー決定、PLAN §7s）。EXPEDITION は v1.1 の同じアドレスに追加し、保存・ツアーのランキング・名前と PIN を継続する。
-- EXPEDITION: #1〜#4 の試作は済み。#4 の試遊の反応を見てから、#5 以降（TRITON の再設計など）を選ぶ。67P の POD の置き場所は未決（案：冥王星ステージ）。本実装はツアー中のミッション POD で解放＋天体が大写しになる演出、ミッション別の最速タイムの世界ランキング（Worker の更新とユーザーの再デプロイが必要）、lab の説明カードの JA/EN。
+- EXPEDITION: #1〜#4 は本編に組み込み済み（beta.8）。次は #5 以降（TRITON の再設計など）か、ミッション別の世界ランキング（Worker の更新とユーザーの再デプロイが必要）。
 - 保留: TERRA ROVER のパッド速度の調整（必要なら）。
 
 ## 7. 既知の注意点

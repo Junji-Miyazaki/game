@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.7';
+const APP_VERSION = '1.1.0-beta.8';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -5477,7 +5477,18 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // 起動画面（TAP TO BEGIN）の UPDATE INFORMATION。新しい順。先頭の version が APP_VERSION（NEW 表示・seenVersion の基準）。
 // items = 日本語の短文（22字まで）、itemsEn = 同じ順の英語（34字まで）。表示は設定の言語（i18nLang）で切り替える（既定は navigator.language）。
 const WHATSNEW_ENTRIES = [
-  { version: APP_VERSION, date: '2026.10.28', items: [
+  { version: APP_VERSION, date: '2026.11.04', items: [
+    '探査ミッション EXPEDITION を追加',
+    'ツアー中の POD を取ると解放',
+    '解放した探査はマップから挑戦',
+    '★は全部で60個に（探査12個）',
+  ], itemsEn: [
+    'New: EXPEDITION missions',
+    'Grab a MISSION POD on tour to unlock',
+    'Play unlocked ones from the MAP',
+    '60 stars in all (12 in EXPEDITION)',
+  ] },
+  { version: '1.1.0-beta.7', date: '2026.10.28', items: [
     'シールドゲージ：20秒で満タン、ボタンで発動',
     '緊急シールド（2回墜落）は廃止',
     'ゲージはボタンの中、満タンで点滅',
@@ -5568,9 +5579,2628 @@ function whatsnewItems(en, lang) {
 const WHATSNEW = { version: WHATSNEW_ENTRIES[0].version, entries: WHATSNEW_ENTRIES };
 
 
+// ---- 02_src/expedition/harness.js ----
+const EXP_harness = (function () {
+// EXPEDITION 共通の物理と描画（本編 v1.1 と 07_lab の試作ページの共通の正本）。使い方は 07_lab/expedition/README.md。
+// game.js の Game クラスには依存しない。物理定数だけ game.js から写している（値を変えたら下の「定数」を合わせる）。
+// 描画（機体・操作ボタン・文字）は 02_src/art.js を読み取り専用で import する。
+// 2 つの動かし方:
+//   試作ページ: createLab({ host: { canvas }, ... }) → 自前のループ・画面サイズ・指の入力・調整パネル（URL の値が優先）
+//   本編: createLab({ host: { embed: { ctx, canvas, touches(), audioCtx() } }, ... }) → ループと入力は本編のシーンが回す
+//         （lab.step(dt) / lab.draw() / lab.tap(x, y) / lab.destroy()）。URL の値・パネルは使わない
+// バンドル（build.js）ではこのファイルは EXP_harness という閉じたスコープに入る。
+
+const W = 360;
+const H = 640;
+
+// ---- 定数（game.js v1.1 beta.4 から複製） ----------------------------------------------------
+const C = {
+  FUEL_RATE_MAIN: 5, FUEL_RATE_RCS: 1.5,
+  SAFE:   { vy: 22, vx: 13, ang: 28, om: 20 },     // この内側 = 即成功
+  BOUNCE: { vy: 45, vx: 26, ang: 55, om: 40 },     // この外側 = 即クラッシュ。間 = バウンス
+  BOUNCE_RESTITUTION: 0.28, BOUNCE_FRICTION: 0.55, BOUNCE_ANG_DAMP: 0.45, BOUNCE_SETTLE_VY: 6,
+  LAND_SLOPE_DEG: 10, FOOT_HALF: 18, LEG_Y: 16,    // 足元 = 機体中心 + 16
+  LIFTOFF_MIN_S: 0.2, LIFTOFF_VY: -7,
+  CONTROL_Y_MIN: 52, ZONE_L_MAX: 120, ZONE_R_MIN: 240,
+};
+const GRADE_TABLE = [
+  { g: 'PERFECT', vy: 8,  vx: 3,  ang: 5,  om: 6,  dist: 0.25 },
+  { g: 'S',       vy: 12, vx: 6,  ang: 10, om: 10, dist: 0.5 },
+  { g: 'A',       vy: 16, vx: 9,  ang: 17, om: 14, dist: 0.75 },
+  { g: 'B',       vy: 20, vx: 11, ang: 24, om: 17, dist: 1.0 },
+];
+const GRADE_ORDER = ['C', 'B', 'A', 'S', 'PERFECT'];
+function gradeFor(m) {
+  for (const r of GRADE_TABLE) if (m.vy <= r.vy && m.vx <= r.vx && m.ang <= r.ang && m.om <= r.om && m.dist <= r.dist) return r.g;
+  return 'C';
+}
+const gradeRank = (g) => GRADE_ORDER.indexOf(g);
+
+// ---- 調整できる値（URL パラメータ名 = key） --------------------------------------------------
+const PARAM_DEFS = [
+  { key: 'g',      label: 'gravity px/s²',     min: 0,   max: 1,    step: 0.005, def: 0.25 },
+  { key: 'thrust', label: 'main thrust px/s²', min: 0,   max: 12,   step: 0.1,   def: 5.2 },
+  { key: 'ang',    label: 'angular accel °/s²', min: 5,  max: 90,   step: 1,     def: 28 },
+  { key: 'damp',   label: 'ang damping ×/s',   min: 0.3, max: 1,    step: 0.01,  def: 0.82 },
+  { key: 'drag',   label: 'drag 1/s',          min: 0,   max: 1,    step: 0.01,  def: 0 },
+  { key: 'fuel',   label: 'fuel max',          min: 20,  max: 300,  step: 5,     def: 100 },
+  { key: 'rcs',    label: 'RCS drift px/s²',   min: 0,   max: 6,    step: 0.1,   def: 2.5 },
+];
+
+const wrap180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+
+function terrainYOn(pts, x) {
+  x = Math.max(0, Math.min(W, x));
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    if (x <= b.x) { const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x); return a.y + (b.y - a.y) * t; }
+  }
+  return pts[pts.length - 1].y;
+}
+function footSlopeDeg(pts, x) {
+  const xl = Math.max(0, x - C.FOOT_HALF), xr = Math.min(W, x + C.FOOT_HALF);
+  if (xr - xl < 1) return 0;
+  return Math.abs(Math.atan2(terrainYOn(pts, xr) - terrainYOn(pts, xl), xr - xl)) * 180 / Math.PI;
+}
+
+/**
+ * createLab(opts) -> lab
+ *  canvas      : <canvas>
+ *  title       : パネル見出し
+ *  defaults    : { g, thrust, ang, damp, drag, fuel, rcs, vec, ...extra } ミッション既定（URL が優先）
+ *  extraParams : [{key,label,min,max,step,def}] ミッション固有のスライダー（lab.params[key] / URL ?key=）
+ *  world       : { terrain:[{x,y}...] (x=0..360 昇順), pads:[{x,y,w,id}] }
+ *  start(lab)  : リセット時に lab.ship を初期化（lab.resetShip({x,y,vx,vy,angle})）。ミッション状態もここで初期化
+ *  onUpdate(lab, dt)               : 物理の後に毎フレーム
+ *  onTouchdown(lab, info)          : 接地成功。info={kind:'pad'|'ground', pad, m:{vy,vx,ang,om,dist}, grade}
+ *  onCrash(lab, reason, detail)    : harness 由来のクラッシュ（lab.crash() でも呼べる）
+ *  onLiftoff(lab)                  : 接地 → 離陸
+ *  onDrawBack(ctx, lab) / onDrawFront(ctx, lab) : 機体の背面 / 前面（HUD はこちら）
+ *  onTap(lab, x, y)                : lab.controlsEnabled=false のときの画面タップ（RETRY など）
+ *  forces(lab, dt)                 : （任意）play 中の物理サブステップ(1/120s)ごとの外力。推力の後・重力の前に呼ばれる
+ *  velRef(lab) -> {vx,vy}|null     : 速度ベクトル矢印の基準系（例 母船に対する相対速度）
+ *  telemetryExtra(lab) -> string   : パネルのテレメトリ末尾に足す
+ */
+// 片付けできるイベント登録（本編ではシーンを出るときに外す）
+function trackOn(host) {
+  const offs = host.offs || (host.offs = []);
+  return (t, type, fn, o) => { t.addEventListener(type, fn, o); offs.push(() => t.removeEventListener(type, fn, o)); };
+}
+function createLab(opts) {
+  const host = opts.host || {}, emb = host.embed || null;
+  const canvas = emb ? emb.canvas : (host.canvas || opts.canvas);
+  const ctx = emb ? emb.ctx : canvas.getContext('2d');
+  const on = trackOn(host);
+  const q = new URLSearchParams(emb ? '' : location.search);
+  const defs = PARAM_DEFS.concat(opts.extraParams || []).map((d) => {
+    const def = (opts.defaults && opts.defaults[d.key] != null) ? opts.defaults[d.key] : d.def;
+    return Object.assign({}, d, { def });
+  });
+  const params = {};
+  for (const d of defs) {
+    const v = q.has(d.key) ? parseFloat(q.get(d.key)) : d.def;   // 本編は URL を読まない（既定値のみ）
+    params[d.key] = Number.isFinite(v) ? v : d.def;
+  }
+  params.vec = q.has('vec') ? q.get('vec') !== '0' : ((opts.defaults && opts.defaults.vec != null) ? !!opts.defaults.vec : true);
+
+  const lab = {
+    ctx, canvas, params, defs, opts, world: opts.world, host, embedded: !!emb,
+    ship: null, input: { left: false, main: false, right: false },
+    state: 'play',           // 'play' | 'grounded' | 'crashed'
+    t: 0, clock: 0,          // t=リセットからの経過(シミュレーション秒) / clock=ページ通算(演出用)
+    frozen: false,           // true の間は機体の物理を止める（ドッキング後など）
+    controlsEnabled: true,   // false の間は入力を機体に渡さず、タップを onTap に渡す
+    hideShip: false, showHud: opts.hud !== false,
+    groundedT: 0, lastTouch: null, crashInfo: null,
+    particles: [],
+    script: null,            // テスト用: (lab)=>({left,main,right})。設定すると実入力の代わりに使う
+    scale: 1,
+  };
+
+  // ---------------------------------------------------------------- 状態
+  lab.resetShip = (s) => {
+    lab.ship = Object.assign({ x: 180, y: 100, vx: 0, vy: 0, angle: 0, omega: 0, fuel: params.fuel }, s || {});
+    if (s && s.fuel == null) lab.ship.fuel = params.fuel;
+    lab.state = 'play'; lab.groundedT = 0; lab._bouncing = false; lab._contact0 = null;
+    lab.thr = { main: false, left: false, right: false };
+  };
+  lab.reset = () => {
+    lab.t = 0; lab.frozen = false; lab.controlsEnabled = true; lab.hideShip = false;
+    lab.lastTouch = null; lab.crashInfo = null; lab.particles.length = 0; lab._bouncing = false;
+    lab.resetShip();
+    if (opts.start) opts.start(lab);
+  };
+  lab.crash = (reason, detail) => {
+    if (lab.state === 'crashed') return;
+    lab.state = 'crashed'; lab.crashInfo = { reason, detail: detail || '' };
+    lab.thr = { main: false, left: false, right: false };
+    burst(lab.ship.x, lab.ship.y, 26, '#FFB547');
+    if (opts.onCrash) opts.onCrash(lab, reason, detail || '');
+  };
+  const burst = (x, y, n, col) => {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = 10 + Math.random() * 50;
+      lab.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5 + Math.random() * 0.7, col, r: 1 + Math.random() * 1.6 });
+    }
+  };
+  const dust = (x, y, strength) => {
+    for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 6; i++)
+      lab.particles.push({ x: x + side * (9 + Math.random() * 8), y: y - 1, vx: side * (6 + Math.random() * 22) * strength, vy: -(2 + Math.random() * 9) * strength, life: 0.5 + Math.random() * 0.5, col: '#9a9aa4', r: 1.2 + Math.random() * 1.2 });
+  };
+  lab.burst = burst;
+
+  // ---------------------------------------------------------------- 入力
+  const keys = { left: false, main: false, right: false };
+  const pointers = new Map();
+  const keyMap = (e, v) => {
+    const k = e.key;
+    if (k === 'ArrowLeft' || k === 'a') keys.left = v;
+    else if (k === 'ArrowRight' || k === 'd') keys.right = v;
+    else if (k === 'ArrowUp' || k === 'w' || k === ' ') keys.main = v;
+    else return false;
+    return true;
+  };
+  on(window, 'keydown', (e) => {
+    if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (e.key === 'r' || e.key === 'R') { lab.reset(); e.preventDefault(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (keyMap(e, true)) e.preventDefault();
+  });
+  on(window, 'keyup', (e) => { if (keyMap(e, false)) e.preventDefault(); });
+  on(window, 'blur', () => { keys.left = keys.main = keys.right = false; pointers.clear(); });
+  // 画面のタップ（操作ボタンが無効の間 = メニュー・結果・開始待ちなど）。本編はシーンの tap から呼ぶ
+  lab.tap = (x, y) => { if (!lab.controlsEnabled && opts.onTap) opts.onTap(lab, x, y); };
+  if (!emb) {
+    const toLogical = (e) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) / lab.scale, y: (e.clientY - r.top) / lab.scale }; };
+    on(canvas, 'pointerdown', (e) => {
+      const p = toLogical(e); pointers.set(e.pointerId, p);
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      lab.tap(p.x, p.y);
+      e.preventDefault();
+    });
+    on(canvas, 'pointermove', (e) => { if (pointers.has(e.pointerId)) pointers.set(e.pointerId, toLogical(e)); });
+    const up = (e) => { pointers.delete(e.pointerId); };
+    on(canvas, 'pointerup', up); on(canvas, 'pointercancel', up);
+    on(canvas, 'contextmenu', (e) => e.preventDefault());
+  }
+
+  const readInput = () => {
+    let l = keys.left, m = keys.main, r = keys.right;
+    const pts = emb ? (emb.touches ? emb.touches() || [] : []) : pointers.values();
+    for (const p of pts) {
+      if (!(p.y > C.CONTROL_Y_MIN)) continue;
+      if (p.x < C.ZONE_L_MAX) l = true; else if (p.x > C.ZONE_R_MIN) r = true; else m = true;
+    }
+    if (lab.script) { const s = lab.script(lab) || {}; l = !!s.left; m = !!s.main; r = !!s.right; }
+    if (!lab.controlsEnabled) { l = m = r = false; }
+    lab.input = { left: l, main: m, right: r };
+  };
+
+  // ---------------------------------------------------------------- 物理
+  const terrainY = (x) => terrainYOn(lab.world.terrain, x);
+  lab.terrainY = terrainY;
+  lab.padAt = (x) => (lab.world.pads || []).find((p) => x >= p.x && x <= p.x + p.w) || null;
+
+  const stepPhysics = (dt) => {
+    const s = lab.ship, pr = params, inp = lab.input;
+    if (lab.state === 'crashed' || lab.frozen) { lab.thr = { main: false, left: false, right: false }; return; }
+    if (lab.state === 'grounded') {
+      s.vx = 0; s.vy = 0; s.omega = 0;
+      s.angle *= Math.pow(0.02, dt);
+      s.y = terrainY(s.x) - C.LEG_Y;
+      lab.groundedT += dt;
+      lab.thr = { main: false, left: false, right: false };
+      if (s.fuel > 0 && inp.main && lab.groundedT >= C.LIFTOFF_MIN_S) {
+        lab.state = 'play'; s.vy = C.LIFTOFF_VY; s.y -= 2; lab._contact0 = null; lab._bouncing = false;
+        if (opts.onLiftoff) opts.onLiftoff(lab);
+      }
+      return;
+    }
+    const fuelOk = s.fuel > 0;
+    lab.thr = { main: inp.main && fuelOk, left: inp.left && fuelOk, right: inp.right && fuelOk };
+    // RCS（左ボタン = 時計回り + 右ドリフト。game.js と同じ向き）
+    if (inp.left && s.fuel > 0)  { s.omega += pr.ang * dt; s.vx += pr.rcs * dt;  s.fuel = Math.max(0, s.fuel - C.FUEL_RATE_RCS * dt); }
+    if (inp.right && s.fuel > 0) { s.omega -= pr.ang * dt; s.vx -= pr.rcs * dt;  s.fuel = Math.max(0, s.fuel - C.FUEL_RATE_RCS * dt); }
+    s.omega *= Math.pow(pr.damp, dt);
+    s.angle = wrap180(s.angle + s.omega * dt);
+    if (inp.main && s.fuel > 0) {
+      const rad = s.angle * Math.PI / 180;
+      s.vx += Math.sin(rad) * pr.thrust * dt;
+      s.vy += -Math.cos(rad) * pr.thrust * dt;
+      s.fuel = Math.max(0, s.fuel - C.FUEL_RATE_MAIN * dt);
+    }
+    if (opts.forces) opts.forces(lab, dt);   // ミッション固有の外力（噴気など）。s.vx/vy/omega を直接変えてよい。play 中の物理サブステップごと
+    s.vy += pr.g * dt;
+    if (pr.drag > 0) { s.vx -= s.vx * pr.drag * dt; s.vy -= s.vy * pr.drag * dt; }
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    checkCollision();
+  };
+
+  const worst = (m, lim, keys2) => {   // 限界に対する超過率が最大の項目
+    let best = null, r = 0;
+    for (const k of keys2) { const q2 = m[k] / lim[k]; if (q2 > r) { r = q2; best = k; } }
+    const nm = { vy: 'DESCENT', vx: 'DRIFT', ang: 'TILT', om: 'SPIN' }, un = { vy: 'px/s', vx: 'px/s', ang: '°', om: '°/s' };
+    return best ? `${nm[best]} ${m[best].toFixed(0)}${un[best]} (limit ${lim[best]})` : '';
+  };
+
+  const checkCollision = () => {
+    const s = lab.ship, pts = lab.world.terrain;
+    const ty = terrainY(s.x);
+    if (s.y + C.LEG_Y < ty) return;
+    const pad = lab.padAt(s.x);
+    const m = { vy: Math.abs(s.vy), vx: Math.abs(s.vx), ang: Math.abs(wrap180(s.angle)), om: Math.abs(s.omega) };
+    if (!lab._bouncing && !lab._contact0) lab._contact0 = Object.assign({}, m);
+    const B = C.BOUNCE, S = C.SAFE;
+    if (!pad) {
+      if (m.ang > B.ang) return lab.crash('TIPPED OVER', `TILT ${m.ang.toFixed(0)}° (limit ${B.ang})`);
+      if (m.vy > B.vy || m.vx > B.vx || m.om > B.om) return lab.crash('HARD IMPACT', worst(m, B, ['vy', 'vx', 'om']));
+      const sl = footSlopeDeg(pts, s.x);
+      if (sl > C.LAND_SLOPE_DEG) return lab.crash('STEEP GROUND', `SLOPE ${sl.toFixed(0)}° (limit ${C.LAND_SLOPE_DEG})`);
+    }
+    const land = () => {
+      const c0 = lab._contact0 || m;
+      const dist = pad ? Math.abs(s.x - (pad.x + pad.w / 2)) / (pad.w / 2) : 9;
+      const mm = { vy: c0.vy, vx: c0.vx, ang: c0.ang, om: c0.om, dist };
+      lab.state = 'grounded'; lab.groundedT = 0; lab._bouncing = false; lab._contact0 = null;
+      s.vx = 0; s.vy = 0; s.omega = 0; s.y = terrainY(s.x) - C.LEG_Y;
+      dust(s.x, ty, pad ? 1 : 0.6);
+      const info = { kind: pad ? 'pad' : 'ground', pad, m: mm, grade: pad ? gradeFor(mm) : null };
+      lab.lastTouch = info;
+      if (opts.onTouchdown) opts.onTouchdown(lab, info);
+    };
+    if (lab._bouncing) {
+      if (m.vy <= C.BOUNCE_SETTLE_VY && m.vx <= S.vx && m.ang <= S.ang) return land();
+      if (m.vy > B.vy || m.vx > B.vx || m.ang > B.ang) return lab.crash('HARD IMPACT', worst(m, B, ['vy', 'vx', 'ang']));
+    }
+    if (m.vy <= S.vy && m.vx <= S.vx && m.ang <= S.ang && m.om <= S.om) return land();
+    if (m.vy <= B.vy && m.vx <= B.vx && m.ang <= B.ang && m.om <= B.om) {   // バウンス
+      s.y = ty - C.LEG_Y;
+      const tilt = 1 + (m.ang / B.ang) * 0.5;
+      s.vy = -Math.abs(s.vy) * C.BOUNCE_RESTITUTION * tilt; s.vx *= C.BOUNCE_FRICTION; s.omega *= C.BOUNCE_ANG_DAMP;
+      s.omega += -s.angle * 0.15;
+      lab._bouncing = true; dust(s.x, ty, 0.5);
+      return;
+    }
+    lab.crash('HARD IMPACT', worst(m, B, ['vy', 'vx', 'ang', 'om']));
+  };
+
+  const SUB = 1 / 120;
+  lab.step = (dt) => {   // 1フレーム分（描画なし）。テストの simulate() もこれを使う
+    lab.clock += dt;
+    readInput();
+    let left = dt;
+    while (left > 1e-9) { const h = Math.min(SUB, left); stepPhysics(h); left -= h; lab.t += (lab.state === 'crashed' ? 0 : h); }
+    for (const p of lab.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+    lab.particles = lab.particles.filter((p) => p.life > 0);
+    if (opts.onUpdate) opts.onUpdate(lab, dt);
+  };
+  // テスト用: controller(lab)->{left,main,right} で seconds 秒進める（untilFn が真になったら止める）
+  lab.simulate = (seconds, controller, untilFn) => {
+    const old = lab.script; if (controller) lab.script = controller;
+    const n = Math.round(seconds * 60);
+    for (let i = 0; i < n; i++) { lab.step(1 / 60); if (untilFn && untilFn(lab)) break; }
+    lab.script = old;
+  };
+
+  // ---------------------------------------------------------------- 描画
+  const fuelPct = () => 100 * lab.ship.fuel / params.fuel;
+  lab.fuelPct = fuelPct;
+
+  function drawVector() {
+    const s = lab.ship, ref = opts.velRef ? opts.velRef(lab) : null;
+    const vx = s.vx - (ref ? ref.vx : 0), vy = s.vy - (ref ? ref.vy : 0);
+    const sp = Math.hypot(vx, vy), p = P();
+    ctx.save();
+    // 機首方向の細い点線（逆噴射の向き合わせ用）
+    const rad = s.angle * Math.PI / 180;
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = rgba(p.fg, 0.35); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(s.x + Math.sin(rad) * 18, s.y - Math.cos(rad) * 18); ctx.lineTo(s.x + Math.sin(rad) * 44, s.y - Math.cos(rad) * 44); ctx.stroke();
+    ctx.setLineDash([]);
+    if (sp > 1.5) {
+      const len = Math.min(64, 6 + sp * 1.6), ux = vx / sp, uy = vy / sp;
+      const x0 = s.x + ux * 20, y0 = s.y + uy * 20, x1 = s.x + ux * (20 + len), y1 = s.y + uy * (20 + len);
+      ctx.strokeStyle = p.mid; ctx.fillStyle = p.mid; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      const ax = -uy, ay = ux;
+      ctx.beginPath(); ctx.moveTo(x1 + ux * 6, y1 + uy * 6); ctx.lineTo(x1 + ax * 4, y1 + ay * 4); ctx.lineTo(x1 - ax * 4, y1 - ay * 4); ctx.closePath(); ctx.fill();
+      if (ref) txt(ctx, 'REL ' + sp.toFixed(0), x1 + ux * 8 - 12, y1 + uy * 8 - 4, 7, p.mid, 'left', { w: 600 });
+    }
+    ctx.restore();
+  }
+
+  // 標準の小さな HUD: 燃料バー + 速度(DESCENT/DRIFT/TILT/SPIN)。安全範囲を超えると琥珀/赤
+  lab.drawHud = (x = 12, y = 12) => {
+    const s = lab.ship, p = P(), fp = Math.max(0, fuelPct());
+    txt(ctx, 'FUEL', x, y, 7, p.dim, 'left', { w: 600, sp: 1.2 });
+    ctx.fillStyle = rgba(p.fg, 0.12); ctx.fillRect(x + 28, y + 2, 84, 5);
+    ctx.fillStyle = fp < 20 ? p.bad : p.warn; ctx.fillRect(x + 28, y + 2, 84 * fp / 100, 5);
+    txt(ctx, fp.toFixed(0) + '%', x + 118, y, 8, fp < 20 ? p.bad : p.fg, 'left', { w: 600 });
+    const items = [['DESC', Math.abs(s.vy), C.SAFE.vy, ''], ['DRIFT', Math.abs(s.vx), C.SAFE.vx, ''], ['TILT', Math.abs(wrap180(s.angle)), C.SAFE.ang, '°'], ['SPIN', Math.abs(s.omega), C.SAFE.om, '']];
+    items.forEach((it, i) => {
+      const bx = x + i * 52, v = it[1], col = v <= it[2] ? p.green : (v <= it[2] * 1.9 ? p.warn : p.bad);
+      txt(ctx, it[0], bx, y + 14, 6.5, p.dim, 'left', { w: 600, sp: 1 });
+      txt(ctx, v.toFixed(0) + it[3], bx, y + 22, 11, col, 'left', { w: 700 });
+    });
+  };
+
+  lab.draw = () => {
+    const p = P(), s = lab.ship;
+    ctx.save();
+    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
+    if (opts.onDrawBack) opts.onDrawBack(ctx, lab);
+    drawGround();
+    if (opts.onDrawMid) opts.onDrawMid(ctx, lab);
+    if (!lab.hideShip && lab.state !== 'crashed') {
+      drawShip(ctx, s.x, s.y, s.angle, lab.thr.main, lab.thr.left, lab.thr.right, lab.clock);
+      if (params.vec && lab.state === 'play' && !lab.frozen) drawVector();
+    }
+    for (const q2 of lab.particles) { ctx.globalAlpha = Math.max(0, Math.min(1, q2.life * 1.6)); ctx.fillStyle = q2.col; ctx.beginPath(); ctx.arc(q2.x, q2.y, q2.r, 0, Math.PI * 2); ctx.fill(); }
+    ctx.globalAlpha = 1;
+    if (opts.onDrawFront) opts.onDrawFront(ctx, lab);
+    if (lab.showHud) lab.drawHud();
+    drawControls(ctx, lab.input.left, lab.input.main, lab.input.right, 0, lab.clock);
+    ctx.restore();
+  };
+
+  function drawGround() {
+    const pts = lab.world.terrain;
+    if (opts.drawTerrain) { opts.drawTerrain(ctx, lab); return; }
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (const q2 of pts) ctx.lineTo(q2.x, q2.y);
+    ctx.lineTo(W, H); ctx.closePath();
+    ctx.fillStyle = '#3a3c46'; ctx.fill();
+    ctx.strokeStyle = '#8a90a0'; ctx.lineWidth = 1.2; ctx.stroke();
+  }
+
+  // 後片付け（本編: シーンを出るとき）。登録したイベントを外し、揺れの transform を戻す
+  lab.destroy = () => { for (const f of (host.offs || []).splice(0)) { try { f(); } catch (_) { /* ignore */ } } try { if (canvas && canvas.style) canvas.style.transform = ''; } catch (_) { /* ignore */ } lab.destroyed = true; };
+  if (emb) { lab.start = () => lab.reset(); return lab; }   // 本編: ループ・画面サイズ・パネルはシーン側
+
+  // ---------------------------------------------------------------- 画面サイズ（engine.js と同じ「見た目 360x640 を中央にフィット」）
+  const resize = () => {
+    const dpr = window.devicePixelRatio || 1, vw = window.innerWidth, vh = window.innerHeight;
+    lab.scale = Math.min(vw / W, vh / H);
+    const cw = Math.floor(W * lab.scale), ch = Math.floor(H * lab.scale);
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    canvas.width = Math.floor(cw * dpr); canvas.height = Math.floor(ch * dpr);
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+  };
+  on(window, 'resize', resize); resize();
+
+  // ---------------------------------------------------------------- デバッグパネル（HTML）
+  buildPanel(lab, defs, opts);
+
+  // ---------------------------------------------------------------- ループ
+  let last = performance.now();
+  const loop = (now) => {
+    let dt = (now - last) / 1000; last = now;
+    if (dt > 0.1) dt = 0.1;
+    lab.step(dt); lab.draw();
+    requestAnimationFrame(loop);
+  };
+  lab.start = () => { lab.reset(); last = performance.now(); requestAnimationFrame(loop); };
+  window.__lab = lab;
+  return lab;
+}
+
+// =====================================================================================
+function buildPanel(lab, defs, opts) {
+  const st = document.createElement('style');
+  st.textContent = `
+  html,body{margin:0;height:100%;background:#020306;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;touch-action:none;background:#06080E}
+  #dbgBtn{position:fixed;top:6px;right:6px;z-index:20;background:#0D111Bcc;color:#9aa4b8;border:1px solid #2a3348;border-radius:12px;padding:5px 10px;font:11px -apple-system,sans-serif}
+  #dbg{position:fixed;top:34px;right:6px;z-index:19;width:236px;max-height:calc(100vh - 44px);overflow:auto;background:#0D111Bee;color:#c9d2e3;border:1px solid #2a3348;border-radius:10px;padding:8px 10px;font:11px -apple-system,"Hiragino Sans",sans-serif;display:none;touch-action:pan-y}
+  #dbg.open{display:block}
+  #dbg h4{margin:0 0 6px;font-size:11px;color:#63D8C9;letter-spacing:.08em}
+  #dbg label{display:block;margin:5px 0 0;color:#8f9ab0}
+  #dbg label b{float:right;color:#ECE6D8;font-weight:600}
+  #dbg input[type=range]{width:100%;margin:2px 0 0;touch-action:pan-y}
+  #dbg .row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  #dbg button{background:#162033;color:#ECE6D8;border:1px solid #2a3348;border-radius:8px;padding:5px 9px;font:inherit}
+  #dbg pre{margin:8px 0 0;padding:6px;background:#06080E;border-radius:6px;color:#7FE3B0;font:10.5px ui-monospace,Menlo,monospace;white-space:pre;line-height:1.35}`;
+  document.head.appendChild(st);
+  const btn = document.createElement('button'); btn.id = 'dbgBtn'; btn.textContent = 'DEBUG'; document.body.appendChild(btn);
+  const box = document.createElement('div'); box.id = 'dbg'; document.body.appendChild(box);
+  btn.addEventListener('click', () => box.classList.toggle('open'));
+  if (window.innerWidth >= 760 || new URLSearchParams(location.search).get('dbg') === '1') box.classList.add('open');
+
+  const h = document.createElement('h4'); h.textContent = (opts.title || 'LAB') + ' · TUNING'; box.appendChild(h);
+  const sync = () => {   // URL に既定と違う値だけ書く
+    const q = new URLSearchParams(location.search);
+    for (const d of defs) { if (Math.abs(lab.params[d.key] - d.def) > 1e-9) q.set(d.key, String(+lab.params[d.key].toFixed(4))); else q.delete(d.key); }
+    const vdef = (opts.defaults && opts.defaults.vec != null) ? !!opts.defaults.vec : true;
+    if (lab.params.vec !== vdef) q.set('vec', lab.params.vec ? '1' : '0'); else q.delete('vec');
+    history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : ''));
+  };
+  const fmt = (v, step) => (+v).toFixed(step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0);
+  const inputs = {};
+  for (const d of defs) {
+    const lb = document.createElement('label'); const val = document.createElement('b'); val.textContent = fmt(lab.params[d.key], d.step);
+    lb.textContent = d.label; lb.appendChild(val);
+    const r = document.createElement('input'); r.type = 'range'; r.min = d.min; r.max = d.max; r.step = d.step; r.value = lab.params[d.key];
+    r.addEventListener('input', () => {
+      lab.params[d.key] = parseFloat(r.value); val.textContent = fmt(r.value, d.step); sync();
+      if (d.key === 'fuel') lab.ship.fuel = Math.min(lab.ship.fuel, lab.params.fuel);   // 現在値は上限に丸めるだけ（リセットで満タン）
+    });
+    r.addEventListener('keydown', (e) => e.stopPropagation());
+    box.appendChild(lb); box.appendChild(r); inputs[d.key] = { r, val, d };
+  }
+  const vl = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = lab.params.vec;
+  cb.addEventListener('change', () => { lab.params.vec = cb.checked; sync(); });
+  vl.appendChild(cb); vl.appendChild(document.createTextNode(' velocity vector + nose line')); box.appendChild(vl);
+  const row = document.createElement('div'); row.className = 'row';
+  const mk = (t, fn) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('click', (e) => { fn(); b.blur(); }); row.appendChild(b); };
+  mk('RESET (R)', () => lab.reset());
+  mk('DEFAULTS', () => {
+    for (const d of defs) { lab.params[d.key] = d.def; inputs[d.key].r.value = d.def; inputs[d.key].val.textContent = fmt(d.def, d.step); }
+    lab.params.vec = (opts.defaults && opts.defaults.vec != null) ? !!opts.defaults.vec : true; cb.checked = lab.params.vec; sync(); lab.reset();
+  });
+  mk('COPY LINK', () => { sync(); const u = location.href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).catch(() => prompt('URL', u)); });
+  box.appendChild(row);
+  const pre = document.createElement('pre'); box.appendChild(pre);
+  setInterval(() => {
+    if (!box.classList.contains('open') || !lab.ship) return;
+    const s = lab.ship, alt = lab.terrainY(s.x) - (s.y + C.LEG_Y);
+    let o = `state ${lab.state}${lab.frozen ? ' (frozen)' : ''}\nt     ${lab.t.toFixed(1)} s\nvx    ${s.vx.toFixed(1)}\nvy    ${s.vy.toFixed(1)}\nangle ${s.angle.toFixed(1)}°\nomega ${s.omega.toFixed(1)}\nfuel  ${s.fuel.toFixed(1)} (${lab.fuelPct().toFixed(0)}%)\nalt   ${alt.toFixed(0)} px`;
+    if (opts.telemetryExtra) o += '\n' + opts.telemetryExtra(lab);
+    pre.textContent = o;
+  }, 100);
+}
+
+return { W, H, C, GRADE_TABLE, GRADE_ORDER, gradeFor, gradeRank, PARAM_DEFS, terrainYOn, footSlopeDeg, trackOn, createLab };
+})();
+
+// ---- 02_src/expedition/shell.js ----
+const EXP_shell = (function () {
+// EXPEDITION 共通ミッションシェル（本編 v1.1 と 07_lab の試作ページの共通の正本）。#1 で承認済みの枠組みを抜き出したもの。
+// メニュー（PRACTICE / MISSION）・3 ライフ（×1.0/0.8/0.6）・タイムトライアル（max(0,1500−10×秒)）・
+// ★の和集合 + 最高スコア + ベストタイム・結果 / 失敗画面・HUD 右上・足元の傾斜マーカー。
+// 記録の保存先: 試作ページは localStorage 'lander11.exp.<id>.*'。本編は cfg.store（パイロットごと、02_src/expedition/store.js）。
+// 説明カードは JA/EN（設定の言語 i18nLang）。本編では cfg.onExit があり、メニュー左上に BACK（マップへ戻る）を出す。
+// ミッション固有の状態は lab.m に置く。シェルが読む lab.m のフィールド:
+//   m.menu / m.result('win'|'lose') / m.resultT / m.lifeLost / m.failed / m.final / m.reason / m.detail
+// 使い方: const sh = createShell({ id, expLabel:'EXPEDITION 02', title, options:[{key,label,btn,param}], host, store, onExit });
+// バンドル（build.js）ではこのファイルは EXP_shell という閉じたスコープに入る。
+const { W, C, footSlopeDeg, trackOn } = EXP_harness;
+
+const LIVES0 = 3;
+const LIFE_MULT = { 3: 1.0, 2: 0.8, 1: 0.6 };
+const lifeMult = (lives) => LIFE_MULT[lives] || 0.6;
+const TIME_BONUS_MAX = 1500;   // 時間ボーナス = max(0, 1500 − 10×秒)
+const TIME_BONUS_RATE = 10;
+const timeBonus = (sec) => Math.max(0, Math.round(TIME_BONUS_MAX - TIME_BONUS_RATE * sec));
+const LIFE_LOST_S = 1.6;
+const DRIFT_S = 5.0;     // 燃料切れ: 流れる秒数
+const DRIFT_SPIN = 10;   // 燃料切れ: ゆっくり回る角速度 °/s
+const HINT_Y = 84;   // ヒント行（右上のタイマー / チェック / PRACTICE・ライフ行の下。重ならない高さ）
+const mmss = (t) => { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(1).padStart(4, '0'); };
+
+function star(ctx, cx, cy, r, on) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? r * 0.42 : r; ctx.lineTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2); }
+  ctx.closePath(); ctx.fillStyle = on ? '#FFC94D' : 'rgba(255,255,255,0.1)'; ctx.fill(); ctx.strokeStyle = on ? '#FFE9A8' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+}
+function button(ctx, b, oy, label, col, hot, fs = 14, on = null) {
+  rr(ctx, b.x, b.y + oy, b.w, b.h, 20); ctx.fillStyle = '#0D111B'; ctx.fill(); ctx.fillStyle = rgba(col, 0.16 + 0.06 * hot + (on ? 0.14 : 0)); ctx.fill(); ctx.strokeStyle = rgba(col, 0.85); ctx.lineWidth = 1.4; ctx.stroke();
+  txt(ctx, label, b.x + b.w / 2, b.y + oy + b.h / 2 - fs * 0.45, fs, col, 'center', { w: 800, sp: 1.6 });
+}
+const hit = (b, x, y, oy = 0) => x >= b.x && x <= b.x + b.w && y >= b.y + oy && y <= b.y + oy + b.h;
+
+// 足元の傾斜マーカー（機体の真下の地面）: 青緑 ≤5° / 琥珀 ≤10° / 赤 >10°（STEEP GROUND）。高度 130px 以内で表示
+function drawLandability(ctx, l, terrain) {
+  const s = l.ship, p = P(); if (!s || l.hideShip || l.state === 'crashed' || (l.m && (l.m.menu || l.m.docked || l.m.waiting))) return;
+  const alt = l.terrainY(s.x) - (s.y + C.LEG_Y), a = Math.max(0, Math.min(1, (130 - alt) / 90)) * 0.85; if (a <= 0.02) return;
+  ctx.save(); ctx.lineWidth = 3; ctx.lineCap = 'butt';
+  for (let x = Math.max(0, Math.floor((s.x - 42) / 6) * 6); x < Math.min(W, s.x + 42); x += 6) {
+    const sl = footSlopeDeg(terrain, x + 3), col = sl <= 5 ? '#63D8C9' : sl <= C.LAND_SLOPE_DEG ? p.warn : p.bad;
+    ctx.globalAlpha = a * (1 - Math.min(1, Math.abs(x + 3 - s.x) / 48) * 0.7); ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.moveTo(x, l.terrainY(x) + 1.5); ctx.lineTo(x + 6.2, l.terrainY(x + 6) + 1.5); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// 試作ページの保存先（localStorage 直）。本編は store.js の expStore(...) を cfg.store に渡す
+function labStore(id) {
+  const K = (k) => 'lander11.exp.' + id + '.' + k;
+  return {
+    get: (k) => { try { return localStorage.getItem(K(k)); } catch (e) { return null; } },
+    set: (k, v) => { try { localStorage.setItem(K(k), v); } catch (e) { /* 保存できなくても続行 */ } },
+  };
+}
+const SH_LBL = { ja: { goals: '目的', stars: '★ 条件' }, en: { goals: 'GOALS', stars: '★ STARS' } };
+function createShell(cfg) {
+  const id = cfg.id, options = cfg.options || [], host = cfg.host || {}, emb = !!host.embed;
+  const store = cfg.store || labStore(id), on = trackOn(host);
+  const KEY_B = 'lander11.exp.' + id + '.best', KEY_T = 'lander11.exp.' + id + '.besttime';   // 試作ページの保存キー（テストが読む）
+  const KEY_S = 'lander11.exp.' + id + '.skipBrief';
+  const SK = { [KEY_B]: 'best', [KEY_T]: 'besttime', [KEY_S]: 'skipBrief' };
+  const lsGet = (k) => store.get(SK[k] || k);
+  const lsSet = (k, v) => store.set(SK[k] || k, v);
+  const qp = new URLSearchParams(emb ? '' : location.search);
+  const sess = { mode: qp.get('mode') === 'practice' || qp.get('mode') === 'mission' ? qp.get('mode') : 'menu', lives: LIVES0 };
+  for (const o of options) sess[o.key] = qp.get(o.param) === '1';
+  const loadBest = () => { try { const b = JSON.parse(lsGet(KEY_B)); if (b && Array.isArray(b.stars)) return { score: +b.score || 0, stars: [!!b.stars[0], !!b.stars[1], !!b.stars[2]] }; } catch (e) { /* 無効 */ } return { score: 0, stars: [false, false, false] }; };
+  const loadBestTime = () => { const v = parseFloat(lsGet(KEY_T)); return Number.isFinite(v) && v > 0 ? v : null; };
+  // ボタン配置（論理座標 360x640）。高さはすべて 44 以上
+  const BTN = {
+    practice: { x: 40, y: 284, w: 280, h: 52 }, mission: { x: 40, y: 436, w: 280, h: 52 },
+    res1: { x: 24, y: 0, w: 152, h: 48 }, res2: { x: 184, y: 0, w: 152, h: 48 },
+    help: { x: 296, y: 176, w: 48, h: 48 },                     // メニューの '?'（ブリーフィングを開く）
+    skip: { x: 52, y: 446, w: 256, h: 44 },                      // ブリーフィングの NEXT TIME SKIP
+  };
+  const BR = { x: 20, y: 96, w: 320, h: 440 };                   // ブリーフィングカード
+  options.forEach((o, i) => { BTN[o.btn] = { x: i ? 182 : 24, y: 366, w: 154, h: 44 }; });
+  const btnY = (m) => (m.result === 'win' ? 478 : 330);
+
+  const brief = cfg.brief || null;
+  const lang = () => { try { return cfg.lang ? cfg.lang() : i18nLang(); } catch (e) { return 'ja'; } };
+  // 説明カードの文: brief.en があれば英語のとき差し替える（title は共通）
+  const B = () => (brief && lang() === 'en' && brief.en ? Object.assign({}, brief, brief.en) : brief);
+  BTN.back = { x: 6, y: 8, w: 84, h: 44 };   // 本編のメニュー左上（マップへ戻る）
+  const skipOn = () => lsGet(KEY_S) === '1';
+  const sh = { KEY_S, skipOn, id, sess, BTN, KEY_B, KEY_T, loadBest, loadBestTime, lsGet, lsSet, lifeMult, timeBonus, LIFE_LOST_S, HINT_Y, mmss, star, button, hit, store, embedded: emb, lang };
+  sh.score = (base, lives, sec = 1e9) => Math.round((base + timeBonus(sec)) * lifeMult(lives));
+  // 燃料切れ（全ミッション共通）: 推力・回転は燃料 0 で出ないので操作は効かない。機体は勢いのまま流れ、ゆっくり回る（外力も受ける）。
+  // DRIFT_S 秒たつと爆発せずに終了 = LOST CONTROL（失敗・ライフ -1）。その間にそっと目標へ触れれば各ミッションの判定どおり成功、速く当たれば通常の墜落。
+  // onUpdate から毎フレーム呼ぶ。onCrash = ミッションの失敗処理。戻り値 true = 終了した
+  sh.fuelOut = (l, dt, onCrash) => {
+    const m = l.m, s = l.ship;
+    if (s.fuel > 0.0001) { m.strandT = 0; return false; }
+    m.strandT += dt;
+    if (l.state === 'play' && Math.abs(s.omega) < DRIFT_SPIN) s.omega = (s.omega < 0 ? -1 : 1) * DRIFT_SPIN;
+    if (m.strandT < DRIFT_S) return false;
+    l.frozen = true; onCrash(l, 'LOST CONTROL', 'Out of fuel · drifted ' + DRIFT_S + ' s'); return true;
+  };
+  sh.drawFuelOut = (ctx, l) => {
+    const m = l.m; if (m.result || l.ship.fuel > 0.0001 || !m.strandT) return;
+    txt(ctx, 'NO FUEL · DRIFTING  ' + Math.max(0, DRIFT_S - m.strandT).toFixed(1), 180, 256, 11, P().bad, 'center', { w: 800, sp: 1.2, a: 0.6 + 0.4 * Math.sin(l.clock * 8) });
+  };
+
+  // ---- セッション ----
+  sh.onStart = (prev) => { if (sess.mode === 'mission' && prev && (prev.result === 'win' || prev.failed)) sess.lives = LIVES0; };   // R で結果画面から再開 = 新しい3ライフ
+  // ブリーフィング: sess.brief = 'start'（PRACTICE/MISSION 選択直後・開始前）| 'view'（メニューの ? ）| false。メニュー経由のみ（RETRY・URL の ?mode= ・テストの begin は出さない）
+  const bsave = {};
+  const briefOpen = (l, kind) => { sess.brief = kind; if (kind === 'start') { bsave.f = l.frozen; bsave.c = l.controlsEnabled; l.frozen = true; l.controlsEnabled = false; } };
+  const briefClose = (l) => { const k = sess.brief; sess.brief = false; if (k === 'start') { l.frozen = bsave.f; l.controlsEnabled = bsave.c; } };
+  sh.begin = (lab, mode, opt = {}) => { sess.brief = false; sess.mode = mode; if (mode === 'mission') sess.lives = LIVES0; for (const o of options) if (opt[o.key] != null) sess[o.key] = !!opt[o.key]; lab.reset(); };
+  sh.onLoss = (m) => {   // 失敗: ミッションならライフ -1（0 で MISSION FAILED）
+    if (sess.mode === 'mission') { sess.lives = Math.max(0, sess.lives - 1); m.livesLeft = sess.lives; if (sess.lives > 0) m.lifeLost = true; else m.failed = true; }
+  };
+  // 勝利の確定。f = { t, base, fuel, ...固有 } に lives/mult/tbonus/score と保存結果（newStars/newBest/best/newBestTime/bestTime）を足す。練習は保存しない
+  sh.complete = (f, got) => {
+    f.practice = sess.mode === 'practice'; f.lives = sess.lives; f.mult = lifeMult(sess.lives); f.tbonus = timeBonus(f.t); f.score = sh.score(f.base, sess.lives, f.t);
+    const prev = loadBest(), pt = loadBestTime();
+    if (f.practice) { f.newStars = [false, false, false]; f.newBest = false; f.newBestTime = false; f.best = prev; f.bestTime = pt; return f; }
+    f.newBestTime = pt == null || f.t < pt; f.bestTime = f.newBestTime ? f.t : pt; if (f.newBestTime) lsSet(KEY_T, String(f.t));
+    f.newStars = got.map((g, i) => g && !prev.stars[i]); f.newBest = f.score > prev.score;
+    f.best = { score: Math.max(prev.score, f.score), stars: got.map((g, i) => g || prev.stars[i]) };
+    lsSet(KEY_B, JSON.stringify(f.best));
+    return f;
+  };
+  // メニュー / 結果画面のタップ。処理したら true
+  sh.tap = (l, x, y) => {
+    const m = l.m;
+    if (sess.brief) {   // ブリーフィング中: チェックで切替、それ以外のタップで閉じる（start なら開始待ちへ）
+      if (brief && hit(BTN.skip, x, y)) lsSet(KEY_S, skipOn() ? '' : '1'); else briefClose(l);
+      return true;
+    }
+    if (m.menu) {
+      if (cfg.onExit && hit(BTN.back, x, y)) { cfg.onExit(); return true; }
+      if (brief && hit(BTN.help, x, y)) briefOpen(l, 'view');
+      else if (hit(BTN.practice, x, y)) { sh.begin(l, 'practice'); if (brief && !skipOn()) briefOpen(l, 'start'); }
+      else if (hit(BTN.mission, x, y)) { sh.begin(l, 'mission'); if (brief && !skipOn()) briefOpen(l, 'start'); }
+      else for (const o of options) if (hit(BTN[o.btn], x, y)) sess[o.key] = !sess[o.key];
+      return true;
+    }
+    if (!m.result || m.resultT < 0.4 || m.lifeLost) return false;
+    const oy = btnY(m);
+    if (hit(BTN.res1, x, y, oy)) sh.begin(l, sess.mode);        // RETRY / RETRY MISSION
+    else if (hit(BTN.res2, x, y, oy)) sh.begin(l, 'menu');      // MENU
+    return true;
+  };
+  // 本編の BACK / Escape: 説明カード → 閉じる / メニュー → マップへ / 結果画面 → メニュー / 開始待ち → メニュー /
+  // 飛行中 → メニュー（ミッションならライフを 1 つ失う扱いはせず、記録も残さない = やめる）
+  sh.back = (l) => {
+    const m = l.m;
+    if (sess.brief) { briefClose(l); if (!m.menu) sh.begin(l, 'menu'); return; }
+    if (m.menu) { if (cfg.onExit) cfg.onExit(); return; }
+    if (m.result && m.lifeLost) return;
+    sh.begin(l, 'menu');
+  };
+  // R: ミッション中（開始後）に押すとライフを1つ失う（無料リトライの抜け道を作らない）。それ以外は harness の即リセット
+  // 注意: リスナーは createLab（harness の R = 即リセット）より前に登録する。ブラウザによっては window 上の同一ターゲットで登録順に発火するため
+  let rHook = null;
+  on(window, 'keydown', (e) => {
+    if (!rHook || (e.key !== 'r' && e.key !== 'R') || e.metaKey || e.ctrlKey) return;
+    const lab = rHook.lab;
+    if (sess.mode === 'mission' && lab.m && rHook.started(lab.m) && !lab.m.result) { e.stopImmediatePropagation(); e.preventDefault(); rHook.lose(lab, 'RESTARTED', 'R pressed: life lost'); }
+  }, true);
+  on(window, 'keydown', (e) => {   // ブリーフィング中の Space / ↑ = タップと同じ（閉じる）。ミッション側のキー処理より先に登録
+    if (!sess.brief || !briefLab || e.repeat || !(e.key === ' ' || e.key === 'ArrowUp')) return;
+    e.stopImmediatePropagation(); e.preventDefault(); briefClose(briefLab);
+  }, true);
+  let briefLab = null; sh.bindLab = (l) => { briefLab = l; };
+  sh.hookR = (lab, started, lose) => { rHook = { lab, started, lose }; };
+  sh.addResetButton = () => { if (emb) return; const box = document.getElementById('dbg'); if (box) { const b = document.createElement('button'); b.textContent = 'RESET RECORD'; b.style.cssText = 'margin-top:8px;font:9px monospace;opacity:.6;padding:2px 6px'; b.onclick = () => { lsSet(KEY_B, ''); lsSet(KEY_T, ''); }; box.appendChild(b); } };
+
+  // ---- 描画 ----
+  // HUD 右上: タイマー(y38) / チェック行(y54) / PRACTICE タグ or ライフ(y72〜)。ヒントは HINT_Y（下）に出す
+  sh.drawCorner = (ctx, l, o) => {
+    const p = P();
+    if (o.time != null) txt(ctx, mmss(o.time), W - 12, 36, 13, p.fg, 'right', { w: 700 });
+    if (o.check) txt(ctx, o.check, W - 12, 54, 7.5, o.checkOk ? p.green : p.dim, 'right', { w: 700, sp: 1 });
+    if (sess.mode === 'practice') txt(ctx, 'PRACTICE', W - 12, 72, 7, p.mid, 'right', { w: 700, sp: 1.4 });
+    else for (let i = 0; i < LIVES0; i++) {   // ライフ: 小さな機体アイコン（右から）
+      const cx = W - 18 - i * 14, cy = 76, on = i < sess.lives;
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy - 1, 4, Math.PI, 0); ctx.lineTo(cx + 4, cy + 3); ctx.lineTo(cx - 4, cy + 3); ctx.closePath();
+      ctx.fillStyle = on ? p.green : 'rgba(255,255,255,0.1)'; ctx.fill(); ctx.strokeStyle = on ? p.fg : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.8; ctx.stroke(); ctx.restore();
+    }
+  };
+  sh.drawHint = (ctx, text, bad) => { if (text) txt(ctx, text, 180, HINT_Y, 7.5, bad ? P().bad : P().fg, 'center', { w: 600, sp: 0.4, a: 0.95 }); };
+
+  sh.drawMenu = (ctx, l) => {
+    const p = P(), best = loadBest(), hot = Math.floor(l.clock * 2) % 2;
+    if (cfg.onExit) {   // 本編: 左上の BACK（マップへ）
+      const b = BTN.back; ctx.save(); ctx.strokeStyle = rgba(p.mid, 0.7); ctx.lineWidth = 0.8; ctx.strokeRect(b.x + 4.5, b.y + 2.5, 72, 36);
+      ctx.strokeStyle = p.fg; ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(b.x + 24, b.y + 12); ctx.lineTo(b.x + 17, b.y + 20); ctx.lineTo(b.x + 24, b.y + 28); ctx.stroke(); ctx.restore();
+      txt(ctx, 'MAP', b.x + 32, b.y + 14, 10.5, p.fg, 'left', { w: 700, sp: 1.4 });
+    }
+    ctx.fillStyle = 'rgba(4,6,12,0.55)'; ctx.fillRect(0, 180, W, 340);
+    txt(ctx, cfg.expLabel, 180, 192, 7, p.dim, 'center', { w: 600, sp: 2 });
+    txt(ctx, cfg.title, 180, 206, 13, p.fg, 'center', { w: 800, sp: 1.2 });
+    const nst = best.stars.filter(Boolean).length, bt = loadBestTime();
+    txt(ctx, 'BEST SCORE ' + (best.score || '-') + '   ·   ★ ' + nst + ' / 3', 180, 225, 9, nst ? '#FFC94D' : p.dim, 'center', { w: 700, sp: 0.8 });
+    txt(ctx, 'BEST TIME ' + (bt == null ? '-' : mmss(bt)), 180, 240, 9, bt == null ? p.dim : '#FFC94D', 'center', { w: 700, sp: 0.8 });
+    for (let i = 0; i < 3; i++) star(ctx, 150 + i * 30, 266, 8, best.stars[i]);
+    if (brief) {   // '?' ボタン
+      const b = BTN.help, cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, 12, 0, 7); ctx.fillStyle = rgba(p.fg, 0.06); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.55); ctx.lineWidth = 1.2; ctx.stroke();
+      txt(ctx, '?', cx, cy - 7, 13, p.fg, 'center', { w: 700 });
+    }
+    button(ctx, BTN.practice, 0, 'PRACTICE', p.mid, hot, 16);
+    txt(ctx, 'UNLIMITED RETRIES · NO STARS', 180, 344, 7.5, p.dim, 'center', { w: 600, sp: 0.8 });
+    for (const o of options) {
+      const b = BTN[o.btn], on = sess[o.key];
+      rr(ctx, b.x, b.y, b.w, b.h, 12); ctx.fillStyle = rgba(p.fg, on ? 0.12 : 0.04); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.4); ctx.lineWidth = 1; ctx.stroke();
+      rr(ctx, b.x + 10, b.y + 15, 14, 14, 3); ctx.strokeStyle = on ? p.green : rgba(p.fg, 0.5); ctx.stroke();
+      if (on) { ctx.beginPath(); ctx.moveTo(b.x + 13, b.y + 22); ctx.lineTo(b.x + 16.5, b.y + 26); ctx.lineTo(b.x + 22, b.y + 18); ctx.lineWidth = 2; ctx.strokeStyle = p.green; ctx.stroke(); }
+      txt(ctx, o.label, b.x + 32, b.y + 18, 8, on ? p.fg : p.dim, 'left', { w: 700, sp: 0.6 });
+    }
+    if (options.length) txt(ctx, '(PRACTICE ONLY)', 180, 418, 6.5, p.dim, 'center', { w: 500, sp: 0.8 });
+    button(ctx, BTN.mission, 0, 'MISSION', p.warn, hot, 16);
+    txt(ctx, '3 LIVES · STARS & SCORE', 180, 496, 7.5, p.dim, 'center', { w: 600, sp: 0.8 });
+    sh.drawBrief(ctx, l);
+  };
+
+  // ブリーフィングカード。日本語は 11〜12px（art.js の FONT = システム日本語フォントへフォールバック）
+  sh.drawBrief = (ctx, l) => {
+    if (!sess.brief || !brief) return;
+    const brief2 = B(), lb = SH_LBL[lang() === 'en' ? 'en' : 'ja'];
+    const p = P(), c = BR, view = sess.brief === 'view', cx = c.x + c.w / 2, L = c.x + 22;
+    ctx.save(); ctx.fillStyle = 'rgba(4,6,12,0.78)'; ctx.fillRect(0, 0, W, 560);
+    ctx.fillStyle = 'rgba(13,17,27,0.97)'; rr(ctx, c.x, c.y, c.w, c.h, 16); ctx.fill(); ctx.strokeStyle = rgba(p.mid, 0.75); ctx.lineWidth = 1.4; ctx.stroke();
+    txt(ctx, 'MISSION BRIEFING' + (view ? '' : sess.mode === 'practice' ? ' · PRACTICE' : ' · MISSION'), cx, c.y + 16, 7, p.dim, 'center', { w: 600, sp: 2 });
+    txt(ctx, brief2.title, cx, c.y + 32, 13, p.fg, 'center', { w: 800, sp: 1 });
+    txt(ctx, brief2.sub, cx, c.y + 54, 12, p.warn, 'center', { w: 600 });
+    let y = c.y + 86;
+    txt(ctx, lb.goals, L, y, 11, p.dim, 'left', { w: 700 }); y += 20;
+    for (const g of brief2.goals) { txt(ctx, g, L, y, 12, p.fg, 'left', { w: 500 }); y += 21; }
+    y += 12; txt(ctx, lb.stars, L, y, 11, p.dim, 'left', { w: 700 }); y += 20;
+    brief2.stars.forEach((t, i) => { txt(ctx, '★' + (i + 1), L, y, 12, '#FFC94D', 'left', { w: 700 }); txt(ctx, t, L + 28, y, 12, p.fg, 'left', { w: 500 }); y += 21; });
+    y += 12; txt(ctx, brief2.tip, L, y, 12, p.green, 'left', { w: 600 });
+    if (brief2.fact) {   // 実際の天体と探査の話（1〜3 行。幅は約 276px に収める）
+      y += 21; ctx.fillStyle = rgba(p.fg, 0.18); ctx.fillRect(L, y - 7, c.w - 44, 1);
+      for (const f of brief2.fact) { txt(ctx, f, L, y, 10, rgba(p.fg, 0.72), 'left', { w: 500 }); y += 13.5; }
+    }
+    const b = BTN.skip, on = skipOn();   // NEXT TIME SKIP チェック
+    rr(ctx, b.x, b.y, b.w, b.h, 12); ctx.fillStyle = rgba(p.fg, on ? 0.12 : 0.04); ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.35); ctx.lineWidth = 1; ctx.stroke();
+    rr(ctx, b.x + 14, b.y + 15, 14, 14, 3); ctx.strokeStyle = on ? p.green : rgba(p.fg, 0.5); ctx.stroke();
+    if (on) { ctx.beginPath(); ctx.moveTo(b.x + 17, b.y + 22); ctx.lineTo(b.x + 20.5, b.y + 26); ctx.lineTo(b.x + 26, b.y + 18); ctx.lineWidth = 2; ctx.strokeStyle = p.green; ctx.stroke(); }
+    txt(ctx, 'NEXT TIME SKIP', b.x + 38, b.y + 17, 8.5, on ? p.fg : p.dim, 'left', { w: 700, sp: 0.8 });
+    txt(ctx, view ? 'TAP TO CLOSE' : 'TAP TO START', cx, c.y + c.h - 24, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+    ctx.restore();
+  };
+
+  // 結果 / 失敗。r = { winTitle?, rows:[[on,label,value]]（★3行）, failNote: string|null, failTime: 秒 }
+  sh.drawResult = (ctx, l, r) => {
+    const p = P(), m = l.m, win = m.result === 'win';
+    if (!m.result || m.resultT <= (win ? 0.7 : 0.5)) return;
+    const k = Math.min(1, (m.resultT - (win ? 0.7 : 0.5)) / 0.3);
+    ctx.save(); ctx.globalAlpha = k;
+    ctx.fillStyle = 'rgba(4,6,12,0.72)'; ctx.fillRect(0, 0, W, 560);
+    const x = 30, y = 100, w = 300, h = win ? 360 : (m.lifeLost ? 150 : 190), RY = btnY(m), prac = sess.mode === 'practice';
+    ctx.fillStyle = 'rgba(13,17,27,0.96)'; rr(ctx, x, y, w, h, 16); ctx.fill(); ctx.strokeStyle = rgba(win ? p.green : p.bad, 0.7); ctx.lineWidth = 1.4; ctx.stroke();
+    if (win) {
+      const f = m.final;
+      txt(ctx, prac ? 'PRACTICE CLEAR' : 'MISSION COMPLETE', 180, y + 18, 13, p.green, 'center', { w: 800, sp: 1.4 });
+      txt(ctx, cfg.title, 180, y + 40, 8, p.dim, 'center', { w: 600, sp: 1.5 });
+      r.rows.forEach((row, i) => {
+        const ry = y + 72 + i * 50, pop = Math.min(1, Math.max(0, (m.resultT - 0.9 - i * 0.3) / 0.2));
+        ctx.save(); ctx.translate(x + 38, ry + 14); ctx.scale(0.4 + 0.6 * pop, 0.4 + 0.6 * pop); ctx.globalAlpha = k * pop; star(ctx, 0, 0, 14, row[0]); ctx.restore();
+        txt(ctx, row[1], x + 66, ry + 3, 9, row[0] ? p.fg : p.dim, 'left', { w: 700, sp: 0.6 });
+        txt(ctx, row[2], x + 66, ry + 18, 11, row[0] ? p.warn : p.dim, 'left', { w: 700 });
+        if (f.newStars[i]) txt(ctx, 'NEW', x + w - 18, ry + 10, 9, '#FFC94D', 'right', { w: 800, sp: 1.2, a: 0.6 + 0.4 * Math.sin(l.clock * 8) });
+      });
+      if (prac) {
+        txt(ctx, 'NO SCORE · NO STARS IN PRACTICE', 180, y + 232, 9, p.warn, 'center', { w: 700, sp: 0.8 });
+        txt(ctx, 'TIME ' + mmss(f.t) + '   ·   FUEL ' + f.fuel.toFixed(0) + '%', 180, y + 262, 8, p.dim, 'center', { w: 600, sp: 0.8 });
+      } else {
+        txt(ctx, 'SCORE ' + f.score, 180, y + 214, 16, '#FFC94D', 'center', { w: 800, sp: 1 });
+        txt(ctx, f.lives + ' LIVES LEFT · ×' + f.mult.toFixed(1), 180, y + 238, 9, p.warn, 'center', { w: 700, sp: 0.8 });
+        txt(ctx, 'TIME ' + mmss(f.t) + '   ·   TIME BONUS +' + f.tbonus, 180, y + 258, 9, p.fg, 'center', { w: 700, sp: 0.8 });
+        if (f.newBestTime) txt(ctx, 'NEW BEST TIME', 180, y + 276, 11, '#FFC94D', 'center', { w: 800, sp: 1.4, a: 0.65 + 0.35 * Math.sin(l.clock * 8) });
+        else txt(ctx, 'BEST TIME ' + mmss(f.bestTime), 180, y + 276, 8, p.dim, 'center', { w: 700, sp: 0.8 });
+        txt(ctx, 'BEST SCORE ' + f.best.score + (f.newBest ? '  NEW' : '') + '   ·   ★ ' + f.best.stars.filter(Boolean).length + ' / 3', 180, y + 296, 8, f.newBest ? '#FFC94D' : p.dim, 'center', { w: 700, sp: 0.8 });
+        txt(ctx, 'FUEL ' + f.fuel.toFixed(0) + '%', 180, y + 314, 8, p.dim, 'center', { w: 600, sp: 0.8 });
+      }
+    } else if (m.lifeLost) {
+      txt(ctx, 'LIFE LOST', 180, y + 24, 15, p.warn, 'center', { w: 800, sp: 1.8 });
+      txt(ctx, m.reason || '', 180, y + 62, 11, p.fg, 'center', { w: 700, sp: 1 });
+      txt(ctx, m.livesLeft + (m.livesLeft === 1 ? ' LIFE' : ' LIVES') + ' LEFT · RESTARTING', 180, y + 100, 9, p.dim, 'center', { w: 600, sp: 0.8 });
+    } else {
+      txt(ctx, prac ? 'FAILED' : 'MISSION FAILED', 180, y + 22, 15, p.bad, 'center', { w: 800, sp: 1.8 });
+      txt(ctx, m.reason || '', 180, y + 62, 12, p.fg, 'center', { w: 700, sp: 1 });
+      txt(ctx, m.detail || '', 180, y + 86, 9, p.warn, 'center', { w: 600, sp: 0.6 });
+      txt(ctx, r.failNote || '', 180, y + 118, 8, p.dim, 'center', { w: 600, sp: 0.6 });
+      txt(ctx, 'TIME ' + mmss(r.failTime || 0), 180, y + 142, 8, p.dim, 'center', { w: 600, sp: 0.8 });
+    }
+    if (!m.lifeLost) {
+      const hot = Math.floor(l.clock * 2) % 2;
+      button(ctx, BTN.res1, RY, prac ? 'RETRY' : 'RETRY MISSION', p.mid, hot, prac ? 14 : 11);
+      button(ctx, BTN.res2, RY, 'MENU', p.fg, 0, 13);
+      txt(ctx, 'R = retry', 180, RY + 62, 7, p.dim, 'center', { w: 500, sp: 0.8 });
+    }
+    ctx.restore();
+  };
+  return sh;
+}
+
+return { LIVES0, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, DRIFT_S, DRIFT_SPIN, HINT_Y, mmss, star, button, hit, drawLandability, labStore, createShell };
+})();
+
+// ---- 02_src/expedition/m1_phobos.js ----
+const EXP_m1 = (function () {
+// EXPEDITION #1 PHOBOS SAMPLE RETURN（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
+// 着陸 → その場で2秒静止して採取 → 離陸 → 母船のドッキング枠に低速で入る。
+// 本編 v1.1 と試作ページ（07_lab/expedition/01_sample_return/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
+// host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
+const { createLab, trackOn, W, H, C, footSlopeDeg } = EXP_harness;
+const { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } = EXP_shell;
+
+const baseScore = (fuelPct, grade) => 1000 + Math.round(fuelPct) * 10 + (grade === 'PERFECT' ? 300 : grade ? 100 : 0);
+function create(host = {}) {
+  const on = trackOn(host);
+  const SITE = { x: 190, y: 512, w: 64, id: 'site' };
+  const SAMPLE_S = 2.0;          // 採取に必要な静止秒数
+  const MS_Y = 130, MS_AMP = 90;              // 母船の高さ
+  const RING_DY = 31, RING_R = 17;   // ドッキング枠: 母船の中心からの下方向オフセットと半径（円形判定の半径）
+  const DOCK_REL = 10, DOCK_TILT = 20;
+  const STAR2_FUEL = 30;
+  const DRIFT_S = 1.0, DRIFT_VY = 18;   // 発進: 係留（タップで解放。タイマー無し）→ 解放 → 1.0s は自動で漂う（操作不可）
+  const DOCK_CONFIRM = 0.25;   // 条件を満たし続ける秒数（ゴースト点灯 → 成功）
+  const missionScore = (fuelPct, grade, lives, sec = 1e9) => sh.score(baseScore(fuelPct, grade), lives, sec);
+  const LIVES0 = 3;
+  const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'sample_return', expLabel: 'EXPEDITION 01', title: 'PHOBOS SAMPLE RETURN',
+    brief: { title: 'PHOBOS — SAMPLE RETURN', sub: '往復', goals: ['・タップで母船から切り離す', '・採取地点に着地して2秒じっと待つ', '・母船の点線の枠に戻ればクリア'], stars: ['帰還', '燃料30%以上で帰還', '採取地点に PERFECT 着地'], tip: 'コツ：逆向きに噴射すると止まれる', fact: ['フォボス：火星の 2 つの衛星のうち大きいほう。', '日本の探査機 MMX が試料を持ち帰る計画を進めている。'],
+      en: { sub: 'ROUND TRIP', goals: ['· Tap to undock from the mothership', '· Land on the site, hold still for 2 s', '· Fly back into the dotted dock frame'], stars: ['Return to the ship', 'Return with 30% fuel or more', 'PERFECT landing on the site'], tip: 'Tip: thrust the other way to stop', fact: ['Phobos: the larger of the two moons of Mars.', 'Japan\'s MMX probe plans to bring a sample back.'] } },
+    options: [{ key: 'atSite', label: 'START AT SITE', btn: 'site', param: 'site' }, { key: 'nearDock', label: 'START NEAR DOCK', btn: 'near', param: 'near' }] });
+  try { localStorage.removeItem('lander11.exp.sample_return.attempts'); } catch (e) { /* 旧キー（試行回数）の掃除 */ }
+  const sess = sh.sess;   // menu → practice | mission（lab.reset をまたいで保持）
+  const OUT = { x0: -10, x1: 370, y0: -30 };
+
+  // ---- 地形（ゆるい起伏 + 採取地点だけ平ら） ---------------------------------------------------
+  const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const baseY = (x) => 506 + 4 * Math.sin(x * 0.018 + 0.6) + 1.3 * Math.sin(x * 0.05 + 2.1);
+  const FLATS = [{ x0: 28, x1: 92 }, { x0: 300, x1: 350 }];   // 採取地点以外の平らな場所（着地しても採取にならない・失敗でもない）
+  const RIDGE = { x: 130, amp: 15, sig: 12 };                    // 急な岩（STEEP GROUND になる）
+  function terrainFn(x) {
+    let y = baseY(x) - RIDGE.amp * Math.exp(-((x - RIDGE.x) ** 2) / (2 * RIDGE.sig * RIDGE.sig));
+    for (const f of FLATS) { const w = Math.min(sstep(f.x0 - 18, f.x0, x), 1 - sstep(f.x1, f.x1 + 18, x)); y += (baseY((f.x0 + f.x1) / 2) - y) * w; }
+    const wgt = Math.min(sstep(SITE.x - 30, SITE.x, x), 1 - sstep(SITE.x + SITE.w, SITE.x + SITE.w + 30, x));
+    return y + (SITE.y - y) * wgt;
+  }
+  const terrain = [];
+  for (let x = 0; x <= W; x += 6) terrain.push({ x, y: terrainFn(x) });
+
+  // 装飾（衝突しない）: 星・クレーター・小石は固定乱数
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const STARS = Array.from({ length: 80 }, () => ({ x: rnd() * W, y: rnd() * 470, r: 0.4 + rnd() * 0.9, a: 0.25 + rnd() * 0.6 }));
+  const CRATERS = Array.from({ length: 9 }, () => ({ x: rnd() * W, d: 14 + rnd() * 34, r: 5 + rnd() * 16 }));
+  const PEBBLES = Array.from({ length: 36 }, () => ({ x: rnd() * W, d: 4 + rnd() * 100, r: 0.8 + rnd() * 1.8 }));
+
+  const lab = createLab({
+    host,
+    title: 'PHOBOS SAMPLE RETURN',
+    defaults: { g: 0.04, thrust: 5.2, ang: 28, damp: 0.82, drag: 0, fuel: 100, rcs: 2.5, vec: 1 },
+    extraParams: [
+      { key: 'ms',   label: 'mothership peak speed px/s', min: 3, max: 40, step: 1, def: 9 },
+      { key: 'ph0',  label: 'mothership start phase rad', min: -3.14, max: 3.14, step: 0.05, def: -1.2 },
+      { key: 'hold', label: 'sample hold s',         min: 0.5, max: 5, step: 0.1, def: SAMPLE_S },
+      { key: 'ring', label: 'dock ring radius px',   min: 8, max: 40, step: 1,   def: RING_R },
+    ],
+    world: { terrain, pads: [SITE] },
+    start, onUpdate, onTouchdown, onLiftoff, onCrash, onTap,
+    onDrawBack, onDrawMid, onDrawFront, drawTerrain,
+    velRef: (l) => (l.m.sampled && !l.m.result ? { vx: l.m.mvx, vy: 0 } : null),
+    telemetryExtra: (l) => `phase  ${phaseName(l.m)}\ngauge  ${(l.m.gauge * 100).toFixed(0)}%\nsample ${l.m.sampled}\ntouch  ${l.m.touchGrade || '-'}\nmship  x${l.m.mx.toFixed(0)} v${l.m.mvx.toFixed(1)}\nrel    ${l.m.rel == null ? '-' : l.m.rel.toFixed(1)}`,
+  });
+
+  function phaseName(m) { return m.result ? m.result : m.sampled ? 'RETURN' : m.gauge > 0 ? 'SAMPLING' : 'DESCENT'; }
+
+  // ---------------------------------------------------------------- 状態
+  function start(l) {
+    const prev = l.m;
+    sh.onStart(prev);   // R で結果画面から再開 = 新しい3ライフ
+    l.showHud = sess.mode !== 'menu';
+    const ph0 = l.params.ph0, mx0 = 180 + MS_AMP * Math.sin(ph0), mvx0 = l.params.ms * Math.cos(ph0);
+    l.resetShip({ x: mx0, y: MS_Y + RING_DY, vx: mvx0, vy: 0, angle: 0 });
+    l.frozen = true; l.controlsEnabled = false;   // 係留中
+    l.m = { docked: true, relT: 0, driftT: 0, dockT: 0, ph: l.params.ph0, mx: 180 + MS_AMP * Math.sin(l.params.ph0), mvx: l.params.ms * Math.cos(l.params.ph0), gauge: 0, flyT: 0, sampled: false, sampleGrade: null, touchGrade: null, strandT: 0, result: null, resultT: 0, final: null, toast: '', toastT: 0, rel: null, fb: '', dockOk: false, inZone: false, bumps: 0, released: false, menu: sess.mode === 'menu', failed: false, lifeLost: false, bumpT: 0, shakeT: 0, pvx: null, pvy: null };
+    const m = l.m;
+    if (m.menu) { l.hideShip = true; return; }   // メニュー: 母船だけ動かす
+    if (sess.mode === 'practice' && (sess.atSite || sess.nearDock)) {   // 練習: 局面スキップ
+      m.docked = false; m.released = true; m.driftT = DRIFT_S; l.frozen = false; l.controlsEnabled = true;
+      if (sess.nearDock) {
+        m.sampled = true; m.sampleGrade = 'PERFECT'; m.touchGrade = 'PERFECT';
+        l.resetShip({ x: m.mx, y: MS_Y + RING_DY + 95, vx: m.mvx, vy: 0, angle: 0 });
+      } else {
+        m.touchGrade = 'PERFECT';
+        l.resetShip({ x: SITE.x + SITE.w / 2, y: SITE.y - 16, vx: 0, vy: 0, angle: 0 }); l.state = 'grounded';
+      }
+    }
+  }
+  const begin = (l, mode, opt) => sh.begin(l, mode, opt);   // メニュー/結果画面から呼ぶ
+  function toast(l, s, sec = 2) { l.m.toast = s; l.m.toastT = sec; }
+
+  function onTouchdown(l, info) { l.m.touchGrade = info.kind === 'pad' ? info.grade : null; }
+  function onLiftoff(l) { if (!l.m.sampled) l.m.gauge = 0; }
+  function onCrash(l, reason, detail) {
+    const m = l.m; if (m.result) return;
+    m.result = 'lose'; m.resultT = 0; m.reason = reason; m.detail = detail; l.controlsEnabled = false;
+    sh.onLoss(m);
+  }
+  function lose(l, reason, detail) { l.crash(reason, detail); }
+  const { BTN } = sh;
+  function release(l) {   // 係留 → 解放: 母船の水平速度を引き継ぎ、下へゆっくり離れる。解放前はライフを失わない
+    const m = l.m, s = l.ship;
+    if (!m.docked || m.menu || m.result) return;
+    m.docked = false; m.released = true; m.relT = 0; m.driftT = 0; l.frozen = false; s.vx = m.mvx; s.vy = DRIFT_VY; toast(l, 'RELEASED', 1.6);
+  }
+  function onTap(l, x, y) {
+    const m = l.m;
+    if (m.menu || sess.brief) { sh.tap(l, x, y); return; }
+    if (m.docked) { release(l); return; }   // 係留中は画面のどこをタップしても解放（キャンバス上に UI ボタンは無い）
+    sh.tap(l, x, y);                        // 結果画面の RETRY / MENU
+  }
+  // R: ミッション中（解放後）に押すとライフを1つ失う（無料リトライの抜け道を作らない）。それ以外は harness の即リセット
+  on(window, 'keydown', (e) => {
+    if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.docked && !lab.m.menu && !e.repeat) { release(lab); e.preventDefault(); }
+  }, true);
+  sh.hookR(lab, (m) => m.released, lose);
+
+  // ---------------------------------------------------------------- 毎フレーム
+  function onUpdate(l, dt) {
+    const m = l.m, s = l.ship, pr = l.params;
+    if (m.menu) { m.ph += (pr.ms / MS_AMP) * dt; m.mx = 180 + MS_AMP * Math.sin(m.ph); m.mvx = pr.ms * Math.cos(m.ph); return; }
+    // 母船は左右にゆっくり往復（正弦波）。ms = 中央での最大速度。端ほど遅いので、端で待って合わせてもよい
+    const w = pr.ms / MS_AMP;
+    m.ph += w * dt; m.mx = 180 + MS_AMP * Math.sin(m.ph); m.mvx = pr.ms * Math.cos(m.ph);
+    if (m.toastT > 0) m.toastT -= dt;
+    if (sess.brief && !m.docked) return;   // ブリーフィング中は進めない（START AT SITE / NEAR DOCK 用）
+    if (m.docked) {   // 係留: 母船に固定してタップ待ち（タイマー無し・何も失わない）
+      m.relT += dt; s.x = m.mx; s.y = MS_Y + RING_DY; s.vx = m.mvx; s.vy = 0; s.angle = 0; s.omega = 0;
+      return;
+    }
+    m.relT += dt;   // 解放後の経過秒（チュートリアル表示用）
+    if (!m.result) m.flyT += dt;   // タイムトライアル: 解放 → ドッキング成功（この命の分だけ。ライフ喪失で start() が 0 に戻す）
+    if (m.driftT < DRIFT_S) { m.driftT += dt; if (m.driftT >= DRIFT_S) l.controlsEnabled = true; }   // 自動で漂う間は入力なし
+    if (m.result) {
+      m.resultT += dt;
+      if (m.lifeLost && m.resultT >= LIFE_LOST_S) { l.reset(); return; }   // LIFE LOST → 母船係留スタートへ自動で戻る
+      if (m.result === 'win') {   // 吸い込まれる
+        const k = 1 - Math.exp(-dt * 7), tx = m.mx, ty = MS_Y + RING_DY;
+        s.x += (tx - s.x) * k; s.y += (ty - s.y) * k; s.angle *= Math.exp(-dt * 8); s.vx = m.mvx; s.vy = 0;
+      }
+      return;
+    }
+    // 範囲外
+    if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return lose(l, 'LEFT THE AREA', 'You drifted out of range');
+    // 燃料切れ（ドッキング前）
+    if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
+    // 採取
+    const onSite = l.state === 'grounded' && l.padAt(s.x) === SITE;
+    if (onSite && !m.sampled) {
+      if (l.input.main) m.gauge = 0;                     // 推力で取り消し
+      else {
+        m.gauge = Math.min(1, m.gauge + dt / pr.hold);
+        if (m.gauge >= 1) { m.sampled = true; m.sampleGrade = m.touchGrade; toast(l, 'SAMPLE ACQUIRED  ·  NOW DOCK', 2.6); }
+      }
+    } else if (!m.sampled && l.state !== 'grounded') m.gauge = 0;
+    // 母船
+    const dx = s.x - m.mx, dy = s.y - (MS_Y + RING_DY);
+    const relSpeed = Math.hypot(s.vx - m.mvx, s.vy), tilt = Math.abs(s.angle);
+    m.rel = relSpeed;
+    const inZone = dx * dx + dy * dy <= pr.ring * pr.ring;
+    m.inZone = inZone; m.dockOk = relSpeed <= DOCK_REL && tilt <= DOCK_TILT;
+    m.fb = inZone && m.sampled && !m.dockOk ? (relSpeed > DOCK_REL ? 'TOO FAST  REL ' + relSpeed.toFixed(0) + ' > ' + DOCK_REL : 'TOO TILTED  ' + tilt.toFixed(0) + '° > ' + DOCK_TILT + '°') : '';
+    m.dockT = (l.state === 'play' && m.sampled && inZone && m.dockOk) ? m.dockT + dt : 0;
+    if (m.dockT >= DOCK_CONFIRM) {
+      m.result = 'win'; m.resultT = 0; l.frozen = true; l.controlsEnabled = false;
+      const fp = l.fuelPct(), tsec = m.flyT;
+      m.final = { t: tsec, base: baseScore(fp, m.sampleGrade), fuel: fp, grade: m.sampleGrade, s2: fp >= STAR2_FUEL, s3: m.sampleGrade === 'PERFECT' };
+      sh.complete(m.final, [true, m.final.s2, m.final.s3]);
+      return;
+    }
+    // 母船の船体・ドッキング枠への接触: 墜落にしない。物理的に跳ね返す（スイープ判定でトンネリング防止）
+    if (l.state === 'play') bumpCheck(l);
+    m.pvx = s.x - m.mx; m.pvy = s.y - MS_Y;   // 次フレームのスイープ用（母船座標の前回位置）
+    if (m.shakeT > 0) m.shakeT -= dt;
+    if (m.bumpT > 0) m.bumpT -= dt;
+    lab.canvas.style.transform = m.shakeT > 0 ? 'translate(' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px,' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px)' : '';
+  }
+
+  // ---- 母船の衝突形状（母船中心座標）: 船体 = カプセル、ドッキング枠の腕 = 折れ線（入口は開けておく）
+  const SR = 8, BUMP_E = 0.35, BUMP_SPIN = 15;
+  const HULL = [[-24, 0.5, 24, 0.5, 10.5]];
+  const ARMS = [];
+  for (const sx of [-1, 1]) {
+    let px = sx * 20, py = 8;
+    for (let i = 1; i <= 6; i++) {   // 受け台の曲線 t=0..0.75（先端は開ける）
+      const t = i / 8, u = 1 - t, x = sx * (u * u * 20 + 2 * t * u * 24 + t * t * 10), y = u * u * 8 + 2 * t * u * (RING_DY + 4) + t * t * (RING_DY + 18);
+      ARMS.push([px, py, x, y, 1.5]); px = x; py = y;
+    }
+  }
+  const SEGS = HULL.concat(ARMS);
+  function nearest(x, y) {   // 最も深く食い込んでいる形状 → {nx, ny, pen}
+    let best = null;
+    for (const [ax, ay, bx, by, r] of SEGS) {
+      const ex = bx - ax, ey = by - ay, t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey)));
+      const cx = ax + ex * t, cy = ay + ey * t; let dx = x - cx, dy = y - cy; const d = Math.hypot(dx, dy), pen = r + SR - d;
+      if (pen > 0 && (!best || pen > best.pen)) { if (d < 1e-6) { dx = 0; dy = 1; } else { dx /= d; dy /= d; } best = { nx: dx, ny: dy, pen }; }
+    }
+    return best;
+  }
+  function bumpCheck(l) {
+    const m = l.m, s = l.ship;
+    const cx = s.x - m.mx, cy = s.y - MS_Y, px = m.pvx == null ? cx : m.pvx, py = m.pvy == null ? cy : m.pvy;
+    const n = Math.max(1, Math.ceil(Math.hypot(cx - px, cy - py) / 2));   // 2px 刻みで前回位置→現在位置を走査
+    for (let i = 1; i <= n; i++) {
+      const x = px + (cx - px) * i / n, y = py + (cy - py) * i / n, h = nearest(x, y);
+      if (!h) continue;
+      const rvx = s.vx - m.mvx, rvy = s.vy, vn = rvx * h.nx + rvy * h.ny;
+      if (vn < 0) {
+        const sp = Math.hypot(rvx, rvy), nvx = rvx - (1 + BUMP_E) * vn * h.nx, nvy = rvy - (1 + BUMP_E) * vn * h.ny;
+        s.vx = nvx + m.mvx; s.vy = nvy;
+        if (sp > DOCK_REL) {   // 強い接触のみ演出
+          s.omega += (h.nx >= 0 ? 1 : -1) * BUMP_SPIN; m.bumps++; m.shakeT = 0.3; m.bumpT = 0.9; clang(Math.min(1, sp / 60));
+        }
+      }
+      s.x = m.mx + x + h.nx * (h.pen + 0.5); s.y = MS_Y + y + h.ny * (h.pen + 0.5);   // 船体の外へ押し出す
+      m.pvx = s.x - m.mx; m.pvy = s.y - MS_Y;
+      return;
+    }
+  }
+  let actx = null;
+  function clang(k) {
+    try {
+      if (host.muted && host.muted()) return;   // 本編のミュート
+      actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)());
+      if (!actx) return;
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.12 + 0.12 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      for (const f of [310, 487, 811]) { const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 0.36); }
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+
+  // ---------------------------------------------------------------- 描画
+  function onDrawBack(ctx, l) {
+    const p = P();
+    const g = ctx.createLinearGradient(0, 0, 0, 520); g.addColorStop(0, '#03040a'); g.addColorStop(1, '#0d1220');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    for (const s of STARS) { ctx.fillStyle = rgba('#ffffff', s.a); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill(); }
+    drawMars(ctx);
+    drawMothership(ctx, l);
+  }
+
+  function drawMars(ctx) {
+    const cx = 62, cy = 262, r = 150;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.clip();
+    const g = ctx.createRadialGradient(cx + 55, cy - 60, 10, cx + 20, cy - 20, r * 1.15);
+    g.addColorStop(0, '#e08a55'); g.addColorStop(0.5, '#b4583a'); g.addColorStop(0.85, '#6a2c24'); g.addColorStop(1, '#2a1216');
+    ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.fillStyle = 'rgba(70,28,24,0.45)';                       // 暗い模様（大シルチス風）
+    [[cx + 30, cy - 10, 46, 22, 0.5], [cx - 10, cy + 40, 36, 15, -0.3], [cx + 70, cy + 30, 24, 12, 0.9], [cx - 50, cy - 40, 30, 12, 0.2]].forEach((e) => { ctx.beginPath(); ctx.ellipse(e[0], e[1], e[2], e[3], e[4], 0, 7); ctx.fill(); });
+    ctx.fillStyle = 'rgba(255,240,230,0.55)'; ctx.beginPath(); ctx.ellipse(cx + 8, cy - r + 6, 44, 11, 0, 0, 7); ctx.fill();   // 極冠
+    const sh = ctx.createRadialGradient(cx + 70, cy - 70, r * 0.5, cx + 70, cy - 70, r * 2.0);   // 左下の影（右上から光が当たる）
+    sh.addColorStop(0, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = sh; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,170,120,0.22)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, r + 1, -2.4, 0.2); ctx.stroke();   // 大気の縁
+  }
+
+  function drawMothership(ctx, l) {
+    const m = l.m, p = P(), t = l.clock, my = MS_Y;
+    const armed = m.sampled && !m.result;
+    const ringCol = !armed ? rgba(p.mid, 0.35) : (m.inZone ? (m.dockOk ? p.green : p.bad) : p.warn);
+    ctx.save(); ctx.translate(m.mx, my);
+    // 太陽電池パネル（上に2枚）
+    ctx.strokeStyle = '#8d93a6'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-12, -9); ctx.lineTo(-14, -16); ctx.moveTo(12, -9); ctx.lineTo(14, -16); ctx.stroke();
+    for (const sx of [-1, 1]) {
+      ctx.save(); ctx.translate(sx * 24, -19); ctx.rotate(sx * 0.12);
+      rr(ctx, -13, -4.5, 26, 9, 1.8); ctx.fillStyle = '#27407a'; ctx.fill(); ctx.strokeStyle = '#9fb4e8'; ctx.lineWidth = 0.7; ctx.stroke();
+      ctx.strokeStyle = 'rgba(190,210,255,0.4)'; ctx.beginPath(); for (let i = -6; i <= 6; i += 6.5) { ctx.moveTo(i, -4.5); ctx.lineTo(i, 4.5); } ctx.moveTo(-13, 0); ctx.lineTo(13, 0); ctx.stroke();
+      ctx.restore();
+    }
+    // 受け台（ドッキングベイの腕）
+    ctx.strokeStyle = '#b9b2a0'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-20, 8); ctx.quadraticCurveTo(-24, RING_DY + 4, -10, RING_DY + 18); ctx.moveTo(20, 8); ctx.quadraticCurveTo(24, RING_DY + 4, 10, RING_DY + 18); ctx.stroke();
+    // 船体（丸いカプセル）
+    rr(ctx, -34, -10, 68, 21, 10);
+    const hg = ctx.createLinearGradient(0, -10, 0, 11); hg.addColorStop(0, '#FBF7EC'); hg.addColorStop(0.6, '#E2DAC6'); hg.addColorStop(1, '#BDB5A0');
+    ctx.fillStyle = hg; ctx.fill(); ctx.strokeStyle = 'rgba(20,24,34,0.5)'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.fillStyle = rgba(p.warn, 0.85); ctx.fillRect(-34 + 14, -10, 5, 21); ctx.fillStyle = rgba(p.mid, 0.8); ctx.fillRect(-34 + 21, -10, 2, 21);   // 帯
+    // 窓（目）。進行方向（右）を向く
+    const blink = (Math.floor(t * 0.7) % 6) === 0 && (t % 1) < 0.12;
+    ctx.fillStyle = '#16314a'; rr(ctx, 6, -6, 22, 11, 5.5); ctx.fill();
+    ctx.fillStyle = '#9ee8ff';
+    if (!blink) { ctx.beginPath(); ctx.arc(13, -0.5, 2.2, 0, 7); ctx.arc(22, -0.5, 2.2, 0, 7); ctx.fill(); } else { ctx.fillRect(10.8, -0.9, 4.4, 1); ctx.fillRect(19.8, -0.9, 4.4, 1); }
+    // アンテナ
+    ctx.strokeStyle = '#bdb6a4'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-26, -10); ctx.lineTo(-30, -19); ctx.stroke();
+    ctx.fillStyle = (Math.floor(t * 1.3) % 2) ? p.warn : rgba(p.warn, 0.25); ctx.beginPath(); ctx.arc(-30, -20, 1.6, 0, 7); ctx.fill();
+    // ゴースト: 戻るべき姿勢（直立）の破線アウトライン。母船と一緒に動く。条件成立で青緑に点灯
+    if (!m.docked) {
+      const lit = m.dockT > 0 || m.result === 'win', gc = lit ? '#63D8C9' : rgba(p.fg, armed ? 1 : 0.85), gy = RING_DY;
+      ctx.save(); ctx.translate(0, gy); ctx.lineWidth = lit ? 2.2 : 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = gc;
+      if (lit) { ctx.shadowColor = '#63D8C9'; ctx.shadowBlur = 12; }
+      ctx.setLineDash([3, 2.5]);
+      ctx.beginPath(); ctx.moveTo(-9, -4); ctx.arc(0, -4, 9, Math.PI, 0, false); ctx.lineTo(9, 5); ctx.quadraticCurveTo(9, 9, 5, 9); ctx.lineTo(-5, 9); ctx.quadraticCurveTo(-9, 9, -9, 5); ctx.closePath(); ctx.stroke();   // 船体
+      ctx.beginPath(); ctx.moveTo(-6, 6.5); ctx.lineTo(-12.2, 14.4); ctx.moveTo(6, 6.5); ctx.lineTo(12.2, 14.4); ctx.moveTo(-2.7, 8.5); ctx.lineTo(-3.7, 12.2); ctx.lineTo(3.7, 12.2); ctx.lineTo(2.7, 8.5); ctx.stroke();   // 脚・ノズル
+      ctx.beginPath(); ctx.ellipse(-14.4, 15, 3.8, 1.35, 0, 0, 7); ctx.moveTo(18.2, 15); ctx.ellipse(14.4, 15, 3.8, 1.35, 0, 0, 7); ctx.stroke();
+      if (lit) { ctx.fillStyle = rgba('#63D8C9', 0.18); ctx.beginPath(); ctx.arc(0, 0, 14, 0, 7); ctx.fill(); }
+      ctx.restore();
+    }
+    // ドッキング枠
+    const pulse = 0.65 + 0.35 * Math.sin(t * 5), R = l.params.ring;
+    const cy = RING_DY;
+    ctx.shadowColor = ringCol; ctx.shadowBlur = armed ? 10 * pulse : 0;
+    ctx.strokeStyle = ringCol; ctx.lineWidth = armed ? 2.2 : 1.4; ctx.setLineDash([6, 4]); ctx.lineDashOffset = -t * 14;
+    ctx.beginPath(); ctx.arc(0, cy, R, 0, 7); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+    ctx.fillStyle = rgba(ringCol, armed ? 0.1 + 0.06 * pulse : 0.05); ctx.beginPath(); ctx.arc(0, cy, R, 0, 7); ctx.fill();
+    ctx.strokeStyle = rgba(ringCol, 0.8); ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';   // 上向きシェブロン
+    for (let i = 0; i < 2; i++) { const yy = cy + 5 - i * 7; ctx.beginPath(); ctx.moveTo(-5, yy + 3); ctx.lineTo(0, yy - 2); ctx.lineTo(5, yy + 3); ctx.stroke(); }
+    if (!armed && !m.result) txt(ctx, 'DOCK', 0, cy + R + 4, 6.5, rgba(p.mid, 0.6), 'center', { w: 600, sp: 1.5 });
+    ctx.restore();
+  }
+
+  function drawTerrain(ctx, l) {
+    const p = P();
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (const q of terrain) ctx.lineTo(q.x, q.y);
+    ctx.lineTo(W, H); ctx.closePath();
+    const g = ctx.createLinearGradient(0, 490, 0, 600); g.addColorStop(0, '#4a4a52'); g.addColorStop(1, '#25262c');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.save(); ctx.clip();
+    for (const c of CRATERS) {            // クレーター: 暗い楕円 + 明るい縁
+      const y = l.terrainY(c.x) + c.d * 0.5 + 4;
+      ctx.fillStyle = 'rgba(15,16,20,0.45)'; ctx.beginPath(); ctx.ellipse(c.x, y, c.r, c.r * 0.28, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(140,142,154,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(c.x, y, c.r, c.r * 0.28, 0, Math.PI, 2 * Math.PI); ctx.stroke();
+    }
+    for (const k of PEBBLES) { ctx.fillStyle = 'rgba(110,112,124,0.7)'; ctx.beginPath(); ctx.ellipse(k.x, l.terrainY(k.x) + k.d * 0.5 + 3, k.r * 1.4, k.r, 0, 0, 7); ctx.fill(); }
+    ctx.restore();
+    ctx.beginPath(); for (const q of terrain) (q === terrain[0] ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y));
+    ctx.strokeStyle = '#9a9eae'; ctx.lineWidth = 1.2; ctx.stroke();
+    drawSite(ctx, l);
+    drawLandabilityHere(ctx, l);
+  }
+
+  const drawLandabilityHere = (ctx, l) => drawLandability(ctx, l, terrain);
+
+  function drawSite(ctx, l) {
+    const p = P(), m = l.m, t = l.clock, done = m.sampled;
+    const col = done ? p.green : p.warn, x0 = SITE.x, x1 = SITE.x + SITE.w, y = SITE.y;
+    ctx.save();
+    // 地面の発光ストリップ + 角のブラケット
+    ctx.fillStyle = rgba(col, 0.16 + 0.08 * Math.sin(t * 4)); ctx.fillRect(x0, y - 1, SITE.w, 5);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x0, y - 9); ctx.lineTo(x0, y - 1); ctx.lineTo(x0 + 7, y - 1); ctx.moveTo(x1, y - 9); ctx.lineTo(x1, y - 1); ctx.lineTo(x1 - 7, y - 1); ctx.stroke();
+    ctx.fillStyle = col; ctx.fillRect(SITE.x + SITE.w / 2 - 4, y - 1.5, 8, 2);
+    // 採取ゲージ（地面の帯）
+    ctx.fillStyle = rgba(p.fg, 0.1); ctx.fillRect(x0 + 6, y + 6, SITE.w - 12, 3);
+    ctx.fillStyle = p.green; ctx.fillRect(x0 + 6, y + 6, (SITE.w - 12) * (done ? 1 : m.gauge), 3);
+    // 呼び出しラベル（採取前のみ）
+    if (!done && l.state !== 'grounded') {
+      const by = Math.sin(t * 4) * 3;
+      txt(ctx, 'SAMPLE SITE', SITE.x + SITE.w / 2, y - 44 + by, 8, col, 'center', { w: 700, sp: 1.2 });
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(SITE.x + SITE.w / 2 - 5, y - 32 + by); ctx.lineTo(SITE.x + SITE.w / 2 + 5, y - 32 + by); ctx.lineTo(SITE.x + SITE.w / 2, y - 25 + by); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function onDrawMid() {}
+
+  function onDrawFront(ctx, l) {
+    const p = P(), m = l.m, s = l.ship;
+    if (m.menu) { sh.drawMenu(ctx, l); return; }
+    // 採取中: 機体の周りに円ゲージ
+    if (!m.sampled && m.gauge > 0 && !m.result) {
+      ctx.save(); ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.strokeStyle = rgba(p.fg, 0.15); ctx.beginPath(); ctx.arc(s.x, s.y, 26, 0, 7); ctx.stroke();
+      ctx.strokeStyle = p.green; ctx.beginPath(); ctx.arc(s.x, s.y, 26, -Math.PI / 2, -Math.PI / 2 + m.gauge * Math.PI * 2); ctx.stroke(); ctx.restore();
+      txt(ctx, 'SAMPLING ' + Math.round(m.gauge * 100) + '%', s.x, s.y - 46, 8, p.green, 'center', { w: 700, sp: 1 });
+    }
+    // タイマー + 進行チェック + PRACTICE/ライフ（右上。DEBUG ボタンの下）
+    sh.drawCorner(ctx, l, { time: m.released ? (m.result === 'win' ? m.final.t : m.flyT) : null, check: (m.sampled ? '✓ ' : '○ ') + 'SAMPLE   ' + (m.result === 'win' ? '✓ ' : '○ ') + 'DOCK', checkOk: m.sampled });
+    // ヒント
+    let hint = '';
+    if (!m.result) {
+      if ((m.docked || m.relT < 9) && !m.sampled && l.state !== 'grounded') hint = 'TAP TO RELEASE · LAND ON THE SITE · HOLD 2s · RETURN TO THE DOCK';
+      else if (!m.sampled && l.state === 'grounded') hint = m.gauge > 0 ? 'HOLD STILL...' : (l.padAt(s.x) ? 'DON’T TOUCH THRUST' : 'OFF SITE · THRUST TO LIFT OFF, LAND ON THE SITE');
+      else if (m.sampled) hint = m.fb || (m.dockOk || !m.inZone ? 'FILL THE OUTLINE · UPRIGHT · MATCH SPEED (REL ≤ ' + DOCK_REL + ')' : '');
+      sh.drawHint(ctx, hint, !!m.fb);
+    }
+    if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
+    if (m.docked && !m.menu && !m.result) txt(ctx, 'TAP TO RELEASE', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+    if (m.toastT > 0) txt(ctx, m.toast, 180, 236, 10, p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
+    // 燃料切れの警告 / 範囲外の警告
+    sh.drawFuelOut(ctx, l);
+    if (!m.result) {
+      const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 16 && s.vy < 2));
+      if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
+    }
+    // 結果
+    if (m.result) {
+      const f = m.final;
+      sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'SAMPLE RETURNED', mmss(f.t)], [f.s2, 'FUEL ≥ ' + STAR2_FUEL + '% LEFT', f.fuel.toFixed(0) + '%'], [f.s3, 'PERFECT TOUCHDOWN AT SITE', f.grade || '-']] : [], failNote: m.sampled ? 'The sample was lost.' : 'No sample collected yet.', failTime: m.flyT });
+    }
+    sh.drawBrief(ctx, l);
+  }
+
+  sh.bindLab(lab);
+  sh.addResetButton();
+
+  window.__score = { mult: lifeMult, score: missionScore, timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
+  window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN, LIFE_LOST_S };
+  lab.shell = sh;
+  return lab;
+}
+
+return { baseScore, create };
+})();
+
+// ---- 02_src/expedition/m2_enceladus.js ----
+const EXP_m2 = (function () {
+// EXPEDITION #2 ENCELADUS GEYSER RUN（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
+// 氷の割れ目から周期的に噴気。噴気の頂上を通って試料を集め（最低1つ）、噴気の間のパッドに着地する。
+// 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
+// 本編 v1.1 と試作ページ（07_lab/expedition/02_geyser_run/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
+// host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
+const { createLab, trackOn, W, H, C } = EXP_harness;
+const { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } = EXP_shell;
+
+function create(host = {}) {
+  const on = trackOn(host);
+  const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN',
+    brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す', fact: ['エンケラドゥス：土星の衛星。南極の割れ目から', '氷の粒を噴き出している。', '2005 年に探査機カッシーニが発見した。'],
+      en: { sub: 'GEYSERS', goals: ['· Fly through the glowing samples on the plumes', '· Land on the pad with at least one sample'], stars: ['Clear', 'All 3 samples', 'PERFECT landing on the pad'], tip: 'Tip: frost swirls 1 s before it erupts', fact: ['Enceladus: a moon of Saturn. Ice grains', 'spray from cracks at its south pole.', 'Found by the Cassini probe in 2005.'] } } });
+  const sess = sh.sess;
+  const OUT = { x0: -10, x1: 370, y0: -30 };
+  const GY = 520;                        // 地表の基準高さ
+  const PAD = { x: 200, y: 518, w: 60, id: 'pad' };
+  const VENT_W = 11;                     // 噴出口の半幅（接触でバウンス）
+  // 噴気: x, 周期 P（6〜9秒）, 最初の噴出時刻 O, 強さの係数 f
+  const VENTS = [
+    { x: 52,  P: 11, O: 6.5,  f: 0.92 },
+    { x: 150, P: 12, O: 11.5, f: 1.08 },
+    { x: 308, P: 13, O: 1.5,  f: 1.0 },
+  ];
+  const TELE_S = 1.2;                    // 前触れ（霜・ヒス音）
+  const RISE = 0.5, PEAK = 1.8, FADE = 2.7, ERUPT_S = RISE + PEAK + FADE;   // 噴出: 立ち上がり 0.5 → ピーク 1.8 → 2.7 秒で消える（計 5.0 s）
+  const F_TOP = 3.0;                     // 噴気の頂上での上向き加速度（口で push、頂上で F_TOP へ直線的に減る）
+  const SAMPLE_R = 14, SAMPLE_Q = 0.86;  // 試料の取得半径 / 頂上に近い位置（高さ比）
+  const LINGER_S = 6.0;                  // 噴出が終わった後も試料が残る秒数（その後 昇華して消える）
+  const SAMPLE_GK = 10, SAMPLE_LAT = 1.6;   // 試料は軽い氷粒: 落下加速度 = g × 10（見えるように増幅）/ 横ドリフト px/s（噴気ごとに左右交互）
+  const SAMPLE_LIFE = ERUPT_S + LINGER_S - RISE;   // 出現（噴出の RISE 後）から消えるまで
+  const ENTRY = { x: 180, y: 96, vy: 14 };   // 上から進入
+
+  // ---- 地形（ゆるい起伏 + 噴出口・パッドは平ら） -----------------------------------------------
+  const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const baseY = (x) => GY + 3.2 * Math.sin(x * 0.021 + 0.7) + 1.3 * Math.sin(x * 0.07 + 2.0);
+  function terrainFn(x) {
+    let y = baseY(x);
+    for (const v of VENTS) { const w = 1 - sstep(16, 34, Math.abs(x - v.x)); y += (baseY(v.x) - y) * w; v.y = baseY(v.x); }
+    const wp = Math.min(sstep(PAD.x - 26, PAD.x, x), 1 - sstep(PAD.x + PAD.w, PAD.x + PAD.w + 26, x));
+    return y + (PAD.y - y) * wp;
+  }
+  const terrain = [];
+  for (let x = 0; x <= W; x += 6) terrain.push({ x, y: terrainFn(x) });
+  for (const v of VENTS) v.y = terrainFn(v.x);
+
+  // 装飾（固定乱数）
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const STARS = Array.from({ length: 70 }, () => ({ x: rnd() * W, y: rnd() * 470, r: 0.4 + rnd() * 0.9, a: 0.25 + rnd() * 0.6 }));
+  // 虎縞（tiger stripes）: 地表の暗い割れ目。地形の少し下に斜めに走る折れ線
+  const STRIPES = Array.from({ length: 7 }, (_, i) => {
+    const x0 = -10 + i * 56 + rnd() * 18, pts = [[x0, 0]]; let x = x0, d = 0;
+    for (let k = 0; k < 4; k++) { x += 10 + rnd() * 18; d += 8 + rnd() * 18; pts.push([x, d]); }
+    return { pts, w: 1.2 + rnd() * 1.4 };
+  });
+
+  // ---- 噴気の時間関係 -----------------------------------------------------------------------------
+  // T = 開始（タップ）からの秒。ph0 = 全噴気の位相ずらし（秒）。a = 噴出からの経過秒（噴出中のみ 0..ERUPT_S、他は -1）
+  const ease = (t) => 1 - (1 - t) * (1 - t);
+  function ventAt(v, T, ph0) {
+    const u = (((T - v.O - ph0) % v.P) + v.P) % v.P;
+    const a = u < ERUPT_S ? u : -1, toNext = a >= 0 ? v.P - u : v.P - u;
+    const tele = a < 0 && toNext < TELE_S ? 1 - toNext / TELE_S : 0;
+    const env = a < 0 ? 0 : a < RISE + PEAK ? 1 : Math.max(0, 1 - (a - RISE - PEAK) / FADE);
+    return { a, tele, env, toNext, cycle: Math.floor((T - v.O - ph0) / v.P) };
+  }
+
+  // 試料: 噴出の RISE 後に頂上付近へ出現 → 噴出中はその場に漂い、噴出が終わってから LINGER_S 秒かけて重力でゆっくり落ちる（横にも少しドリフト）→ 昇華して消える。
+  // 取れなかった試料は次の噴出で再出現。tau = 出現からの秒。left = 残り秒。nominal = 出現位置（予告マーカーの位置）
+  function sampleAt(i, T, ph0, clock = 0, g = 0.066, hp = 290) {
+    const v = VENTS[i], u = (((T - v.O - ph0) % v.P) + v.P) % v.P;
+    const tau = u >= RISE ? u - RISE : u + v.P - RISE, cyc = Math.floor((T - v.O - ph0) / v.P) - (u >= RISE ? 0 : 1), alive = cyc >= 0 && tau >= 0 && tau < SAMPLE_LIFE;   // 最初の噴出より前は出ない
+    const fall = Math.max(0, tau + RISE - ERUPT_S), ny = v.y - hp * SAMPLE_Q;
+    return { alive, tau, left: SAMPLE_LIFE - tau, life: SAMPLE_LIFE, nx: v.x, ny,
+      x: v.x + 4 * Math.sin(clock * 2.1 + i) + (i % 2 ? -1 : 1) * SAMPLE_LAT * fall,
+      y: ny + 3 * Math.sin(clock * 2.7 + i * 2) + 0.5 * g * SAMPLE_GK * fall * fall };
+  }
+
+  const lab = createLab({
+    host,
+    title: 'ENCELADUS GEYSER RUN',
+    defaults: { g: 0.066, thrust: 5.2, ang: 28, damp: 0.82, drag: 0, fuel: 100, rcs: 2.5, vec: 1 },
+    extraParams: [
+      { key: 'push', label: 'plume push at vent px/s²', min: 4, max: 20, step: 0.5, def: 13 },
+      { key: 'hp',   label: 'plume height px',          min: 150, max: 380, step: 10, def: 290 },
+      { key: 'ph0',  label: 'vent phase shift s',       min: -10, max: 10, step: 0.1, def: 0 },
+    ],
+    world: { terrain, pads: [PAD] },
+    start, onUpdate, onTouchdown, onLiftoff, onCrash, onTap, forces,
+    onDrawBack, onDrawMid, onDrawFront, drawTerrain,
+    telemetryExtra: (l) => `samples ${l.m.got.filter(Boolean).length}/3\n` + VENTS.map((v, i) => { const s = l.m.vs[i]; return `vent${i}  ${s ? (s.a >= 0 ? 'ERUPT ' + s.a.toFixed(1) : 'next ' + s.toNext.toFixed(1)) : '-'}`; }).join('\n') + `\ntouch  ${l.m.touchGrade || '-'}`,
+  });
+  const HP = () => lab.params.hp;
+  const plumeHalf = (q) => 11 + 9 * q;   // 高さ比 q での半幅
+
+  // ---------------------------------------------------------------- 状態
+  function start(l) {
+    sh.onStart(l.m);
+    l.showHud = sess.mode !== 'menu';
+    l.resetShip({ x: ENTRY.x, y: ENTRY.y, vx: 0, vy: 0, angle: 0 });
+    l.frozen = true; l.controlsEnabled = false;   // 開始待ち
+    l.m = { menu: sess.mode === 'menu', waiting: true, started: false, flyT: 0, relT: 0, got: [false, false, false], sampleGrade: null, touchGrade: null, strandT: 0, result: null, resultT: 0, final: null, failed: false, lifeLost: false, toast: '', toastT: 0, bumpT: 0, shakeT: 0, vs: VENTS.map(() => null), nz1: 0, nz2: 0, inPlume: 0, rng: 12345, hissed: {}, erupted: {}, lockedT: 0 };
+    if (l.m.menu) l.hideShip = true;
+  }
+  const begin = (l, mode, opt) => sh.begin(l, mode, opt);
+  const toast = (l, s, sec = 2) => { l.m.toast = s; l.m.toastT = sec; };
+  const samples = (m) => m.got.filter(Boolean).length;
+  const mrand = (m) => (m.rng = (m.rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  function go(l) {   // 開始待ち → 進入（タップ / 推力）
+    const m = l.m; if (!m.waiting || m.menu || m.result) return;
+    m.waiting = false; m.started = true; l.frozen = false; l.controlsEnabled = true; l.ship.vy = ENTRY.vy; toast(l, 'GO', 1.0); audioWake();
+  }
+  function onTap(l, x, y) {
+    const m = l.m;
+    if (m.menu || sess.brief) { sh.tap(l, x, y); return; }
+    if (m.waiting) { go(l); return; }
+    sh.tap(l, x, y);
+  }
+  on(window, 'keydown', (e) => { if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.waiting && !lab.m.menu && !e.repeat) { go(lab); e.preventDefault(); } }, true);
+  sh.hookR(lab, (m) => m.started, (l, r, d) => l.crash(r, d));
+
+  function onTouchdown(l, info) {
+    const m = l.m; m.touchGrade = info.kind === 'pad' ? info.grade : null;
+    if (info.kind !== 'pad' || m.result) return;
+    if (samples(m) < 1) { m.lockedT = 2.4; toast(l, 'PAD LOCKED · NO SAMPLE', 2.4); return; }   // 試料なし: grounded のみ（得点なし・失敗でもない）
+    m.result = 'win'; m.resultT = 0; l.frozen = true; l.controlsEnabled = false;
+    const fp = l.fuelPct(), n = samples(m), grade = info.grade;
+    m.final = { t: m.flyT, base: 1000 + Math.round(fp) * 10 + (grade === 'PERFECT' ? 300 : 100), fuel: fp, grade, n, s2: n >= 3, s3: grade === 'PERFECT' };
+    sh.complete(m.final, [true, m.final.s2, m.final.s3]);
+  }
+  function onLiftoff() {}
+  function onCrash(l, reason, detail) {
+    const m = l.m; if (m.result) return;
+    m.result = 'lose'; m.resultT = 0; m.reason = reason; m.detail = detail; l.controlsEnabled = false; sh.onLoss(m);
+  }
+  const lose = (l, r, d) => l.crash(r, d);
+
+  // ---------------------------------------------------------------- 噴気の外力（物理サブステップごと）
+  function forces(l, dt) {
+    const m = l.m, s = l.ship, pr = l.params; if (!m.started || m.result) return;
+    const T = m.flyT, hp = pr.hp;
+    m.nz1 += ((mrand(m) * 2 - 1) - m.nz1) * Math.min(1, dt * 5); m.nz2 += ((mrand(m) * 2 - 1) - m.nz2) * Math.min(1, dt * 3);
+    let inside = 0;
+    for (let i = 0; i < VENTS.length; i++) {
+      const v = VENTS[i], st = ventAt(v, T, pr.ph0); if (st.a < 0 || st.env <= 0) continue;
+      const hf = ease(Math.min(1, st.a / RISE)), top = hp * hf, h = v.y - s.y, dx = s.x - v.x;
+      // 噴出口への接触: 墜落にせず押し返す（バウンス）
+      if (Math.abs(dx) <= VENT_W + 4 && s.y + C.LEG_Y >= v.y - 5 && s.vy > 0) {
+        s.vy = -(0.4 * s.vy + 14); s.vx += (dx >= 0 ? 1 : -1) * 9; s.omega += (dx >= 0 ? 1 : -1) * 10; m.bumpT = 0.9; m.shakeT = 0.25; clang(0.5);
+      }
+      if (h < 0 || h > top) continue;
+      const q = h / hp, w = plumeHalf(q); if (Math.abs(dx) > w) continue;
+      const lat = 1 - 0.4 * (dx / w) * (dx / w), F0 = pr.push * v.f;
+      s.vy -= (F0 + (F_TOP - F0) * q) * lat * st.env * dt;                                // 強い上向きの押し
+      s.vx += 4.0 * m.nz1 * st.env * (1 - 0.5 * q) * dt;                                 // 横ゆれ
+      s.omega += 5.0 * m.nz2 * st.env * dt;                                               // スピンの乱れ（°/s²。ゆるく減衰するので ±数十°/s 程度）
+      inside = Math.max(inside, st.env);
+    }
+    m.inPlume = inside;
+  }
+
+  // ---------------------------------------------------------------- 毎フレーム
+  function onUpdate(l, dt) {
+    const m = l.m, s = l.ship, pr = l.params;
+    if (m.menu) { m.T = l.clock; for (let i = 0; i < VENTS.length; i++) m.vs[i] = ventAt(VENTS[i], l.clock, 0); return; }
+    if (m.toastT > 0) m.toastT -= dt;
+    if (m.lockedT > 0) m.lockedT -= dt;
+    m.relT += dt;
+    if (m.waiting) { for (let i = 0; i < VENTS.length; i++) m.vs[i] = null; return; }
+    if (!m.result) m.flyT += dt;
+    for (let i = 0; i < VENTS.length; i++) m.vs[i] = ventAt(VENTS[i], m.flyT, pr.ph0);
+    if (m.result) {
+      m.resultT += dt;
+      if (m.lifeLost && m.resultT >= LIFE_LOST_S) l.reset();
+      return;
+    }
+    // 範囲外
+    if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
+    // 燃料切れ
+    if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
+    // 噴出の音・接地中に噴出口が噴いたら押し上げる
+    for (let i = 0; i < VENTS.length; i++) {
+      const v = VENTS[i], st = m.vs[i];
+      if (st.tele > 0 && !m.hissed[i + ':' + st.cycle]) { m.hissed[i + ':' + st.cycle] = 1; hiss(0.55); }
+      if (st.a >= 0 && !m.erupted[i + ':' + st.cycle]) { m.erupted[i + ':' + st.cycle] = 1; hiss(1.0); }
+      if (st.a >= 0 && st.env > 0.2 && l.state === 'grounded' && Math.abs(s.x - v.x) <= VENT_W + 4) {
+        l.state = 'play'; s.vy = -22; s.vx += (s.x >= v.x ? 1 : -1) * 9; s.omega += 10; m.bumpT = 0.9; m.shakeT = 0.25; clang(0.5); toast(l, 'VENT ERUPTED', 1.2);
+      }
+      // 試料: 噴出中だけ頂上付近に出現（噴出ごとに1回、各噴気の試料は1度だけ取れる）
+      const sa = sampleAt(i, m.flyT, pr.ph0, l.clock, pr.g, pr.hp);
+      if (sa.alive && !m.got[i]) {
+        const p = sa;
+        if (Math.hypot(s.x - p.x, s.y - p.y) <= SAMPLE_R) { m.got[i] = true; chime(samples(m)); toast(l, 'SAMPLE ' + samples(m) + '/3', 1.6); l.burst(p.x, p.y, 16, '#9FF3E6'); }
+      }
+    }
+    if (m.bumpT > 0) m.bumpT -= dt;
+    if (m.shakeT > 0) m.shakeT -= dt;
+    lab.canvas.style.transform = m.shakeT > 0 ? 'translate(' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px,' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px)' : '';
+  }
+  function samplePos(i, clock, T = lab.m.flyT) { const a = sampleAt(i, T, lab.params.ph0, clock, lab.params.g, lab.params.hp); return { x: a.x, y: a.y }; }
+
+  // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
+  let actx = null;
+  const audioWake = () => { try { actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)()); if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
+  const audioOn = () => actx && !lab.script && !(host.muted && host.muted());   // 本編のミュートに従う
+  let noiseBuf = null;
+  function hiss(k) {   // 霜のヒス音 / 噴出の吹き出し音（フィルタ付きノイズ）
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime;
+      if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+      const src = actx.createBufferSource(); src.buffer = noiseBuf;
+      const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = k < 0.8 ? 5200 : 1400; f.Q.value = 0.7;
+      const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05 * k, t + (k < 0.8 ? 0.9 : 0.12)); g.gain.exponentialRampToValueAtTime(0.0001, t + (k < 0.8 ? 1.3 : 1.6));
+      src.connect(f); f.connect(g); g.connect(actx.destination); src.start(t); src.stop(t + 1.7);
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function chime(n) {
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      [880, 1318 + n * 110].forEach((fr, i) => { const o = actx.createOscillator(); o.type = 'sine'; o.frequency.value = fr; o.connect(g); o.start(t + i * 0.09); o.stop(t + 0.75); });
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function clang(k) {
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.1 + 0.1 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      for (const f of [260, 410]) { const o = actx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 0.32); }
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+
+  // ---------------------------------------------------------------- 描画
+  function onDrawBack(ctx, l) {
+    const g = ctx.createLinearGradient(0, 0, 0, 540); g.addColorStop(0, '#02030a'); g.addColorStop(1, '#101a2e');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    for (const s of STARS) { ctx.fillStyle = rgba('#ffffff', s.a); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill(); }
+    drawSaturn(ctx);
+  }
+  function drawSaturn(ctx) {
+    const cx = 258, cy = 218, r = 92, tilt = -0.28;
+    const ring = (back) => {   // 環: 傾いた楕円。back=惑星の裏側（上半分）
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
+      for (const [rx, ry, col, lw] of [[196, 34, 'rgba(206,190,150,0.55)', 9], [168, 29, 'rgba(160,144,112,0.5)', 6], [146, 25, 'rgba(226,212,176,0.45)', 4]]) {
+        ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, back ? Math.PI : 0, back ? 2 * Math.PI : Math.PI); ctx.stroke();
+      }
+      ctx.restore();
+    };
+    ring(true);
+    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.clip();
+    const g = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+    g.addColorStop(0, '#c9b585'); g.addColorStop(0.3, '#e2d3a6'); g.addColorStop(0.5, '#bba274'); g.addColorStop(0.7, '#d8c697'); g.addColorStop(1, '#8c7752');
+    ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.fillStyle = 'rgba(120,96,60,0.22)'; for (const [y, h] of [[-52, 8], [-20, 12], [14, 7], [40, 10]]) ctx.fillRect(cx - r, cy + y, r * 2, h);
+    const sh2 = ctx.createRadialGradient(cx + 46, cy - 40, r * 0.4, cx + 46, cy - 40, r * 2.0); sh2.addColorStop(0, 'rgba(0,0,0,0)'); sh2.addColorStop(1, 'rgba(0,0,0,0.72)');
+    ctx.fillStyle = sh2; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
+    ring(false);
+  }
+
+  // 地形: 氷の白青 + 暗い虎縞 + 噴出口の割れ目
+  function drawTerrain(ctx, l) {
+    const p = P(), m = l.m;
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (const q of terrain) ctx.lineTo(q.x, q.y);
+    ctx.lineTo(W, H); ctx.closePath();
+    const g = ctx.createLinearGradient(0, 500, 0, 600); g.addColorStop(0, '#e6f1fb'); g.addColorStop(0.45, '#b4cbe2'); g.addColorStop(1, '#5d7391');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const s of STRIPES) {   // 虎縞
+      const top = terrainFn(s.pts[0][0]) + 4;
+      ctx.strokeStyle = 'rgba(28,46,76,0.7)'; ctx.lineWidth = s.w; ctx.beginPath();
+      s.pts.forEach((q, i) => (i ? ctx.lineTo(q[0], top + q[1]) : ctx.moveTo(q[0], top + q[1]))); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 0.7; ctx.beginPath();
+      s.pts.forEach((q, i) => (i ? ctx.lineTo(q[0] + 1.2, top + q[1] - 1) : ctx.moveTo(q[0] + 1.2, top + q[1] - 1))); ctx.stroke();
+    }
+    for (const v of VENTS) {   // 噴出口の割れ目（暗い楕円 + 下へ走る亀裂）
+      const st = m.vs[VENTS.indexOf(v)], hot = st && st.a >= 0 ? st.env : st ? st.tele * 0.6 : 0;
+      ctx.fillStyle = '#16233c'; ctx.beginPath(); ctx.ellipse(v.x, v.y + 2, VENT_W + 2, 4, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(22,35,60,0.85)'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(v.x - 10, v.y + 3); ctx.lineTo(v.x - 24, v.y + 14); ctx.lineTo(v.x - 40, v.y + 20); ctx.moveTo(v.x + 10, v.y + 3); ctx.lineTo(v.x + 22, v.y + 16); ctx.lineTo(v.x + 44, v.y + 22); ctx.stroke();
+      if (hot > 0.02) { ctx.fillStyle = rgba('#cfeaff', 0.35 * hot); ctx.beginPath(); ctx.ellipse(v.x, v.y + 1, VENT_W, 3, 0, 0, 7); ctx.fill(); }
+    }
+    ctx.restore();
+    ctx.beginPath(); for (const q of terrain) (q === terrain[0] ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y));
+    ctx.strokeStyle = '#f4faff'; ctx.lineWidth = 1.3; ctx.stroke();
+    drawPad(ctx, l);
+    drawLandability(ctx, l, terrain);
+  }
+  function drawPad(ctx, l) {
+    const p = P(), m = l.m, t = l.clock, open = samples(m) >= 1, col = open ? p.green : p.bad, x0 = PAD.x, x1 = PAD.x + PAD.w, y = PAD.y;
+    ctx.save();
+    ctx.fillStyle = rgba(col, (open ? 0.2 : 0.14) + 0.08 * Math.sin(t * 4)); ctx.fillRect(x0, y - 1, PAD.w, 5);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x0, y - 9); ctx.lineTo(x0, y - 1); ctx.lineTo(x0 + 7, y - 1); ctx.moveTo(x1, y - 9); ctx.lineTo(x1, y - 1); ctx.lineTo(x1 - 7, y - 1); ctx.stroke();
+    ctx.fillStyle = col; ctx.fillRect(PAD.x + PAD.w / 2 - 4, y - 1.5, 8, 2);
+    if (!m.menu && !m.result && (l.state !== 'grounded' || !open)) {
+      const by = open ? Math.sin(t * 4) * 3 : 0;
+      txt(ctx, open ? 'LANDING PAD' : 'PAD LOCKED', PAD.x + PAD.w / 2, y - 44 + by, 8, col, 'center', { w: 700, sp: 1.2 });
+      if (open) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(PAD.x + PAD.w / 2 - 5, y - 32 + by); ctx.lineTo(PAD.x + PAD.w / 2 + 5, y - 32 + by); ctx.lineTo(PAD.x + PAD.w / 2, y - 25 + by); ctx.closePath(); ctx.fill(); }
+      else {   // 鍵アイコン
+        const kx = PAD.x + PAD.w / 2, ky = y - 28; ctx.strokeStyle = col; ctx.lineWidth = 1.6; rr(ctx, kx - 5, ky, 10, 8, 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(kx, ky, 3.4, Math.PI, 0); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // 噴気（地形の後・機体の前）。柱 = ぼんやりした柱状グラデーション + 上へ広がる粒の連なり。前触れ = 霜が舞う
+  function onDrawMid(ctx, l) {
+    const m = l.m, hp = l.params.hp, t = l.clock;
+    VENTS.forEach((v, i) => {
+      const st = m.vs[i]; if (!st) { frostIdle(ctx, v, t, 0.15); if (!m.menu) drawMarker(ctx, sampleAt(i, 0, 0, t, 0, hp), t, 0); return; }
+      if (st.tele > 0) frostIdle(ctx, v, t, 0.15 + 0.85 * st.tele);
+      else if (st.a < 0) frostIdle(ctx, v, t, 0.12);
+      const sa = sampleAt(i, m.flyT, l.params.ph0, t, l.params.g, hp);
+      if (!m.menu && !m.got[i]) {
+        if (sa.alive) drawSample(ctx, sa, t); else drawMarker(ctx, sa, t, st.tele);   // 試料（残り時間リング付き）/ 次の出現位置の予告
+      }
+      if (st.a < 0) return;
+      const hf = ease(Math.min(1, st.a / RISE)), top = hp * hf, env = st.env, N = 34;
+      // 柱の発光（口が明るく、頂上へ薄く）
+      const g = ctx.createLinearGradient(0, v.y, 0, v.y - top); g.addColorStop(0, rgba('#e8f6ff', 0.5 * env)); g.addColorStop(1, rgba('#bfe0ff', 0.04 * env));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(v.x - plumeHalf(0), v.y); ctx.lineTo(v.x - plumeHalf(hf), v.y - top); ctx.lineTo(v.x + plumeHalf(hf), v.y - top); ctx.lineTo(v.x + plumeHalf(0), v.y); ctx.closePath(); ctx.fill();
+      for (let k = 0; k < N; k++) {   // 粒
+        const q = (k + 0.5) / N, h = q * top, ph = (t * 1.4 + k * 0.37) % 1, sway = Math.sin(t * 3 + k * 1.7 + i) * (2 + 8 * q);
+        const r = 5 + 11 * q + 2 * Math.sin(t * 4 + k), a = 0.5 * env * (1 - 0.55 * q) * (0.65 + 0.35 * ph);
+        ctx.fillStyle = rgba(k % 3 ? '#f2f9ff' : '#cfe6ff', a); ctx.beginPath(); ctx.arc(v.x + sway, v.y - h, r, 0, 7); ctx.fill();
+      }
+      for (let k = 0; k < 14; k++) {   // 氷の粒（上へ飛ぶ）
+        const ph = (t * (0.7 + (k % 3) * 0.25) + k * 0.31) % 1, h = ph * top, x = v.x + Math.sin(k * 12.9 + i) * plumeHalf(ph) * 0.9;
+        ctx.fillStyle = rgba('#ffffff', 0.8 * env * (1 - ph)); ctx.fillRect(x, v.y - h, 1.4, 1.4);
+      }
+    });
+  }
+  function frostIdle(ctx, v, t, k) {   // 噴出口から霜がふわっと立ちのぼる（前触れで濃く・大きく）
+    for (let j = 0; j < 12; j++) {
+      const ph = (t * (0.5 + 0.9 * k) + j / 12) % 1, h = ph * (14 + 40 * k), x = v.x + Math.sin(j * 5.1 + t * 2) * (3 + 8 * ph * k);
+      ctx.fillStyle = rgba('#f4faff', 0.5 * k * (1 - ph)); ctx.beginPath(); ctx.arc(x, v.y - 2 - h, 1.2 + 2.6 * ph * k + 0.6, 0, 7); ctx.fill();
+    }
+  }
+  function drawMarker(ctx, sa, t, tele) {   // 予告マーカー: 常にうっすら、霜（前触れ）で濃く。点線の輪 + 中心の点
+    const k = 0.2 + 0.75 * tele, x = sa.nx, y = sa.ny + 3 * Math.sin(t * 2.7);
+    ctx.save(); ctx.globalAlpha = k; ctx.strokeStyle = '#63D8C9'; ctx.fillStyle = '#9FF3E6'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.arc(x, y, SAMPLE_R * 0.9 + tele * 3 * Math.sin(t * 8), 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 7); ctx.fill(); ctx.restore();
+  }
+  function drawSample(ctx, p, t) {
+    const blink = p.left < 1.5 ? 0.45 + 0.35 * Math.sin(t * 22) + 0.2 : p.left < 2.5 ? 0.85 : 1, pulse = 0.7 + 0.3 * Math.sin(t * 6);
+    ctx.save(); ctx.globalAlpha = blink;
+    const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 17 + 3 * pulse); g.addColorStop(0, 'rgba(210,255,248,0.95)'); g.addColorStop(0.35, 'rgba(120,240,222,0.5)'); g.addColorStop(1, 'rgba(120,240,222,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, 17 + 3 * pulse, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(p.x, p.y, 3.2, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#63D8C9'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(p.x, p.y, SAMPLE_R * 0.6 + pulse, 0, 7); ctx.stroke();
+    const fr = Math.max(0, Math.min(1, p.left / p.life));   // 残り時間リング（時計回りに縮む）
+    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = p.left < 2.5 ? '#FFC94D' : '#9FF3E6';
+    ctx.beginPath(); ctx.arc(p.x, p.y, SAMPLE_R + 4, -Math.PI / 2, -Math.PI / 2 + fr * Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function onDrawFront(ctx, l) {
+    const p = P(), m = l.m, s = l.ship;
+    if (m.menu) { sh.drawMenu(ctx, l); return; }
+    const n = samples(m);
+    sh.drawCorner(ctx, l, { time: m.started ? (m.result === 'win' ? m.final.t : m.flyT) : null, check: 'SAMPLES ' + m.got.map((g) => (g ? '●' : '○')).join('') + '   PAD ' + (m.result === 'win' ? '✓' : n ? '○' : '✕'), checkOk: n >= 1 });
+    // ヒント
+    if (!m.result) {
+      let hint = '', bad = false;
+      if (m.waiting || m.relT < 9) hint = 'FLY THROUGH THE PLUMES · GRAB A SAMPLE · LAND ON THE PAD';
+      else if (l.state === 'grounded' && l.padAt(s.x) && n < 1) { hint = 'PAD LOCKED · GRAB A SAMPLE FIRST · THRUST TO LIFT OFF'; bad = true; }
+      else if (l.state === 'grounded' && !l.padAt(s.x)) hint = 'OFF PAD · THRUST TO LIFT OFF';
+      else if (n < 1) hint = 'GRAB A GLOWING SAMPLE AT A PLUME TOP';
+      else if (n < 3) hint = 'LAND ON THE PAD  ·  OR GRAB MORE FOR ★2';
+      else hint = 'ALL 3 SAMPLES · LAND ON THE PAD';
+      sh.drawHint(ctx, hint, bad);
+    }
+    if (m.inPlume > 0.05 && !m.result) txt(ctx, 'PLUME', s.x, s.y - 30, 7.5, '#bfe6ff', 'center', { w: 700, sp: 1.2, a: 0.5 + 0.5 * m.inPlume });
+    if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
+    if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+    if (m.toastT > 0 && !m.waiting) txt(ctx, m.toast, 180, 236, 10, m.lockedT > 0 ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
+    sh.drawFuelOut(ctx, l);
+    if (!m.result && m.started) {
+      const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 30 && s.vy < 4));
+      if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
+    }
+    if (m.result) {
+      const f = m.final;
+      sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'SAMPLE LANDED', mmss(f.t)], [f.s2, 'ALL 3 SAMPLES', f.n + ' / 3'], [f.s3, 'PERFECT PAD LANDING', f.grade || '-']] : [], failNote: samples(m) ? samples(m) + ' sample(s) collected · lost.' : 'No sample collected yet.', failTime: m.flyT });
+    }
+    sh.drawBrief(ctx, l);
+  }
+
+  sh.bindLab(lab);
+  sh.addResetButton();
+
+  window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
+  window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
+  window.__geyser = { VENTS, PAD, ventAt, samplePos, sampleAt, LINGER_S, SAMPLE_LIFE, ERUPT_S, RISE, PEAK, FADE, TELE_S, SAMPLE_R, VENT_W, HP, plumeHalf, F_TOP };
+  lab.shell = sh;
+  return lab;
+}
+
+return { create };
+})();
+
+// ---- 02_src/expedition/m3_ryugu.js ----
+const EXP_m3 = (function () {
+// EXPEDITION #3 RYUGU TOUCH-AND-GO（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
+// タップで開始（左上から右下へ流れながら降りる）。ほぼ無重力。弧を描く小天体の地表、岩の間の目標円に 8 px/s 以下でそっと触れると自動で採取（弾丸発射の演出）→ 小さく弾んでほぼ静止（自動）→
+// LIFT OFF の合図から 9 秒以内に安全高度の線（104px 上）より上へ → CLEAR、機体は自動で真上へ去ってから結果。母艦との発着は #1 PHOBOS だけ（2026-11-03 決定）。
+// 接触の規則は一つ:「8 px/s 以下ならどこに触れても壊れない」（目標円 = 採取 / 岩 = 押し返される / 平地 = 接地）。
+// 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
+// 本編 v1.1 と試作ページ（07_lab/expedition/03_touch_and_go/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
+// host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
+const { createLab, trackOn, W, H, C, footSlopeDeg } = EXP_harness;
+const { createShell, LIFE_LOST_S, mmss } = EXP_shell;
+
+function create(host = {}) {
+  const on = trackOn(host);
+  const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'touch_and_go', expLabel: 'EXPEDITION 03', title: 'RYUGU TOUCH-AND-GO',
+    brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる', fact: ['リュウグウ：はやぶさ2 が 2019 年に 2 回', 'タッチダウンし、2020 年に試料を地球へ届けた小惑星。'],
+      en: { sub: 'TOUCH-AND-GO', goals: ['· Not a landing: touch the target circle', '  gently (8 px/s or less) to take a sample', '· At LIFT OFF, climb above the dotted line'], stars: ['Clear', 'Touch the center of the circle', 'PERFECT touch (3 or less, upright)'], tip: 'Tip: nose against your drift, then thrust', fact: ['Ryugu: Hayabusa2 touched down twice in 2019', 'and delivered samples to Earth in 2020.'] } } });
+  const sess = sh.sess;
+  const OUT = { x0: -10, x1: 370, y0: -30 };
+  const GY = 524;                               // 地表の基準高さ（目標の空き地はこの高さで平ら）
+  const TGT = { x: 187, r: 18, c: 5 };          // 目標円: 中心 x / 触れて採取できる半径 / ★2 の中心半径
+  const CLEAR = { x0: 163, x1: 211 };           // 目標の空き地（平ら）
+  const TOUCH_TILT = 20;                        // 採取できる傾きの上限（サンプラーの筒が地面に向く）
+  const PERFECT = { sp: 3, ang: 5, om: 6 };     // ★3
+  const REBOUND = 14;                           // 採取の瞬間の上向き速度（小さく弾む。すぐ自動で止まる）
+  const SETTLE = { s: 0.9, free: 0.3, k: 6 };   // 採取後の自動静止: 合計秒 / 最初は減衰なし（弾みが見える）/ 減衰の速さ。この間は操作なし
+  const AWAY = { s: 2.8, t0: 0.25, acc: 260 };  // 線を越えた後の演出（秒）: 直立して真上へ加速し画面の外へ → 結果。t0 = 噴射までの間、acc = 上向き加速 px/s²
+  const ENTRY = { x: 60, y: 110, vx: 8, vy: 16 };   // 開始位置と初速: 左上から右下へ流れながら降りる（横の流れを止めるのが課題）
+  const CURVE = { cx: 187, R: 450 };            // 小天体の丸み: 地表は中心 x=cx・半径 R の円弧（目標は弧の頂上。両端は約 35〜41px 下がる）
+  // 岩（半円に近いこぶ。側面は急 = 傾斜 >10°）。x, 半径 r, 高さ h
+  const ROCKS = [
+    { x: 22, r: 24, h: 28 }, { x: 104, r: 30, h: 44 }, { x: 141, r: 12, h: 15 },
+    { x: 252, r: 36, h: 62 }, { x: 301, r: 13, h: 15 }, { x: 340, r: 24, h: 30 },
+  ];
+
+  // ---- 地形 ----------------------------------------------------------------------------------------
+  const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const arcY = (x) => CURVE.R - Math.sqrt(CURVE.R * CURVE.R - (x - CURVE.cx) * (x - CURVE.cx));   // 頂上からの下がり
+  const baseY = (x) => GY + arcY(x) + 3 * Math.sin(x * 0.05 + 1.1) + 1.5 * Math.sin(x * 0.13 + 0.4);
+  function terrainFn(x) {
+    let y = baseY(x);
+    const wc = Math.min(sstep(CLEAR.x0 - 12, CLEAR.x0, x), 1 - sstep(CLEAR.x1, CLEAR.x1 + 12, x));
+    y += (GY - y) * wc;
+    for (const r of ROCKS) { const d = (x - r.x) / r.r; if (Math.abs(d) < 1) y = Math.min(y, baseY(x) - r.h * Math.pow(1 - d * d, 0.55)); }
+    return y;
+  }
+  const terrain = [];
+  for (let x = 0; x <= W; x += 3) terrain.push({ x, y: terrainFn(x) });
+
+  // 装飾（固定乱数）
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // 星空は小天体の自転に合わせて、地表の弧の中心（CURVE.cx, GY + R）のまわりをごくゆっくり回る（上空で左へ 約 1 px/s）。
+  // 遠い（暗い）星ほど速く、明るい星は 0.6 倍（奥行き）。機体の速さ（8〜10 px/s 以下を読む遊び）を邪魔しない遅さにとどめる。
+  // 星は角度 ±SKY.span の帯に置き、帯の端（画面の外）で反対側へ戻る。密度は元の 80 個/画面と同程度。
+  const SKY = { cy: GY + CURVE.R, span: 30 * Math.PI / 180, r0: CURVE.R + GY - 480 - 30, r1: 1000, n: 195, w: 1 / 800, wBright: 0.6 };
+  const STARS = Array.from({ length: SKY.n }, () => {
+    const r = Math.sqrt(SKY.r0 * SKY.r0 + rnd() * (SKY.r1 * SKY.r1 - SKY.r0 * SKY.r0)), th = (rnd() * 2 - 1) * SKY.span, sz = 0.4 + rnd() * 0.9, a = 0.25 + rnd() * 0.6;
+    return { rr: r, th, r: sz, a, w: SKY.w * (sz > 1.0 || a > 0.7 ? SKY.wBright : 1) };
+  });
+  const starPos = (st, t) => { const th = ((st.th - st.w * t + SKY.span) % (2 * SKY.span) + 2 * SKY.span) % (2 * SKY.span) - SKY.span; return { x: CURVE.cx + st.rr * Math.sin(th), y: SKY.cy - st.rr * Math.cos(th) }; };
+  const PEBBLES = Array.from({ length: 90 }, () => { const x = rnd() * W; return { x, dy: 3 + rnd() * 40, r: 0.8 + rnd() * 2.6, s: rnd() }; });
+
+  const lab = createLab({
+    host,
+    title: 'RYUGU TOUCH-AND-GO',
+    defaults: { g: 0.03, thrust: 5.2, ang: 28, damp: 0.82, drag: 0, fuel: 100, rcs: 2.5, vec: 1 },
+    extraParams: [
+      { key: 'vtouch', label: 'touch speed limit px/s', min: 4, max: 14, step: 0.5, def: 8 },
+      { key: 'leave',  label: 'time to leave s (from LIFT OFF)', min: 3, max: 14, step: 0.5, def: 9 },
+      { key: 'alt',    label: 'safe altitude px',       min: 30, max: 160, step: 2, def: 104 },
+    ],
+    world: { terrain, pads: [] },
+    start, onUpdate, onTouchdown, onLiftoff, onCrash, onTap, forces,
+    onDrawBack, onDrawMid, onDrawFront, drawTerrain, hud: false,
+    telemetryExtra: (l) => `sampled ${l.m.sampled ? 'yes' : 'no'}  leave ${l.m.sampled ? l.m.leaveT.toFixed(1) : '-'}\ntouch  ${l.m.touch ? l.m.touch.sp.toFixed(1) + ' px/s dx ' + l.m.touch.dx.toFixed(1) : '-'}\nbumps  ${l.m.bumps}`,
+  });
+  const LINE_Y = () => GY - lab.params.alt;   // 安全高度の線（足元がこれより上で離脱完了）
+  const wrap180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+  const speedOf = (s) => Math.hypot(s.vx, s.vy);
+
+  // ---------------------------------------------------------------- 状態
+  function start(l) {
+    sh.onStart(l.m);
+    l.resetShip({ x: ENTRY.x, y: ENTRY.y, vx: 0, vy: 0, angle: 0 });
+    l.frozen = true; l.controlsEnabled = false;   // 開始待ち
+    l.m = { menu: sess.mode === 'menu', waiting: true, started: false, flyT: 0, relT: 0, sampled: false, phase: null, settleT: 0, awayT: 0, promptT: 0, away0: null, touch: null, leaveT: 0, touchX: TGT.x,
+      strandT: 0, result: null, resultT: 0, final: null, failed: false, lifeLost: false, toast: '', toastT: 0, toastBad: false, bumpT: 0, shakeT: 0, shotT: 0, bumps: 0, noSampleT: 0 };
+    if (l.m.menu) l.hideShip = true;
+  }
+  const begin = (l, mode, opt) => sh.begin(l, mode, opt);
+  const toast = (l, s, sec = 2, bad = false) => { l.m.toast = s; l.m.toastT = sec; l.m.toastBad = bad; };
+  function go(l) {   // 開始待ち → 進入: 右下へ流れながら降りる
+    const m = l.m; if (!m.waiting || m.menu || m.result) return;
+    m.waiting = false; m.started = true; l.frozen = false; l.controlsEnabled = true; l.ship.vx = ENTRY.vx; l.ship.vy = ENTRY.vy; toast(l, 'GO', 1.0); audioWake();
+  }
+  function onTap(l, x, y) {
+    const m = l.m;
+    if (m.menu || sess.brief) { sh.tap(l, x, y); return; }
+    if (m.waiting) { go(l); return; }
+    sh.tap(l, x, y);
+  }
+  on(window, 'keydown', (e) => { if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.waiting && !lab.m.menu && !e.repeat) { go(lab); e.preventDefault(); } }, true);
+  sh.hookR(lab, (m) => m.started, (l, r, d) => { if (l.m.phase !== 'away') l.crash(r, d); });   // 去る演出中の R は無視（クリア済み）
+
+  function onTouchdown(l, info) { if (l.m.result) return; }   // 平地への接地（採取なし・失敗でもない。推力で離陸）
+  function onLiftoff() {}
+  function onCrash(l, reason, detail) {
+    const m = l.m; if (m.result) return;
+    m.result = 'lose'; m.resultT = 0; m.reason = reason; m.detail = detail; l.controlsEnabled = false; sh.onLoss(m);
+  }
+  function clearLine(l) {   // 線を越えた = クリア確定（時間・燃料はここで決まる）→ 真上へ去る演出へ
+    const m = l.m, s = l.ship; if (m.result || m.phase === 'away') return;
+    const fp = l.fuelPct(), t = m.touch;
+    m.final = { t: m.flyT, base: 1000 + Math.round(fp) * 10 + (t.perfect ? 300 : 100), fuel: fp, sp: t.sp, dx: t.dx, s2: t.center, s3: t.perfect, leaveT: m.leaveT };
+    m.phase = 'away'; m.awayT = 0; m.away0 = { x: s.x, y: s.y, vx: s.vx, vy: s.vy, a: s.angle, tx: s.x < 180 ? 262 : 98 }; l.frozen = true; l.controlsEnabled = false;
+    chime();
+  }
+  function win(l) {   // 去る演出が終わったら結果
+    const m = l.m; if (m.result) return;
+    m.result = 'win'; m.resultT = 0; l.frozen = true; l.controlsEnabled = false; l.hideShip = true;
+    sh.complete(m.final, [true, m.final.s2, m.final.s3]);
+  }
+  function updateAway(l, dt) {   // 機体が自動で直立し、真上へ加速して画面の外へ去る
+    const m = l.m, s = l.ship, h = m.away0; m.awayT += dt;
+    const t = Math.max(0, m.awayT - AWAY.t0);
+    s.angle = h.a * Math.max(0, 1 - m.awayT / 0.4);
+    s.x = h.x + h.vx * Math.min(m.awayT, 0.6);
+    s.y = h.y + Math.min(0, h.vy) * m.awayT - 0.5 * AWAY.acc * t * t;
+    l.thr = { main: m.awayT >= AWAY.t0 && s.y > -40, left: false, right: false };
+    if (s.y < -40) l.hideShip = true;
+    if (m.awayT >= AWAY.s) win(l);
+  }
+
+  // ---------------------------------------------------------------- 接触（物理サブステップごと。harness の着地判定より先に、次の位置で接地するかを見る）
+  function forces(l, dt) {
+    const m = l.m, s = l.ship, pr = l.params; if (!m.started || m.result) return;
+    if (m.phase === 'settle') {   // 採取後の自動静止: 弾んだあと速度・回転・傾きを消して、その場にほぼ止まる（重力も打ち消す）
+      s.vy -= pr.g * dt;
+      if (m.settleT >= SETTLE.free) { const k = Math.exp(-SETTLE.k * dt); s.vx *= k; s.vy *= k; s.omega *= k; s.angle *= Math.exp(-5 * dt); }
+    }
+    const nx = s.x + s.vx * dt, ny = s.y + s.vy * dt, ty = l.terrainY(nx);
+    if (ny + C.LEG_Y + 0.05 < ty) return;
+    const sp = speedOf(s), tilt = Math.abs(wrap180(s.angle)), om = Math.abs(s.omega), dx = s.x - TGT.x;
+    if (Math.abs(dx) <= TGT.r) {   // 目標円（平ら）
+      if (!m.sampled && sp <= pr.vtouch && tilt <= TOUCH_TILT) return touchSample(l, { sp, tilt, om, dx });
+      const B = C.BOUNCE;
+      if (sp <= pr.vtouch || (Math.abs(s.vy) <= B.vy && Math.abs(s.vx) <= B.vx && tilt <= B.ang && om <= B.om)) {   // 速すぎ・傾きすぎ・採取済み: 跳ね返る（墜落ではない）
+        s.vy = -Math.max(3, 0.45 * Math.abs(s.vy)); s.vx *= 0.6; s.omega += (dx >= 0 ? 1 : -1) * 6; s.y = Math.min(s.y, GY - C.LEG_Y - 0.5);
+        m.bumpT = 0.9; m.shakeT = 0.18; m.bumps++; clang(0.35);
+        if (!m.sampled) { m.noSampleT = 2.2; toast(l, sp > pr.vtouch ? 'TOO FAST · NO SAMPLE (' + sp.toFixed(0) + ' > ' + pr.vtouch + ')' : 'TILTED · NO SAMPLE', 2.2, true); }
+      }
+      return;   // それ以上は harness の判定（HARD IMPACT / TIPPED OVER）
+    }
+    if (footSlopeDeg(terrain, nx) > C.LAND_SLOPE_DEG && sp <= pr.vtouch) rockBump(l, nx);   // 岩にそっと触れた: 押し返す。速ければ harness で墜落（STEEP GROUND など）
+  }
+  function touchSample(l, t) {
+    const m = l.m, s = l.ship;
+    t.center = Math.abs(t.dx) <= TGT.c; t.perfect = t.sp <= PERFECT.sp && t.tilt <= PERFECT.ang && t.om <= PERFECT.om;
+    m.sampled = true; m.touch = t; m.leaveT = 0; m.touchX = s.x; m.shotT = 1; m.phase = 'settle'; m.settleT = 0;
+    s.vy = -REBOUND; s.vx *= 0.3; s.omega *= 0.5; s.y = Math.min(s.y, GY - C.LEG_Y - 0.5);
+    l.controlsEnabled = false;   // 静止するまで自動（合図の前に噴いても効かない）
+    l.burst(s.x, GY - 1, 26, '#8d8378'); l.burst(s.x, GY - 2, 8, '#FFE9A8');
+    toast(l, 'SAMPLE ACQUIRED', 1.0); shot();
+  }
+  function rockBump(l, nx) {
+    const m = l.m, s = l.ship, ty = l.terrainY;
+    const k = (ty(nx + 2) - ty(nx - 2)) / 4, n = Math.hypot(k, 1), ex = k / n, ey = -1 / n;   // 外向きの法線（上向き側）
+    const vn = s.vx * ex + s.vy * ey;
+    if (vn < 0) { s.vx -= 1.5 * vn * ex; s.vy -= 1.5 * vn * ey; }
+    const out = s.vx * ex + s.vy * ey; if (out < 3) { s.vx += (3 - out) * ex; s.vy += (3 - out) * ey; }
+    s.omega += (ex >= 0 ? 1 : -1) * 8; s.y = Math.min(s.y, ty(s.x) - C.LEG_Y - 0.3);
+    m.bumpT = 0.9; m.shakeT = 0.2; m.bumps++; clang(0.4);
+  }
+
+  // ---------------------------------------------------------------- 毎フレーム
+  function onUpdate(l, dt) {
+    const m = l.m, s = l.ship, pr = l.params;
+    if (m.menu) return;
+    if (m.toastT > 0) m.toastT -= dt;
+    if (m.noSampleT > 0) m.noSampleT -= dt;
+    if (m.shotT > 0) m.shotT -= dt * 1.6;
+    m.relT += dt;
+    if (m.waiting) return;
+    if (!m.result && m.phase !== 'away') m.flyT += dt;
+    if (m.phase === 'away' && !m.result) { updateAway(l, dt); return; }
+    if (m.result) {
+      m.resultT += dt;
+      if (m.lifeLost && m.resultT >= LIFE_LOST_S) l.reset();
+      return;
+    }
+    if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
+    if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
+    if (m.phase === 'settle') {
+      m.settleT += dt;
+      if (m.settleT >= SETTLE.s) { m.phase = 'leave'; m.promptT = 0; l.controlsEnabled = true; alarm(); }
+    } else if (m.phase === 'leave') {
+      m.promptT += dt;
+      if (s.y + C.LEG_Y <= LINE_Y()) return clearLine(l);
+      m.leaveT += dt;
+      if (m.leaveT >= pr.leave) return l.crash('CAUGHT IN DEBRIS', 'Climb above the line within ' + pr.leave + ' s of LIFT OFF');
+    }
+    if (m.bumpT > 0) m.bumpT -= dt;
+    if (m.shakeT > 0) m.shakeT -= dt;
+    lab.canvas.style.transform = m.shakeT > 0 ? 'translate(' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px,' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px)' : '';
+  }
+
+  // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
+  let actx = null;
+  const audioWake = () => { try { actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)()); if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
+  const audioOn = () => actx && !lab.script && !(host.muted && host.muted());   // 本編のミュートに従う
+  let noiseBuf = null;
+  function shot() {   // サンプラーの弾丸: 低い「ドン」+ 砂のはじけるノイズ
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime;
+      const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.25);
+      g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.36);
+      if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+      const src = actx.createBufferSource(); src.buffer = noiseBuf; const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 0.6;
+      const g2 = actx.createGain(); g2.gain.setValueAtTime(0.12, t + 0.02); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      src.connect(f); f.connect(g2); g2.connect(actx.destination); src.start(t + 0.02); src.stop(t + 0.62);
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function alarm() {   // LIFT OFF の合図: 高い短音 3 回
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination); g.gain.value = 0;
+      for (let i = 0; i < 3; i++) { const t0 = t + i * 0.13; g.gain.setValueAtTime(0.11, t0); g.gain.setValueAtTime(0, t0 + 0.08); }
+      const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = 1046; o.connect(g); o.start(t); o.stop(t + 0.4);
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function chime() {
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      [784, 1175, 1568].forEach((fr, i) => { const o = actx.createOscillator(); o.type = 'sine'; o.frequency.value = fr; o.connect(g); o.start(t + i * 0.08); o.stop(t + 0.95); });
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function clang(k) {
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.08 + 0.1 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      for (const f of [190, 310]) { const o = actx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 0.27); }
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+
+  // ---------------------------------------------------------------- 描画
+  function onDrawBack(ctx, l) {
+    const g = ctx.createLinearGradient(0, 0, 0, 540); g.addColorStop(0, '#010207'); g.addColorStop(1, '#0b0d16');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const t = l.clock;
+    for (const st of STARS) { const q = starPos(st, t); if (q.x < -2 || q.x > W + 2 || q.y < -2 || q.y > 545) continue; ctx.fillStyle = rgba('#ffffff', st.a); ctx.beginPath(); ctx.arc(q.x, q.y, st.r, 0, 7); ctx.fill(); }
+    const sun = ctx.createRadialGradient(28, 60, 2, 28, 60, 120); sun.addColorStop(0, 'rgba(255,244,214,0.9)'); sun.addColorStop(0.08, 'rgba(255,230,180,0.35)'); sun.addColorStop(1, 'rgba(255,220,160,0)');
+    ctx.fillStyle = sun; ctx.fillRect(0, 0, 160, 190);
+    ctx.fillStyle = '#7fb4ff'; ctx.beginPath(); ctx.arc(300, 150, 1.8, 0, 7); ctx.fill();   // 地球（遠い青い点）
+    txt(ctx, 'EARTH', 306, 146, 6, '#7fb4ff', 'left', { w: 600, sp: 1, a: 0.55 });
+  }
+
+  // 地形: 暗い炭色の礫だらけの地表（Ryugu は太陽系で最も暗い部類）+ 岩の陰影 + 小石
+  function drawTerrain(ctx, l) {
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (const q of terrain) ctx.lineTo(q.x, q.y);
+    ctx.lineTo(W, H); ctx.closePath();
+    const g = ctx.createLinearGradient(0, 450, 0, 600); g.addColorStop(0, '#5a524b'); g.addColorStop(0.35, '#3a3531'); g.addColorStop(1, '#1c1a18');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.save(); ctx.clip();
+    for (const r of ROCKS) {   // 岩のハイライト（左上から日が当たる）と影
+      const top = baseY(r.x) - r.h;
+      const hg = ctx.createRadialGradient(r.x - r.r * 0.35, top + r.h * 0.3, 1, r.x - r.r * 0.2, top + r.h * 0.5, r.r * 1.1);
+      hg.addColorStop(0, 'rgba(170,158,144,0.55)'); hg.addColorStop(1, 'rgba(60,54,48,0)');
+      ctx.fillStyle = hg; ctx.fillRect(r.x - r.r, top - 2, r.r * 2, r.h + 6);
+      ctx.strokeStyle = 'rgba(20,18,16,0.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r.x - r.r * 0.3, top + r.h * 0.35); ctx.lineTo(r.x + r.r * 0.1, top + r.h * 0.55); ctx.lineTo(r.x + r.r * 0.05, top + r.h * 0.8); ctx.stroke();
+    }
+    for (const p of PEBBLES) {
+      const y = terrainFn(p.x) + p.dy; ctx.fillStyle = p.s > 0.5 ? 'rgba(120,110,100,0.5)' : 'rgba(18,16,14,0.55)';
+      ctx.beginPath(); ctx.ellipse(p.x, y, p.r, p.r * 0.65, 0, 0, 7); ctx.fill();
+    }
+    const lg = ctx.createLinearGradient(0, 0, W, 0);   // 丸みの陰影: 弧の両端（向こうへ回り込む面）ほど暗い
+    lg.addColorStop(0, 'rgba(0,0,0,0.42)'); lg.addColorStop(0.3, 'rgba(0,0,0,0)'); lg.addColorStop(0.72, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = lg; ctx.fillRect(0, 440, W, H - 440);
+    ctx.restore();
+    ctx.beginPath(); for (const q of terrain) (q === terrain[0] ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y));
+    ctx.save(); ctx.strokeStyle = 'rgba(214,200,180,0.13)'; ctx.lineWidth = 5; ctx.stroke(); ctx.restore();   // 地平線のうっすらした光
+    ctx.strokeStyle = '#a69a8c'; ctx.lineWidth = 1.2; ctx.stroke();
+    drawTarget(ctx, l);
+    drawFootMarker(ctx, l);
+  }
+  // 足元の傾斜マーカー（shell の drawLandability と同じ。ただし目標円の中は常に青緑 = 触れてよい場所）
+  function drawFootMarker(ctx, l) {
+    const s = l.ship, p = P(), m = l.m; if (!s || l.hideShip || l.state === 'crashed' || m.menu || m.waiting) return;
+    const alt = l.terrainY(s.x) - (s.y + C.LEG_Y), a = Math.max(0, Math.min(1, (130 - alt) / 90)) * 0.85; if (a <= 0.02) return;
+    ctx.save(); ctx.lineWidth = 3; ctx.lineCap = 'butt';
+    for (let x = Math.max(0, Math.floor((s.x - 42) / 6) * 6); x < Math.min(W, s.x + 42); x += 6) {
+      const xc = x + 3, inT = Math.abs(xc - TGT.x) <= TGT.r, sl = footSlopeDeg(terrain, xc), col = inT || sl <= 5 ? '#63D8C9' : sl <= C.LAND_SLOPE_DEG ? p.warn : p.bad;
+      ctx.globalAlpha = a * (1 - Math.min(1, Math.abs(xc - s.x) / 48) * 0.7); ctx.strokeStyle = col;
+      ctx.beginPath(); ctx.moveTo(x, l.terrainY(x) + 1.5); ctx.lineTo(x + 6.2, l.terrainY(x + 6) + 1.5); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawTarget(ctx, l) {
+    const p = P(), m = l.m, t = l.clock, col = m.sampled ? p.dim : '#63D8C9';
+    ctx.save();
+    if (!m.sampled && !m.menu) {   // 目標への縦の案内（うっすら）
+      const bg = ctx.createLinearGradient(0, GY, 0, GY - 200); bg.addColorStop(0, rgba('#63D8C9', 0.12)); bg.addColorStop(1, rgba('#63D8C9', 0));
+      ctx.fillStyle = bg; ctx.fillRect(TGT.x - TGT.r, GY - 200, TGT.r * 2, 200);
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(TGT.x, GY + 1, TGT.r, 4.5, 0, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(TGT.x, GY + 1, TGT.c, 1.6, 0, 0, 7); ctx.stroke();
+    if (!m.sampled) { ctx.globalAlpha = 0.25 + 0.2 * Math.sin(t * 4); ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(TGT.x, GY + 1, TGT.r, 4.5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+    // ターゲットマーカー（白い小球。目標の横に置かれている）
+    const mx = TGT.x + TGT.r + 5, mg = ctx.createRadialGradient(mx - 1, GY - 4, 0.5, mx, GY - 3, 7);
+    mg.addColorStop(0, 'rgba(255,255,255,1)'); mg.addColorStop(0.4, 'rgba(230,240,255,0.7)'); mg.addColorStop(1, 'rgba(200,230,255,0)');
+    ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(mx, GY - 3, 7, 0, 7); ctx.fill();
+    if (m.sampled) {   // 採取痕（小さなくぼみ）
+      ctx.fillStyle = 'rgba(10,9,8,0.8)'; ctx.beginPath(); ctx.ellipse(m.touchX, GY + 1, 4, 1.4, 0, 0, 7); ctx.fill();
+    }
+    if (!m.menu && !m.result && !m.sampled) {
+      const by = Math.sin(t * 4) * 3, s = l.ship, near = Math.abs(s.x - TGT.x) < 60 && s.y > GY - 110 && !l.hideShip;   // 機体が近いと文字を薄く（機体と重ならない）
+      ctx.globalAlpha = near ? 0.25 : 1;
+      txt(ctx, 'TARGET  ≤ ' + l.params.vtouch + ' px/s', TGT.x, GY - 50 + by, 8, col, 'center', { w: 700, sp: 1.2 });
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(TGT.x - 5, GY - 37 + by); ctx.lineTo(TGT.x + 5, GY - 37 + by); ctx.lineTo(TGT.x, GY - 30 + by); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 安全高度の線 + 採取後の砂ぼこり（離脱の制限時間で線まで昇る = 残り時間が目で分かる）
+  function onDrawMid(ctx, l) {
+    const p = P(), m = l.m, t = l.clock, ly = LINE_Y(), pr = l.params;
+    if (m.menu) return;
+    if (m.sampled) {
+      const k = Math.min(1, m.leaveT / pr.leave), top = GY - (GY - ly) * k, cx = m.touchX, fade = m.phase === 'away' ? Math.max(0, 1 - m.awayT) : m.result === 'win' ? 0 : 1;
+      for (let i = 0; i < 26; i++) {
+        const q = i / 25, y = GY - (GY - top) * q, r = 8 + 26 * q * (0.4 + 0.6 * k) + 3 * Math.sin(t * 3 + i);
+        ctx.fillStyle = rgba(i % 3 ? '#6f665d' : '#8d8378', 0.22 * (1 - 0.4 * q) * fade);
+        ctx.beginPath(); ctx.arc(cx + Math.sin(i * 2.3 + t) * (6 + 14 * q), y, r, 0, 7); ctx.fill();
+      }
+    }
+    // 線 = ゴール。採取後は線の上に緑の帯（ここまで上がる）。越えた瞬間に白く光る
+    const hot = (m.phase === 'settle' || m.phase === 'leave') && !m.result, done = m.phase === 'away';
+    if (hot) {
+      const bg = ctx.createLinearGradient(0, ly, 0, ly - 34); bg.addColorStop(0, rgba(p.green, 0.28 + 0.1 * Math.sin(t * 6))); bg.addColorStop(1, rgba(p.green, 0));
+      ctx.fillStyle = bg; ctx.fillRect(0, ly - 34, W, 34);
+    }
+    if (done && m.awayT < 0.6) { ctx.fillStyle = rgba('#ffffff', 0.35 * (1 - m.awayT / 0.6)); ctx.fillRect(0, ly - 3, W, 6); }
+    const a = hot ? 0.95 : done ? Math.max(0.32, 1 - m.awayT) : 0.32, lc = hot || done ? p.green : p.fg;
+    ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = rgba(lc, a); ctx.lineWidth = hot ? 1.8 : 1;
+    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke(); ctx.restore();
+    if (hot) txt(ctx, 'GOAL ↑ CLIMB ABOVE THIS LINE', 8, ly - 11, 7, p.green, 'left', { w: 800, sp: 1.1 });
+    else txt(ctx, 'SAFE ALTITUDE · GOAL', 8, ly - 11, 6.5, done ? p.green : p.dim, 'left', { w: 700, sp: 1.2, a: done ? 1 : 0.7 });
+  }
+
+  // HUD（左上）: 燃料 + SPEED（合成速度。≤vtouch で緑）/ TILT（≤20 で緑）/ SPIN / ALT
+  function drawHud(ctx, l) {
+    const s = l.ship, p = P(), fp = Math.max(0, l.fuelPct()), x = 12, y = 12, vt = l.params.vtouch;
+    txt(ctx, 'FUEL', x, y, 7, p.dim, 'left', { w: 600, sp: 1.2 });
+    ctx.fillStyle = rgba(p.fg, 0.12); ctx.fillRect(x + 28, y + 2, 84, 5);
+    ctx.fillStyle = fp < 20 ? p.bad : p.warn; ctx.fillRect(x + 28, y + 2, 84 * fp / 100, 5);
+    txt(ctx, fp.toFixed(0) + '%', x + 118, y, 8, fp < 20 ? p.bad : p.fg, 'left', { w: 600 });
+    const sp = speedOf(s), tilt = Math.abs(wrap180(s.angle)), alt = Math.max(0, l.terrainY(s.x) - (s.y + C.LEG_Y));
+    const items = [['SPEED', sp, vt, 1], ['TILT', tilt, TOUCH_TILT, 0, '°'], ['SPIN', Math.abs(s.omega), C.SAFE.om, 0], ['ALT', alt, 1e9, 0]];
+    items.forEach((it, i) => {
+      const bx = x + i * 52, v = it[1], col = i === 3 ? p.fg : v <= it[2] ? p.green : (v <= it[2] * 1.9 ? p.warn : p.bad);
+      txt(ctx, it[0], bx, y + 14, 6.5, p.dim, 'left', { w: 600, sp: 1 });
+      txt(ctx, v.toFixed(it[3]) + (it[4] || ''), bx, y + 22, 11, col, 'left', { w: 700 });
+    });
+  }
+
+  function onDrawFront(ctx, l) {
+    const p = P(), m = l.m, s = l.ship;
+    if (m.menu) { sh.drawMenu(ctx, l); return; }
+    if (m.phase !== 'away' && m.result !== 'win') drawHud(ctx, l);   // 去る演出中は計器を隠す（自動操縦の速度は意味がない）
+    sh.drawCorner(ctx, l, { time: m.started ? (m.final ? m.final.t : m.flyT) : null, check: 'SAMPLE ' + (m.sampled ? '●' : '○') + '   LEAVE ' + (m.final ? '✓' : '○'), checkOk: m.sampled });
+    const sp = speedOf(s), alt = l.terrainY(s.x) - (s.y + C.LEG_Y);
+    if (!m.result && m.phase !== 'away') {
+      let hint = '', bad = false;
+      if (m.phase === 'settle') hint = 'SAMPLING… HOLDING POSITION';
+      else if (m.phase === 'leave') { hint = 'THRUST UP · CLIMB ABOVE THE GREEN LINE'; bad = true; }
+      else if (m.waiting || m.relT < 8) hint = 'NOT A LANDING · TOUCH THE TARGET, THEN LIFT OFF';
+      else if (l.state === 'grounded') hint = 'OFF TARGET · THRUST TO LIFT OFF';
+      else if (alt < 150 && sp > l.params.vtouch) { hint = 'TOO FAST · SPEED ≤ ' + l.params.vtouch + ' TO SAMPLE'; bad = true; }
+      else hint = 'POINT THE NOSE AGAINST YOUR DRIFT AND THRUST TO STOP';
+      sh.drawHint(ctx, hint, bad);
+    }
+    // 機体の下の速度の読み（目標に近いとき）: 触れたらどうなるかが分かる
+    if (!m.result && m.started && !m.sampled && l.state === 'play' && alt < 140) {
+      const ok = sp <= l.params.vtouch, perf = sp <= PERFECT.sp && Math.abs(wrap180(s.angle)) <= PERFECT.ang;
+      const rx = s.x > W - 70 ? s.x - 22 : s.x + 22;   // 機体の横（目標の文字と重ならない）
+      txt(ctx, sp.toFixed(1), rx, s.y - 6, 10, perf ? '#FFC94D' : ok ? p.green : p.bad, rx < s.x ? 'right' : 'left', { w: 800, sp: 0.8 });
+      if (perf) txt(ctx, 'PERFECT', rx, s.y + 6, 6.5, '#FFC94D', rx < s.x ? 'right' : 'left', { w: 700, sp: 1 });
+    }
+    // 採取の直後: 大きな合図（中央）+ 機体の上の上向き矢印 + 機体の横の残り秒
+    if (m.phase === 'settle' && !m.result) txt(ctx, 'SAMPLE OK', 180, 366, 16, p.green, 'center', { w: 800, sp: 2, a: Math.min(1, m.settleT * 4) });
+    if (m.phase === 'leave' && !m.result) {
+      const pop = 1 + 0.25 * Math.max(0, 1 - m.promptT / 0.25), blink = m.promptT < 1.5 || Math.sin(l.clock * 9) > -0.3;
+      txt(ctx, 'SAMPLE OK', 180, 344, 9, p.green, 'center', { w: 800, sp: 2 });
+      if (blink) txt(ctx, 'LIFT OFF!', 180, 368, 22 * pop, p.warn, 'center', { w: 900, sp: 3 });
+      for (let i = 0; i < 3; i++) {   // 上向きの山形（下から順に点灯）
+        const ph = (l.clock * 2.2 - i * 0.28) % 1, ay = s.y - 26 - i * 9;
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - ph) * 0.95; ctx.strokeStyle = p.warn; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(s.x - 7, ay + 4); ctx.lineTo(s.x, ay - 3); ctx.lineTo(s.x + 7, ay + 4); ctx.stroke(); ctx.restore();
+      }
+      const left = Math.max(0, l.params.leave - m.leaveT), rx = s.x > W - 70 ? s.x - 22 : s.x + 22;
+      txt(ctx, left.toFixed(1), rx, s.y - 4, 13, left < 2.5 ? p.bad : p.warn, rx < s.x ? 'right' : 'left', { w: 900, sp: 0.8 });
+    }
+    if (m.phase === 'away' && !m.result) {   // 文字は機体の通り道（真上）と反対側に
+      const tx = m.away0.tx, gone = l.hideShip;
+      txt(ctx, 'CLEAR!', tx, 290, 20, p.green, 'center', { w: 900, sp: 3, a: Math.min(1, m.awayT * 5) });
+      txt(ctx, gone ? 'SAMPLE SECURED' : 'LEAVING RYUGU…', tx, 314, 8, gone ? '#FFC94D' : p.fg, 'center', { w: 700, sp: 1.5, a: Math.min(1, m.awayT * 3) });
+    }
+    if (m.bumpT > 0 && !m.result) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
+    if (m.shotT > 0) {   // 弾丸発射の閃光
+      ctx.save(); ctx.globalAlpha = Math.min(1, m.shotT); const fg = ctx.createRadialGradient(m.touchX, GY, 1, m.touchX, GY, 40 * (1.3 - m.shotT * 0.3));
+      fg.addColorStop(0, 'rgba(255,240,200,0.95)'); fg.addColorStop(1, 'rgba(255,200,120,0)'); ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(m.touchX, GY, 40, 0, 7); ctx.fill(); ctx.restore();
+    }
+    if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+    if (m.toastT > 0 && !m.waiting && !m.phase) txt(ctx, m.toast, 180, 236, 10, m.toastBad ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
+    sh.drawFuelOut(ctx, l);
+    if (!m.result && m.started && m.phase !== 'away') {   // 去る演出で画面の上へ抜けるのは正常（警告しない）
+      const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 30 && s.vy < 4));
+      if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
+    }
+    if (m.result) {
+      const f = m.final;
+      sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'TOUCH-AND-GO', mmss(f.t)], [f.s2, 'TARGET CENTER', 'OFFSET ' + Math.abs(f.dx).toFixed(1) + ' px'], [f.s3, 'PERFECT TOUCH', f.sp.toFixed(1) + ' px/s']] : [],
+        failNote: m.sampled ? 'Sample taken, but you did not get away.' : 'No sample taken yet.', failTime: m.flyT });
+    }
+    sh.drawBrief(ctx, l);
+  }
+
+  sh.bindLab(lab);
+  sh.addResetButton();
+
+  window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
+  window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
+  window.__tag = { SKY, STARS, starPos, GY, TGT, CLEAR, ROCKS, ENTRY, CURVE, arcY, REBOUND, SETTLE, AWAY, PERFECT, TOUCH_TILT, LINE_Y, terrain, footSlopeDeg };
+  lab.shell = sh;
+  return lab;
+}
+
+return { create };
+})();
+
+// ---- 02_src/expedition/m4_comet.js ----
+const EXP_m4 = (function () {
+// EXPEDITION #4 67P ANCHOR（試作）。仕様: 01_docs/EXPEDITION_MISSIONS.md
+// 彗星の核は二つの塊がくびれでつながった形。ほぼ無重力。タップで開始（右上から左下へ流れながら降りる）。
+// 塊の壁の噴出口から周期的にガスが横向きに噴き出して機体を押す（前触れに霜が舞う）。くびれの底の目標に 10 px/s 以下で触れると
+// 自動で錨（銛）が刺さって成功。速すぎ・傾きすぎは大きく跳ね返る（実際の着陸機が錨に失敗して跳ねた話の再現）。
+// 接触の規則は #3 と同じ:「10 px/s 以下ならどこに触れても壊れない」（目標 = 錨 / 壁・岩 = 押し返される / 平地 = 接地）。
+// 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
+// 本編 v1.1 と試作ページ（07_lab/expedition/04_anchor/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
+// host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
+const { createLab, trackOn, W, H, C, footSlopeDeg } = EXP_harness;
+const { createShell, LIFE_LOST_S, mmss } = EXP_shell;
+
+function create(host = {}) {
+  const on = trackOn(host);
+  const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'anchor', expLabel: 'EXPEDITION 04', title: 'COMET 67P ANCHOR',
+    brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が多いと強いガス。押されたら逆へ噴く', fact: ['67P はチュリュモフ・ゲラシメンコ彗星の番号。', '2014 年、着陸機フィラエは銛が作動せず、', '跳ねて日陰に止まった。'],
+      en: { sub: 'ANCHOR INTO A COMET', goals: ['· Descend to the target in the neck', '· Touch at 10 px/s or less: anchor holds', '· Too fast and you bounce. Mind the gas'], stars: ['Clear', 'Anchor without a bounce', 'PERFECT touch (3 or less, upright)'], tip: 'Tip: more frost = stronger gas. Push back', fact: ['67P: comet Churyumov-Gerasimenko.', 'In 2014 the lander Philae\'s harpoons failed;', 'it bounced and came to rest in shadow.'] } } });
+  const sess = sh.sess;
+  const OUT = { x0: -10, x1: 370, y0: -30 };
+  const GY = 524;                               // くびれの底の高さ（目標はここで平ら）
+  const TGT = { x: 199, r: 20, c: 5 };          // 目標: 中心 x / 錨が刺さる半径 / ★ 中心の半径（記録のみ）
+  const CLEAR = { x0: 173, x1: 225 };           // 目標の空き地（平ら）
+  const TOUCH_TILT = 20;                        // 錨が刺さる傾きの上限
+  const PERFECT = { sp: 3, ang: 5, om: 6 };     // ★3
+  const ANCHOR_S = 1.8;                         // 錨が刺さってから結果までの演出（秒）
+  const ENTRY = { x: 284, y: 150, vx: -7, vy: 13 };   // 右上から左下へ流れながら降りる（右上の表示と太陽に重ならない高さ）
+  const HULL = 13;                              // 機体の半幅（壁との当たり）
+  // 二つの塊（大きい頭 = 左、小さい体 = 右）。中心 x / 半径 r / 高さ h。断面は丸い（くびれ側の壁はほぼ垂直）
+  const LOBES = [{ x: -10, r: 165, h: 130 }, { x: 372, r: 128, h: 92 }];
+  const BOULDERS = [{ x: 163, r: 8, h: 9 }, { x: 236, r: 7, h: 8 }, { x: 74, r: 10, h: 7 }, { x: 318, r: 9, h: 6 }];
+  // ガスの噴出口（塊の壁。くびれへ向けて横に噴く）。x / 向き / 周期 P / 最初の噴出 O
+  const JETS = [{ x: 128, dir: 1, P: 10, O: 4.0 }, { x: 268, dir: -1, P: 10, O: 9.0 }];
+  const JET = { tele: 1.2, rise: 0.3, hold: 1.6, fade: 0.8, len: 150 };   // 前触れ / 立ち上がり / 最大 / 消える（秒）/ 届く長さ px
+  const JET_S = JET.rise + JET.hold + JET.fade;
+  const GAS_LV = [3, 5, 7];                     // 1 回ごとのガスの強さ（弱・中・強、px/s²。スライダー jet = 5 を基準に比例）
+  // 跳ね返り: 上へ POP の速さで跳ね、REB.h px 上で止まり、そのまま REB.vt px/s のゆっくりした降下に戻る（逆さにして噴かなくても降り直せる）
+  const REB = { h: 24, vt: 5, pop0: 6, k: 0.6, popMin: 10, popMax: 18, spin: 2, vxK: 1.0 };
+
+  // ---- 地形 ----------------------------------------------------------------------------------------
+  const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const baseY = (x) => GY + 1.5 * Math.sin(x * 0.11 + 0.4);
+  function lobeY(L, x) { const d = (x - L.x) / L.r; return Math.abs(d) < 1 ? GY - L.h * Math.sqrt(1 - d * d) : Infinity; }
+  const rough = (x) => 2.2 * Math.sin(x * 0.19 + 1.3) + 1.2 * Math.sin(x * 0.47 + 0.2);
+  function terrainFn(x) {
+    let y = baseY(x);
+    const wc = Math.min(sstep(CLEAR.x0 - 10, CLEAR.x0, x), 1 - sstep(CLEAR.x1, CLEAR.x1 + 10, x));
+    y += (GY - y) * wc;
+    for (const L of LOBES) { const ly = lobeY(L, x); if (ly < y) y = Math.min(y, ly + rough(x) * Math.min(1, (GY - ly) / 30)); }
+    for (const r of BOULDERS) { const d = (x - r.x) / r.r; if (Math.abs(d) < 1) y = Math.min(y, terrainBase(x) - r.h * Math.pow(1 - d * d, 0.55)); }
+    return y;
+  }
+  function terrainBase(x) { let y = baseY(x); for (const L of LOBES) y = Math.min(y, lobeY(L, x)); return y; }
+  const terrain = [];
+  for (let x = 0; x <= W; x += 2) terrain.push({ x, y: terrainFn(x) });
+  for (const j of JETS) j.y = terrainFn(j.x) - 2;
+
+  // 装飾（固定乱数）
+  let seed = 23; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const STARS = Array.from({ length: 80 }, () => ({ x: rnd() * W, y: rnd() * 470, r: 0.4 + rnd() * 0.9, a: 0.25 + rnd() * 0.6 }));
+  const ICE = Array.from({ length: 70 }, () => { const x = rnd() * W; return { x, dy: 4 + rnd() * 70, r: 0.5 + rnd() * 1.3, a: 0.25 + rnd() * 0.5 }; });
+  const MOTES = Array.from({ length: 34 }, () => ({ x: rnd() * W, y: rnd() * 520, s: 4 + rnd() * 10, r: 0.5 + rnd() * 1.1, ph: rnd() * 7 }));
+
+  // ---- ガスの時間関係（T = 開始からの秒）----------------------------------------------------------
+  // n = 何回目の噴出か（前触れの間は次の回）。強さは n ごとに決まる
+  function jetAt(j, T) {
+    let a = -1, toNext, n;
+    if (T < j.O) { toNext = j.O - T; n = 0; }
+    else { const c = Math.floor((T - j.O) / j.P), u = (T - j.O) - c * j.P; if (u < JET_S) { a = u; n = c; } else n = c + 1; toNext = j.P - u; }
+    const tele = a < 0 && toNext < JET.tele ? 1 - toNext / JET.tele : 0;
+    const env = a < 0 ? 0 : a < JET.rise ? a / JET.rise : a < JET.rise + JET.hold ? 1 : Math.max(0, 1 - (a - JET.rise - JET.hold) / JET.fade);
+    return { a, tele, env, toNext, n };
+  }
+  // 噴出口 ji の n 回目の強さ（GAS_LV のどれか）。seed はラン開始ごとに変わる（同じランの中では決まっている）
+  function gasLevel(seed, ji, n) {
+    let h = (seed ^ Math.imul(ji + 1, 0x9E3779B1) ^ Math.imul(n + 1, 0x85EBCA77)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x2C1B3C6D) >>> 0; h = Math.imul(h ^ (h >>> 12), 0x297A2D39) >>> 0; h = (h ^ (h >>> 15)) >>> 0;
+    return GAS_LV[h % GAS_LV.length];
+  }
+  const gasK = (m, ji, n) => gasLevel(m.gasSeed, ji, n) / 5;   // 強さの倍率（弱 0.6・中 1・強 1.4）
+  // 位置 (x, y) での横向き加速度 px/s²（噴出口から離れるほど弱く、縦は噴流の幅で減る）。k = その回の強さの倍率
+  function jetForce(j, x, y, T, f, k = 1) {
+    const e = jetAt(j, T).env; if (!e) return 0;
+    const d = (x - j.x) * j.dir; if (d < -4 || d > JET.len) return 0;
+    const hw = 7 + 0.22 * Math.max(0, d), dy = y - j.y;
+    return j.dir * f * k * e * (1 - 0.5 * Math.max(0, d) / JET.len) * Math.exp(-(dy * dy) / (hw * hw));
+  }
+
+  const lab = createLab({
+    host,
+    title: 'COMET 67P ANCHOR',
+    defaults: { g: 0.03, thrust: 5.2, ang: 28, damp: 0.82, drag: 0, fuel: 100, rcs: 2.5, vec: 1 },
+    extraParams: [
+      { key: 'vtouch', label: 'anchor speed limit px/s', min: 4, max: 16, step: 0.5, def: 10 },
+      { key: 'jet',    label: 'gas jet push px/s²',      min: 0, max: 10, step: 0.5, def: 5 },
+    ],
+    world: { terrain, pads: [] },
+    start, onUpdate, onTouchdown, onLiftoff, onCrash, onTap, forces,
+    onDrawBack, onDrawMid, onDrawFront, drawTerrain, hud: false,
+    telemetryExtra: (l) => `anchored ${l.m.phase === 'anchor' || l.m.result === 'win' ? 'yes' : 'no'}  bounces ${l.m.bounces}  bumps ${l.m.bumps}\njet ${JETS.map((j) => jetAt(j, l.m.flyT).env.toFixed(2)).join(' / ')}  push ${l.m.push.toFixed(2)}  gas ${JETS.map((j, i) => gasLevel(l.m.gasSeed, i, jetAt(j, l.m.flyT).n)).join('/')}${l.m.reb ? '  rebound' : ''}`,
+  });
+  const wrap180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+  const speedOf = (s) => Math.hypot(s.vx, s.vy);
+
+  // ---------------------------------------------------------------- 状態
+  function start(l) {
+    sh.onStart(l.m);
+    l.resetShip({ x: ENTRY.x, y: ENTRY.y, vx: 0, vy: 0, angle: 0 });
+    l.frozen = true; l.controlsEnabled = false;   // 開始待ち
+    l.m = { menu: sess.mode === 'menu', waiting: true, started: false, flyT: 0, relT: 0, phase: null, anchorT: 0, touch: null, touchX: TGT.x, push: 0,
+      strandT: 0, result: null, resultT: 0, final: null, failed: false, lifeLost: false, toast: '', toastT: 0, toastBad: false, bumpT: 0, shakeT: 0, bumps: 0, bounces: 0, bounceT: 0, hissed: [-1, -1],
+      reb: null, gasSeed: (Math.random() * 4294967296) >>> 0 };
+    if (l.m.menu) l.hideShip = true;
+  }
+  const begin = (l, mode, opt) => sh.begin(l, mode, opt);
+  const toast = (l, s, sec = 2, bad = false) => { l.m.toast = s; l.m.toastT = sec; l.m.toastBad = bad; };
+  function go(l) {   // 開始待ち → 進入: 左下へ流れながら降りる
+    const m = l.m; if (!m.waiting || m.menu || m.result) return;
+    m.waiting = false; m.started = true; l.frozen = false; l.controlsEnabled = true; l.ship.vx = ENTRY.vx; l.ship.vy = ENTRY.vy; toast(l, 'GO', 1.0); audioWake();
+  }
+  function onTap(l, x, y) {
+    const m = l.m;
+    if (m.menu || sess.brief) { sh.tap(l, x, y); return; }
+    if (m.waiting) { go(l); return; }
+    sh.tap(l, x, y);
+  }
+  on(window, 'keydown', (e) => { if ((e.key === ' ' || e.key === 'ArrowUp') && lab.m && lab.m.waiting && !lab.m.menu && !e.repeat) { go(lab); e.preventDefault(); } }, true);
+  sh.hookR(lab, (m) => m.started, (l, r, d) => { if (l.m.phase !== 'anchor') l.crash(r, d); });   // 錨の演出中の R は無視（成功済み）
+
+  function onTouchdown(l) { if (l.m.result) return; }   // 平地への接地（失敗ではない。推力で離陸）
+  function onLiftoff() {}
+  function onCrash(l, reason, detail) {
+    const m = l.m; if (m.result) return;
+    m.result = 'lose'; m.resultT = 0; m.reason = reason; m.detail = detail; l.controlsEnabled = false; sh.onLoss(m);
+  }
+  function anchor(l, t) {   // 錨が刺さった = 成功確定（時間・燃料はここで決まる）→ 演出の後に結果
+    const m = l.m, s = l.ship;
+    t.center = Math.abs(t.dx) <= TGT.c; t.perfect = t.sp <= PERFECT.sp && t.tilt <= PERFECT.ang && t.om <= PERFECT.om;
+    const fp = l.fuelPct(), clean = m.bounces + m.bumps === 0;
+    m.touch = t; m.touchX = s.x; m.phase = 'anchor'; m.anchorT = 0; m.a0 = s.angle;
+    m.final = { t: m.flyT, base: 1000 + Math.round(fp) * 10 + (t.perfect ? 300 : 100), fuel: fp, sp: t.sp, dx: t.dx, bounces: m.bounces + m.bumps, s2: clean, s3: t.perfect };
+    s.vx = 0; s.vy = 0; s.omega = 0; s.y = GY - C.LEG_Y; l.frozen = true; l.controlsEnabled = false;
+    l.burst(s.x, GY - 1, 18, '#6e655c'); thunk();
+  }
+  function win(l) {
+    const m = l.m; if (m.result) return;
+    m.result = 'win'; m.resultT = 0; l.frozen = true; l.controlsEnabled = false;
+    sh.complete(m.final, [true, m.final.s2, m.final.s3]);
+  }
+
+  // ---------------------------------------------------------------- 外力と接触（物理サブステップごと）
+  function forces(l, dt) {
+    const m = l.m, s = l.ship, pr = l.params; if (!m.started || m.result || m.phase) return;
+    let push = 0; JETS.forEach((j, i) => { push += jetForce(j, s.x, s.y, m.flyT, pr.jet, gasK(m, i, jetAt(j, m.flyT).n)); });
+    s.vx += push * dt; m.push = push;
+    if (m.reb) {   // 跳ね返りの後: 下向きに引き戻して REB.h px 上で止め、REB.vt px/s の降下に戻す。横の流れも弱める
+      s.vy += m.reb.a * dt; s.vx *= Math.exp(-REB.vxK * dt);
+      if (s.vy >= REB.vt) { s.vy = Math.min(s.vy, REB.vt); m.reb = null; }
+    }
+    const nx = s.x + s.vx * dt, ny = s.y + s.vy * dt, sp = speedOf(s);
+    // 壁（塊の側面）に機体の横がぶつかる: そっとなら押し返す、速ければ墜落
+    for (const sx of [-1, 1]) {
+      const wy = l.terrainY(nx + sx * HULL);
+      if (ny + 6 > wy && s.vx * sx > 0) {
+        if (sp > pr.vtouch) return l.crash('HIT THE CLIFF', 'Hit the wall at ' + sp.toFixed(0) + ' px/s (limit ' + pr.vtouch + ')');
+        s.vx = -sx * Math.max(3, 0.5 * Math.abs(s.vx)); s.omega += -sx * 6; m.bumpT = 0.9; m.shakeT = 0.18; m.bumps++; clang(0.35);
+        return;
+      }
+    }
+    const ty = l.terrainY(nx);
+    if (ny + C.LEG_Y + 0.05 < ty) return;
+    const tilt = Math.abs(wrap180(s.angle)), om = Math.abs(s.omega), dx = s.x - TGT.x;
+    if (Math.abs(dx) <= TGT.r) {   // 目標（平ら）
+      if (sp <= pr.vtouch && tilt <= TOUCH_TILT) return anchor(l, { sp, tilt, om, dx });
+      const B = C.BOUNCE;
+      if (Math.abs(s.vy) <= B.vy && Math.abs(s.vx) <= B.vx && tilt <= B.ang && om <= B.om) {   // 錨が刺さらず大きく跳ね返る（墜落ではない）
+        const pop = Math.max(REB.popMin, Math.min(REB.popMax, REB.pop0 + REB.k * Math.abs(s.vy)));
+        s.vy = -pop; s.vx = s.vx * 0.7 + (dx >= 0 ? 1 : -1) * 2; s.omega += (dx >= 0 ? 1 : -1) * REB.spin; s.y = Math.min(s.y, GY - C.LEG_Y - 0.5);
+        m.reb = { a: pop * pop / (2 * REB.h), pop, y0: s.y, peak: s.y };
+        m.bounces++; m.bounceT = 1.2; m.shakeT = 0.25; clang(0.6);
+        toast(l, sp > pr.vtouch ? 'TOO FAST · ANCHOR FAILED (' + sp.toFixed(0) + ' > ' + pr.vtouch + ')' : 'TILTED · ANCHOR FAILED', 2.4, true);
+      }
+      return;   // それ以上は harness の判定（HARD IMPACT / TIPPED OVER）
+    }
+    if (footSlopeDeg(terrain, nx) > C.LAND_SLOPE_DEG && sp <= pr.vtouch) rockBump(l, nx);   // 岩・塊の斜面にそっと触れた: 押し返す
+  }
+  function rockBump(l, nx) {
+    const m = l.m, s = l.ship, ty = l.terrainY;
+    const k = (ty(nx + 2) - ty(nx - 2)) / 4, n = Math.hypot(k, 1), ex = k / n, ey = -1 / n;   // 外向きの法線
+    const vn = s.vx * ex + s.vy * ey;
+    if (vn < 0) { s.vx -= 1.5 * vn * ex; s.vy -= 1.5 * vn * ey; }
+    const out = s.vx * ex + s.vy * ey; if (out < 3) { s.vx += (3 - out) * ex; s.vy += (3 - out) * ey; }
+    s.omega += (ex >= 0 ? 1 : -1) * 8; s.y = Math.min(s.y, ty(s.x) - C.LEG_Y - 0.3);
+    m.bumpT = 0.9; m.shakeT = 0.2; m.bumps++; clang(0.4);
+  }
+
+  // ---------------------------------------------------------------- 毎フレーム
+  function onUpdate(l, dt) {
+    const m = l.m, s = l.ship;
+    if (m.menu) return;
+    if (m.toastT > 0) m.toastT -= dt;
+    if (m.bounceT > 0) m.bounceT -= dt;
+    m.relT += dt;
+    if (m.waiting) return;
+    if (m.phase === 'anchor' && !m.result) {
+      m.anchorT += dt; s.angle = m.a0 * Math.max(0, 1 - m.anchorT / 0.4);
+      if (m.anchorT >= 0.35 && !m.chimed) { m.chimed = true; chime(); }
+      if (m.anchorT >= ANCHOR_S) win(l);
+      return;
+    }
+    if (m.result) {
+      m.resultT += dt;
+      if (m.lifeLost && m.resultT >= LIFE_LOST_S) l.reset();
+      return;
+    }
+    m.flyT += dt;
+    if (m.reb) m.reb.peak = Math.min(m.reb.peak, s.y);
+    JETS.forEach((j, i) => { const a = jetAt(j, m.flyT); if (a.a >= 0 && m.hissed[i] !== a.n) { m.hissed[i] = a.n; hiss(gasK(m, i, a.n)); } });
+    if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
+    if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
+    if (m.bumpT > 0) m.bumpT -= dt;
+    if (m.shakeT > 0) m.shakeT -= dt;
+    lab.canvas.style.transform = m.shakeT > 0 ? 'translate(' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px,' + ((Math.random() - 0.5) * 6 * m.shakeT / 0.3).toFixed(1) + 'px)' : '';
+  }
+
+  // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
+  let actx = null, noiseBuf = null;
+  const audioWake = () => { try { actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)()); if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
+  const audioOn = () => actx && !lab.script && !(host.muted && host.muted());   // 本編のミュートに従う
+  const noise = () => { if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } return noiseBuf; };
+  function hiss(k = 1) {   // ガスの噴出: 低めのシューという音（噴出の長さ）。強いガスほど大きく低い
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, src = actx.createBufferSource(); src.buffer = noise();
+      const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100 - 300 * k; f.Q.value = 0.5;
+      const v = 0.07 * k, g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + JET.rise); g.gain.setValueAtTime(v, t + JET.rise + JET.hold); g.gain.exponentialRampToValueAtTime(0.0001, t + JET_S);
+      src.connect(f); f.connect(g); g.connect(actx.destination); src.start(t); src.stop(t + JET_S + 0.05);
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function thunk() {   // 錨の発射: 低い「ドン」+ 金属音
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+      g.gain.setValueAtTime(0.34, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.42);
+      const g2 = actx.createGain(); g2.connect(actx.destination); g2.gain.setValueAtTime(0.06, t + 0.05); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      for (const fr of [620, 931]) { const o2 = actx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = fr; o2.connect(g2); o2.start(t + 0.05); o2.stop(t + 0.52); }
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function chime() {
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      [784, 1175, 1568].forEach((fr, i) => { const o = actx.createOscillator(); o.type = 'sine'; o.frequency.value = fr; o.connect(g); o.start(t + i * 0.08); o.stop(t + 0.95); });
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+  function clang(k) {
+    if (!audioOn()) return;
+    try {
+      const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.08 + 0.1 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      for (const f of [190, 310]) { const o = actx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 0.27); }
+    } catch (e) { /* 音なしでも続行 */ }
+  }
+
+  // ---------------------------------------------------------------- 描画
+  function onDrawBack(ctx, l) {
+    const g = ctx.createLinearGradient(0, 0, 0, 540); g.addColorStop(0, '#02030a'); g.addColorStop(1, '#0c0f18');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    for (const s of STARS) { ctx.fillStyle = rgba('#ffffff', s.a); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill(); }
+    const coma = ctx.createRadialGradient(180, 560, 40, 180, 560, 460); coma.addColorStop(0, 'rgba(170,200,230,0.13)'); coma.addColorStop(1, 'rgba(170,200,230,0)');   // 核を包むうすいガスの雲（コマ）
+    ctx.fillStyle = coma; ctx.fillRect(0, 0, W, H);
+    const sun = ctx.createRadialGradient(332, 58, 2, 332, 58, 120); sun.addColorStop(0, 'rgba(255,244,214,0.9)'); sun.addColorStop(0.08, 'rgba(255,230,180,0.35)'); sun.addColorStop(1, 'rgba(255,220,160,0)');
+    ctx.fillStyle = sun; ctx.fillRect(200, 0, 160, 190);
+    const t = l.clock;   // 核から離れていく細かな塵（ゆっくり上へ）
+    for (const d of MOTES) { const y = ((d.y - t * d.s) % 520 + 520) % 520, x = d.x + 6 * Math.sin(t * 0.4 + d.ph); ctx.fillStyle = rgba('#cfd8e6', 0.25 + 0.15 * Math.sin(t + d.ph)); ctx.beginPath(); ctx.arc(x, y, d.r, 0, 7); ctx.fill(); }
+  }
+
+  // 地形: ほとんど黒い核（彗星の核は非常に暗い）+ 層の筋 + 氷の白い点 + 日の当たる縁
+  function drawTerrain(ctx, l) {
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (const q of terrain) ctx.lineTo(q.x, q.y);
+    ctx.lineTo(W, H); ctx.closePath();
+    const g = ctx.createLinearGradient(0, 380, 0, 600); g.addColorStop(0, '#4a4440'); g.addColorStop(0.4, '#2c2825'); g.addColorStop(1, '#141210');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = 'rgba(16,14,12,0.55)'; ctx.lineWidth = 1;   // 塊の層（断面に平行な筋）
+    for (const L of LOBES) for (let k = 0.88; k > 0.3; k -= 0.14) {
+      ctx.beginPath(); let first = true;
+      for (let x = Math.max(0, L.x - L.r * k); x <= Math.min(W, L.x + L.r * k); x += 4) { const d = (x - L.x) / (L.r * k); const y = GY + 6 - L.h * k * Math.sqrt(Math.max(0, 1 - d * d)) + 1.5 * Math.sin(x * 0.3); if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+    for (const p of ICE) { const y = terrainFn(p.x) + p.dy; ctx.fillStyle = rgba('#dff2ff', p.a); ctx.beginPath(); ctx.arc(p.x, y, p.r, 0, 7); ctx.fill(); }
+    const lg = ctx.createLinearGradient(0, 0, W, 0);   // 日は右上: 左ほど暗い
+    lg.addColorStop(0, 'rgba(0,0,0,0.38)'); lg.addColorStop(0.55, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(255,240,210,0.05)');
+    ctx.fillStyle = lg; ctx.fillRect(0, 380, W, H - 380);
+    ctx.restore();
+    ctx.beginPath(); for (const q of terrain) (q === terrain[0] ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y));
+    ctx.save(); ctx.strokeStyle = 'rgba(214,200,180,0.12)'; ctx.lineWidth = 5; ctx.stroke(); ctx.restore();
+    ctx.strokeStyle = '#9a8f84'; ctx.lineWidth = 1.2; ctx.stroke();
+    drawTarget(ctx, l);
+    drawFootMarker(ctx, l);
+  }
+  function drawFootMarker(ctx, l) {   // 足元の傾斜マーカー（目標の中は常に水色 = 触れてよい場所）
+    const s = l.ship, p = P(), m = l.m; if (!s || l.hideShip || l.state === 'crashed' || m.menu || m.waiting || m.phase) return;
+    const alt = l.terrainY(s.x) - (s.y + C.LEG_Y), a = Math.max(0, Math.min(1, (130 - alt) / 90)) * 0.85; if (a <= 0.02) return;
+    ctx.save(); ctx.lineWidth = 3; ctx.lineCap = 'butt';
+    for (let x = Math.max(0, Math.floor((s.x - 42) / 6) * 6); x < Math.min(W, s.x + 42); x += 6) {
+      const xc = x + 3, inT = Math.abs(xc - TGT.x) <= TGT.r, sl = footSlopeDeg(terrain, xc), col = inT ? '#7FD1FF' : sl <= 5 ? '#63D8C9' : sl <= C.LAND_SLOPE_DEG ? p.warn : p.bad;
+      ctx.globalAlpha = a * (1 - Math.min(1, Math.abs(xc - s.x) / 48) * 0.7); ctx.strokeStyle = col;
+      ctx.beginPath(); ctx.moveTo(x, l.terrainY(x) + 1.5); ctx.lineTo(x + 6.2, l.terrainY(x + 6) + 1.5); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawTarget(ctx, l) {
+    const p = P(), m = l.m, t = l.clock, done = m.phase === 'anchor' || m.result === 'win', col = done ? p.green : '#7FD1FF';
+    ctx.save();
+    if (!done && !m.menu) {   // 目標への縦の案内（うっすら）
+      const bg = ctx.createLinearGradient(0, GY, 0, GY - 220); bg.addColorStop(0, rgba(col, 0.12)); bg.addColorStop(1, rgba(col, 0));
+      ctx.fillStyle = bg; ctx.fillRect(TGT.x - TGT.r, GY - 220, TGT.r * 2, 220);
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(TGT.x, GY + 1, TGT.r, 4.5, 0, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(TGT.x + sx * 4, GY + 1); ctx.lineTo(TGT.x + sx * 9, GY + 1); ctx.stroke(); }   // 十字の目印
+    if (!done) { ctx.globalAlpha = 0.22 + 0.18 * Math.sin(t * 4); ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(TGT.x, GY + 1, TGT.r, 4.5, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+    if (!m.menu && !m.result && !done) {
+      const by = Math.sin(t * 4) * 3, s = l.ship, near = Math.abs(s.x - TGT.x) < 60 && s.y > GY - 110 && !l.hideShip;
+      ctx.globalAlpha = near ? 0.25 : 1;
+      txt(ctx, 'ANCHOR  ≤ ' + l.params.vtouch + ' px/s', TGT.x, GY - 50 + by, 8, col, 'center', { w: 700, sp: 1.2 });
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(TGT.x - 5, GY - 37 + by); ctx.lineTo(TGT.x + 5, GY - 37 + by); ctx.lineTo(TGT.x, GY - 30 + by); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ガスの噴出（前触れ = 噴出口の霜と届く範囲の点線、噴出中 = 横に流れる白いガス）
+  function onDrawMid(ctx, l) {
+    const p = P(), m = l.m, t = l.clock; if (m.menu) return;
+    const T = m.flyT;
+    JETS.forEach((j, ji) => {
+      const st = m.started ? jetAt(j, T) : { tele: 0, env: 0, a: -1, n: 0 };
+      const k = m.started ? gasK(m, ji, st.n) : 1, lv = k < 0.8 ? 0 : k > 1.2 ? 2 : 1;   // 0 弱 / 1 中 / 2 強
+      ctx.save();
+      ctx.fillStyle = '#0a0908'; ctx.beginPath(); ctx.ellipse(j.x, j.y + 1, 3, 5, 0, 0, 7); ctx.fill();   // 噴出口
+      ctx.fillStyle = rgba('#bfe6ff', 0.25 + 0.6 * Math.max(st.tele, st.env)); ctx.beginPath(); ctx.arc(j.x + j.dir * 2, j.y, 2, 0, 7); ctx.fill();
+      if (st.tele > 0) {   // 前触れ: 霜が舞う（強いガスほど多く・遠くまで）+ 届く範囲の点線 + 「GAS」（強いほど大きい）
+        const nf = [5, 12, 24][lv], reach = [10, 16, 26][lv];
+        for (let i = 0; i < nf; i++) { const q = (t * 1.7 + i / nf) % 1; ctx.fillStyle = rgba('#e8f6ff', (1 - q) * 0.8 * st.tele); ctx.beginPath(); ctx.arc(j.x + j.dir * (3 + q * reach), j.y - 4 + Math.sin(i * 3.1) * (5 + 3 * lv) * q, 0.9 + 0.25 * lv, 0, 7); ctx.fill(); }
+        ctx.setLineDash([3, 4]); ctx.strokeStyle = rgba('#bfe6ff', (0.25 + 0.2 * lv) * st.tele); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(j.x, j.y - 7); ctx.lineTo(j.x + j.dir * JET.len, j.y - 7 - 0.22 * JET.len); ctx.moveTo(j.x, j.y + 7); ctx.lineTo(j.x + j.dir * JET.len, j.y + 7 + 0.22 * JET.len); ctx.stroke(); ctx.setLineDash([]);
+        txt(ctx, lv === 2 ? 'GAS!' : 'GAS', j.x + j.dir * 22, j.y - 20 - 2 * lv, [6.5, 7.5, 9.5][lv], lv === 2 ? p.bad : p.warn, 'center', { w: 800, sp: 1.5, a: 0.5 + 0.5 * Math.sin(t * 14) });
+      }
+      if (st.env > 0) {   // 噴出中
+        const cg = ctx.createLinearGradient(j.x, 0, j.x + j.dir * JET.len, 0); cg.addColorStop(0, rgba('#e6f4ff', (0.18 + 0.14 * k) * st.env)); cg.addColorStop(1, rgba('#e6f4ff', 0));
+        ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(j.x, j.y - 6); ctx.lineTo(j.x + j.dir * JET.len, j.y - 6 - 0.22 * JET.len); ctx.lineTo(j.x + j.dir * JET.len, j.y + 6 + 0.22 * JET.len); ctx.lineTo(j.x, j.y + 6); ctx.closePath(); ctx.fill();
+        const np = Math.round(40 * k);
+        for (let i = 0; i < np; i++) {
+          const q = (t * (0.9 + 0.4 * k) + i / np) % 1, d = q * JET.len, hw = 7 + 0.22 * d;
+          ctx.fillStyle = rgba('#f2f9ff', 0.5 * st.env * (1 - q)); ctx.beginPath(); ctx.arc(j.x + j.dir * d, j.y + Math.sin(i * 7.3) * hw * 0.8, 1 + 3 * q, 0, 7); ctx.fill();
+        }
+      }
+      ctx.restore();
+    });
+  }
+
+  // HUD（左上）: 燃料 + SPEED（合成速度。≤vtouch で緑）/ TILT（≤20 で緑）/ SPIN / ALT
+  function drawHud(ctx, l) {
+    const s = l.ship, p = P(), fp = Math.max(0, l.fuelPct()), x = 12, y = 12, vt = l.params.vtouch;
+    txt(ctx, 'FUEL', x, y, 7, p.dim, 'left', { w: 600, sp: 1.2 });
+    ctx.fillStyle = rgba(p.fg, 0.12); ctx.fillRect(x + 28, y + 2, 84, 5);
+    ctx.fillStyle = fp < 20 ? p.bad : p.warn; ctx.fillRect(x + 28, y + 2, 84 * fp / 100, 5);
+    txt(ctx, fp.toFixed(0) + '%', x + 118, y, 8, fp < 20 ? p.bad : p.fg, 'left', { w: 600 });
+    const sp = speedOf(s), tilt = Math.abs(wrap180(s.angle)), alt = Math.max(0, l.terrainY(s.x) - (s.y + C.LEG_Y));
+    const items = [['SPEED', sp, vt, 1], ['TILT', tilt, TOUCH_TILT, 0, '°'], ['SPIN', Math.abs(s.omega), C.SAFE.om, 0], ['ALT', alt, 1e9, 0]];
+    items.forEach((it, i) => {
+      const bx = x + i * 52, v = it[1], col = i === 3 ? p.fg : v <= it[2] ? p.green : (v <= it[2] * 1.9 ? p.warn : p.bad);
+      txt(ctx, it[0], bx, y + 14, 6.5, p.dim, 'left', { w: 600, sp: 1 });
+      txt(ctx, v.toFixed(it[3]) + (it[4] || ''), bx, y + 22, 11, col, 'left', { w: 700 });
+    });
+  }
+
+  function onDrawFront(ctx, l) {
+    const p = P(), m = l.m, s = l.ship;
+    if (m.menu) { sh.drawMenu(ctx, l); return; }
+    if (!m.phase && m.result !== 'win') drawHud(ctx, l);
+    sh.drawCorner(ctx, l, { time: m.started ? (m.final ? m.final.t : m.flyT) : null, check: 'ANCHOR ' + (m.final ? '●' : '○') + '   BOUNCE ' + (m.bounces + m.bumps), checkOk: !!m.final });
+    const sp = speedOf(s), alt = l.terrainY(s.x) - (s.y + C.LEG_Y);
+    if (!m.result && !m.phase) {
+      let hint = '', bad = false;
+      const gas = m.started && JETS.some((j) => { const a = jetAt(j, m.flyT); return (a.tele > 0 || a.env > 0) && Math.abs(s.y - j.y) < 45 && (s.x - j.x) * j.dir > -4 && (s.x - j.x) * j.dir < JET.len; });
+      if (m.waiting || m.relT < 8) hint = 'DESCEND INTO THE NECK · TOUCH THE TARGET GENTLY';
+      else if (gas) { hint = 'GAS JET! THRUST AGAINST THE PUSH'; bad = true; }
+      else if (l.state === 'grounded') hint = 'OFF TARGET · THRUST TO LIFT OFF';
+      else if (alt < 150 && sp > l.params.vtouch) { hint = 'TOO FAST · SPEED ≤ ' + l.params.vtouch + ' TO ANCHOR'; bad = true; }
+      else hint = 'POINT THE NOSE AGAINST YOUR DRIFT AND THRUST TO STOP';
+      sh.drawHint(ctx, hint, bad);
+    }
+    if (!m.result && m.started && !m.phase && l.state === 'play' && alt < 140) {   // 機体の横の速度の読み
+      const ok = sp <= l.params.vtouch, perf = sp <= PERFECT.sp && Math.abs(wrap180(s.angle)) <= PERFECT.ang;
+      const rx = s.x > W - 70 ? s.x - 22 : s.x + 22;
+      txt(ctx, sp.toFixed(1), rx, s.y - 6, 10, perf ? '#FFC94D' : ok ? p.green : p.bad, rx < s.x ? 'right' : 'left', { w: 800, sp: 0.8 });
+      if (perf) txt(ctx, 'PERFECT', rx, s.y + 6, 6.5, '#FFC94D', rx < s.x ? 'right' : 'left', { w: 700, sp: 1 });
+    }
+    if (m.phase === 'anchor' && !m.result) {   // 銛が両脚から地面へ刺さり、綱が張る
+      const k = Math.min(1, m.anchorT / 0.18), x0 = m.touchX;
+      ctx.save(); ctx.strokeStyle = '#d9dee8'; ctx.lineWidth = 1.2;
+      for (const sx of [-1, 1]) { const fx = x0 + sx * 9, fy = GY - 2, tx = fx + sx * 7, ty = GY + 16; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + (tx - fx) * k, fy + (ty - fy) * k); ctx.stroke(); }
+      if (m.anchorT < 0.5) { const fg = ctx.createRadialGradient(x0, GY, 1, x0, GY, 30); fg.addColorStop(0, rgba('#fff2d0', 0.8 * (1 - m.anchorT / 0.5))); fg.addColorStop(1, rgba('#fff2d0', 0)); ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(x0, GY, 30, 0, 7); ctx.fill(); }
+      ctx.restore();
+      const tx = x0 < 180 ? 262 : 98;
+      txt(ctx, 'ANCHORED!', tx, 300, 18, p.green, 'center', { w: 900, sp: 3, a: Math.min(1, m.anchorT * 4) });
+      txt(ctx, m.final.s2 ? 'FIRST CONTACT · NO BOUNCE' : 'SECURED ON 67P', tx, 322, 8, m.final.s2 ? '#FFC94D' : p.fg, 'center', { w: 700, sp: 1.5, a: Math.min(1, m.anchorT * 3) });
+    }
+    if (m.bumpT > 0 && !m.result && !m.phase) txt(ctx, 'BUMP', s.x, s.y - 30 - (0.9 - m.bumpT) * 14, 10, p.warn, 'center', { w: 800, sp: 1.5, a: Math.min(1, m.bumpT * 2) });
+    if (m.bounceT > 0 && !m.result && !m.phase) txt(ctx, 'BOUNCED!', s.x, s.y - 34 - (1.2 - m.bounceT) * 16, 12, p.bad, 'center', { w: 900, sp: 1.5, a: Math.min(1, m.bounceT * 2) });
+    if (m.waiting && !m.result) txt(ctx, 'TAP TO START', 180, 236, 13, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(l.clock * 4.5) });
+    if (m.toastT > 0 && !m.waiting && !m.phase) txt(ctx, m.toast, 180, 236, 10, m.toastBad ? p.bad : p.green, 'center', { w: 700, sp: 1.2, a: Math.min(1, m.toastT) });
+    sh.drawFuelOut(ctx, l);
+    if (!m.result && m.started && !m.phase) {
+      const e = Math.min(s.x - OUT.x0, OUT.x1 - s.x, s.y - OUT.y0), danger = e < 46 && ((s.x < 40 && s.vx < 2) || (s.x > 320 && s.vx > -2) || (s.y < 30 && s.vy < 4));
+      if (danger) { ctx.fillStyle = rgba(p.bad, 0.1 + 0.08 * Math.sin(l.clock * 12)); ctx.fillRect(0, 0, W, 540); txt(ctx, 'OUT OF RANGE', 180, 276, 10, p.bad, 'center', { w: 800, sp: 1.5 }); }
+    }
+    if (m.result) {
+      const f = m.final;
+      sh.drawResult(ctx, l, { rows: m.result === 'win' ? [[true, 'ANCHOR', mmss(f.t)], [f.s2, 'NO BOUNCE', f.bounces ? f.bounces + ' BOUNCE' + (f.bounces > 1 ? 'S' : '') : 'FIRST CONTACT'], [f.s3, 'PERFECT TOUCH', f.sp.toFixed(1) + ' px/s']] : [],
+        failNote: m.bounces ? 'The anchor did not hold. Slow down before contact.' : 'Not anchored yet.', failTime: m.flyT });
+    }
+    sh.drawBrief(ctx, l);
+  }
+
+  sh.bindLab(lab);
+  sh.addResetButton();
+
+  window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
+  window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
+  window.__tag = { GY, TGT, CLEAR, LOBES, BOULDERS, JETS, JET, GAS_LV, REB, gasLevel, gasK, ENTRY, PERFECT, TOUCH_TILT, ANCHOR_S, HULL, jetAt, jetForce, terrain, terrainFn, footSlopeDeg };
+  lab.shell = sh;
+  return lab;
+}
+
+return { create };
+})();
+
+// ---- 02_src/expedition/index.js ----
+const EXP_index = (function () {
+// EXPEDITION の一覧（本編 v1.1）。並びはツアーで出会う順（月 → 火星 → タイタン → 冥王星）。
+// id = 解放と記録のキー。body = POD が出るツアーの天体。sys = 太陽系マップの惑星系。shellId = 試作ページ時代のミッション id。
+// task = MISSION ACCEPTED の任務文（JA/EN）。music = ミッション中に流すツアーの曲（その天体の近く）。
+// バンドル（build.js）ではこのファイルは EXP_index という閉じたスコープに入る。
+const { create: EXP_c1 } = EXP_m1;
+const { create: EXP_c2 } = EXP_m2;
+const { create: EXP_c3 } = EXP_m3;
+const { create: EXP_c4 } = EXP_m4;
+
+const EXP_MISSIONS = [
+  { id: 'ryugu', no: 3, name: 'RYUGU', title: 'RYUGU TOUCH-AND-GO', body: 'moon', sys: 'earth', shellId: 'touch_and_go', music: 'moon', create: EXP_c3,
+    task: { ja: '小惑星に触れて試料を取り、すぐ離れる', en: 'Touch the asteroid, take a sample, get away' } },
+  { id: 'phobos', no: 1, name: 'PHOBOS', title: 'PHOBOS SAMPLE RETURN', body: 'mars', sys: 'mars', shellId: 'sample_return', music: 'mars', create: EXP_c1,
+    task: { ja: '火星の衛星から試料を母船へ持ち帰る', en: 'Bring a sample from Mars’ moon to the ship' } },
+  { id: 'enceladus', no: 2, name: 'ENCELADUS', title: 'ENCELADUS GEYSER RUN', body: 'titan', sys: 'saturn', shellId: 'geyser_run', music: 'titan', create: EXP_c2,
+    task: { ja: '氷の間欠泉から試料を集める', en: 'Collect samples from the ice geysers' } },
+  { id: '67p', no: 4, name: '67P', title: 'COMET 67P ANCHOR', body: 'pluto', sys: 'pluto', shellId: 'anchor', music: 'pluto', create: EXP_c4,
+    task: { ja: '彗星に錨を打ち込む', en: 'Fire an anchor into the comet' } },
+];
+const EXP_IDS = EXP_MISSIONS.map((x) => x.id);
+function expMission(id) { return EXP_MISSIONS.find((x) => x.id === id) || null; }
+function expForBody(bodyId) { return EXP_MISSIONS.find((x) => x.body === bodyId) || null; }
+
+return { EXP_MISSIONS, EXP_IDS, expMission, expForBody };
+})();
+
+// ---- 02_src/expdata.js ----
+// EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
+// 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
+//   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ best / besttime / skipBrief（shell が使う）
+// 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
+// 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
+// バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
+const { EXP_MISSIONS } = EXP_index;
+
+const XP_STARS_PER = 3;
+const XP_STARS_MAX = EXP_MISSIONS.length * XP_STARS_PER;   // 12（ツアー 48 と合わせて 60）
+const XP_enc = (name) => encodeURIComponent(name || '_');
+function xpKey(pilot, id, k) { return 'xp.' + XP_enc(pilot) + '.' + id + '.' + k; }
+const XP_get = (st, pilot, id, k) => { try { return st.get(xpKey(pilot, id, k), null); } catch (_) { return null; } };
+const XP_set = (st, pilot, id, k, v) => { try { return !!st.set(xpKey(pilot, id, k), v); } catch (_) { return false; } };
+// shell.js の cfg.store（get/set）
+function xpStore(storage, pilot, id) { return { get: (k) => XP_get(storage, pilot, id, k), set: (k, v) => XP_set(storage, pilot, id, k, v) }; }
+
+let XP_all = null;
+function xpAllUnlocked() {
+  if (XP_all === null) { try { XP_all = typeof location !== 'undefined' && /(^|[?&])expedition=all(&|$)/.test(String(location.search || '')); } catch (_) { XP_all = false; } }
+  return XP_all;
+}
+function __xpSetAll(v) { XP_all = v == null ? null : !!v; }   // テスト用
+function xpUnlockedSaved(storage, pilot, id) { return XP_get(storage, pilot, id, 'unlocked') === '1'; }
+function xpIsUnlocked(storage, pilot, id) { return xpAllUnlocked() || xpUnlockedSaved(storage, pilot, id); }
+function xpUnlock(storage, pilot, id) { if (xpUnlockedSaved(storage, pilot, id)) return false; return XP_set(storage, pilot, id, 'unlocked', '1'); }
+function xpSeen(storage, pilot, id) { return XP_get(storage, pilot, id, 'seen') === '1'; }
+function xpMarkSeen(storage, pilot, id) { return XP_set(storage, pilot, id, 'seen', '1'); }
+function xpPodMiss(storage, pilot, id) { const n = parseInt(XP_get(storage, pilot, id, 'podMiss'), 10); return Number.isFinite(n) && n > 0 ? n : 0; }
+function xpSetPodMiss(storage, pilot, id, n) { return XP_set(storage, pilot, id, 'podMiss', String(Math.max(0, n | 0))); }
+function xpBest(storage, pilot, id) {
+  try { const b = JSON.parse(XP_get(storage, pilot, id, 'best')); if (b && Array.isArray(b.stars)) return { score: +b.score || 0, stars: [!!b.stars[0], !!b.stars[1], !!b.stars[2]] }; } catch (_) { /* 無効 */ }
+  return { score: 0, stars: [false, false, false] };
+}
+// マップ用のまとめ: { list:[{ id, name, title, sys, body, no, unlocked, seen, stars }], stars, max }
+function xpSummary(storage, pilot) {
+  let total = 0;
+  const list = EXP_MISSIONS.map((m) => {
+    const b = xpBest(storage, pilot, m.id), n = b.stars.filter(Boolean).length;
+    total += n;
+    return { id: m.id, name: m.name, title: m.title, sys: m.sys, body: m.body, no: m.no, unlocked: xpIsUnlocked(storage, pilot, m.id), seen: xpSeen(storage, pilot, m.id), stars: n };
+  });
+  return { list, stars: total, max: XP_STARS_MAX };
+}
+
+// ---- 探査天体の絵（計器風。中心 x,y・半径 r）。マップの小さな印と MISSION ACCEPTED の大写しで使う ----
+const XP_TAU = Math.PI * 2;
+function XP_shade(c, x, y, r) {   // 左上から光（右下を暗く）
+  const g = c.createRadialGradient(x - r * 0.45, y - r * 0.45, r * 0.1, x - r * 0.2, y - r * 0.2, r * 1.5);
+  g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(0.55, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.6)');
+  c.fillStyle = g; c.fillRect(x - r * 1.6, y - r * 1.6, r * 3.2, r * 3.2);
+}
+function XP_path(c, id, x, y, r, t) {
+  c.beginPath();
+  if (id === 'phobos') c.ellipse(x, y, r, r * 0.76, -0.3, 0, XP_TAU);
+  else if (id === 'ryugu') {   // そろばん玉（赤道の尾根）
+    c.moveTo(x, y - r * 0.9); c.quadraticCurveTo(x + r * 0.7, y - r * 0.55, x + r, y - r * 0.02); c.quadraticCurveTo(x + r * 0.7, y + r * 0.5, x, y + r * 0.9);
+    c.quadraticCurveTo(x - r * 0.7, y + r * 0.5, x - r, y - r * 0.02); c.quadraticCurveTo(x - r * 0.7, y - r * 0.55, x, y - r * 0.9); c.closePath();
+  } else if (id === '67p') { c.ellipse(x - r * 0.3, y + r * 0.16, r * 0.66, r * 0.52, 0.25, 0, XP_TAU); c.moveTo(x + r * 0.9, y - r * 0.24); c.ellipse(x + r * 0.46, y - r * 0.24, r * 0.44, r * 0.4, -0.2, 0, XP_TAU); }
+  else c.arc(x, y, r, 0, XP_TAU);
+}
+const XP_COL = { phobos: '#7a675a', ryugu: '#4b4641', '67p': '#56514c', enceladus: '#dfeef6' };
+function xpBodyColor(id) { return XP_COL[id] || '#888'; }
+function xpDrawBody(c, id, x, y, r, t, o) {
+  o = o || {}; const a = o.alpha == null ? 1 : o.alpha;
+  c.save(); c.globalAlpha *= a;
+  if (id === '67p' && r > 14) {   // コマ（淡いもや）
+    const g = c.createRadialGradient(x, y, r * 0.5, x, y, r * 1.9); g.addColorStop(0, 'rgba(190,225,255,0.18)'); g.addColorStop(1, 'rgba(190,225,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 1.9, 0, XP_TAU); c.fill();
+  }
+  if (id === 'enceladus' && r > 14) {   // 南極の噴出
+    for (let i = 0; i < 18; i++) { const q = ((t || 0) * 0.35 + i / 18) % 1, sx = x + (Math.sin(i * 2.3) * 0.35) * r; c.fillStyle = 'rgba(225,245,255,' + (0.5 * (1 - q)) + ')'; c.beginPath(); c.arc(sx + Math.sin(i * 5.1) * q * r * 0.5, y + r * 0.9 + q * r * 0.9, r * 0.03 + q * r * 0.05, 0, XP_TAU); c.fill(); }
+  }
+  c.save(); XP_path(c, id, x, y, r, t); c.clip();
+  c.fillStyle = XP_COL[id] || '#888'; c.fillRect(x - r * 1.2, y - r * 1.2, r * 2.4, r * 2.4);
+  if (r > 8) {
+    c.lineWidth = Math.max(0.6, r * 0.03);
+    if (id === 'phobos') {   // スティックニー・クレーターと溝
+      c.fillStyle = 'rgba(30,22,18,0.35)'; c.beginPath(); c.arc(x - r * 0.45, y + r * 0.05, r * 0.3, 0, XP_TAU); c.fill();
+      c.strokeStyle = 'rgba(30,22,18,0.3)'; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(x - r * 0.1, y - r * 0.5 + i * r * 0.22); c.lineTo(x + r * 0.9, y - r * 0.7 + i * r * 0.26); c.stroke(); }
+      c.fillStyle = 'rgba(30,22,18,0.3)'; [[0.35, 0.3, 0.1], [0.2, -0.35, 0.08], [0.6, 0.0, 0.07]].forEach(([u, v, d]) => { c.beginPath(); c.arc(x + u * r, y + v * r, d * r, 0, XP_TAU); c.fill(); });
+    } else if (id === 'ryugu') {   // 赤道の尾根と岩
+      c.strokeStyle = 'rgba(160,150,140,0.35)'; c.beginPath(); c.moveTo(x - r, y); c.quadraticCurveTo(x, y + r * 0.12, x + r, y); c.stroke();
+      c.fillStyle = 'rgba(170,160,150,0.35)'; for (let i = 0; i < 9; i++) { c.beginPath(); c.arc(x + Math.sin(i * 2.7) * r * 0.6, y + Math.cos(i * 1.9) * r * 0.55, r * (0.04 + 0.03 * (i % 3)), 0, XP_TAU); c.fill(); }
+    } else if (id === '67p') {   // 首の影と層
+      c.fillStyle = 'rgba(15,15,18,0.35)'; c.beginPath(); c.ellipse(x + r * 0.1, y - r * 0.02, r * 0.16, r * 0.3, 0.3, 0, XP_TAU); c.fill();
+      c.strokeStyle = 'rgba(200,200,210,0.18)'; for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(x - r * 0.3, y + r * 0.16, r * (0.3 + 0.12 * i), r * (0.22 + 0.1 * i), 0.25, 3.6, 5.6); c.stroke(); }
+    } else if (id === 'enceladus') {   // 虎の縞（南極）
+      c.strokeStyle = 'rgba(70,140,190,0.6)'; c.lineWidth = Math.max(0.8, r * 0.05);
+      for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(x - r * 0.55 + i * r * 0.1, y + r * (0.45 + i * 0.1)); c.lineTo(x + r * 0.35 + i * r * 0.08, y + r * (0.3 + i * 0.1)); c.stroke(); }
+    }
+  }
+  XP_shade(c, x, y, r);
+  c.restore();
+  XP_path(c, id, x, y, r, t); c.strokeStyle = rgba('#9fe6dc', 0.55); c.lineWidth = Math.max(0.7, r * 0.02); c.stroke();
+  c.restore();
+}
+
+
 // ---- 02_src/solarmap.js ----
 // LANDER BETA v1.1 L3 — 太陽系マップ（CHOOSE START の置き換え）。07_lab/solar_map の D 案（B の計器表示 + C のキャラの動きを弱めたもの）を移植。
-// 入力・描画・状態はすべてこのクラスの中。タイトル（title.js）は list/summary を渡し、input() の戻り値 {start}/{close} だけを見る。
+// 入力・描画・状態はすべてこのクラスの中。タイトル（title.js）は list/summary を渡し、input() の戻り値 {start}/{close}/{expedition} だけを見る。
+// EXPEDITION（v1.1 beta.8）: 下段の列と惑星系のカードが探査ミッションの入口。未解放は「???」の影、解放済みは天体の絵と★。
+//   解放後に初めてマップを開くと「???」が光って正体が現れる（o.markSeen で記録）。★の合計はツアー 48 + 探査 12（未発見も分母に入れる）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて SM_ / SolarMap で始める。
 
 const SM_W = 360, SM_H = 640, SM_TAU = Math.PI * 2;
@@ -5789,7 +8419,11 @@ class SolarMap {
     this.reduce = !!o.reduce;
     this.patches = Array.isArray(o.patches) ? o.patches : [];   // patchesSummary(): [{ id, name, earned }]
     this.PT = Object.create(null); for (const x of this.patches) if (x && x.id) this.PT[x.id] = !!x.earned;
-    this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）
+    this.viewOnly = !!o.viewOnly;   // MAP ボタンからの閲覧専用（START バーなし・開始しない）。探査ミッションは閲覧専用でも開始できる
+    this.exp = o.exp && Array.isArray(o.exp.list) ? o.exp : { list: [], stars: 0, max: 0 };
+    this.XP = Object.create(null); for (const e of this.exp.list) this.XP[e.id] = e;
+    this.reveal = Object.create(null);   // id → 正体を見せる演出の開始時刻（NOW）
+    { let i = 0; for (const e of this.exp.list) if (e.unlocked && !e.seen) { this.reveal[e.id] = (this.reduce ? 0.2 : 1.7) + 0.5 * (i++); if (typeof o.markSeen === 'function') o.markSeen(e.id); } }
     let mx = 1; for (const e of this.list) if (e.stage > mx) mx = e.stage;
     this.maxStage = mx;
     this.opt = new Map(); for (const e of this.list) this.opt.set(e.stage, e);
@@ -5844,16 +8478,17 @@ class SolarMap {
   patchTotal() { return { n: patchCount(this.patches), of: this.patches.length || BODY_COUNT }; }
   flagged(id) { const ids = SM_SYS[id] ? SM_SYS[id].bodies : [id]; return ids.some((i) => this.B[i].any); }
   sysLocked(sys) { return SM_SYS[sys].bodies.every((i) => this.B[i].locked); }
-  sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } return { st, mx }; }
+  sysStars(sys) { let st = 0, mx = 0; for (const i of SM_SYS[sys].bodies) { st += this.B[i].stars; mx += this.B[i].max; } for (const e of this.exp.list) if (e.sys === sys) { st += e.stars; mx += 3; } return { st, mx }; }
+  expTotal() { return { st: this.sum.totalStars + (this.exp.stars || 0), mx: this.sum.maxStars + (this.exp.max || 0) }; }
   backRect() { return { x: 4, y: 4, w: 86, h: 50 }; }
   startRect() { return { x: 16, y: 536, w: 328, h: 52 }; }
   chipRects() { const n = SM_SYS_ORDER.length, w = 46, g = 4, x0 = (SM_W - n * w - (n - 1) * g) / 2; return SM_SYS_ORDER.map((id, i) => ({ x: x0 + i * (w + g), y: 500, w, h: 44, sys: id })); }
-  soonRects() { return SM_SOON.map((nm, i) => ({ x: 2 + i * 60, y: 572, w: 56, h: 56, soon: nm })); }
+  soonRects() { const n = this.exp.list.length, w = 76, x0 = (SM_W - n * w - (n - 1) * 8) / 2; return this.exp.list.map((e, i) => ({ x: x0 + i * (w + 8), y: 572, w, h: 60, id: e.id })); }
   cards(sys) {
     const out = []; let y = 300;
     for (const id of SM_SYS[sys].bodies) { out.push({ kind: 'body', id, y, h: 70 }); y += 76; }
     if (SM_SYS[sys].bonus) { out.push({ kind: 'bonus', y, h: 48 }); y += 54; }
-    if (SM_SYS[sys].soon) out.push({ kind: 'soon', soon: SM_SYS[sys].soon, y, h: 48 });
+    for (const e of this.exp.list) if (e.sys === sys) { out.push({ kind: 'exp', id: e.id, y, h: 48 }); y += 54; }
     return out;
   }
   pipRect(card, i) { return { x: 168 + i * 54, y: card.y + 35 - 26, w: 48, h: 52 }; }
@@ -5992,7 +8627,7 @@ class SolarMap {
       });
       if (best) return { kind: 'sys', sys: best };
       for (const r of this.chipRects()) if (SM_hit(r, x, y)) return { kind: 'sys', sys: r.sys };
-      for (const r of this.soonRects()) if (SM_hit(r, x, y)) return { kind: 'soon', soon: r.soon };
+      for (const r of this.soonRects()) if (SM_hit(r, x, y)) return { kind: 'exp', id: r.id };
       return null;
     }
     if (z === 1) {
@@ -6005,7 +8640,7 @@ class SolarMap {
         const ps = this.pips(c.id);
         for (let i = 0; i < ps.length; i++) if (SM_hit(this.pipRect(c, i), x, y)) return { kind: 'pip', id: c.id, stage: ps[i].stage, state: ps[i].state };
       }
-      for (const c of cards) if (x >= 16 && x <= 344 && y >= c.y && y <= c.y + c.h) return c.kind === 'body' ? { kind: 'card', id: c.id } : { kind: c.kind, soon: c.soon };
+      for (const c of cards) if (x >= 16 && x <= 344 && y >= c.y && y <= c.y + c.h) return c.kind === 'body' ? { kind: 'card', id: c.id } : { kind: c.kind, soon: c.soon, id: c.id };
       for (const id of SM_SYS[this.camSys].bodies) {
         const q = this._zmPos(id, this.camSys); if (!q) continue;
         if (Math.hypot(x - q.x, y - q.y) < Math.max(q.r + 6, 24)) return { kind: 'body', id };
@@ -6084,7 +8719,12 @@ class SolarMap {
       case 'astro': { const modes = this.reduce ? ['wave'] : ['jump', 'spin', 'wave']; this._poke(modes[this.mascot.n++ % modes.length]); this.sfx(); return null; }
       case 'back': return this._back();
       case 'sys': this.sfx(); this._gotoSys(h.sys); return null;
-      case 'soon': this.sfx(); this._say(h.soon + ' · COMING SOON v1.2'); return null;
+      case 'exp': {   // 探査ミッション: 解放済みなら開始、未解放ならどこで POD が出るか
+        const e = this.XP[h.id]; if (!e) return null;
+        this.sfx();
+        if (e.unlocked) return { expedition: e.id };
+        const b = BODIES.find((q) => q.id === e.body); this._say('??? · FIND THE MISSION POD · ' + (b ? b.name : '')); return null;
+      }
       case 'bonus': case 'hub': this._say('TERRA · BONUS MISSIONS APPEAR DURING A RUN'); return null;
       case 'start': return this._start();
       case 'orbit': this._orbit(h.id, h.d); return null;
@@ -6272,7 +8912,7 @@ class SolarMap {
     SM_T(c, 'SOLAR SYSTEM', 96, 28, 13, p.fg, 'left', 600, 3);
     SM_T(c, 'BETA v1.1', SM_W - 16, 28, 9, p.warn, 'right', 700, 1.5);
     SM_T(c, 'SELECT DESTINATION', 96, 45, 9.5, p.dim, 'left', 500, 1.5);
-    SM_T(c, '★ ' + sum.totalStars + ' / ' + sum.maxStars, SM_W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6);
+    { const et = this.expTotal(); SM_T(c, '★ ' + et.st + ' / ' + et.mx, SM_W - 16, 45, 9.5, rgba(p.fg, 0.7), 'right', 500, 0.6); }
     { const pt = this.patchTotal(); SM_T(c, 'PATCH ' + pt.n + '/' + pt.of, SM_W - 16, 62, 8, pt.n >= pt.of && pt.of > 0 ? p.warn : rgba(p.fg, 0.6), 'right', 500, 0.8); }
     const mm = Math.floor(this.T / 60) % 60, ss = Math.floor(this.T) % 60;
     SM_T(c, 'T+ 00:' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 16, 62, 8, rgba(p.mid, 0.7), 'left', 500, 1);
@@ -6286,8 +8926,31 @@ class SolarMap {
       else SM_T(c, '★' + ss2.st + '/' + ss2.mx, r.x + r.w / 2, r.y + 34, 8.5, this.ringState(id) === 'gold' ? p.warn : rgba(p.fg, 0.7), 'center', 500, 0.3);
       c.restore();
     });
-    SM_T(c, 'COMING SOON · v1.2', SM_W / 2, 566, 8.5, p.dim, 'center', 600, 2.2);
-    SM_SOON.forEach((nm, i) => { const x = 30 + i * 60, y = 593; SM_silhouette(c, nm, x, y); SM_T(c, nm, x, y + 22, 7, rgba(p.dim, 0.9), 'center', 500, 0.5); });
+    if (this.exp.list.length) {
+      SM_T(c, 'EXPEDITION   ★ ' + this.exp.stars + ' / ' + this.exp.max, SM_W / 2, 566, 8.5, this.exp.list.some((e) => e.unlocked) ? p.warn : p.dim, 'center', 600, 2.2);
+      this.soonRects().forEach((r) => { const e = this.XP[r.id]; this._drawExpMark(c, e, r.x + r.w / 2, r.y + 21, 1, true); });
+    }
+    c.restore();
+  }
+  // 探査ミッションの印（下段・カード共通）。未解放 = 影と ???、解放済み = 天体の絵と名前と★。解放直後の初回は光って正体が現れる
+  _drawExpMark(c, e, x, y, k, label) {
+    const p = P(), r0 = this.reveal[e.id], age = r0 === undefined ? 9 : this.NOW - r0, R = 11 * k;
+    const shown = e.unlocked && age >= 0.7, u = SM_clamp((age - 0.7) / 0.5);
+    if (e.unlocked && age >= 0 && age < 1.6) {   // 光る輪と閃光
+      const q = SM_clamp(age / 1.6); c.strokeStyle = rgba(p.warn, 0.9 * (1 - q)); c.lineWidth = 1.4; c.beginPath(); c.arc(x, y, R + 4 + q * 26, 0, SM_TAU); c.stroke();
+      if (age < 0.8) SM_sparkle(c, x, y, R * 1.6 * Math.sin(age / 0.8 * Math.PI), 1, '#fff');
+    }
+    if (!shown) {
+      SM_silhouette(c, e.name, x, y, k);
+      if (label) SM_T(c, '???', x, y + 26 * k, 8, rgba(p.dim, 0.95), 'center', 600, 2);
+      return;
+    }
+    c.save(); c.globalAlpha *= r0 === undefined ? 1 : u;
+    xpDrawBody(c, e.id, x, y, R, this.T);
+    if (label) {
+      SM_T(c, e.name, x, y + 26 * k, 8, p.fg, 'center', 600, 1);
+      SM_T(c, '★' + e.stars + '/3', x, y + 37 * k, 7.5, e.stars >= 3 ? p.warn : rgba(p.fg, 0.7), 'center', 500, 0.3);
+    }
     c.restore();
   }
   _bodyDeco(c, id, x, y, r) {   // 完了リング・旗・選択パルス
@@ -6357,6 +9020,22 @@ class SolarMap {
   }
   _drawCard(c, card) {
     const p = P(), x = 16, w = 328, h = card.h, y = card.y, cy = y + h / 2;
+    if (card.kind === 'exp') {   // 探査ミッションのカード
+      const e = this.XP[card.id]; if (!e) return;
+      c.save();
+      SM_rrect(c, x, y, w, h, 3); c.strokeStyle = rgba(e.unlocked ? p.warn : p.dim, e.unlocked ? 0.75 : 0.5); c.lineWidth = 0.8; if (!e.unlocked) c.setLineDash([3, 3]); c.stroke(); c.setLineDash([]);
+      this._drawExpMark(c, e, x + 28, cy, 1.05, false);
+      const shown = e.unlocked && (this.reveal[e.id] === undefined || this.NOW - this.reveal[e.id] >= 0.7);
+      if (shown) {
+        SM_T(c, e.name, x + 56, cy - 2, 12, p.fg, 'left', 600, 1.5); SM_T(c, 'EXPEDITION 0' + e.no + ' · ' + e.title, x + 56, cy + 12, 7.5, rgba(p.dim, 0.95), 'left', 500, 0.6);
+        for (let k = 0; k < 3; k++) { SM_starPath(c, x + 262 + k * 13, cy - 6, 4.5, 2); if (k < e.stars) { c.fillStyle = p.warn; c.fill(); } else { c.strokeStyle = rgba(p.dim, 0.7); c.lineWidth = 0.7; c.stroke(); } }
+        SM_T(c, 'PLAY ›', x + w - 12, cy + 12, 8.5, p.warn, 'right', 700, 1.2);
+      } else {
+        const b = BODIES.find((q) => q.id === e.body);
+        SM_T(c, '???', x + 56, cy - 2, 12, p.dim, 'left', 600, 3); SM_T(c, 'MISSION POD · ' + (b ? b.name : '') + ' STAGES', x + 56, cy + 12, 8, rgba(p.dim, 0.9), 'left', 500, 1);
+      }
+      c.restore(); return;
+    }
     if (card.kind === 'soon' || card.kind === 'bonus') {
       c.save(); c.globalAlpha *= 0.7;
       SM_rrect(c, x, y, w, h, 3); c.strokeStyle = rgba(p.dim, 0.5); c.lineWidth = 0.8; c.setLineDash([3, 3]); c.stroke(); c.setLineDash([]);
@@ -6468,6 +9147,99 @@ class SolarMap {
     c.fillRect(0, 0, SM_W, SM_H);
     c.restore();
   }
+}
+
+
+// ---- 02_src/expscene.js ----
+// EXPEDITION（本編 v1.1）: ミッション画面のシーンと、POD を受け取った後の全画面演出（MISSION ACCEPTED）。
+// ミッション本体は 02_src/expedition/（試作ページと共通）。ここは本編のエンジンにつなぐだけ:
+//   ループ = Engine が update/render を呼ぶ / 指 = engine.touches / タップ = onInput('tap') / 音 = engine.audio.ctx（ミュートに従う）
+//   記録 = パイロットごと（expdata.js の xpStore）/ BACK・Escape = shell.back（メニュー → マップへ）
+// バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ / Expedition で始める。
+const { expMission } = EXP_index;
+
+const XP_mus = (engine) => (engine && engine.music) || Music;
+
+class ExpeditionScene extends Scene {
+  // onExit: メニューの MAP / Escape で呼ぶ（main.js がタイトル＋マップへ戻す）
+  constructor(engine, id, onExit) {
+    super(engine);
+    this.id = id; this.meta = expMission(id); this.onExit = onExit || null;
+    this.isRoot = true;   // エンジンの BACK ボタンは出さない（メニューに MAP を出す）
+    this.lab = null; this._left = false;
+  }
+  enter() {
+    const eng = this.engine, st = eng.storage;
+    let pilot = ''; try { const pr = getActiveProfile(st); pilot = (pr && pr.name) || ''; } catch (_) { pilot = ''; }
+    this.pilot = pilot;
+    const muted = () => { try { const mu = XP_mus(eng); return !!(mu.isMuted && mu.isMuted()) || (eng.audio && eng.audio.enabled === false); } catch (_) { return false; } };
+    this.lab = this.meta.create({
+      embed: { ctx: eng.ctx, canvas: eng.canvas, touches: () => eng.touches || [], audioCtx: () => (eng.audio && eng.audio.ctx) || null },
+      store: xpStore(st, pilot, this.id), onExit: () => this._exit(), lang: () => i18nLang(), muted,
+    });
+    this.lab.start();
+    try { const mu = XP_mus(eng); if (mu.stopJingle) mu.stopJingle(0.3); mu.playBody(this.meta.music); } catch (_) { /* 音なし */ }
+  }
+  exit() {
+    if (this.lab) this.lab.destroy();
+    try { XP_mus(this.engine).stopAll(0.5); } catch (_) { /* ignore */ }
+  }
+  _exit() { if (this._left) return; this._left = true; if (this.onExit) this.onExit(); }
+  update(dt) {
+    try { XP_mus(this.engine).tick(dt); } catch (_) { /* ignore */ }
+    if (this.lab && !this._left) this.lab.step(typeof dt === 'number' && dt > 0 ? Math.min(dt, 0.1) : 0.016);
+  }
+  render() { if (this.lab) this.lab.draw(); }
+  onInput(action, data) {
+    if (!this.lab || this._left) return;
+    if (action === 'tap' && data) this.lab.tap(data.x, data.y);
+    else if (action === 'back') this.lab.shell.back(this.lab);
+  }
+}
+
+// ---- MISSION ACCEPTED（ツアーで POD を取ったステージの終わりに全画面）----
+// 暗転 → 天体が迫って大写し → 天体名と任務文が計器風に1文字ずつ → 「MISSION ACCEPTED」の印＋ジングル。タップで先へ / 閉じる。
+const XP_ACC = { fade: 0.4, grow0: 0.3, grow1: 1.7, type0: 1.5, cps: 28, stamp: 3.0, close: 3.6, auto: 6.5 };
+const XP_e = (u) => { u = Math.max(0, Math.min(1, u)); return 1 - Math.pow(1 - u, 3); };
+// st = { id, t }。戻り値なし
+function xpDrawAccepted(ctx, st, clock) {
+  const m = expMission(st.id); if (!m) return;
+  const p = P(), t = st.t, A = XP_ACC, ja = i18nLang() === 'ja';
+  ctx.save();
+  ctx.fillStyle = 'rgba(2,3,8,' + (0.94 * Math.min(1, t / A.fade)) + ')'; ctx.fillRect(0, 0, W, H);
+  // 星が後ろへ流れる（迫っていく感じ）
+  for (let i = 0; i < 60; i++) {
+    const a = i * 2.39996, z = ((i * 0.137 + t * 0.35) % 1), d = 20 + z * z * 360;
+    const x = 180 + Math.cos(a) * d, y = 250 + Math.sin(a) * d * 0.9;
+    ctx.fillStyle = rgba('#ffffff', Math.min(1, t / 0.6) * (0.2 + 0.6 * z)); ctx.beginPath(); ctx.arc(x, y, 0.4 + z * 1.4, 0, 7); ctx.fill();
+  }
+  const g = XP_e((t - A.grow0) / (A.grow1 - A.grow0)), r = 6 + 84 * g;
+  if (t > A.grow0) {
+    const glow = ctx.createRadialGradient(180, 250, r * 0.6, 180, 250, r * 1.8); glow.addColorStop(0, rgba(xpBodyColor(st.id), 0.25)); glow.addColorStop(1, rgba(xpBodyColor(st.id), 0));
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(180, 250, r * 1.8, 0, 7); ctx.fill();
+    xpDrawBody(ctx, st.id, 180, 250, r, clock || t);
+  }
+  txt(ctx, 'MISSION POD RECEIVED', 180, 64, 9, p.mid, 'center', { w: 700, sp: 2.2, a: Math.min(1, t / 0.5) });
+  txt(ctx, 'EXPEDITION 0' + m.no, 180, 82, 7.5, p.dim, 'center', { w: 600, sp: 2, a: Math.min(1, t / 0.5) });
+  if (t > A.type0) {   // 計器風の文字送り（名前 → 任務名 → 任務文）
+    const n = Math.floor((t - A.type0) * A.cps), task = ja ? m.task.ja : m.task.en;
+    const l1 = m.name, l2 = m.title, l3 = task;
+    const s1 = l1.slice(0, n), s2 = l2.slice(0, Math.max(0, n - l1.length)), s3 = Array.from(l3).slice(0, Math.max(0, n - l1.length - l2.length)).join('');
+    const cur = Math.sin(t * 16) > 0 ? '_' : ' ';
+    txt(ctx, s1 + (n < l1.length ? cur : ''), 180, 372, 22, p.fg, 'center', { w: 800, sp: 4 });
+    if (s2) txt(ctx, s2 + (n < l1.length + l2.length ? cur : ''), 180, 404, 10, p.warn, 'center', { w: 700, sp: 1.8 });
+    if (s3) txt(ctx, s3, 180, 426, ja ? 12 : 10, p.fg, 'center', { w: 600, sp: ja ? 0 : 0.6, a: 0.9 });
+  }
+  if (t > A.stamp) {   // 印: 少し傾いた枠が大きい所から押される
+    const k = Math.min(1, (t - A.stamp) / 0.18), sc = 1.7 - 0.7 * k;
+    ctx.save(); ctx.translate(180, 488); ctx.rotate(-0.12); ctx.scale(sc, sc); ctx.globalAlpha *= k;
+    ctx.strokeStyle = p.warn; ctx.lineWidth = 2.2; ctx.strokeRect(-112, -20, 224, 40); ctx.lineWidth = 0.8; ctx.strokeRect(-107, -15, 214, 30);
+    txt(ctx, 'MISSION ACCEPTED', 0, -8, 15, p.warn, 'center', { w: 800, sp: 2.4 });
+    ctx.restore();
+  }
+  if (t > A.close) txt(ctx, ja ? 'マップから挑戦できます' : 'PLAY IT FROM THE MAP', 180, 540, ja ? 11 : 9, p.dim, 'center', { w: 600, sp: ja ? 0 : 1.2, a: Math.min(1, (t - A.close) / 0.4) });
+  if (t > A.close) txt(ctx, 'TAP TO CONTINUE', 180, 572, 11, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(t * 4.5) });
+  ctx.restore();
 }
 
 
@@ -6977,6 +9749,7 @@ class TitleScene extends Scene {
     super(engine);
     this.startGame = startGame;
     this.useLaunch = !!(opts && opts.launch);
+    this._openMapOnEnter = !!(opts && opts.openMap);   // EXPEDITION の MAP から戻ったとき: マップを開いた状態で始める
     i18nBind(engine.storage);
     this.isRoot = true;    // 最上位＝BACKボタン非表示
     this.t = 0;
@@ -7022,6 +9795,12 @@ class TitleScene extends Scene {
     this._refreshTop1();
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
+    if (this._openMapOnEnter) { this._openMapOnEnter = false; this._openMap(); }
+  }
+  // 太陽系マップに渡す EXPEDITION の状態（パイロットごと）と、正体を見せた印の保存
+  _mapExp() {
+    const st = this.engine.storage, nm = this.name || '';
+    return { exp: xpSummary(st, nm), markSeen: (id) => { try { xpMarkSeen(st, nm, id); } catch (_) { /* ignore */ } } };
   }
 
   // WORLD #1 を取得してキャッシュ・表示を更新。失敗(null)ならキャッシュのまま
@@ -7234,7 +10013,7 @@ class TitleScene extends Scene {
     if (list.length > 1) {
       this.showRank = false;
       let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+      this.map = new SolarMap(Object.assign({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } }, this._mapExp()));
       return;
     }
     this._startAt(1);
@@ -7244,7 +10023,7 @@ class TitleScene extends Scene {
     const list = this._startOptions();
     this.showRank = false;
     let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+    this.map = new SolarMap(Object.assign({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } }, this._mapExp()));
   }
   _startAt(stage) {
     this.map = null;
@@ -7257,6 +10036,7 @@ class TitleScene extends Scene {
     const r = this.map.input(action, data);
     if (!r) return;
     if (r.close) { this.map = null; return; }        // BACK で閉じる＝何も始めず、チェックポイントも触らずタイトルへ
+    if (r.expedition) { if (this.engine.toExpedition) { this.map = null; this.engine.toExpedition(r.expedition); } return; }   // 探査ミッションへ（main.js）
     if (r.start) this._startAt(r.start);
   }
   blocksBack() { return !!this.map || championEntryOpen(this._champ) || pinEntryOpen(this._pin); }
@@ -7579,6 +10359,93 @@ class MigrateScene extends Scene {
     txt(ctx, 'ASKED ONLY ONCE. v1.0 DATA IS NEVER CHANGED.', W / 2, 474, 7, p.dim, 'center', { sp: 2, w: 400 });
   }
 }
+
+
+// ---- 02_src/pods.js ----
+// ミッション POD（ツアー中に探査ミッションを解放するカプセル。PLAN §7m）。game.js から使う。
+// 出る場所: 月（RYUGU）・火星（PHOBOS）・タイタン（ENCELADUS）・冥王星（67P）のステージ。まだ解放していないパイロットだけ。
+// 出る確率: 30% + 外れるたびに +20%、4 回目の機会で必ず出る（運だけで詰まらない）。外れ回数はパイロットごとに保存。
+// 取り方: 上空で機体のそばに現れ、機体の周り（50〜80px、上半分）をゆっくり漂う。ゆっくり付いてくるので、機体を少し寄せると
+//   磁石の範囲（46px）に入って吸い寄せられ、24px で取れる。機体が地面から 150px より下がるか、出てから 16 秒で上へ去る（逃した扱い）。
+// 得点は 0。取った瞬間に解放を保存（その後の墜落でも保持）。乱数は Math.random を使わない（ツアーの乱数の並びを変えない）。
+// バンドルは1つのスコープなので、トップレベルの名前はすべて POD_ / pod で始める。
+const { expForBody } = EXP_index;
+
+const POD_P0 = 0.3, POD_STEP = 0.2, POD_SURE = 3;
+const POD = { appear0: 1.2, appear1: 2.8, r0: 50, r1: 80, follow: 0.45, magnet: 46, pick: 24, leaveAlt: 150, minAlt: 200, life: 16, leaveS: 1.2, topY: 78, label: 2.2 };
+function podChance(miss) { return miss >= POD_SURE ? 1 : Math.min(1, POD_P0 + POD_STEP * Math.max(0, miss)); }
+function podRng(seed) { let s = (seed >>> 0) || 0x9E3779B9; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+
+// ステージ開始時の判定。出るなら { id, rnd }、出ないなら null。対象のステージなら外れ回数を +1 して保存（取れば解放で上書きされる）
+function podPlan(storage, pilot, bodyId, rnd) {
+  const m = expForBody(bodyId);
+  if (!m || !pilot || !storage) return null;
+  if (xpIsUnlocked(storage, pilot, m.id)) return null;
+  const miss = xpPodMiss(storage, pilot, m.id), go = rnd() < podChance(miss);
+  xpSetPodMiss(storage, pilot, m.id, miss + 1);
+  return go ? { id: m.id } : null;
+}
+
+class Pod {
+  constructor(id, rnd) {
+    this.id = id; this.rnd = rnd || Math.random;
+    this.state = 'wait'; this.t = 0; this.vis = 0; this.leaveT = 0;
+    this.appearAt = POD.appear0 + this.rnd() * (POD.appear1 - POD.appear0);
+    this.ph = this.rnd() * 6.28; this.x = 0; this.y = 0; this.near = false;
+  }
+  // 機体のまわり（上半分）の漂う位置。画面の上端で押し下げられたら、その分を横へ逃がして距離 r を保つ（勝手に磁石の範囲へ入らない）
+  _target(sx, sy) {
+    const a = -Math.PI / 2 + 1.15 * Math.sin(this.ph + this.vis * 0.45), r = (POD.r0 + POD.r1) / 2 + (POD.r1 - POD.r0) / 2 * Math.sin(this.vis * 0.7 + this.ph);
+    let x = sx + Math.cos(a) * r, y = sy + Math.sin(a) * r * 0.8;
+    if (y < POD.topY) {
+      y = POD.topY; const dy = y - sy, side = Math.cos(a) !== 0 ? Math.sign(Math.cos(a)) : 1;
+      x = sx + side * Math.sqrt(Math.max(0, r * r - dy * dy));
+    }
+    if (x < 16 || x > 344) x = sx - (x - sx);   // 画面の横端なら反対側へ
+    return { x: Math.max(16, Math.min(344, x)), y };
+  }
+  // ship = { x, y }、alt = 機体の足元から地面まで px。戻り値 'got' | null
+  step(dt, ship, alt) {
+    this.t += dt;
+    if (this.state === 'wait') {
+      if (this.t >= this.appearAt) {
+        if (alt < POD.minAlt) { this.state = 'gone'; return null; }   // もう低すぎる = 出さない
+        this.state = 'float'; this.vis = 0; const g = this._target(ship.x, ship.y); this.x = g.x; this.y = g.y;
+      }
+      return null;
+    }
+    if (this.state === 'leave') { this.leaveT += dt; this.y -= 140 * dt; if (this.leaveT >= POD.leaveS) this.state = 'gone'; return null; }
+    if (this.state !== 'float') return null;
+    this.vis += dt;
+    const g = this._target(ship.x, ship.y), k = 1 - Math.exp(-POD.follow * dt);
+    this.x += (g.x - this.x) * k; this.y += (g.y - this.y) * k;
+    const dx = ship.x - this.x, dy = ship.y - this.y, d = Math.hypot(dx, dy);
+    this.near = d < POD.magnet;
+    if (this.near && d > 0.01) { const v = Math.min(d, (40 + (POD.magnet - d) * 7) * dt); this.x += dx / d * v; this.y += dy / d * v; }
+    if (Math.hypot(ship.x - this.x, ship.y - this.y) < POD.pick) { this.state = 'got'; return 'got'; }
+    if (alt < POD.leaveAlt || this.vis > POD.life) { this.state = 'leave'; this.leaveT = 0; }
+    return null;
+  }
+  get visible() { return this.state === 'float' || this.state === 'leave'; }
+  draw(ctx, clock) {
+    if (!this.visible) return;
+    const p = P(), a = this.state === 'leave' ? Math.max(0, 1 - this.leaveT / POD.leaveS) : Math.min(1, this.vis / 0.3), t = clock || 0;
+    ctx.save(); ctx.globalAlpha *= a;
+    if (this.vis < 0.6) { const k = this.vis / 0.6; ctx.strokeStyle = rgba(p.warn, 0.8 * (1 - k)); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(this.x, this.y, 8 + k * 40, 0, 7); ctx.stroke(); }   // 出現の輪
+    const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+    const gl = ctx.createRadialGradient(this.x, this.y, 2, this.x, this.y, 20); gl.addColorStop(0, rgba(p.warn, 0.35 + 0.2 * pulse)); gl.addColorStop(1, rgba(p.warn, 0));
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(this.x, this.y, 20, 0, 7); ctx.fill();
+    if (this.near) { ctx.setLineDash([2, 3]); ctx.strokeStyle = rgba(p.mid, 0.6); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(this.x, this.y, 12 + 3 * pulse, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.translate(this.x, this.y); ctx.rotate(Math.sin(t * 1.3 + this.ph) * 0.5);
+    ctx.fillStyle = '#E8E2D2'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 5.5, 0, 0, 7); ctx.fill();   // カプセル
+    ctx.fillStyle = '#9aa3b3'; ctx.fillRect(-1.2, -5.5, 2.4, 11);
+    ctx.strokeStyle = p.warn; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, 0, 8, 5.5, 0, 0, 7); ctx.stroke();
+    ctx.fillStyle = rgba(p.warn, 0.5 + 0.5 * pulse); ctx.beginPath(); ctx.arc(4.2, -1.5, 1.4, 0, 7); ctx.fill();   // 点滅灯
+    ctx.restore();
+    if (this.state === 'float' && this.vis < POD.label) txt(ctx, 'POD', this.x, this.y - 26, 9, p.warn, 'center', { w: 800, sp: 2, a: a * (0.6 + 0.4 * pulse) * Math.min(1, (POD.label - this.vis) / 0.4) });
+  }
+}
+function podUnlock(storage, pilot, id) { return xpUnlock(storage, pilot, id); }
 
 
 // ---- 02_src/game.js ----
@@ -8056,7 +10923,7 @@ class Game extends Scene {
     this._holdGrace = HOLD_GRACE_S;   // 押しっぱなしの指で推力が出ないように（RESUME と同じ規則）
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
   }
-  blocksBack() { return !!this._ht || championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
+  blocksBack() { return !!this._ht || !!this._podShow || championEntryOpen(this._champ) || this.state === 'module' || this.state === 'bonusselect' || this.state === 'hold'; }
 
   // ---- モジュール効果（レベルから都度計算。取得直後に反映される）----
   _lvl(id) { return (this.modules && this.modules[id]) || 0; }
@@ -8180,8 +11047,42 @@ class Game extends Scene {
     }
 
     this._keys = this._keys || { left: false, right: false, up: false };
+    this._podInit();
     this._saveCheckpoint();
   }
+
+  // ---- ミッション POD（pods.js / PLAN §7m）。本編だけ（main.js が engine.pods = true）。ボーナス・デバッグ操作のランは対象外 ----
+  _podInit() {
+    this._pod = null; this._podGot = null; this._podWait = 0; this._podToastT = 0;
+    if (!this.engine.pods || this.bonus || this._isDebugRun() || !this._body) return;
+    let pilot = ''; try { const pr = getActiveProfile(this.engine.storage); pilot = (pr && pr.name) || ''; } catch (_) { pilot = ''; }
+    this._podRnd = this._podRnd || podRng((Date.now() ^ (this.stage * 2654435761)) >>> 0);
+    const plan = podPlan(this.engine.storage, pilot, this._body.id, this._podRnd);
+    if (plan) { this._pod = new Pod(plan.id, this._podRnd); this._podPilot = pilot; }
+  }
+  _podTick(dt) {
+    if (this._podToastT > 0) this._podToastT = Math.max(0, this._podToastT - dt);
+    if (this._pod && this.state === 'play') {
+      const alt = this._terrainYAt(this.x) - (this.y + 16);
+      if (this._pod.step(dt, { x: this.x, y: this.y }, alt) === 'got') {
+        podUnlock(this.engine.storage, this._podPilot, this._pod.id);
+        this._podGot = this._pod.id; this._podWait = 1.1; this._podToastT = 2.6;
+        try { musicOf(this.engine).sfx.power(); } catch (_) { /* 音なし */ }
+      }
+    }
+    // ステージが終わったら（成功・墜落とも）少し待って全画面演出。ゲームオーバー画面には重ねない（解放は保存済み・マップで正体が分かる）
+    if (this._podGot && !this._live() && this.state !== 'hold' && this.state !== 'tip' && this.state !== 'debug') {
+      if (this.state === 'gameover') { this._podGot = null; return; }
+      this._podWait -= dt;
+      if (this._podWait <= 0) { this._podShow = { id: this._podGot, t: 0, stamped: false }; this._podGot = null; this._duck(true); }
+    }
+  }
+  _podShowTick(dt) {
+    const s = this._podShow; s.t += dt;
+    if (!s.stamped && s.t >= XP_ACC.stamp) { s.stamped = true; try { musicOf(this.engine).playJingle({ tier: 2, perfect: true }); } catch (_) { /* 音なし */ } }
+    if (s.t >= XP_ACC.auto) this._podClose();
+  }
+  _podClose() { this._podShow = null; this._duck(false); this._overlayAt = (typeof performance !== 'undefined' ? performance.now() : 0); }
 
   // ステージ開始ごとに保存（ボーナス中は「ボーナスの次のステージ」を保存＝再開がボーナスの途中にならない）。デバッグ中/デバッグ操作ランは保存しない
   _saveCheckpoint() {
@@ -8211,6 +11112,12 @@ class Game extends Scene {
   onInput(action, data) {
     if (championEntryOpen(this._champ)) return;   // 称号入力中は全入力を消費（タイトルへ戻らない・下の画面に貫通しない）
     if (this._ht) { this._ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
+    if (this._podShow) {   // MISSION ACCEPTED: 印の前のタップは印まで飛ばす、印の後のタップで閉じる（キーのオートリピートは無視）
+      if ((action === 'tap' || action === 'confirm') && !(data && data.repeat)) {
+        if (this._podShow.t >= XP_ACC.close) this._podClose(); else if (this._podShow.t >= 0.8) this._podShow.t = Math.max(this._podShow.t, XP_ACC.stamp - 0.05);
+      }
+      return;
+    }
     const confirm = (action === 'tap' || action === 'confirm');
     if (RESULT_STATES.indexOf(this.state) >= 0) {
       if (data && data.repeat) return;                                            // キーのオートリピートは進行に使わない
@@ -8673,6 +11580,7 @@ class Game extends Scene {
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
+    if (this._podShow) { this._podShowTick(dt); return; }   // MISSION ACCEPTED 表示中: 全て凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
       this._tipT -= dt; if (this._tipT <= 0) this._endTip();
@@ -8681,6 +11589,7 @@ class Game extends Scene {
     if (this.state === 'hold') { if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt); return; }   // MISSION HOLD: 全て凍結
     this._clock = (this._clock || 0) + dt;
     if (this._shakeT > 0) this._shakeT = Math.max(0, this._shakeT - dt);
+    this._podTick(dt);
 
     if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
 
@@ -9493,6 +12402,7 @@ class Game extends Scene {
   render(ctx) {
     this._renderMain(ctx);
     if (this._ht) this._ht.render(ctx);
+    if (this._podShow) xpDrawAccepted(ctx, this._podShow, this._clock);
   }
   _renderMain(ctx) {
     if (this.state === 'debug') {
@@ -9585,6 +12495,8 @@ class Game extends Scene {
     if (!sel) this._drawGuide(ctx, true);   // 暗闇の天体(水星)は誘導線を暗闇の上に描く（フェアにする）
     if (body && body.id === 'mercury') drawHorizonGlare(ctx);
     if (!sel && this._rg && (this.state === 'play' || this.state === 'grounded')) this._drawRings(ctx);
+    if (this._pod && this._live()) this._pod.draw(ctx, this._clock);
+    if (this._podToastT > 0) txt(ctx, 'MISSION POD RECEIVED', W / 2, 150, 10, P().warn, 'center', { w: 800, sp: 2, a: Math.min(1, this._podToastT / 0.4, (2.6 - this._podToastT) / 0.15) });
 
     // 着陸パッドのビーコン（霧の上に常に描く）
     this._drawBeacon(ctx);
@@ -9899,6 +12811,10 @@ window.addEventListener('load', () => {
   const toTitle = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true }));
   const startGame = () => engine.changeScene(fadeInScene(new Game(engine), 0.8));
   engine.toMenu = toTitle;
+  // EXPEDITION（PLAN §7m/§7s）: マップ → ミッション → MAP でタイトル（マップを開いた状態）へ戻る。POD はツアー中だけ（テストのエンジンは pods なし）
+  engine.pods = true;
+  const toMap = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true, openMap: true }));
+  engine.toExpedition = (id) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, toMap), 0.5));
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。

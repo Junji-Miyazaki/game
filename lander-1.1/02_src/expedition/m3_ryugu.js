@@ -5,15 +5,16 @@
 // 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
 // 本編 v1.1 と試作ページ（07_lab/expedition/03_touch_and_go/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
 // host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
-import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=ce3c0bad38';
-import { txt, rgba } from '../art.js?v=0f569522c3';
+import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=0ac2d166b6';
+import { txt, rgba } from '../art.js?v=6a1ae490e6';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from './shell.js?v=5de0737f94';
+import { createShell, LIFE_LOST_S, mmss } from './shell.js?v=d50ebace8a';
 
 export function create(host = {}) {
   const on = trackOn(host);
   const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'touch_and_go', expLabel: 'EXPEDITION 03', title: 'RYUGU TOUCH-AND-GO',
-    brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる', fact: ['リュウグウ：はやぶさ2 が 2019 年に 2 回', 'タッチダウンし、2020 年に試料を地球へ届けた小惑星。'] } });
+    brief: { title: 'RYUGU — TOUCH-AND-GO', sub: 'タッチ・アンド・ゴー', goals: ['・着陸ではない。目標の円にそっと触れる', '　（8 px/s 以下）と自動で採取して止まる', '・LIFT OFF の合図で点線の上へ'], stars: ['クリア', '円の中心に触れる', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：進む向きと逆に機首を向けて噴くと止まる', fact: ['リュウグウ：はやぶさ2 が 2019 年に 2 回', 'タッチダウンし、2020 年に試料を地球へ届けた小惑星。'],
+      en: { sub: 'TOUCH-AND-GO', goals: ['· Not a landing: touch the target circle', '  gently (8 px/s or less) to take a sample', '· At LIFT OFF, climb above the dotted line'], stars: ['Clear', 'Touch the center of the circle', 'PERFECT touch (3 or less, upright)'], tip: 'Tip: nose against your drift, then thrust', fact: ['Ryugu: Hayabusa2 touched down twice in 2019', 'and delivered samples to Earth in 2020.'] } } });
   const sess = sh.sess;
   const OUT = { x0: -10, x1: 370, y0: -30 };
   const GY = 524;                               // 地表の基準高さ（目標の空き地はこの高さで平ら）
@@ -205,8 +206,8 @@ export function create(host = {}) {
 
   // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
   let actx = null;
-  const audioWake = () => { try { actx = actx || ((host.audioCtx && host.audioCtx()) || new (window.AudioContext || window.webkitAudioContext)()); if (actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
-  const audioOn = () => actx && !lab.script;
+  const audioWake = () => { try { actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)()); if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
+  const audioOn = () => actx && !lab.script && !(host.muted && host.muted());   // 本編のミュートに従う
   let noiseBuf = null;
   function shot() {   // サンプラーの弾丸: 低い「ドン」+ 砂のはじけるノイズ
     if (!audioOn()) return;

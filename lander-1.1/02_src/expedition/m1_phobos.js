@@ -2,10 +2,10 @@
 // 着陸 → その場で2秒静止して採取 → 離陸 → 母船のドッキング枠に低速で入る。
 // 本編 v1.1 と試作ページ（07_lab/expedition/01_sample_return/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
 // host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
-import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=ce3c0bad38';
-import { txt, rgba, rr } from '../art.js?v=0f569522c3';
+import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=0ac2d166b6';
+import { txt, rgba, rr } from '../art.js?v=6a1ae490e6';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from './shell.js?v=5de0737f94';
+import { createShell, LIFE_MULT, lifeMult, TIME_BONUS_MAX, TIME_BONUS_RATE, timeBonus, LIFE_LOST_S, mmss, star, drawLandability } from './shell.js?v=d50ebace8a';
 
 export const baseScore = (fuelPct, grade) => 1000 + Math.round(fuelPct) * 10 + (grade === 'PERFECT' ? 300 : grade ? 100 : 0);
 export function create(host = {}) {
@@ -21,7 +21,8 @@ export function create(host = {}) {
   const missionScore = (fuelPct, grade, lives, sec = 1e9) => sh.score(baseScore(fuelPct, grade), lives, sec);
   const LIVES0 = 3;
   const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'sample_return', expLabel: 'EXPEDITION 01', title: 'PHOBOS SAMPLE RETURN',
-    brief: { title: 'PHOBOS — SAMPLE RETURN', sub: '往復', goals: ['・タップで母船から切り離す', '・採取地点に着地して2秒じっと待つ', '・母船の点線の枠に戻ればクリア'], stars: ['帰還', '燃料30%以上で帰還', '採取地点に PERFECT 着地'], tip: 'コツ：逆向きに噴射すると止まれる', fact: ['フォボス：火星の 2 つの衛星のうち大きいほう。', '日本の探査機 MMX が試料を持ち帰る計画を進めている。'] },
+    brief: { title: 'PHOBOS — SAMPLE RETURN', sub: '往復', goals: ['・タップで母船から切り離す', '・採取地点に着地して2秒じっと待つ', '・母船の点線の枠に戻ればクリア'], stars: ['帰還', '燃料30%以上で帰還', '採取地点に PERFECT 着地'], tip: 'コツ：逆向きに噴射すると止まれる', fact: ['フォボス：火星の 2 つの衛星のうち大きいほう。', '日本の探査機 MMX が試料を持ち帰る計画を進めている。'],
+      en: { sub: 'ROUND TRIP', goals: ['· Tap to undock from the mothership', '· Land on the site, hold still for 2 s', '· Fly back into the dotted dock frame'], stars: ['Return to the ship', 'Return with 30% fuel or more', 'PERFECT landing on the site'], tip: 'Tip: thrust the other way to stop', fact: ['Phobos: the larger of the two moons of Mars.', 'Japan\'s MMX probe plans to bring a sample back.'] } },
     options: [{ key: 'atSite', label: 'START AT SITE', btn: 'site', param: 'site' }, { key: 'nearDock', label: 'START NEAR DOCK', btn: 'near', param: 'near' }] });
   try { localStorage.removeItem('lander11.exp.sample_return.attempts'); } catch (e) { /* 旧キー（試行回数）の掃除 */ }
   const sess = sh.sess;   // menu → practice | mission（lab.reset をまたいで保持）
@@ -222,7 +223,9 @@ export function create(host = {}) {
   let actx = null;
   function clang(k) {
     try {
-      actx = actx || ((host.audioCtx && host.audioCtx()) || new (window.AudioContext || window.webkitAudioContext)());
+      if (host.muted && host.muted()) return;   // 本編のミュート
+      actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)());
+      if (!actx) return;
       const t = actx.currentTime, g = actx.createGain(); g.connect(actx.destination);
       g.gain.setValueAtTime(0.12 + 0.12 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
       for (const f of [310, 487, 811]) { const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 0.36); }

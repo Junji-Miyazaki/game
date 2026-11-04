@@ -1,6 +1,9 @@
 # EXPEDITION 試作（R&D。本実装は v1.1 の同じアドレスに追加 = PLAN §7s）
 
-仕様: `01_docs/EXPEDITION_MISSIONS.md`（正）/ PLAN §7m。ゲーム本体（02_src, 04_tests）・`../lander/` は無変更。サーバ: preview 設定 `lander-1.1`（port 4177）。URL は `index.html` まで書く。
+仕様: `01_docs/EXPEDITION_MISSIONS.md`（正）/ PLAN §7m・§7t。サーバ: preview 設定 `lander-1.1`（port 4177）。URL は `index.html` まで書く。
+
+**2026-11-04（beta.8）から本編に組み込み済み。ミッションの正本は `02_src/expedition/`**（harness.js・shell.js・m1_phobos.js・m2_enceladus.js・m3_ryugu.js・m4_comet.js・index.js）。各ミッションは `create(host)` で lab を返す。このフォルダの `NN_*/mission.js` は `create({ canvas })` して `lab.start()` するだけの薄い入口（調整パネル・`?test=1` の自動テストはここだけ）。`00_harness/harness.js` `shell.js` は 02_src への転送。試作ページの記録は `lander11.exp.<id>.*`（本編は `lander11.xp.<パイロット>.<id>.*` で別）。`node 07_lab/stamp.js` は 02_src/expedition も刻む。本編の変更後は `node build.js` も。
+- 本編（`host.embed`）: ループ・指・タップは本編のシーン（`02_src/expscene.js` の ExpeditionScene）が回す。URL の値・パネルは使わない。音は本編の AudioContext（ミュートに従う）。メニュー左上に MAP（Escape も）でマップへ戻る。説明カードは `brief.en` で英語（設定の言語）。
 
 | 試作 | URL | 内容 |
 |---|---|---|
@@ -8,6 +11,7 @@
 | 01_sample_return | http://localhost:4177/07_lab/expedition/01_sample_return/index.html | #1 PHOBOS SAMPLE RETURN |
 | 02_geyser_run | http://localhost:4177/07_lab/expedition/02_geyser_run/index.html | #2 ENCELADUS GEYSER RUN（間欠泉） |
 | 03_touch_and_go | http://localhost:4177/07_lab/expedition/03_touch_and_go/index.html | #3 RYUGU TOUCH-AND-GO（ほぼ無重力・低速接触・離脱） |
+| 04_anchor | http://localhost:4177/07_lab/expedition/04_anchor/index.html | #4 COMET 67P ANCHOR（くびれの底に錨・横向きのガス） |
 
 ## 共通シェル（00_harness/shell.js）
 #1 で承認済みの枠組みを共通化。メニュー（PRACTICE / MISSION、BEST・累積★）・3 ライフ（×1.0/0.8/0.6）・タイムトライアル（max(0,1500−10×秒)）・ベストの保存（`lander11.exp.<id>.best / .besttime`、★は和集合）・結果 / MISSION FAILED / LIFE LOST 画面・HUD 右上（タイマー / チェック行 / PRACTICE タグ or ライフ）・ヒント行・足元の傾斜マーカー・R キーのライフ消費（**createLab より前に登録**するのでブラウザの発火順に依存しない）。`createShell({id, expLabel, title, options})` → `sh.sess / begin / onLoss / complete(f, [★1,★2,★3]) / tap / drawMenu / drawResult / drawCorner / drawHint`。ミッションは `lab.m` に menu / result / resultT / lifeLost / failed / final / reason / detail を置く。#1・#2 とも使用（#1 は移行後も autotest の `score()` `five()` 全通過）。

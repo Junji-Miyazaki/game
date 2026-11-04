@@ -216,11 +216,12 @@ for (const max of [2, 3, 7, 13, 14, 15, 16, 28, 29, 41, 60, 200]) {
   const r = render(t); // イントロ中でも落ちない
   m.introT = 1.6; run(t, 1);
   const rec = render(t);
-  ok(rec.texts.includes('★ ' + sum.totalStars + ' / ' + sum.maxStars), 'total stars counter drawn: ' + (rec.texts.find((s) => s.startsWith('★ ')) || 'none') + ' / expect ' + sum.totalStars + ' / ' + sum.maxStars);
-  ok(sum.totalStars === 10 && sum.maxStars === 48, 'counter data: 10 / 48');
-  for (const nm of ['PHOBOS', 'RYUGU', '67P', 'ENCELADUS', 'TRITON']) ok(rec.texts.includes(nm), 'COMING SOON silhouette label drawn: ' + nm);
-  ok(m.soonRects().length === 5 && m.soonRects().every((r) => r.soon !== 'PLUTO') && m.chipRects().length === 7 && m.chipRects()[6].sys === 'pluto', 'Pluto left COMING SOON (5 silhouettes) and has its own chip (7 chips)');
-  ok(rec.texts.includes('COMING SOON · v1.2'), 'COMING SOON heading drawn');
+  // beta.8: ★の合計は ツアー 48 + 探査 12（未発見も分母に入れる）= 60。下段は探査ミッション 4 つ（未解放は ??? の影）
+  ok(rec.texts.includes('★ ' + sum.totalStars + ' / ' + (sum.maxStars + 12)), 'total stars counter drawn: ' + (rec.texts.find((s) => s.startsWith('★ ')) || 'none') + ' / expect ' + sum.totalStars + ' / ' + (sum.maxStars + 12));
+  ok(sum.totalStars === 10 && sum.maxStars === 48, 'counter data: 10 / 48 (tour part)');
+  ok(rec.texts.filter((s) => s === '???').length === 4 && !rec.texts.includes('TRITON'), 'EXPEDITION row: 4 locked missions drawn as ???');
+  ok(m.soonRects().length === 4 && m.soonRects().map((r) => r.id).join() === 'ryugu,phobos,enceladus,67p' && m.chipRects().length === 7 && m.chipRects()[6].sys === 'pluto', 'EXPEDITION row in tour order (4) and 7 system chips');
+  ok(rec.texts.includes('EXPEDITION   ★ 0 / 12'), 'EXPEDITION heading drawn');
   // 拡大画面
   zoomTo(t, 'jupiter');
   const rz = render(t);
@@ -232,20 +233,21 @@ for (const max of [2, 3, 7, 13, 14, 15, 16, 28, 29, 41, 60, 200]) {
   ok(m2.B.moon.ring === true && m2.ringState('moon') === 'ring', 'ring is judged on the first-orbit stages');
 }
 
-// ===== 7. COMING SOON / TERRA は選べない =====
+// ===== 7. 未解放の探査ミッション / TERRA は選べない（beta.8: 未解放は POD の場所を案内するだけ）=====
 {
   const { t, calls } = openMap(storeWith(14));
   const m = t.map; m.introT = 1.6;
+  const where = { ryugu: 'MOON', phobos: 'MARS', enceladus: 'TITAN', '67p': 'PLUTO' };
   for (const r of m.soonRects()) {
     t.onInput('tap', center(r));
-    ok(m.view === 'over' && !m.ship.fl && m.sel === null && calls.n === 0 && m.toast && /COMING SOON/.test(m.toast.text) && m.toast.text.startsWith(r.soon), 'COMING SOON ' + r.soon + ': toast only');
+    ok(m.view === 'over' && !m.ship.fl && m.sel === null && calls.n === 0 && m.toast && /MISSION POD/.test(m.toast.text) && m.toast.text.endsWith(where[r.id]), 'locked ' + r.id + ': toast only (' + (m.toast && m.toast.text) + ')');
   }
   zoomTo(t, 'mars');
-  const cs = m.cards('mars'), soon = cs.find((c) => c.kind === 'soon');
+  const cs = m.cards('mars'), soon = cs.find((c) => c.kind === 'exp');
   t.onInput('tap', center({ x: 16, y: soon.y, w: 328, h: soon.h }));
-  ok(m.sel === null && calls.n === 0 && /PHOBOS/.test(m.toast.text), 'PHOBOS card is not selectable');
+  ok(soon.id === 'phobos' && m.sel === null && calls.n === 0 && /MARS/.test(m.toast.text), 'locked PHOBOS card is not selectable');
   zoomTo(t, 'saturn');
-  ok(m.cards('saturn').some((c) => c.kind === 'soon' && c.soon === 'ENCELADUS'), 'Saturn shows ENCELADUS as coming soon');
+  ok(m.cards('saturn').some((c) => c.kind === 'exp' && c.id === 'enceladus'), 'Saturn shows the ENCELADUS mission card');
   zoomTo(t, 'earth');
   const bonus = m.cards('earth').find((c) => c.kind === 'bonus');
   t.onInput('tap', center({ x: 16, y: bonus.y, w: 328, h: bonus.h }));
@@ -367,7 +369,7 @@ for (const max of [2, 3, 7, 13, 14, 15, 16, 28, 29, 41, 60, 200]) {
   const cd = m.cards('jupiter')[0];
   ok(big(m.pipRect(cd, 0)) && big(m.pipRect(cd, 1)) && big(m.stepRects(cd).prev) && big(m.stepRects(cd).next), 'stage pips and orbit steppers >= 44 px');
   ok(m.pipRect(cd, 0).x + m.pipRect(cd, 0).w <= m.pipRect(cd, 1).x && m.stepRects(cd).prev.x + 48 <= m.stepRects(cd).next.x, 'targets do not overlap');
-  ok(m.soonRects().every((r) => r.w >= 44 && r.h >= 44), 'COMING SOON targets >= 44 px');
+  ok(m.soonRects().every((r) => r.w >= 44 && r.h >= 44), 'EXPEDITION targets >= 44 px');
   // 惑星の当たり: 全惑星は中心タップで拡大
   for (const id of SYSORD) {
     const q = m.ovP[id]; const fresh = openMap(storeWith(14)); const fm = fresh.t.map; fm.introT = 1.6; fresh.t.update(0.1);

@@ -7,10 +7,10 @@
 //   m.menu / m.result('win'|'lose') / m.resultT / m.lifeLost / m.failed / m.final / m.reason / m.detail
 // 使い方: const sh = createShell({ id, expLabel:'EXPEDITION 02', title, options:[{key,label,btn,param}], host, store, onExit });
 // バンドル（build.js）ではこのファイルは EXP_shell という閉じたスコープに入る。
-import { txt, rgba, rr } from '../art.js?v=0f569522c3';
+import { txt, rgba, rr } from '../art.js?v=6a1ae490e6';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { i18nLang } from '../core/i18n.js?v=2844aa7a76';
-import { W, C, footSlopeDeg, trackOn } from './harness.js?v=ce3c0bad38';
+import { i18nLang } from '../core/i18n.js?v=eebba828ab';
+import { W, C, footSlopeDeg, trackOn } from './harness.js?v=0ac2d166b6';
 
 export const LIVES0 = 3;
 export const LIFE_MULT = { 3: 1.0, 2: 0.8, 1: 0.6 };

@@ -3,6 +3,19 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-11-04 beta.8: EXPEDITION を本編へ組み込み（再開 → 完了）
+- ユーザー: 「再開して」。推奨案 11 項目どおり（PLAN §7t）。
+- 実施: `build.js` に閉じたスコープ（EXP_*。同名のトップレベルが多いミッションを包む。外側からの import は `const { … } = EXP_x;`、同じ名前は一度だけ宣言）。`02_src/expedition/index.js`（4 ミッションの一覧・POD の天体・任務文 JA/EN）、`expdata.js`（パイロットごとの保存 `xp.<名前>.<id>.*`・解放・正体を見せた印・POD の外れ回数・★まとめ・全解放 `?expedition=all`・探査天体の絵）、`expscene.js`（ExpeditionScene・MISSION ACCEPTED）、`pods.js`（POD）。game.js: `_podInit/_podTick/_podShowTick`（engine.pods の時だけ、自前の乱数）、ステージ後 1.1 秒で全画面演出（全て凍結・BACK 不可・タップで印へ / 閉じる）。title.js: マップに探査の状態を渡す・`{expedition}` で main.js の toExpedition・`openMap` で戻る。solarmap.js: 下段（COMING SOON → EXPEDITION ★x/12、4 つ）・惑星系のカード（earth/mars/saturn/pluto）・正体が現れる演出・★ x/60。ミッション: 音を本編の AudioContext とミュートに従わせた。説明カードの英文。beta.8・UPDATE INFORMATION（JA/EN 4 行）。
+- 不具合と修正: 画面上端で POD の位置が押し下げられて勝手に磁石の範囲へ入り自分で取れた → 押し下げた分を横へ逃がして距離を保つ。#1 の `export` がミッション関数の中に入っていた（試作ページで構文エラー）→ 外へ。build の入れ子 export 検査の正規表現が空行で誤検出 → `[ \t]+`。エンケラドゥスの絵で 2 つのクレーターと縞が顔に見えた → クレーターを削除。
+- テスト: 既存 31 ファイル（版・UPDATE INFORMATION の位置で引いている p10/p12/p13/p18/p19/p20/p21 と、マップの p15map を更新）+ 新規 p24expedition（87 項目：保存・確率・POD の動き・ツアーでの取得と演出・マップ・4 ミッションの埋め込み・英語カード・バンドル）全通過。試作ページ #1〜#4 の autotest も通過。ブラウザ（本編）: マップの EXPEDITION 列・正体の演出・★/60、RYUGU と 67P の英語カード、噴射ボタンが効く、Escape 2 回でマップへ戻る。MISSION ACCEPTED 4 天体と POD の見た目（一時ページで確認、削除済み）。
+- 未確認: 実機で POD が取りやすいか（ツアー中に実際に取るところはブラウザでは未操作、Node のテストのみ）、演出の長さ、スマホでのミッションの操作感（試作ページと同じ物理）。
+
+## 2026-11-04 本編への組み込み 着手 → ユーザー指示で一時停止（途中）
+- ユーザー: 推奨案 11 項目で開始 → 途中で「一旦ストップ」。
+- 済み（ローカルコミット 9548cd8、未 push）: 試作の harness・shell・4 ミッションを `02_src/expedition/` へ移し `create(host)` の形に。試作ページは薄い入口に（4 ページとも physics・score・five 全通過）。shell に保存先の差し替え（`cfg.store`）・説明カードの英語（`brief.en`、文はまだ無い）・本編用の MAP 戻るボタン。harness に本編用の埋め込みモード（`host.embed`）。`stamp.js` が 02_src/expedition も刻む。
+- 未コミット（作りかけ）: `build.js` に閉じたスコープのモジュール（EXP_*）と、まだ無いファイル（expdata.js・expscene.js・pods.js）を FILES に追加済み → **今 `node build.js` を実行すると失敗する**。`02_src/expedition/index.js`（ミッション一覧）を新規作成。本編のバンドル・index.html は未変更なので、公開中の v1.1 には影響なし。
+- 残り: expdata.js（パイロットごとの記録・解放・POD の外れ回数・全解放 `?expedition=all`）、expscene.js（ミッション画面・MISSION ACCEPTED 演出）、マップの入口と ★/60、title の受け渡し、game.js の POD、英文、beta.8、テスト。
+
 ## 2026-11-04 #4 確定 / #3 の星空をゆっくり回す
 - ユーザー: #4 改訂版「いいと思います」→ この形で確定。#3 に小惑星らしさを出すため背景の星を動かす案（ユーザー発案）→ 「流す」ではなく「弧の中心のまわりでごくゆっくり回す」を提案して OK。
 - 判断: 一方向に流すと機体が進んでいるように見える。回転なら自転する小天体の上にいる感じになり、円弧の地表と合う。#3・#4 は 8〜10 px/s 以下を読む遊びなので、星は 約 1 px/s にとどめる（錯覚で速度判断を乱さない）。#4 は彗星で、塵とガスの動きがすでにあるので入れない。実際のリュウグウの自転（約 7.6 時間）は目に見えない速さで、これは誇張した演出。

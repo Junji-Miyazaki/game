@@ -6,15 +6,16 @@
 // 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
 // 本編 v1.1 と試作ページ（07_lab/expedition/04_anchor/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
 // host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
-import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=ce3c0bad38';
-import { txt, rgba } from '../art.js?v=0f569522c3';
+import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=0ac2d166b6';
+import { txt, rgba } from '../art.js?v=6a1ae490e6';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from './shell.js?v=5de0737f94';
+import { createShell, LIFE_LOST_S, mmss } from './shell.js?v=d50ebace8a';
 
 export function create(host = {}) {
   const on = trackOn(host);
   const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'anchor', expLabel: 'EXPEDITION 04', title: 'COMET 67P ANCHOR',
-    brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が多いと強いガス。押されたら逆へ噴く', fact: ['67P はチュリュモフ・ゲラシメンコ彗星の番号。', '2014 年、着陸機フィラエは銛が作動せず、', '跳ねて日陰に止まった。'] } });
+    brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が多いと強いガス。押されたら逆へ噴く', fact: ['67P はチュリュモフ・ゲラシメンコ彗星の番号。', '2014 年、着陸機フィラエは銛が作動せず、', '跳ねて日陰に止まった。'],
+      en: { sub: 'ANCHOR INTO A COMET', goals: ['· Descend to the target in the neck', '· Touch at 10 px/s or less: anchor holds', '· Too fast and you bounce. Mind the gas'], stars: ['Clear', 'Anchor without a bounce', 'PERFECT touch (3 or less, upright)'], tip: 'Tip: more frost = stronger gas. Push back', fact: ['67P: comet Churyumov-Gerasimenko.', 'In 2014 the lander Philae\'s harpoons failed;', 'it bounced and came to rest in shadow.'] } } });
   const sess = sh.sess;
   const OUT = { x0: -10, x1: 370, y0: -30 };
   const GY = 524;                               // くびれの底の高さ（目標はここで平ら）
@@ -224,8 +225,8 @@ export function create(host = {}) {
 
   // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
   let actx = null, noiseBuf = null;
-  const audioWake = () => { try { actx = actx || ((host.audioCtx && host.audioCtx()) || new (window.AudioContext || window.webkitAudioContext)()); if (actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
-  const audioOn = () => actx && !lab.script;
+  const audioWake = () => { try { actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)()); if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
+  const audioOn = () => actx && !lab.script && !(host.muted && host.muted());   // 本編のミュートに従う
   const noise = () => { if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } return noiseBuf; };
   function hiss(k = 1) {   // ガスの噴出: 低めのシューという音（噴出の長さ）。強いガスほど大きく低い
     if (!audioOn()) return;

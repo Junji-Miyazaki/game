@@ -7,7 +7,7 @@
 //         （lab.step(dt) / lab.draw() / lab.tap(x, y) / lab.destroy()）。URL の値・パネルは使わない
 // バンドル（build.js）ではこのファイルは EXP_harness という閉じたスコープに入る。
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { drawShip, drawControls, txt, rgba } from '../art.js?v=0f569522c3';
+import { drawShip, drawControls, txt, rgba } from '../art.js?v=6a1ae490e6';
 
 export const W = 360;
 export const H = 640;

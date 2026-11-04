@@ -3,7 +3,18 @@
 import { APP_VERSION } from './version.js';
 import { i18nLang } from './core/i18n.js';
 export const WHATSNEW_ENTRIES = [
-  { version: APP_VERSION, date: '2026.10.28', items: [
+  { version: APP_VERSION, date: '2026.11.04', items: [
+    '探査ミッション EXPEDITION を追加',
+    'ツアー中の POD を取ると解放',
+    '解放した探査はマップから挑戦',
+    '★は全部で60個に（探査12個）',
+  ], itemsEn: [
+    'New: EXPEDITION missions',
+    'Grab a MISSION POD on tour to unlock',
+    'Play unlocked ones from the MAP',
+    '60 stars in all (12 in EXPEDITION)',
+  ] },
+  { version: '1.1.0-beta.7', date: '2026.10.28', items: [
     'シールドゲージ：20秒で満タン、ボタンで発動',
     '緊急シールド（2回墜落）は廃止',
     'ゲージはボタンの中、満タンで点滅',

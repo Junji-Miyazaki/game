@@ -4,6 +4,7 @@ import { BootScene, HallOfFameScene, hallHasData, TitleScene, restoreMute, fadeI
 import { Game } from './game.js';
 import { Music } from './music.js';
 import { MigrateScene, migrationPlan, legacyPilotNames } from './migrate.js';
+import { ExpeditionScene } from './expscene.js';
 
 window.addEventListener('load', () => {
   const canvas = document.getElementById('screen');
@@ -17,6 +18,10 @@ window.addEventListener('load', () => {
   const toTitle = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true }));
   const startGame = () => engine.changeScene(fadeInScene(new Game(engine), 0.8));
   engine.toMenu = toTitle;
+  // EXPEDITION（PLAN §7m/§7s）: マップ → ミッション → MAP でタイトル（マップを開いた状態）へ戻る。POD はツアー中だけ（テストのエンジンは pods なし）
+  engine.pods = true;
+  const toMap = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true, openMap: true }));
+  engine.toExpedition = (id) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, toMap), 0.5));
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。

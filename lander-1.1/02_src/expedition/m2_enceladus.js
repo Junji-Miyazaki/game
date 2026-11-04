@@ -3,15 +3,16 @@
 // 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
 // 本編 v1.1 と試作ページ（07_lab/expedition/02_geyser_run/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
 // host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
-import { createLab, trackOn, W, H, C } from './harness.js?v=ce3c0bad38';
-import { txt, rgba, rr } from '../art.js?v=0f569522c3';
+import { createLab, trackOn, W, H, C } from './harness.js?v=0ac2d166b6';
+import { txt, rgba, rr } from '../art.js?v=6a1ae490e6';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from './shell.js?v=5de0737f94';
+import { createShell, LIFE_LOST_S, mmss, drawLandability, HINT_Y } from './shell.js?v=d50ebace8a';
 
 export function create(host = {}) {
   const on = trackOn(host);
   const sh = createShell({ host, store: host.store, onExit: host.onExit, lang: host.lang, id: 'geyser_run', expLabel: 'EXPEDITION 02', title: 'ENCELADUS GEYSER RUN',
-    brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す', fact: ['エンケラドゥス：土星の衛星。南極の割れ目から', '氷の粒を噴き出している。', '2005 年に探査機カッシーニが発見した。'] } });
+    brief: { title: 'ENCELADUS — GEYSER RUN', sub: '間欠泉', goals: ['・噴気の上の光る試料をくぐって集める', '・試料を1つ以上持ってパッドに着地'], stars: ['クリア', '試料を3つすべて', 'パッドに PERFECT 着地'], tip: 'コツ：霜が舞うと1秒後に噴き出す', fact: ['エンケラドゥス：土星の衛星。南極の割れ目から', '氷の粒を噴き出している。', '2005 年に探査機カッシーニが発見した。'],
+      en: { sub: 'GEYSERS', goals: ['· Fly through the glowing samples on the plumes', '· Land on the pad with at least one sample'], stars: ['Clear', 'All 3 samples', 'PERFECT landing on the pad'], tip: 'Tip: frost swirls 1 s before it erupts', fact: ['Enceladus: a moon of Saturn. Ice grains', 'spray from cracks at its south pole.', 'Found by the Cassini probe in 2005.'] } } });
   const sess = sh.sess;
   const OUT = { x0: -10, x1: 370, y0: -30 };
   const GY = 520;                        // 地表の基準高さ
@@ -202,8 +203,8 @@ export function create(host = {}) {
 
   // ---------------------------------------------------------------- 音（WebAudio。失敗しても続行。テスト自動操縦中は鳴らさない）
   let actx = null;
-  const audioWake = () => { try { actx = actx || ((host.audioCtx && host.audioCtx()) || new (window.AudioContext || window.webkitAudioContext)()); if (actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
-  const audioOn = () => actx && !lab.script;
+  const audioWake = () => { try { actx = actx || (host.audioCtx ? host.audioCtx() : new (window.AudioContext || window.webkitAudioContext)()); if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
+  const audioOn = () => actx && !lab.script && !(host.muted && host.muted());   // 本編のミュートに従う
   let noiseBuf = null;
   function hiss(k) {   // 霜のヒス音 / 噴出の吹き出し音（フィルタ付きノイズ）
     if (!audioOn()) return;

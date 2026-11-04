@@ -17,6 +17,7 @@ import { HtCard } from './howto.js';
 import { starsSummary } from './stars.js';
 import { patchesSummary, patchCount, PATCH_COUNT } from './patches.js';
 import { SolarMap } from './solarmap.js';
+import { xpSummary, xpMarkSeen } from './expdata.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
 // ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
@@ -520,6 +521,7 @@ export class TitleScene extends Scene {
     super(engine);
     this.startGame = startGame;
     this.useLaunch = !!(opts && opts.launch);
+    this._openMapOnEnter = !!(opts && opts.openMap);   // EXPEDITION の MAP から戻ったとき: マップを開いた状態で始める
     i18nBind(engine.storage);
     this.isRoot = true;    // 最上位＝BACKボタン非表示
     this.t = 0;
@@ -565,6 +567,12 @@ export class TitleScene extends Scene {
     this._refreshTop1();
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
+    if (this._openMapOnEnter) { this._openMapOnEnter = false; this._openMap(); }
+  }
+  // 太陽系マップに渡す EXPEDITION の状態（パイロットごと）と、正体を見せた印の保存
+  _mapExp() {
+    const st = this.engine.storage, nm = this.name || '';
+    return { exp: xpSummary(st, nm), markSeen: (id) => { try { xpMarkSeen(st, nm, id); } catch (_) { /* ignore */ } } };
   }
 
   // WORLD #1 を取得してキャッシュ・表示を更新。失敗(null)ならキャッシュのまま
@@ -777,7 +785,7 @@ export class TitleScene extends Scene {
     if (list.length > 1) {
       this.showRank = false;
       let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-      this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+      this.map = new SolarMap(Object.assign({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } }, this._mapExp()));
       return;
     }
     this._startAt(1);
@@ -787,7 +795,7 @@ export class TitleScene extends Scene {
     const list = this._startOptions();
     this.showRank = false;
     let reduce = false; try { reduce = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { reduce = false; }
-    this.map = new SolarMap({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } });
+    this.map = new SolarMap(Object.assign({ list, summary: starsSummary(this.engine.storage, this.name), patches: patchesSummary(this.engine.storage, this.name), reduce, viewOnly: !(this.name && list.length > 1), sfx: () => { try { musicOf(this.engine).sfx.uiTap(); } catch (_) { /* ignore */ } } }, this._mapExp()));
   }
   _startAt(stage) {
     this.map = null;
@@ -800,6 +808,7 @@ export class TitleScene extends Scene {
     const r = this.map.input(action, data);
     if (!r) return;
     if (r.close) { this.map = null; return; }        // BACK で閉じる＝何も始めず、チェックポイントも触らずタイトルへ
+    if (r.expedition) { if (this.engine.toExpedition) { this.map = null; this.engine.toExpedition(r.expedition); } return; }   // 探査ミッションへ（main.js）
     if (r.start) this._startAt(r.start);
   }
   blocksBack() { return !!this.map || championEntryOpen(this._champ) || pinEntryOpen(this._pin); }
