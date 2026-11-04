@@ -5,10 +5,10 @@
 // 共通部分（メニュー・ライフ・スコア・★・結果）は 00_harness/shell.js。
 // 本編 v1.1 と試作ページ（07_lab/expedition/03_touch_and_go/）の共通の正本。create(host) でミッションを1つ作って lab を返す（開始はしない）。
 // host: 試作ページ { canvas } / 本編 { embed:{ctx,canvas,touches,audioCtx}, store, onExit, lang }。バンドルでは閉じたスコープに入る。
-import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=0ac2d166b6';
-import { txt, rgba } from '../art.js?v=6a1ae490e6';
+import { createLab, trackOn, W, H, C, footSlopeDeg } from './harness.js?v=4ee60acfef';
+import { txt, rgba } from '../art.js?v=85480c339f';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { createShell, LIFE_LOST_S, mmss } from './shell.js?v=d50ebace8a';
+import { createShell, LIFE_LOST_S, mmss } from './shell.js?v=39492ba715';
 
 export function create(host = {}) {
   const on = trackOn(host);

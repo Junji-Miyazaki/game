@@ -959,6 +959,14 @@ export const Music = {
       const t = _musS.ctx.currentTime + 0.005;
       [0, 7, 12, 19].forEach((s, i) => _musSfxTone('sine', _musHz(523.25, s), t + i * 0.07, 0.3, 0.3, 2.0));
     },
+    // ミッション POD が現れた: 短い2回の「ピピッ」（計器の呼び出し音。控えめ）
+    podAppear() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      _musSfxTone('sine', 1567.98, t, 0.09, 0.16, 0);
+      _musSfxTone('sine', 1567.98, t + 0.13, 0.12, 0.16, 0);
+      _musSfxTone('triangle', 783.99, t + 0.13, 0.25, 0.08, 0);
+    },
     // クリア画面の集計の「カチ」。step が増えるほどわずかに高く
     tick(step) {
       if (!_musSfxReady()) return;

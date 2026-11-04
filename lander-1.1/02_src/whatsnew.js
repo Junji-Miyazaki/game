@@ -4,6 +4,17 @@ import { APP_VERSION } from './version.js';
 import { i18nLang } from './core/i18n.js';
 export const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.11.04', items: [
+    'POD は画面の中ほどに出るように',
+    'POD を取ったら、すぐ探査へ寄り道できる',
+    '未挑戦の探査はステージ後に再案内',
+    'ゲームオーバー画面から探査へ',
+  ], itemsEn: [
+    'MISSION POD now appears mid-screen',
+    'GO NOW: detour to the mission',
+    'Unplayed missions offered again',
+    'Or start from the GAME OVER screen',
+  ] },
+  { version: '1.1.0-beta.8', date: '2026.11.04', items: [
     '探査ミッション EXPEDITION を追加',
     'ツアー中の POD を取ると解放',
     '解放した探査はマップから挑戦',

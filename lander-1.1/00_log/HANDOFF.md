@@ -6,7 +6,7 @@
 | 対象 | 場所 | 公開 URL | 状態 |
 |---|---|---|---|
 | v1.0（公開中・安定版） | `../lander/` | https://junji-miyazaki.github.io/game/lander/index.html | 致命的不具合のみ修正 |
-| BETA v1.1（主開発） | `lander-1.1/` | https://junji-miyazaki.github.io/game/lander-1.1/index.html | 版 `1.1.0-beta.8`、表示「BETA v1.1」 |
+| BETA v1.1（主開発） | `lander-1.1/` | https://junji-miyazaki.github.io/game/lander-1.1/index.html | 版 `1.1.0-beta.9`、表示「BETA v1.1」 |
 | EXPEDITION（beta.8 で本編に組み込み、§7t） | 正本 `lander-1.1/02_src/expedition/`、試作ページ `07_lab/expedition/` | 本編はマップから / 試作は `07_lab/expedition/…` | #1〜#4。解放はツアー中の POD |
 | 中継 Worker（両版共通の正本） | `../lander/06_server/ranking-worker.js` | https://lander-ranking.euler057721.workers.dev | ユーザーが Cloudflare で貼り替え |
 
@@ -48,8 +48,15 @@
 - マップの下段と惑星系のカードが入口。未解放は ???、POD を取ると解放。POD: 月=RYUGU・火星=PHOBOS・タイタン=ENCELADUS・冥王星=67P、30%→50%→70%→必ず。ステージ後に MISSION ACCEPTED。★は x/60。記録はパイロットごと・端末内。説明カード JA/EN。全解放 `?expedition=all`。
 - テスト: 既存 31 + `04_tests/p24expedition.mjs`（87 項目）= 32 ファイル全通過。試作ページの autotest も通る。
 
+## 4c. beta.9（2026-11-04）寄り道の分岐と POD の出し方（PLAN §7u）
+- MISSION ACCEPTED の最後に「いま向かう / ツアーを続ける」。いま向かう = ツアーを止めたまま探査を MISSION で1回 → 「ツアーへ戻る」で同じ画面から再開（main.js `engine.toDetour`、Game は `_suspended` の間 enter/exit で状態を消さない）。探査はツアーの得点に足さない。
+- 未挑戦の探査は、その天体のステージをクリアした後に再案内（ランごと1回、`played` で停止）。ゲームオーバー画面の下に入口。
+- POD は機体が画面の中ほどまで降りた時に、反対側の横・少し下に出て付いて来ない（出る時に音）。
+- テスト: 32 ファイル全通過（p24expedition 120 項目）。
+
 ## 5. ユーザーの実機確認待ち
-- beta.8: POD の見つけやすさ・取りやすさ（漂う距離 50〜80px、磁石 46px）、MISSION ACCEPTED の長さ（約 4 秒、タップで先へ）、マップの ??? と正体が現れる演出、ミッションから MAP で戻る流れ、英語の説明カード。
+- beta.9: POD の見つけやすさ・取りに行く手間（反対側 110〜170px・吸い寄せ 28px）、出る時の音、いま向かう → ツアーへ戻るの流れ、再案内のしつこさ、ゲームオーバー画面の入口。
+- beta.8: マップの ??? と正体が現れる演出、ミッションから MAP で戻る流れ、英語の説明カード。
 - SHIELD: 音と見え方は 2026-11-04 ユーザー OK。PC のクリック誤発動は未報告。
 - INVERTED 操作の感触、冥王星の滑りと中継着陸の所要時間（自動操縦の中央値 約 270 秒）、Hall of Fame の音。
 - 起動画面の HOW TO PLAY ボタンの押しやすさ（画面最下部）。

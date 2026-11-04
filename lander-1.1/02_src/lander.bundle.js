@@ -5,7 +5,7 @@
 // ---- 02_src/version.js ----
 // 版の単一の定義元。表示ラベル・保存領域の接頭辞・ランキングのボードはここだけで決める。
 // v1.0 と v1.1 は同一オリジン(junji-miyazaki.github.io)で動くため、localStorage の接頭辞を分ける（v1.0 は 'lander.'）。
-const APP_VERSION = '1.1.0-beta.8';
+const APP_VERSION = '1.1.0-beta.9';
 const APP_LABEL = 'BETA v1.1';
 const APP_BUILD_TEXT = 'build ' + APP_VERSION;
 const STORAGE_PREFIX = 'lander11.';
@@ -5437,6 +5437,14 @@ const Music = {
       const t = _musS.ctx.currentTime + 0.005;
       [0, 7, 12, 19].forEach((s, i) => _musSfxTone('sine', _musHz(523.25, s), t + i * 0.07, 0.3, 0.3, 2.0));
     },
+    // ミッション POD が現れた: 短い2回の「ピピッ」（計器の呼び出し音。控えめ）
+    podAppear() {
+      if (!_musSfxReady()) return;
+      const t = _musS.ctx.currentTime + 0.005;
+      _musSfxTone('sine', 1567.98, t, 0.09, 0.16, 0);
+      _musSfxTone('sine', 1567.98, t + 0.13, 0.12, 0.16, 0);
+      _musSfxTone('triangle', 783.99, t + 0.13, 0.25, 0.08, 0);
+    },
     // クリア画面の集計の「カチ」。step が増えるほどわずかに高く
     tick(step) {
       if (!_musSfxReady()) return;
@@ -5478,6 +5486,17 @@ function _musSfxTone(type, f, t, dur, vel, ratio) {
 // items = 日本語の短文（22字まで）、itemsEn = 同じ順の英語（34字まで）。表示は設定の言語（i18nLang）で切り替える（既定は navigator.language）。
 const WHATSNEW_ENTRIES = [
   { version: APP_VERSION, date: '2026.11.04', items: [
+    'POD は画面の中ほどに出るように',
+    'POD を取ったら、すぐ探査へ寄り道できる',
+    '未挑戦の探査はステージ後に再案内',
+    'ゲームオーバー画面から探査へ',
+  ], itemsEn: [
+    'MISSION POD now appears mid-screen',
+    'GO NOW: detour to the mission',
+    'Unplayed missions offered again',
+    'Or start from the GAME OVER screen',
+  ] },
+  { version: '1.1.0-beta.8', date: '2026.11.04', items: [
     '探査ミッション EXPEDITION を追加',
     'ツアー中の POD を取ると解放',
     '解放した探査はマップから挑戦',
@@ -6060,6 +6079,7 @@ const EXP_shell = (function () {
 // ★の和集合 + 最高スコア + ベストタイム・結果 / 失敗画面・HUD 右上・足元の傾斜マーカー。
 // 記録の保存先: 試作ページは localStorage 'lander11.exp.<id>.*'。本編は cfg.store（パイロットごと、02_src/expedition/store.js）。
 // 説明カードは JA/EN（設定の言語 i18nLang）。本編では cfg.onExit があり、メニュー左上に BACK（マップへ戻る）を出す。
+// cfg.detour（beta.9 ツアーからの寄り道）: メニューを出さずに MISSION で始め、結果画面は「ツアーへ戻る」1つだけ（RETRY なし）。BACK / Escape もツアーへ戻る。
 // ミッション固有の状態は lab.m に置く。シェルが読む lab.m のフィールド:
 //   m.menu / m.result('win'|'lose') / m.resultT / m.lifeLost / m.failed / m.final / m.reason / m.detail
 // 使い方: const sh = createShell({ id, expLabel:'EXPEDITION 02', title, options:[{key,label,btn,param}], host, store, onExit });
@@ -6134,6 +6154,8 @@ function createShell(cfg) {
   const BR = { x: 20, y: 96, w: 320, h: 440 };                   // ブリーフィングカード
   options.forEach((o, i) => { BTN[o.btn] = { x: i ? 182 : 24, y: 366, w: 154, h: 44 }; });
   const btnY = (m) => (m.result === 'win' ? 478 : 330);
+  const detour = !!(cfg.detour || host.detour);
+  BTN.tour = { x: 40, y: 0, w: 280, h: 48 };   // 寄り道の結果画面: ツアーへ戻る
 
   const brief = cfg.brief || null;
   const lang = () => { try { return cfg.lang ? cfg.lang() : i18nLang(); } catch (e) { return 'ja'; } };
@@ -6197,6 +6219,7 @@ function createShell(cfg) {
     }
     if (!m.result || m.resultT < 0.4 || m.lifeLost) return false;
     const oy = btnY(m);
+    if (detour) { if (hit(BTN.tour, x, y, oy) && cfg.onExit) cfg.onExit(); return true; }
     if (hit(BTN.res1, x, y, oy)) sh.begin(l, sess.mode);        // RETRY / RETRY MISSION
     else if (hit(BTN.res2, x, y, oy)) sh.begin(l, 'menu');      // MENU
     return true;
@@ -6205,6 +6228,7 @@ function createShell(cfg) {
   // 飛行中 → メニュー（ミッションならライフを 1 つ失う扱いはせず、記録も残さない = やめる）
   sh.back = (l) => {
     const m = l.m;
+    if (detour) { if (m.result && m.lifeLost) return; if (cfg.onExit) cfg.onExit(); return; }   // 寄り道: どこからでもツアーへ戻る（記録は残さない）
     if (sess.brief) { briefClose(l); if (!m.menu) sh.begin(l, 'menu'); return; }
     if (m.menu) { if (cfg.onExit) cfg.onExit(); return; }
     if (m.result && m.lifeLost) return;
@@ -6223,6 +6247,9 @@ function createShell(cfg) {
     e.stopImmediatePropagation(); e.preventDefault(); briefClose(briefLab);
   }, true);
   let briefLab = null; sh.bindLab = (l) => { briefLab = l; };
+  sh.detour = detour;
+  // 寄り道の開始: MISSION（3 ライフ）で始め、説明カードを出す（NEXT TIME SKIP を選んでいれば出さない）
+  sh.startDetour = (l) => { sh.begin(l, 'mission'); if (brief && !skipOn()) briefOpen(l, 'start'); };
   sh.hookR = (lab, started, lose) => { rHook = { lab, started, lose }; };
   sh.addResetButton = () => { if (emb) return; const box = document.getElementById('dbg'); if (box) { const b = document.createElement('button'); b.textContent = 'RESET RECORD'; b.style.cssText = 'margin-top:8px;font:9px monospace;opacity:.6;padding:2px 6px'; b.onclick = () => { lsSet(KEY_B, ''); lsSet(KEY_T, ''); }; box.appendChild(b); } };
 
@@ -6347,7 +6374,11 @@ function createShell(cfg) {
       txt(ctx, r.failNote || '', 180, y + 118, 8, p.dim, 'center', { w: 600, sp: 0.6 });
       txt(ctx, 'TIME ' + mmss(r.failTime || 0), 180, y + 142, 8, p.dim, 'center', { w: 600, sp: 0.8 });
     }
-    if (!m.lifeLost) {
+    if (!m.lifeLost && detour) {
+      const ja = lang() !== 'en';
+      button(ctx, BTN.tour, RY, ja ? 'ツアーへ戻る' : 'BACK TO TOUR', p.green, Math.floor(l.clock * 2) % 2, ja ? 15 : 13);
+      txt(ctx, ja ? 'マップからいつでも再挑戦できます' : 'RETRY ANY TIME FROM THE MAP', 180, RY + 62, ja ? 10 : 7, p.dim, 'center', { w: 500, sp: ja ? 0 : 0.8 });
+    } else if (!m.lifeLost) {
       const hot = Math.floor(l.clock * 2) % 2;
       button(ctx, BTN.res1, RY, prac ? 'RETRY' : 'RETRY MISSION', p.mid, hot, prac ? 14 : 11);
       button(ctx, BTN.res2, RY, 'MENU', p.fg, 0, 13);
@@ -8099,7 +8130,7 @@ return { EXP_MISSIONS, EXP_IDS, expMission, expForBody };
 // ---- 02_src/expdata.js ----
 // EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
 // 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
-//   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ best / besttime / skipBrief（shell が使う）
+//   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ played('1' = 一度でも始めた) / best / besttime / skipBrief（shell が使う）
 // 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
 // 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
@@ -8125,6 +8156,14 @@ function xpIsUnlocked(storage, pilot, id) { return xpAllUnlocked() || xpUnlocked
 function xpUnlock(storage, pilot, id) { if (xpUnlockedSaved(storage, pilot, id)) return false; return XP_set(storage, pilot, id, 'unlocked', '1'); }
 function xpSeen(storage, pilot, id) { return XP_get(storage, pilot, id, 'seen') === '1'; }
 function xpMarkSeen(storage, pilot, id) { return XP_set(storage, pilot, id, 'seen', '1'); }
+function xpPlayed(storage, pilot, id) { return XP_get(storage, pilot, id, 'played') === '1' || !!XP_get(storage, pilot, id, 'best'); }
+function xpMarkPlayed(storage, pilot, id) { return XP_set(storage, pilot, id, 'played', '1'); }
+// まだ一度も遊んでいない解放済みの探査（並び順で最初の1つ）。ツアーの再案内と終了画面の入口が使う。無ければ null
+function xpUnplayed(storage, pilot, bodyId) {
+  if (!storage || !pilot) return null;
+  const m = EXP_MISSIONS.find((x) => (!bodyId || x.body === bodyId) && xpIsUnlocked(storage, pilot, x.id) && !xpPlayed(storage, pilot, x.id));
+  return m ? m.id : null;
+}
 function xpPodMiss(storage, pilot, id) { const n = parseInt(XP_get(storage, pilot, id, 'podMiss'), 10); return Number.isFinite(n) && n > 0 ? n : 0; }
 function xpSetPodMiss(storage, pilot, id, n) { return XP_set(storage, pilot, id, 'podMiss', String(Math.max(0, n | 0))); }
 function xpBest(storage, pilot, id) {
@@ -9162,9 +9201,10 @@ const XP_mus = (engine) => (engine && engine.music) || Music;
 
 class ExpeditionScene extends Scene {
   // onExit: メニューの MAP / Escape で呼ぶ（main.js がタイトル＋マップへ戻す）
-  constructor(engine, id, onExit) {
+  // opts.detour（beta.9）: ツアーからの寄り道。メニューを出さずに MISSION で始め、終わったら onExit でツアーへ戻る
+  constructor(engine, id, onExit, opts) {
     super(engine);
-    this.id = id; this.meta = expMission(id); this.onExit = onExit || null;
+    this.id = id; this.meta = expMission(id); this.onExit = onExit || null; this.detour = !!(opts && opts.detour);
     this.isRoot = true;   // エンジンの BACK ボタンは出さない（メニューに MAP を出す）
     this.lab = null; this._left = false;
   }
@@ -9175,9 +9215,13 @@ class ExpeditionScene extends Scene {
     const muted = () => { try { const mu = XP_mus(eng); return !!(mu.isMuted && mu.isMuted()) || (eng.audio && eng.audio.enabled === false); } catch (_) { return false; } };
     this.lab = this.meta.create({
       embed: { ctx: eng.ctx, canvas: eng.canvas, touches: () => eng.touches || [], audioCtx: () => (eng.audio && eng.audio.ctx) || null },
-      store: xpStore(st, pilot, this.id), onExit: () => this._exit(), lang: () => i18nLang(), muted,
+      store: xpStore(st, pilot, this.id), onExit: () => this._exit(), lang: () => i18nLang(), muted, detour: this.detour,
     });
+    // 一度でも PRACTICE / MISSION を始めたら「遊んだ」（ツアーでの再案内と終了画面の入口が止まる）
+    const sh = this.lab.shell, begin = sh.begin;
+    sh.begin = (l, mode, o) => { if (mode === 'practice' || mode === 'mission') xpMarkPlayed(st, pilot, this.id); return begin(l, mode, o); };
     this.lab.start();
+    if (this.detour) sh.startDetour(this.lab);
     try { const mu = XP_mus(eng); if (mu.stopJingle) mu.stopJingle(0.3); mu.playBody(this.meta.music); } catch (_) { /* 音なし */ }
   }
   exit() {
@@ -9199,7 +9243,16 @@ class ExpeditionScene extends Scene {
 
 // ---- MISSION ACCEPTED（ツアーで POD を取ったステージの終わりに全画面）----
 // 暗転 → 天体が迫って大写し → 天体名と任務文が計器風に1文字ずつ → 「MISSION ACCEPTED」の印＋ジングル。タップで先へ / 閉じる。
-const XP_ACC = { fade: 0.4, grow0: 0.3, grow1: 1.7, type0: 1.5, cps: 28, stamp: 3.0, close: 3.6, auto: 6.5 };
+// beta.9: 最後に2つのボタン（いま向かう = ツアーから寄り道 / ツアーを続ける）。自動では閉じない。
+// st.kind = 'pod'（POD を取った）| 'offer'（解放済みで未挑戦の探査を、その天体のステージ後に再び案内。印・ジングルなし）
+const XP_ACC = { fade: 0.4, grow0: 0.3, grow1: 1.7, type0: 1.5, cps: 28, stamp: 3.0, close: 3.6, armed: 0.3 };
+const XP_BTN = { go: { x: 40, y: 522, w: 280, h: 48 }, tour: { x: 40, y: 580, w: 280, h: 44 } };
+const XP_in = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+// ボタンの当たり。出てから XP_ACC.armed 秒は反応しない（飛ばしのタップがそのまま押さないように）。戻り値 'go' | 'tour' | null
+function xpAcceptedHit(st, x, y) {
+  if (!st || st.t < XP_ACC.close + XP_ACC.armed) return null;
+  return XP_in(XP_BTN.go, x, y) ? 'go' : XP_in(XP_BTN.tour, x, y) ? 'tour' : null;
+}
 const XP_e = (u) => { u = Math.max(0, Math.min(1, u)); return 1 - Math.pow(1 - u, 3); };
 // st = { id, t }。戻り値なし
 function xpDrawAccepted(ctx, st, clock) {
@@ -9219,7 +9272,8 @@ function xpDrawAccepted(ctx, st, clock) {
     ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(180, 250, r * 1.8, 0, 7); ctx.fill();
     xpDrawBody(ctx, st.id, 180, 250, r, clock || t);
   }
-  txt(ctx, 'MISSION POD RECEIVED', 180, 64, 9, p.mid, 'center', { w: 700, sp: 2.2, a: Math.min(1, t / 0.5) });
+  const offer = st.kind === 'offer';
+  txt(ctx, offer ? 'EXPEDITION READY' : 'MISSION POD RECEIVED', 180, 64, 9, p.mid, 'center', { w: 700, sp: 2.2, a: Math.min(1, t / 0.5) });
   txt(ctx, 'EXPEDITION 0' + m.no, 180, 82, 7.5, p.dim, 'center', { w: 600, sp: 2, a: Math.min(1, t / 0.5) });
   if (t > A.type0) {   // 計器風の文字送り（名前 → 任務名 → 任務文）
     const n = Math.floor((t - A.type0) * A.cps), task = ja ? m.task.ja : m.task.en;
@@ -9230,15 +9284,24 @@ function xpDrawAccepted(ctx, st, clock) {
     if (s2) txt(ctx, s2 + (n < l1.length + l2.length ? cur : ''), 180, 404, 10, p.warn, 'center', { w: 700, sp: 1.8 });
     if (s3) txt(ctx, s3, 180, 426, ja ? 12 : 10, p.fg, 'center', { w: 600, sp: ja ? 0 : 0.6, a: 0.9 });
   }
-  if (t > A.stamp) {   // 印: 少し傾いた枠が大きい所から押される
+  if (offer && t > A.type0) txt(ctx, ja ? 'まだ挑戦していない探査です' : 'NOT PLAYED YET', 180, 470, ja ? 11 : 9, p.warn, 'center', { w: 700, sp: ja ? 0 : 1.6, a: 0.85 });
+  if (!offer && t > A.stamp) {   // 印: 少し傾いた枠が大きい所から押される
     const k = Math.min(1, (t - A.stamp) / 0.18), sc = 1.7 - 0.7 * k;
-    ctx.save(); ctx.translate(180, 488); ctx.rotate(-0.12); ctx.scale(sc, sc); ctx.globalAlpha *= k;
+    ctx.save(); ctx.translate(180, 470); ctx.rotate(-0.12); ctx.scale(sc, sc); ctx.globalAlpha *= k;
     ctx.strokeStyle = p.warn; ctx.lineWidth = 2.2; ctx.strokeRect(-112, -20, 224, 40); ctx.lineWidth = 0.8; ctx.strokeRect(-107, -15, 214, 30);
     txt(ctx, 'MISSION ACCEPTED', 0, -8, 15, p.warn, 'center', { w: 800, sp: 2.4 });
     ctx.restore();
   }
-  if (t > A.close) txt(ctx, ja ? 'マップから挑戦できます' : 'PLAY IT FROM THE MAP', 180, 540, ja ? 11 : 9, p.dim, 'center', { w: 600, sp: ja ? 0 : 1.2, a: Math.min(1, (t - A.close) / 0.4) });
-  if (t > A.close) txt(ctx, 'TAP TO CONTINUE', 180, 572, 11, p.green, 'center', { w: 800, sp: 2, a: 0.55 + 0.45 * Math.sin(t * 4.5) });
+  if (t > A.close) {   // 2つのボタン
+    const k = Math.min(1, (t - A.close) / A.armed), B = XP_BTN, hot = 0.5 + 0.5 * Math.sin(t * 4.5);
+    ctx.save(); ctx.globalAlpha *= k;
+    txt(ctx, ja ? 'あとでマップからも挑戦できます' : 'YOU CAN ALSO PLAY IT LATER FROM THE MAP', 180, 508, ja ? 10 : 7.5, p.dim, 'center', { w: 600, sp: ja ? 0 : 0.8 });
+    rr(ctx, B.go.x, B.go.y, B.go.w, B.go.h, 22); ctx.fillStyle = '#0D111B'; ctx.fill(); ctx.fillStyle = rgba(p.warn, 0.16 + 0.1 * hot); ctx.fill(); ctx.strokeStyle = rgba(p.warn, 0.9); ctx.lineWidth = 1.5; ctx.stroke();
+    txt(ctx, (ja ? 'いま向かう  ▸  ' : 'GO NOW  ▸  ') + m.name, 180, B.go.y + 16, ja ? 15 : 13, p.warn, 'center', { w: 800, sp: ja ? 0.5 : 1.6 });
+    rr(ctx, B.tour.x, B.tour.y, B.tour.w, B.tour.h, 20); ctx.fillStyle = '#0D111B'; ctx.fill(); ctx.strokeStyle = rgba(p.fg, 0.45); ctx.lineWidth = 1.2; ctx.stroke();
+    txt(ctx, ja ? 'ツアーを続ける' : 'CONTINUE TOUR', 180, B.tour.y + 15, ja ? 13 : 11, p.fg, 'center', { w: 700, sp: ja ? 0.5 : 1.6, a: 0.85 });
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -10365,14 +10428,15 @@ class MigrateScene extends Scene {
 // ミッション POD（ツアー中に探査ミッションを解放するカプセル。PLAN §7m）。game.js から使う。
 // 出る場所: 月（RYUGU）・火星（PHOBOS）・タイタン（ENCELADUS）・冥王星（67P）のステージ。まだ解放していないパイロットだけ。
 // 出る確率: 30% + 外れるたびに +20%、4 回目の機会で必ず出る（運だけで詰まらない）。外れ回数はパイロットごとに保存。
-// 取り方: 上空で機体のそばに現れ、機体の周り（50〜80px、上半分）をゆっくり漂う。ゆっくり付いてくるので、機体を少し寄せると
-//   磁石の範囲（46px）に入って吸い寄せられ、24px で取れる。機体が地面から 150px より下がるか、出てから 16 秒で上へ去る（逃した扱い）。
+// 取り方（beta.9）: 機体が画面の中ほど（y ≥ 200）まで降りた時、画面の中ほど（機体の 40〜80px 下・地面から 100px 以上上）に、
+//   機体と反対側の横 110〜170px に現れ、出る時に短い音。その場で小さく揺れるだけで付いて来ない（自分で横へ寄せて取る）。
+//   吸い寄せは 28px、18px で取れる。機体が POD より 90px 以上下へ降りるか、出てから 12 秒で上へ去る（逃した扱い）。
 // 得点は 0。取った瞬間に解放を保存（その後の墜落でも保持）。乱数は Math.random を使わない（ツアーの乱数の並びを変えない）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて POD_ / pod で始める。
 const { expForBody } = EXP_index;
 
 const POD_P0 = 0.3, POD_STEP = 0.2, POD_SURE = 3;
-const POD = { appear0: 1.2, appear1: 2.8, r0: 50, r1: 80, follow: 0.45, magnet: 46, pick: 24, leaveAlt: 150, minAlt: 200, life: 16, leaveS: 1.2, topY: 78, label: 2.2 };
+const POD = { trigY: 200, minAlt: 140, dx0: 110, dx1: 170, dy0: 40, dy1: 80, clear: 100, minY: 150, bob: 6, sway: 10, magnet: 28, pick: 18, below: 90, life: 12, leaveS: 1.2, label: 2.2 };
 function podChance(miss) { return miss >= POD_SURE ? 1 : Math.min(1, POD_P0 + POD_STEP * Math.max(0, miss)); }
 function podRng(seed) { let s = (seed >>> 0) || 0x9E3779B9; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
@@ -10390,40 +10454,40 @@ class Pod {
   constructor(id, rnd) {
     this.id = id; this.rnd = rnd || Math.random;
     this.state = 'wait'; this.t = 0; this.vis = 0; this.leaveT = 0;
-    this.appearAt = POD.appear0 + this.rnd() * (POD.appear1 - POD.appear0);
-    this.ph = this.rnd() * 6.28; this.x = 0; this.y = 0; this.near = false;
+    this.ph = this.rnd() * 6.28; this.u = this.rnd(); this.v = this.rnd();
+    this.ax = 0; this.ay = 0; this.x = 0; this.y = 0; this.near = false;
   }
-  // 機体のまわり（上半分）の漂う位置。画面の上端で押し下げられたら、その分を横へ逃がして距離 r を保つ（勝手に磁石の範囲へ入らない）
-  _target(sx, sy) {
-    const a = -Math.PI / 2 + 1.15 * Math.sin(this.ph + this.vis * 0.45), r = (POD.r0 + POD.r1) / 2 + (POD.r1 - POD.r0) / 2 * Math.sin(this.vis * 0.7 + this.ph);
-    let x = sx + Math.cos(a) * r, y = sy + Math.sin(a) * r * 0.8;
-    if (y < POD.topY) {
-      y = POD.topY; const dy = y - sy, side = Math.cos(a) !== 0 ? Math.sign(Math.cos(a)) : 1;
-      x = sx + side * Math.sqrt(Math.max(0, r * r - dy * dy));
-    }
-    if (x < 16 || x > 344) x = sx - (x - sx);   // 画面の横端なら反対側へ
-    return { x: Math.max(16, Math.min(344, x)), y };
+  // 出る位置: 機体と反対側の横（画面の中央寄りの側）・機体より少し下。地面から POD.clear 以上上。置けなければ null
+  _place(ship, groundAt) {
+    const side = ship.x < 180 ? 1 : -1, d = POD.dx0 + this.u * (POD.dx1 - POD.dx0);
+    const cl = (v) => Math.max(24, Math.min(336, v));
+    let x = cl(ship.x + side * d);
+    if (Math.abs(x - ship.x) < POD.dx0) x = cl(ship.x - side * d);   // 画面の端で近すぎれば逆の側へ
+    if (Math.abs(x - ship.x) < POD.dx0) return null;
+    const gy = groundAt ? groundAt(x) : 640, y = Math.min(ship.y + POD.dy0 + this.v * (POD.dy1 - POD.dy0), gy - POD.clear);
+    return y >= POD.minY ? { x, y } : null;
   }
-  // ship = { x, y }、alt = 機体の足元から地面まで px。戻り値 'got' | null
-  step(dt, ship, alt) {
+  // ship = { x, y }、alt = 機体の足元から地面まで px、groundAt(x) = その x の地面の y。戻り値 'appear'（出た瞬間）| 'got' | null
+  step(dt, ship, alt, groundAt) {
     this.t += dt;
     if (this.state === 'wait') {
-      if (this.t >= this.appearAt) {
-        if (alt < POD.minAlt) { this.state = 'gone'; return null; }   // もう低すぎる = 出さない
-        this.state = 'float'; this.vis = 0; const g = this._target(ship.x, ship.y); this.x = g.x; this.y = g.y;
-      }
-      return null;
+      if (ship.y < POD.trigY) return null;
+      const at = alt >= POD.minAlt ? this._place(ship, groundAt) : null;   // もう低すぎる・置く場所がない = このステージは出さない
+      if (!at) { this.state = 'gone'; return null; }
+      this.state = 'float'; this.vis = 0; this.ax = at.x; this.ay = at.y; this.x = at.x; this.y = at.y;
+      return 'appear';
     }
     if (this.state === 'leave') { this.leaveT += dt; this.y -= 140 * dt; if (this.leaveT >= POD.leaveS) this.state = 'gone'; return null; }
     if (this.state !== 'float') return null;
     this.vis += dt;
-    const g = this._target(ship.x, ship.y), k = 1 - Math.exp(-POD.follow * dt);
-    this.x += (g.x - this.x) * k; this.y += (g.y - this.y) * k;
+    // その場で小さく揺れる（付いて来ない）。吸い寄せられた分は錨の位置もずらす
+    const tx = this.ax + POD.sway * Math.sin(this.vis * 0.6 + this.ph), ty = this.ay + POD.bob * Math.sin(this.vis * 1.3 + this.ph);
+    const k = 1 - Math.exp(-3 * dt); this.x += (tx - this.x) * k; this.y += (ty - this.y) * k;
     const dx = ship.x - this.x, dy = ship.y - this.y, d = Math.hypot(dx, dy);
     this.near = d < POD.magnet;
-    if (this.near && d > 0.01) { const v = Math.min(d, (40 + (POD.magnet - d) * 7) * dt); this.x += dx / d * v; this.y += dy / d * v; }
+    if (this.near && d > 0.01) { const v = Math.min(d, (30 + (POD.magnet - d) * 6) * dt); this.x += dx / d * v; this.y += dy / d * v; this.ax += dx / d * v; this.ay += dy / d * v; }
     if (Math.hypot(ship.x - this.x, ship.y - this.y) < POD.pick) { this.state = 'got'; return 'got'; }
-    if (alt < POD.leaveAlt || this.vis > POD.life) { this.state = 'leave'; this.leaveT = 0; }
+    if (ship.y > this.y + POD.below || this.vis > POD.life) { this.state = 'leave'; this.leaveT = 0; }
     return null;
   }
   get visible() { return this.state === 'float' || this.state === 'leave'; }
@@ -10839,6 +10903,7 @@ function hexA(hex, a) {
 class Game extends Scene {
 
   enter() {
+    if (this._suspended) { this._resumeFromDetour(); return; }   // 寄り道から戻った: ランの状態はそのまま
     if (this._champ) this._champ.close();
     this._champTok = (this._champTok || 0) + 1; this._champ = null;
     hideNameOverlay(); hideChampionEntry();   // 名前入力DOMがゲーム画面に残らないように
@@ -10882,7 +10947,9 @@ class Game extends Scene {
     if (!this._maybeShowHowto()) this._maybeShowTip();
   }
 
-  exit() { this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() {
+    if (this._suspended) { this._duck(false); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; return; }   // 寄り道へ: 音だけ止めて状態は保持
+    this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
@@ -11059,12 +11126,17 @@ class Game extends Scene {
     this._podRnd = this._podRnd || podRng((Date.now() ^ (this.stage * 2654435761)) >>> 0);
     const plan = podPlan(this.engine.storage, pilot, this._body.id, this._podRnd);
     if (plan) { this._pod = new Pod(plan.id, this._podRnd); this._podPilot = pilot; }
+    // 再案内（beta.9）: この天体の探査を解放済みで、まだ一度も遊んでいない → このステージをクリアした後に1回だけ案内（ランごとに1回）
+    this._offerId = null;
+    if (!plan) { const id = xpUnplayed(this.engine.storage, pilot, this._body.id); if (id && !(this._offered && this._offered[id])) this._offerId = id; }
   }
   _podTick(dt) {
     if (this._podToastT > 0) this._podToastT = Math.max(0, this._podToastT - dt);
     if (this._pod && this.state === 'play') {
       const alt = this._terrainYAt(this.x) - (this.y + 16);
-      if (this._pod.step(dt, { x: this.x, y: this.y }, alt) === 'got') {
+      const ev = this._pod.step(dt, { x: this.x, y: this.y }, alt, (x) => this._terrainYAt(x));
+      if (ev === 'appear') { try { musicOf(this.engine).sfx.podAppear(); } catch (_) { /* 音なし */ } }
+      if (ev === 'got') {
         podUnlock(this.engine.storage, this._podPilot, this._pod.id);
         this._podGot = this._pod.id; this._podWait = 1.1; this._podToastT = 2.6;
         try { musicOf(this.engine).sfx.power(); } catch (_) { /* 音なし */ }
@@ -11074,15 +11146,36 @@ class Game extends Scene {
     if (this._podGot && !this._live() && this.state !== 'hold' && this.state !== 'tip' && this.state !== 'debug') {
       if (this.state === 'gameover') { this._podGot = null; return; }
       this._podWait -= dt;
-      if (this._podWait <= 0) { this._podShow = { id: this._podGot, t: 0, stamped: false }; this._podGot = null; this._duck(true); }
+      if (this._podWait <= 0) { this._podShow = { id: this._podGot, t: 0, stamped: false, kind: 'pod' }; this._podGot = null; this._duck(true); }
+    }
+    if (this._offerId && this.state === 'cleared' && !this._podShow) {
+      if (this._offerWait == null) this._offerWait = 1.1;
+      this._offerWait -= dt;
+      if (this._offerWait <= 0) {
+        (this._offered = this._offered || {})[this._offerId] = true;
+        this._podShow = { id: this._offerId, t: XP_ACC.stamp, stamped: true, kind: 'offer' }; this._offerId = null; this._offerWait = null; this._duck(true);
+      }
     }
   }
   _podShowTick(dt) {
     const s = this._podShow; s.t += dt;
     if (!s.stamped && s.t >= XP_ACC.stamp) { s.stamped = true; try { musicOf(this.engine).playJingle({ tier: 2, perfect: true }); } catch (_) { /* 音なし */ } }
-    if (s.t >= XP_ACC.auto) this._podClose();
   }
   _podClose() { this._podShow = null; this._duck(false); this._overlayAt = (typeof performance !== 'undefined' ? performance.now() : 0); }
+  // 「いま向かう」: ツアーをこの画面のまま止めて保持し、探査へ寄り道（main.js の engine.toDetour）。戻ると enter() が再開だけをする
+  _podGo(id) {
+    this._podClose();
+    if (!this.engine.toDetour) return;
+    this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._suspended = true;
+    this.engine.toDetour(id, this);
+  }
+  _resumeFromDetour() {
+    this._suspended = false; this._resumeT = 0.5; this._inputLock = Math.max(this._inputLock || 0, 0.3);
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    hideNameOverlay();
+  }
 
   // ステージ開始ごとに保存（ボーナス中は「ボーナスの次のステージ」を保存＝再開がボーナスの途中にならない）。デバッグ中/デバッグ操作ランは保存しない
   _saveCheckpoint() {
@@ -11114,7 +11207,10 @@ class Game extends Scene {
     if (this._ht) { this._ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
     if (this._podShow) {   // MISSION ACCEPTED: 印の前のタップは印まで飛ばす、印の後のタップで閉じる（キーのオートリピートは無視）
       if ((action === 'tap' || action === 'confirm') && !(data && data.repeat)) {
-        if (this._podShow.t >= XP_ACC.close) this._podClose(); else if (this._podShow.t >= 0.8) this._podShow.t = Math.max(this._podShow.t, XP_ACC.stamp - 0.05);
+        const s = this._podShow, h = action === 'tap' && data ? xpAcceptedHit(s, data.x, data.y) : null;
+        if (h === 'go') this._podGo(s.id);
+        else if (h === 'tour' || (action === 'confirm' && s.t >= XP_ACC.close + XP_ACC.armed)) this._podClose();   // Enter / Space = ツアーを続ける
+        else if (s.t < XP_ACC.close && s.t >= 0.8) s.t = XP_ACC.close;   // ボタンが出る前のタップは最後まで飛ばす
       }
       return;
     }
@@ -11200,6 +11296,7 @@ class Game extends Scene {
     }
     if (this.state === 'gameover') {
       if (action === 'tap' && data && this._inputLock <= 0 && rankTabsTap(this.rankTabs, 32, 146, data.x, data.y, W - 64)) return;
+      if (action === 'tap' && data && this._inputLock <= 0 && this._xpEntry && this._inRect(this._xpEntryRect(), data)) { this._uiTap(); this.engine.toExpedition(this._xpEntry); return; }
       if (confirm && this._inputLock <= 0) this.engine.toMenu();
       if (action === 'back') this.engine.toMenu();
       return;
@@ -11513,6 +11610,9 @@ class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
     this._setOverlayState('gameover');
+    // 終了画面の入口（beta.9）: 解放済みでまだ一度も遊んでいない探査があれば、そこから直接始められる
+    this._xpEntry = null;
+    if (this.engine.pods && !dbgRun && this.engine.toExpedition) { try { const pr = getActiveProfile(this.engine.storage); this._xpEntry = xpUnplayed(this.engine.storage, (pr && pr.name) || ''); } catch (_) { this._xpEntry = null; } }
     if (!dbgRun && !keepCheckpoint) clearCheckpoint(this.engine.storage);   // 本当のゲームオーバー（残機切れ/GIVE UP）で破棄
     this.rankList = loadRanking(this.engine.storage);
     this.rankTabs = createRankTabs();
@@ -11580,6 +11680,7 @@ class Game extends Scene {
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
+    if (this._resumeT > 0) this._resumeT = Math.max(0, this._resumeT - dt);
     if (this._podShow) { this._podShowTick(dt); return; }   // MISSION ACCEPTED 表示中: 全て凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
@@ -12551,6 +12652,7 @@ class Game extends Scene {
     }
 
     if (championEntryOpen(this._champ)) veil(ctx, 0.5);
+    if (this._resumeT > 0) veil(ctx, this._resumeT / 0.5);   // 寄り道から戻った直後のフェード
 
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
@@ -12792,6 +12894,19 @@ class Game extends Scene {
     drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
     if (this._worldNote) drawNote(ctx, this._worldNote);
     drawGameOverFooter(ctx);
+    if (this._xpEntry) this._drawXpEntry(ctx);
+  }
+  // 終了画面の探査の入口（画面下の操作ボタンの帯）
+  _xpEntryRect() { return { x: 40, y: 572, w: 280, h: 48 }; }
+  _drawXpEntry(ctx) {
+    const m = expMission(this._xpEntry); if (!m) return;
+    const r = this._xpEntryRect(), p = P(), ja = i18nLang() === 'ja', hot = 0.5 + 0.5 * Math.sin((this._clock || 0) * 4.5);
+    ctx.save(); ctx.fillStyle = 'rgba(4,6,12,0.92)'; ctx.fillRect(0, 564, W, 76);
+    rr(ctx, r.x, r.y, r.w, r.h, 22); ctx.fillStyle = rgba(p.warn, 0.14 + 0.1 * hot); ctx.fill(); ctx.strokeStyle = rgba(p.warn, 0.9); ctx.lineWidth = 1.4; ctx.stroke();
+    xpDrawBody(ctx, m.id, r.x + 28, r.y + r.h / 2, 13, this._clock || 0);
+    txt(ctx, ja ? '未挑戦の探査があります' : 'NEW EXPEDITION READY', r.x + 52, r.y + 9, ja ? 10 : 8, p.dim, 'left', { w: 600, sp: ja ? 0 : 1.2 });
+    txt(ctx, m.name + '  ▸  ' + (ja ? '挑戦' : 'PLAY'), r.x + 52, r.y + 24, 13, p.warn, 'left', { w: 800, sp: 1.4 });
+    ctx.restore();
   }
 }
 
@@ -12815,6 +12930,8 @@ window.addEventListener('load', () => {
   engine.pods = true;
   const toMap = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true, openMap: true }));
   engine.toExpedition = (id) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, toMap), 0.5));
+  // 寄り道（beta.9）: ツアーの Game を止めたまま探査へ。終わったら同じ Game に戻る（Game.enter が再開だけをする）
+  engine.toDetour = (id, game) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, () => engine.changeScene(game), { detour: true }), 0.5));
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。

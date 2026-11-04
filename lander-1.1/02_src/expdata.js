@@ -1,6 +1,6 @@
 // EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
 // 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
-//   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ best / besttime / skipBrief（shell が使う）
+//   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ played('1' = 一度でも始めた) / best / besttime / skipBrief（shell が使う）
 // 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
 // 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
@@ -27,6 +27,14 @@ export function xpIsUnlocked(storage, pilot, id) { return xpAllUnlocked() || xpU
 export function xpUnlock(storage, pilot, id) { if (xpUnlockedSaved(storage, pilot, id)) return false; return XP_set(storage, pilot, id, 'unlocked', '1'); }
 export function xpSeen(storage, pilot, id) { return XP_get(storage, pilot, id, 'seen') === '1'; }
 export function xpMarkSeen(storage, pilot, id) { return XP_set(storage, pilot, id, 'seen', '1'); }
+export function xpPlayed(storage, pilot, id) { return XP_get(storage, pilot, id, 'played') === '1' || !!XP_get(storage, pilot, id, 'best'); }
+export function xpMarkPlayed(storage, pilot, id) { return XP_set(storage, pilot, id, 'played', '1'); }
+// まだ一度も遊んでいない解放済みの探査（並び順で最初の1つ）。ツアーの再案内と終了画面の入口が使う。無ければ null
+export function xpUnplayed(storage, pilot, bodyId) {
+  if (!storage || !pilot) return null;
+  const m = EXP_MISSIONS.find((x) => (!bodyId || x.body === bodyId) && xpIsUnlocked(storage, pilot, x.id) && !xpPlayed(storage, pilot, x.id));
+  return m ? m.id : null;
+}
 export function xpPodMiss(storage, pilot, id) { const n = parseInt(XP_get(storage, pilot, id, 'podMiss'), 10); return Number.isFinite(n) && n > 0 ? n : 0; }
 export function xpSetPodMiss(storage, pilot, id, n) { return XP_set(storage, pilot, id, 'podMiss', String(Math.max(0, n | 0))); }
 export function xpBest(storage, pilot, id) {

@@ -1,8 +1,8 @@
 // BootScene 背景の比較プロトタイプ（02_src は読み取りのみ）。レイアウトは title.js BootScene.render と同一。
-import { txt, pill, rgba, ellipsize } from '../../02_src/art.js?v=6a1ae490e6';
+import { txt, pill, rgba, ellipsize } from '../../02_src/art.js?v=85480c339f';
 import { P } from '../../02_src/core/palette.js?v=a36de9d9c3';
-import { WHATSNEW } from '../../02_src/whatsnew.js?v=efe8fe2ebf';
-import { APP_LABEL, APP_BUILD_TEXT } from '../../02_src/version.js?v=7cb6049168';
+import { WHATSNEW } from '../../02_src/whatsnew.js?v=9e328117cb';
+import { APP_LABEL, APP_BUILD_TEXT } from '../../02_src/version.js?v=df74baa07d';
 
 const W = 360, H = 640;
 const q = new URLSearchParams(location.search);

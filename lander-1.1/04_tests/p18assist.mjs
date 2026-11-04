@@ -275,13 +275,13 @@ const key = (g, k, sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i+
 
 // ================================================================ 6. 版・UPDATE INFORMATION
 {
-  ok(APP_VERSION === '1.1.0-beta.8', 'APP_VERSION 1.1.0-beta.8');
+  ok(APP_VERSION === '1.1.0-beta.9', 'APP_VERSION 1.1.0-beta.9');
   const E = WHATSNEW.entries;
-  ok(E[0].version === '1.1.0-beta.8' && E[0].date === '2026.11.04' && WHATSNEW.version === '1.1.0-beta.8' && E[1].version === '1.1.0-beta.7' && E[1].date === '2026.10.28', 'newest entry = beta.8 (2026.11.04), then beta.7 (2026.10.28)');
-  ok(E[4].version === '1.1.0-beta.4' && E[4].date === '2026.10.26', 'beta.4 is the fifth entry');
-  ok(E[4].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [3])');
+  ok(E[0].version === '1.1.0-beta.9' && E[0].date === '2026.11.04' && WHATSNEW.version === '1.1.0-beta.9' && E[1].version === '1.1.0-beta.8' && E[2].version === '1.1.0-beta.7' && E[2].date === '2026.10.28', 'newest entry = beta.9 (2026.11.04), then beta.8, beta.7 (2026.10.28)');
+  ok(E[5].version === '1.1.0-beta.4' && E[5].date === '2026.10.26', 'beta.4 is the sixth entry');
+  ok(E[5].items.join('|') === ['SIDE THRUST：左右で真横に移動', '平地の上に LANDABLE を表示', '隕石に進行方向の尾と危険表示', '隕石で2回墜落すると緊急シールド', '序盤の隕石を少しずつ増やす', '失敗理由に速さ・傾きの数値を表示'].join('|'), 'beta.4 items as specified (entry [3])');
   ok(E.every((en) => en.items.every((l) => l.length <= 22)), 'every item <= 22 chars: ' + E[0].items.map((l) => l.length).join(','));
-  ok(E.map((en) => en.version).join() === '1.1.0-beta.8,1.1.0-beta.7,1.1.0-beta.6,1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
+  ok(E.map((en) => en.version).join() === '1.1.0-beta.9,1.1.0-beta.8,1.1.0-beta.7,1.1.0-beta.6,1.1.0-beta.5,1.1.0-beta.4,1.1.0-beta.3,1.1.0-beta.2,1.1.0-beta', 'older entries kept');
 }
 
 console.log('p18assist: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));

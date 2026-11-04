@@ -1,5 +1,6 @@
 // p24expedition — beta.8: EXPEDITION を本編へ（PLAN §7m/§7s）。実行: node 04_tests/p24expedition.mjs（lander-1.1/ から）
 // パイロットごとの保存 / POD の確率と取り方 / ステージ後の MISSION ACCEPTED / マップの入口と ★60 / ミッション画面（埋め込み）/ バンドル
+// beta.9: POD は画面の中ほどに出て付いて来ない / いま向かう（寄り道）とツアーへ戻る / 未挑戦の再案内 / ゲームオーバー画面の入口
 import './p10setup.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -18,7 +19,7 @@ const { starsSummary } = await import('../02_src/stars.js');
 const { EXP_MISSIONS, expForBody } = await import('../02_src/expedition/index.js');
 const XD = await import('../02_src/expdata.js');
 const { Pod, podPlan, podChance, podRng, POD } = await import('../02_src/pods.js');
-const { ExpeditionScene, XP_ACC, xpDrawAccepted } = await import('../02_src/expscene.js');
+const { ExpeditionScene, XP_ACC, XP_BTN, xpDrawAccepted } = await import('../02_src/expscene.js');
 setDebug(false); __setRelayUrl('');
 
 let pass = 0, fail = 0;
@@ -36,7 +37,7 @@ function makeCtx(rec) {
 }
 function makeEngine(store, extra) {
   const log = [];
-  const sfx = {}; for (const n of ['landing', 'crash', 'module', 'launch', 'uiTap', 'thud', 'tick', 'ring', 'power']) sfx[n] = () => log.push(n);
+  const sfx = {}; for (const n of ['landing', 'crash', 'module', 'launch', 'uiTap', 'thud', 'tick', 'ring', 'power', 'podAppear']) sfx[n] = () => log.push(n);
   return Object.assign({ ctx: makeCtx(), canvas: { style: {} }, log,
     music: { attach: noop, setMuted: noop, isMuted: () => false, playTitle: noop, playBody: (b) => log.push('body:' + b), stopAll: noop, stopJingle: noop, playJingle: () => log.push('jingle'), duck: noop, tick: noop, sfx },
     audio: { ctx: null, enabled: true, good: noop, bad: noop, beep: noop, unlock: noop },
@@ -73,35 +74,42 @@ const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
   const a = podRng(5), b = podRng(5); ok(a() === b() && a() !== podRng(6)(), 'own RNG (does not use Math.random)');
 }
 
-// ===== 3. POD の動き =====
+// ===== 3. POD の動き（beta.9: 画面の中ほど・付いて来ない）=====
 {
-  const sim = (pod, ship, alt, sec, mover) => { let got = null; for (let i = 0; i < sec * 60 && !got; i++) { if (mover) mover(ship, i); got = pod.step(1 / 60, ship, alt(ship)); } return got; };
-  const p = new Pod('ryugu', podRng(1)), ship = { x: 180, y: 120 };
-  ok(p.state === 'wait' && p.appearAt >= POD.appear0 && p.appearAt <= POD.appear1, 'appears after a short delay');
-  sim(p, ship, () => 400, 3.0);
-  ok(p.state === 'float', 'floating near the ship');
-  let dmin = 1e9, dmax = 0; for (let i = 0; i < 300; i++) { p.step(1 / 60, ship, 400); const d = Math.hypot(p.x - ship.x, p.y - ship.y); dmin = Math.min(dmin, d); dmax = Math.max(dmax, d); }
-  ok(p.state === 'float' && dmin > POD.magnet - 2 && dmax < POD.r1 + 12 && p.y <= ship.y + 5, 'orbits 50-80 px around (upper side), not grabbed by itself: ' + dmin.toFixed(0) + '-' + dmax.toFixed(0));
-  const got = sim(p, ship, () => 400, 6, (s) => { const dx = p.x - s.x, dy = p.y - s.y, d = Math.hypot(dx, dy) || 1; s.x += dx / d * 0.2; s.y += dy / d * 0.2; });   // 12 px/s で寄せる
-  ok(got === 'got', 'moving the ship a little toward it grabs it (magnet)');
-  const q = new Pod('ryugu', podRng(2)), sh2 = { x: 180, y: 120 };
-  sim(q, sh2, () => 400, 3.0); sim(q, sh2, () => 120, 0.2);
-  ok(q.state === 'leave', 'leaves upward when the ship gets low');
-  for (let i = 0; i < 120; i++) q.step(1 / 60, sh2, 120); ok(q.state === 'gone', 'then gone');
-  const r = new Pod('ryugu', podRng(3)); sim(r, { x: 180, y: 300 }, () => 150, 3.0); ok(r.state === 'gone', 'does not appear if the ship is already low');
+  const flat = () => 520;
+  const sim = (pod, ship, alt, sec, mover, gnd) => { let got = null; for (let i = 0; i < sec * 60 && !got; i++) { if (mover) mover(ship, i); const ev = pod.step(1 / 60, ship, alt(ship), gnd || flat); if (ev === 'got') got = ev; } return got; };
+  const p = new Pod('ryugu', podRng(1)), ship = { x: 100, y: 120 };
+  sim(p, ship, () => 400, 2.0); ok(p.state === 'wait', 'does not appear while the ship is still high');
+  ship.y = 210; const ev = p.step(1 / 60, ship, 300, flat);
+  ok(ev === 'appear' && p.state === 'float', 'appears when the ship reaches mid-screen (appear event for the sound)');
+  ok(p.x >= ship.x + POD.dx0 - 1 && p.x <= ship.x + POD.dx1 + 1 && p.y >= ship.y + POD.dy0 - 1 && p.y <= ship.y + POD.dy1 + 1, 'on the other side, a little lower: ' + p.x.toFixed(0) + ',' + p.y.toFixed(0));
+  const x0 = p.ax, y0 = p.ay; let far = 0;
+  for (let i = 0; i < 300; i++) { ship.x = 60 + (i % 40); p.step(1 / 60, ship, 300, flat); far = Math.max(far, Math.hypot(p.x - x0, p.y - y0)); }
+  ok(p.state === 'float' && far < POD.sway + POD.bob + 2, 'stays where it is (does not follow the ship): ' + far.toFixed(1));
+  const got = sim(p, ship, () => 300, 8, (s) => { const dx = p.x - s.x, dy = p.y - s.y, d = Math.hypot(dx, dy) || 1; s.x += dx / d; s.y += dy / d; });   // 60 px/s で寄せる
+  ok(got === 'got', 'steering the ship to it grabs it');
+  const q = new Pod('ryugu', podRng(2)), s2 = { x: 100, y: 210 }; q.step(1 / 60, s2, 300, flat);
+  s2.y = q.y + POD.below + 5; q.step(1 / 60, s2, 200, flat); ok(q.state === 'leave', 'leaves upward when the ship goes well below it');
+  for (let i = 0; i < 120; i++) q.step(1 / 60, s2, 120, flat); ok(q.state === 'gone', 'then gone');
+  const L = new Pod('ryugu', podRng(4)), s3 = { x: 100, y: 210 }; L.step(1 / 60, s3, 300, flat); sim(L, s3, () => 300, POD.life + 0.2);
+  ok(L.state === 'leave' || L.state === 'gone', 'leaves after ' + POD.life + ' s');
+  const r = new Pod('ryugu', podRng(3)); r.step(1 / 60, { x: 100, y: 250 }, 100, flat); ok(r.state === 'gone', 'does not appear if the ship is already low');
+  const hi = new Pod('ryugu', podRng(5)); hi.step(1 / 60, { x: 100, y: 210 }, 300, () => 230); ok(hi.state === 'gone', 'no room above high ground: not shown');
+  let inside = true; for (const sx of [20, 90, 180, 270, 340]) { const z = new Pod('ryugu', podRng(sx)); z.step(1 / 60, { x: sx, y: 220 }, 300, flat); inside = inside && z.state === 'float' && z.x >= 24 && z.x <= 336 && Math.abs(z.x - sx) >= POD.dx0 - 1; }
+  ok(inside, 'always on screen and at least ' + POD.dx0 + ' px to the side');
 }
 
-// ===== 4. ツアー: POD を取る → ステージ後に MISSION ACCEPTED =====
+// ツアーの POD を浮かせる（機体を画面の中ほどへ）
+function floatPod(g) { for (let i = 0; i < 30 && g._pod.state === 'wait'; i++) { g.y = 220; g.vy = 0; g.update(1 / 60); clock += 16; } }
+
+// ===== 4. ツアー: POD を取る → ステージ後に MISSION ACCEPTED（2つのボタン）=====
 {
-  const s = new Map(prof('AAA'));
-  s.set('lander11.' + XD.xpKey('AAA', 'ryugu', 'podMiss'), '3');   // 4 回目の機会 = 必ず出る（キーは Storage が接頭辞を付ける。ここは生の Map なので接頭辞なし）
-  s.delete('lander11.' + XD.xpKey('AAA', 'ryugu', 'podMiss')); s.set(XD.xpKey('AAA', 'ryugu', 'podMiss'), '3');
+  const s = new Map(prof('AAA')); s.set(XD.xpKey('AAA', 'ryugu', 'podMiss'), '3');   // 4 回目の機会 = 必ず出る
   const e = makeEngine(s, { pods: true }), g = new Game(e); g.enter();
   ok(g._body.id === 'moon' && g._pod && g._pod.id === 'ryugu', 'moon stage 1 gets a POD on the 4th chance');
   const off = new Game(makeEngine(new Map(prof('AAA')))); off.enter(); ok(!off._pod, 'no POD unless engine.pods (existing tests and debug engines)');
-  // 浮いたら機体を POD に重ねる
-  for (let i = 0; i < 200 && g._pod.state !== 'float'; i++) { g.update(1 / 60); clock += 16; }
-  ok(g._pod.state === 'float', 'POD visible during play');
+  floatPod(g);
+  ok(g._pod.state === 'float' && e.log.includes('podAppear'), 'POD appears at mid-screen with a sound');
   const rc = makeCtx(); g.render(rc); ok(rc.rec.texts.includes('POD'), 'POD label drawn');
   g.x = g._pod.x; g.y = g._pod.y; g.update(1 / 60);
   ok(XD.xpUnlockedSaved(e.storage, 'AAA', 'ryugu') && g._podGot === 'ryugu' && e.log.includes('power'), 'picked up: unlocked and saved immediately, sound');
@@ -109,17 +117,20 @@ const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, t0: clock + 1 });
   ok(g.state === 'play' && !g._podShow, 'no interruption during play');
   g._doCrash('TEST', 'forced'); clock += 16;
   for (let i = 0; i < 90 && !g._podShow; i++) { g.update(1 / 60); clock += 16; }
-  ok(g._podShow && g._podShow.id === 'ryugu', 'after the stage ends (crash), the full-screen presentation starts');
+  ok(g._podShow && g._podShow.id === 'ryugu' && g._podShow.kind === 'pod', 'after the stage ends (crash), the full-screen presentation starts');
   const st0 = g.state; const t0 = g._podShow.t; for (let i = 0; i < 30; i++) g.update(1 / 60); ok(g.state === st0 && g._podShow.t > t0, 'game frozen under the presentation');
   ok(g.blocksBack(), 'BACK blocked while shown');
   for (let i = 0; i < 30; i++) g.update(1 / 60);
-  g.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); ok(g._podShow.t >= XP_ACC.stamp - 0.06, 'tap skips to the stamp');
+  g.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); ok(g._podShow.t >= XP_ACC.close, 'tap skips to the end');
+  g.onInput('tap', center(XP_BTN.go)); ok(g._podShow, 'buttons ignore taps for a moment (no accidental press)');
   for (let i = 0; i < 40; i++) g.update(1 / 60);
   ok(e.log.includes('jingle'), 'stamp jingle');
-  const ra = makeCtx(); g.render(ra); ok(['MISSION ACCEPTED', 'MISSION POD RECEIVED', 'RYUGU'].every((x) => ra.rec.texts.includes(x)), 'presentation draws name and stamp');
-  g.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); ok(!g._podShow, 'tap after the stamp closes it');
+  const ra = makeCtx(); g.render(ra); ok(['MISSION ACCEPTED', 'MISSION POD RECEIVED', 'RYUGU'].every((x) => ra.rec.texts.includes(x)) && ra.rec.texts.some((x) => x === 'ツアーを続ける' || x === 'CONTINUE TOUR') && ra.rec.texts.some((x) => /^(いま向かう|GO NOW)  ▸  RYUGU$/.test(x)), 'presentation draws name, stamp and the two buttons');
+  for (let i = 0; i < 600; i++) g.update(1 / 60); ok(!!g._podShow, 'does not close by itself (the player chooses)');
+  g.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); ok(!!g._podShow, 'tap outside the buttons does nothing');
+  g.onInput('tap', center(XP_BTN.tour)); ok(!g._podShow && g.state === st0, 'CONTINUE TOUR closes it, tour goes on');
   // 文字送りの途中も落ちない
-  for (const t of [0, 0.5, 1.6, 2.0, 2.6, 3.1, 4]) { try { xpDrawAccepted(makeCtx(), { id: '67p', t }, 1); } catch (er) { ok(false, 'draw at ' + t + ': ' + er); } }
+  for (const t of [0, 0.5, 1.6, 2.0, 2.6, 3.1, 4]) for (const kind of ['pod', 'offer']) { try { xpDrawAccepted(makeCtx(), { id: '67p', t, kind }, 1); } catch (er) { ok(false, 'draw at ' + t + ': ' + er); } }
   // 解放済み → もう出ない
   const g2 = new Game(makeEngine(s, { pods: true })); g2.enter(); ok(!g2._pod, 'no POD after unlocking');
 }
@@ -187,6 +198,76 @@ for (const M of EXP_MISSIONS) {
     ok(sh.sess.brief === 'view' && tx.includes('GOALS') && tx.includes(M.title.split(' ')[0] === 'COMET' ? 'COMET 67P — ANCHOR' : tx.find((x) => x.includes('—'))) && !jp.length, M.id + ': EN briefing has no Japanese text ' + sh.sess.brief + ' ' + JSON.stringify(jp));
     sc.exit();
   }
+}
+
+// ===== 9. 寄り道: いま向かう → ミッション → ツアーへ戻る（ランの状態はそのまま）=====
+{
+  const s = new Map(prof('AAA')); s.set(XD.xpKey('AAA', 'ryugu', 'podMiss'), '3');
+  const e = makeEngine(s, { pods: true });
+  e.changeScene = (sc) => { if (e.scene && e.scene.exit) e.scene.exit(); e.scene = sc; if (sc.enter) sc.enter(); };
+  e.toDetour = (id, game) => e.changeScene(new ExpeditionScene(e, id, () => e.changeScene(game), { detour: true }));
+  const g = new Game(e); e.scene = g; g.enter();
+  floatPod(g); g.x = g._pod.x; g.y = g._pod.y; g.update(1 / 60);
+  g._doCrash('TEST', 'forced'); clock += 16;
+  for (let i = 0; i < 90 && !g._podShow; i++) { g.update(1 / 60); clock += 16; }
+  for (let i = 0; i < 60; i++) g.update(1 / 60);
+  g.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); for (let i = 0; i < 30; i++) g.update(1 / 60);
+  const before = { state: g.state, stage: g.stage, score: g.totalScore, cont: g.continues, run: g.runId };
+  g.onInput('tap', center(XP_BTN.go));
+  const sc = e.scene;
+  ok(sc instanceof ExpeditionScene && sc.detour && sc.id === 'ryugu', 'GO NOW → the expedition (detour)');
+  const sh = sc.lab.shell;
+  ok(sh.detour && sh.sess.mode === 'mission' && sh.sess.lives === 3 && sh.sess.brief === 'start' && !sc.lab.m.menu, 'starts in MISSION (3 lives) with the briefing, no menu');
+  ok(XD.xpPlayed(e.storage, 'AAA', 'ryugu'), 'marked as played');
+  sc.onInput('tap', { x: 180, y: 300, t0: clock + 1 }); ok(!sh.sess.brief, 'briefing closes with a tap');
+  for (let i = 0; i < 20; i++) { sc.update(1 / 60); sc.render(e.ctx); }
+  sc.lab.controlsEnabled = false; sc.lab.m.waiting = false; sc.lab.m.result = 'lose'; sc.lab.m.failed = true; sc.lab.m.lifeLost = false; sc.lab.m.resultT = 2; sc.lab.m.reason = 'X'; sc.lab.m.detail = 'Y';
+  e.ctx.rec.texts.length = 0; let rerr = null; try { sc.render(e.ctx); } catch (er) { rerr = er; }
+  ok(!rerr && e.ctx.rec.texts.some((x) => x === 'ツアーへ戻る' || x === 'BACK TO TOUR') && !e.ctx.rec.texts.includes('RETRY MISSION'), 'result screen: only BACK TO TOUR ' + (rerr || ''));
+  const oy = sc.lab.m.result === 'win' ? 478 : 330;
+  sc.onInput('tap', { x: 180, y: oy + 24, t0: clock + 1 });
+  ok(e.scene === g, 'BACK TO TOUR → the same tour');
+  ok(g.state === before.state && g.stage === before.stage && g.totalScore === before.score && g.continues === before.cont && g.runId === before.run, 'run state kept (stage, score, continues)');
+  ok(g._resumeT > 0 && !g._suspended && !g._podShow, 'fade back in, ready');
+  g.update(1 / 60); g.render(makeCtx());
+  // Escape でもツアーへ戻る
+  g._podShow = { id: 'ryugu', t: XP_ACC.close + 1, kind: 'offer', stamped: true }; g.onInput('tap', center(XP_BTN.go));
+  ok(e.scene instanceof ExpeditionScene, 'second detour');
+  e.scene.onInput('back'); ok(e.scene === g && g.stage === before.stage, 'Escape in a detour → back to the tour');
+  // Enter / Space = ツアーを続ける
+  g._podShow = { id: 'ryugu', t: XP_ACC.close + 1, kind: 'offer', stamped: true }; g.onInput('confirm', {}); ok(!g._podShow && e.scene === g, 'Enter = continue tour');
+  // 地図から開いた探査はメニューから（寄り道ではない）
+  const m2 = new ExpeditionScene(makeEngine(new Map(prof('AAA'))), 'phobos', noop); m2.enter(); ok(m2.lab.m.menu === true && !m2.lab.shell.detour, 'from the map: menu as before'); m2.exit();
+}
+
+// ===== 10. 再案内: 解放済みで未挑戦なら、その天体のステージをクリアした後に1回（ランごと）=====
+{
+  const s = new Map(prof('AAA')); s.set(XD.xpKey('AAA', 'ryugu', 'unlocked'), '1');
+  const e = makeEngine(s, { pods: true }), g = new Game(e); g.enter();
+  ok(!g._pod && g._offerId === 'ryugu', 'unlocked, not played: offer planned for this moon stage');
+  for (let i = 0; i < 20; i++) g.update(1 / 60); ok(!g._podShow, 'not during play');
+  g.state = 'cleared'; const jl = e.log.filter((x) => x === 'jingle').length;
+  for (let i = 0; i < 90 && !g._podShow; i++) { g.update(1 / 60); clock += 16; }
+  ok(g._podShow && g._podShow.kind === 'offer' && g._podShow.id === 'ryugu', 'after clearing: EXPEDITION READY');
+  for (let i = 0; i < 60; i++) g.update(1 / 60);
+  const rc = makeCtx(); g.render(rc); ok(rc.rec.texts.includes('EXPEDITION READY') && !rc.rec.texts.includes('MISSION ACCEPTED') && e.log.filter((x) => x === 'jingle').length === jl, 'offer: no stamp, no jingle');
+  g.onInput('tap', center(XP_BTN.tour)); ok(!g._podShow, 'declined');
+  g._podInit(); ok(g._offerId === null, 'only once per run');
+  const g2 = new Game(makeEngine(s, { pods: true })); g2.enter(); ok(g2._offerId === 'ryugu', 'asked again on the next run');
+  XD.xpMarkPlayed(e.storage, 'AAA', 'ryugu'); const g3 = new Game(makeEngine(s, { pods: true })); g3.enter(); ok(g3._offerId === null, 'not asked once played');
+  const s4 = new Map(prof('AAA')); s4.set(XD.xpKey('AAA', 'ryugu', 'unlocked'), '1'); s4.set(XD.xpKey('AAA', 'ryugu', 'best'), JSON.stringify({ score: 1, stars: [true, false, false] }));
+  ok(XD.xpPlayed(makeEngine(s4).storage, 'AAA', 'ryugu'), 'a saved record counts as played');
+  const g5 = new Game(makeEngine(s4)); g5.enter(); ok(g5._offerId === null || g5._offerId === undefined, 'no offer without engine.pods');
+}
+
+// ===== 11. ゲームオーバー画面の入口 =====
+{
+  const s = new Map(prof('AAA')); s.set(XD.xpKey('AAA', 'phobos', 'unlocked'), '1');
+  const went = []; const e = makeEngine(s, { pods: true, toExpedition: (id) => went.push(id) }), g = new Game(e); g.enter();
+  g._gameOver(); ok(g.state === 'gameover' && g._xpEntry === 'phobos', 'game over: unplayed expedition offered');
+  const rc = makeCtx(); g.render(rc); ok(rc.rec.texts.some((x) => x.startsWith('PHOBOS')) && rc.rec.texts.some((x) => x === '未挑戦の探査があります' || x === 'NEW EXPEDITION READY'), 'entrance drawn');
+  g._inputLock = 0; g.onInput('tap', center(g._xpEntryRect())); ok(went.join() === 'phobos', 'tap → the expedition');
+  const s2 = new Map(prof('AAA')); const g2 = new Game(makeEngine(s2, { pods: true, toExpedition: noop })); g2.enter(); g2._gameOver(); ok(!g2._xpEntry, 'nothing unlocked: no entrance');
 }
 
 // ===== 8. バンドル（1 ファイルのクラシックスクリプト）が読み込めて、閉じたスコープが効いている =====

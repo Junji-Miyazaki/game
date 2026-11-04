@@ -321,3 +321,17 @@ v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/
 - テスト: 新規 `04_tests/p22gauge.mjs`（110: 20 秒・grounded 計上・各停止状態・持ち越し/リセット/使用/墜落・ボタン配置(≥56px・操作ボタンと非重複)・タップ/マウス/↓/S（実エンジン経由）・Space/↑は噴射のみ・スワイプ下と指のタップで誤発動しない・泡 5 秒・隕石の弾き返しと墜落なし・泡切れ後は被弾・モジュール SHIELD 独立・地面衝撃は従来どおり失敗・AUTO LAND 不発動・HOW TO PLAY の行とレイアウト・バナー/音/ミュート）。更新: p18assist（緊急シールド節を「廃止の確認」に置換、版/UPDATE 位置）、p10touch・p12v11・p13rings・p19crash・p20pluto・p21howto（版 beta.7、entries のインデックスを +1、新 entry は 2 項目可、EN 上限 40）。全スイート PASS（smoke 2, p1, p2a/b/j/m, p3fix, p4*, p5hud 1715, p6bonus 383, p7〜p9*, p10touch 264, p11net, p12v11 119, p13rings 261, p14boot 42, p15 424, p15map, p16mapbtn, p17patch 98, p18assist 95, p19crash, p20pluto 92, p21howto, p22gauge）。`node build.js` OK。
 - 目視（preview lander-1.1、375x812、一時ハーネスで Game を直接起動→削除済み）: ゲージ（燃料バー下、満タンで琥珀）、SHIELD ボタン（メイン噴射ボタンの真上・親指の届く位置・重ならない）、クリックで泡＋残り時間リング＋バナー。バナーが開始1文のピルと重なったので y244 に下げた（再目視は未実施、テストは座標のみ）。localStorage は消去、ビューポート復元。
 - 未確認: 実機タッチ（親指位置・震えの見え方）、効果音の音色、泡の見え方（昼間の明るい天体）、PC マウスの「どこでもクリック」が噴射用クリックと紛れる体感（噴射は押し続けるので短いクリックで発動する）。
+
+## 2026-11-04 寄り道の分岐と POD の出し方（1.1.0-beta.9、PLAN §7u）
+- 経緯: ユーザー指摘「RYUGU を取ってもクリアするとすぐ次へ進み、マップからしか入れないので遊ばれない。通常ステージを何度もできる設計は避けたい」「POD が上の方だと気づかないうちに取れてしまう。中間ぐらいで」。議論の推奨案（寄り道は片道・ツアー得点に足さない・未挑戦の間だけ再案内・終了画面に入口・POD を中ほどに）をユーザーが「全部推奨で」承認。
+- 実施:
+  - `pods.js`: 出現を「機体 y ≥ 200」で判定、反対側の横 110〜170px・40〜80px 下（地面から 100px 以上・y ≥ 150）。付いて来ない（その場で揺れる）。吸い寄せ 28 / 取得 18 / 下へ 90px か 12 秒で去る。`step` は 'appear' も返す。`music.js` に `sfx.podAppear`。原因は旧仕様で開始 1〜3 秒後に機体の上 50〜80px（画面上端で押し付けられて機体の横）に出て、付いて来る＋吸い寄せ 46px で勝手に取れていたこと。
+  - `expscene.js`: MISSION ACCEPTED に2ボタン（`XP_BTN`、出て 0.3 秒は反応しない）、自動で閉じない。`kind:'offer'`（EXPEDITION READY、印・ジングルなし）。`ExpeditionScene(…, {detour})` は MISSION で開始＋説明カード、`sh.begin` を包んで `played` を保存。
+  - `expedition/shell.js`: `detour`（cfg か host）。結果画面は「ツアーへ戻る」1つ、BACK/Escape もツアーへ。`sh.startDetour`。
+  - `game.js`: `_podGo`（`_suspended` にして `engine.toDetour`）、`enter`/`exit` は `_suspended` の間は再開/音だけ。戻りは 0.5 秒のフェード。`_offerId`（解放済み・未挑戦・ランで未案内なら、クリア後 1.1 秒で案内）。`_gameOver` で `_xpEntry`、画面下の入口。
+  - `expdata.js`: `xpPlayed`（`played` または記録あり）/ `xpMarkPlayed` / `xpUnplayed`。`main.js`: `engine.toDetour`。
+  - 版 beta.9、UPDATE INFORMATION に4項目（JA/EN）。
+- テスト: p24expedition を書き換え・追加（87 → 120: POD の位置・付いて来ない・去る条件・画面内、2ボタンと誤タップ防止、寄り道で状態が保たれる、Escape/Enter、再案内の回数、終了画面の入口）。p10touch・p12v11・p13rings・p18assist・p19crash・p20pluto・p21howto は版と entries の位置を +1。32 ファイル全通過、`node build.js`・`07_lab/stamp.js` 済み。
+- 目視（preview、一時ページで描画→削除済み）: MISSION ACCEPTED の2ボタン（注記の行を印と重ならない y508 に移動）、ゲームオーバー画面の入口（ランキングと重ならない）、月のステージで POD が右側の中ほど（機体 175,200 → POD 313,259）に出ること。
+- 未確認: 実機での POD の取りやすさと音、寄り道から戻った時の感触（クリア画面は BGM なしで再開、次のステージで曲が戻る）、ブラウザでの寄り道の通し（テストのみ）。
+

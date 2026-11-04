@@ -2,10 +2,10 @@
 // id = 解放と記録のキー。body = POD が出るツアーの天体。sys = 太陽系マップの惑星系。shellId = 試作ページ時代のミッション id。
 // task = MISSION ACCEPTED の任務文（JA/EN）。music = ミッション中に流すツアーの曲（その天体の近く）。
 // バンドル（build.js）ではこのファイルは EXP_index という閉じたスコープに入る。
-import { create as EXP_c1 } from './m1_phobos.js?v=c7b4b5f7f3';
-import { create as EXP_c2 } from './m2_enceladus.js?v=c88f58267b';
-import { create as EXP_c3 } from './m3_ryugu.js?v=89a4370fa8';
-import { create as EXP_c4 } from './m4_comet.js?v=46e3c2b9a4';
+import { create as EXP_c1 } from './m1_phobos.js?v=b521887bc7';
+import { create as EXP_c2 } from './m2_enceladus.js?v=28c888e47d';
+import { create as EXP_c3 } from './m3_ryugu.js?v=1f01f5254a';
+import { create as EXP_c4 } from './m4_comet.js?v=ff1d0945d1';
 
 export const EXP_MISSIONS = [
   { id: 'ryugu', no: 3, name: 'RYUGU', title: 'RYUGU TOUCH-AND-GO', body: 'moon', sys: 'earth', shellId: 'touch_and_go', music: 'moon', create: EXP_c3,

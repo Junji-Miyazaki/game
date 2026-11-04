@@ -3,14 +3,15 @@
 // ★の和集合 + 最高スコア + ベストタイム・結果 / 失敗画面・HUD 右上・足元の傾斜マーカー。
 // 記録の保存先: 試作ページは localStorage 'lander11.exp.<id>.*'。本編は cfg.store（パイロットごと、02_src/expedition/store.js）。
 // 説明カードは JA/EN（設定の言語 i18nLang）。本編では cfg.onExit があり、メニュー左上に BACK（マップへ戻る）を出す。
+// cfg.detour（beta.9 ツアーからの寄り道）: メニューを出さずに MISSION で始め、結果画面は「ツアーへ戻る」1つだけ（RETRY なし）。BACK / Escape もツアーへ戻る。
 // ミッション固有の状態は lab.m に置く。シェルが読む lab.m のフィールド:
 //   m.menu / m.result('win'|'lose') / m.resultT / m.lifeLost / m.failed / m.final / m.reason / m.detail
 // 使い方: const sh = createShell({ id, expLabel:'EXPEDITION 02', title, options:[{key,label,btn,param}], host, store, onExit });
 // バンドル（build.js）ではこのファイルは EXP_shell という閉じたスコープに入る。
-import { txt, rgba, rr } from '../art.js?v=6a1ae490e6';
+import { txt, rgba, rr } from '../art.js?v=85480c339f';
 import { P } from '../core/palette.js?v=a36de9d9c3';
-import { i18nLang } from '../core/i18n.js?v=eebba828ab';
-import { W, C, footSlopeDeg, trackOn } from './harness.js?v=0ac2d166b6';
+import { i18nLang } from '../core/i18n.js?v=e408a3c5b7';
+import { W, C, footSlopeDeg, trackOn } from './harness.js?v=4ee60acfef';
 
 export const LIVES0 = 3;
 export const LIFE_MULT = { 3: 1.0, 2: 0.8, 1: 0.6 };
@@ -80,6 +81,8 @@ export function createShell(cfg) {
   const BR = { x: 20, y: 96, w: 320, h: 440 };                   // ブリーフィングカード
   options.forEach((o, i) => { BTN[o.btn] = { x: i ? 182 : 24, y: 366, w: 154, h: 44 }; });
   const btnY = (m) => (m.result === 'win' ? 478 : 330);
+  const detour = !!(cfg.detour || host.detour);
+  BTN.tour = { x: 40, y: 0, w: 280, h: 48 };   // 寄り道の結果画面: ツアーへ戻る
 
   const brief = cfg.brief || null;
   const lang = () => { try { return cfg.lang ? cfg.lang() : i18nLang(); } catch (e) { return 'ja'; } };
@@ -143,6 +146,7 @@ export function createShell(cfg) {
     }
     if (!m.result || m.resultT < 0.4 || m.lifeLost) return false;
     const oy = btnY(m);
+    if (detour) { if (hit(BTN.tour, x, y, oy) && cfg.onExit) cfg.onExit(); return true; }
     if (hit(BTN.res1, x, y, oy)) sh.begin(l, sess.mode);        // RETRY / RETRY MISSION
     else if (hit(BTN.res2, x, y, oy)) sh.begin(l, 'menu');      // MENU
     return true;
@@ -151,6 +155,7 @@ export function createShell(cfg) {
   // 飛行中 → メニュー（ミッションならライフを 1 つ失う扱いはせず、記録も残さない = やめる）
   sh.back = (l) => {
     const m = l.m;
+    if (detour) { if (m.result && m.lifeLost) return; if (cfg.onExit) cfg.onExit(); return; }   // 寄り道: どこからでもツアーへ戻る（記録は残さない）
     if (sess.brief) { briefClose(l); if (!m.menu) sh.begin(l, 'menu'); return; }
     if (m.menu) { if (cfg.onExit) cfg.onExit(); return; }
     if (m.result && m.lifeLost) return;
@@ -169,6 +174,9 @@ export function createShell(cfg) {
     e.stopImmediatePropagation(); e.preventDefault(); briefClose(briefLab);
   }, true);
   let briefLab = null; sh.bindLab = (l) => { briefLab = l; };
+  sh.detour = detour;
+  // 寄り道の開始: MISSION（3 ライフ）で始め、説明カードを出す（NEXT TIME SKIP を選んでいれば出さない）
+  sh.startDetour = (l) => { sh.begin(l, 'mission'); if (brief && !skipOn()) briefOpen(l, 'start'); };
   sh.hookR = (lab, started, lose) => { rHook = { lab, started, lose }; };
   sh.addResetButton = () => { if (emb) return; const box = document.getElementById('dbg'); if (box) { const b = document.createElement('button'); b.textContent = 'RESET RECORD'; b.style.cssText = 'margin-top:8px;font:9px monospace;opacity:.6;padding:2px 6px'; b.onclick = () => { lsSet(KEY_B, ''); lsSet(KEY_T, ''); }; box.appendChild(b); } };
 
@@ -293,7 +301,11 @@ export function createShell(cfg) {
       txt(ctx, r.failNote || '', 180, y + 118, 8, p.dim, 'center', { w: 600, sp: 0.6 });
       txt(ctx, 'TIME ' + mmss(r.failTime || 0), 180, y + 142, 8, p.dim, 'center', { w: 600, sp: 0.8 });
     }
-    if (!m.lifeLost) {
+    if (!m.lifeLost && detour) {
+      const ja = lang() !== 'en';
+      button(ctx, BTN.tour, RY, ja ? 'ツアーへ戻る' : 'BACK TO TOUR', p.green, Math.floor(l.clock * 2) % 2, ja ? 15 : 13);
+      txt(ctx, ja ? 'マップからいつでも再挑戦できます' : 'RETRY ANY TIME FROM THE MAP', 180, RY + 62, ja ? 10 : 7, p.dim, 'center', { w: 500, sp: ja ? 0 : 0.8 });
+    } else if (!m.lifeLost) {
       const hot = Math.floor(l.clock * 2) % 2;
       button(ctx, BTN.res1, RY, prac ? 'RETRY' : 'RETRY MISSION', p.mid, hot, prac ? 14 : 11);
       button(ctx, BTN.res2, RY, 'MENU', p.fg, 0, 13);

@@ -1,8 +1,9 @@
 // ミッション POD（ツアー中に探査ミッションを解放するカプセル。PLAN §7m）。game.js から使う。
 // 出る場所: 月（RYUGU）・火星（PHOBOS）・タイタン（ENCELADUS）・冥王星（67P）のステージ。まだ解放していないパイロットだけ。
 // 出る確率: 30% + 外れるたびに +20%、4 回目の機会で必ず出る（運だけで詰まらない）。外れ回数はパイロットごとに保存。
-// 取り方: 上空で機体のそばに現れ、機体の周り（50〜80px、上半分）をゆっくり漂う。ゆっくり付いてくるので、機体を少し寄せると
-//   磁石の範囲（46px）に入って吸い寄せられ、24px で取れる。機体が地面から 150px より下がるか、出てから 16 秒で上へ去る（逃した扱い）。
+// 取り方（beta.9）: 機体が画面の中ほど（y ≥ 200）まで降りた時、画面の中ほど（機体の 40〜80px 下・地面から 100px 以上上）に、
+//   機体と反対側の横 110〜170px に現れ、出る時に短い音。その場で小さく揺れるだけで付いて来ない（自分で横へ寄せて取る）。
+//   吸い寄せは 28px、18px で取れる。機体が POD より 90px 以上下へ降りるか、出てから 12 秒で上へ去る（逃した扱い）。
 // 得点は 0。取った瞬間に解放を保存（その後の墜落でも保持）。乱数は Math.random を使わない（ツアーの乱数の並びを変えない）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて POD_ / pod で始める。
 import { expForBody } from './expedition/index.js';
@@ -11,7 +12,7 @@ import { txt, rgba } from './art.js';
 import { P } from './core/palette.js';
 
 export const POD_P0 = 0.3, POD_STEP = 0.2, POD_SURE = 3;
-export const POD = { appear0: 1.2, appear1: 2.8, r0: 50, r1: 80, follow: 0.45, magnet: 46, pick: 24, leaveAlt: 150, minAlt: 200, life: 16, leaveS: 1.2, topY: 78, label: 2.2 };
+export const POD = { trigY: 200, minAlt: 140, dx0: 110, dx1: 170, dy0: 40, dy1: 80, clear: 100, minY: 150, bob: 6, sway: 10, magnet: 28, pick: 18, below: 90, life: 12, leaveS: 1.2, label: 2.2 };
 export function podChance(miss) { return miss >= POD_SURE ? 1 : Math.min(1, POD_P0 + POD_STEP * Math.max(0, miss)); }
 export function podRng(seed) { let s = (seed >>> 0) || 0x9E3779B9; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
@@ -29,40 +30,40 @@ export class Pod {
   constructor(id, rnd) {
     this.id = id; this.rnd = rnd || Math.random;
     this.state = 'wait'; this.t = 0; this.vis = 0; this.leaveT = 0;
-    this.appearAt = POD.appear0 + this.rnd() * (POD.appear1 - POD.appear0);
-    this.ph = this.rnd() * 6.28; this.x = 0; this.y = 0; this.near = false;
+    this.ph = this.rnd() * 6.28; this.u = this.rnd(); this.v = this.rnd();
+    this.ax = 0; this.ay = 0; this.x = 0; this.y = 0; this.near = false;
   }
-  // 機体のまわり（上半分）の漂う位置。画面の上端で押し下げられたら、その分を横へ逃がして距離 r を保つ（勝手に磁石の範囲へ入らない）
-  _target(sx, sy) {
-    const a = -Math.PI / 2 + 1.15 * Math.sin(this.ph + this.vis * 0.45), r = (POD.r0 + POD.r1) / 2 + (POD.r1 - POD.r0) / 2 * Math.sin(this.vis * 0.7 + this.ph);
-    let x = sx + Math.cos(a) * r, y = sy + Math.sin(a) * r * 0.8;
-    if (y < POD.topY) {
-      y = POD.topY; const dy = y - sy, side = Math.cos(a) !== 0 ? Math.sign(Math.cos(a)) : 1;
-      x = sx + side * Math.sqrt(Math.max(0, r * r - dy * dy));
-    }
-    if (x < 16 || x > 344) x = sx - (x - sx);   // 画面の横端なら反対側へ
-    return { x: Math.max(16, Math.min(344, x)), y };
+  // 出る位置: 機体と反対側の横（画面の中央寄りの側）・機体より少し下。地面から POD.clear 以上上。置けなければ null
+  _place(ship, groundAt) {
+    const side = ship.x < 180 ? 1 : -1, d = POD.dx0 + this.u * (POD.dx1 - POD.dx0);
+    const cl = (v) => Math.max(24, Math.min(336, v));
+    let x = cl(ship.x + side * d);
+    if (Math.abs(x - ship.x) < POD.dx0) x = cl(ship.x - side * d);   // 画面の端で近すぎれば逆の側へ
+    if (Math.abs(x - ship.x) < POD.dx0) return null;
+    const gy = groundAt ? groundAt(x) : 640, y = Math.min(ship.y + POD.dy0 + this.v * (POD.dy1 - POD.dy0), gy - POD.clear);
+    return y >= POD.minY ? { x, y } : null;
   }
-  // ship = { x, y }、alt = 機体の足元から地面まで px。戻り値 'got' | null
-  step(dt, ship, alt) {
+  // ship = { x, y }、alt = 機体の足元から地面まで px、groundAt(x) = その x の地面の y。戻り値 'appear'（出た瞬間）| 'got' | null
+  step(dt, ship, alt, groundAt) {
     this.t += dt;
     if (this.state === 'wait') {
-      if (this.t >= this.appearAt) {
-        if (alt < POD.minAlt) { this.state = 'gone'; return null; }   // もう低すぎる = 出さない
-        this.state = 'float'; this.vis = 0; const g = this._target(ship.x, ship.y); this.x = g.x; this.y = g.y;
-      }
-      return null;
+      if (ship.y < POD.trigY) return null;
+      const at = alt >= POD.minAlt ? this._place(ship, groundAt) : null;   // もう低すぎる・置く場所がない = このステージは出さない
+      if (!at) { this.state = 'gone'; return null; }
+      this.state = 'float'; this.vis = 0; this.ax = at.x; this.ay = at.y; this.x = at.x; this.y = at.y;
+      return 'appear';
     }
     if (this.state === 'leave') { this.leaveT += dt; this.y -= 140 * dt; if (this.leaveT >= POD.leaveS) this.state = 'gone'; return null; }
     if (this.state !== 'float') return null;
     this.vis += dt;
-    const g = this._target(ship.x, ship.y), k = 1 - Math.exp(-POD.follow * dt);
-    this.x += (g.x - this.x) * k; this.y += (g.y - this.y) * k;
+    // その場で小さく揺れる（付いて来ない）。吸い寄せられた分は錨の位置もずらす
+    const tx = this.ax + POD.sway * Math.sin(this.vis * 0.6 + this.ph), ty = this.ay + POD.bob * Math.sin(this.vis * 1.3 + this.ph);
+    const k = 1 - Math.exp(-3 * dt); this.x += (tx - this.x) * k; this.y += (ty - this.y) * k;
     const dx = ship.x - this.x, dy = ship.y - this.y, d = Math.hypot(dx, dy);
     this.near = d < POD.magnet;
-    if (this.near && d > 0.01) { const v = Math.min(d, (40 + (POD.magnet - d) * 7) * dt); this.x += dx / d * v; this.y += dy / d * v; }
+    if (this.near && d > 0.01) { const v = Math.min(d, (30 + (POD.magnet - d) * 6) * dt); this.x += dx / d * v; this.y += dy / d * v; this.ax += dx / d * v; this.ay += dy / d * v; }
     if (Math.hypot(ship.x - this.x, ship.y - this.y) < POD.pick) { this.state = 'got'; return 'got'; }
-    if (alt < POD.leaveAlt || this.vis > POD.life) { this.state = 'leave'; this.leaveT = 0; }
+    if (ship.y > this.y + POD.below || this.vis > POD.life) { this.state = 'leave'; this.leaveT = 0; }
     return null;
   }
   get visible() { return this.state === 'float' || this.state === 'leave'; }

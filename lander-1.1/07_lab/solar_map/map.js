@@ -1,7 +1,7 @@
 // LANDER BETA v1.1 — SOLAR SYSTEM MAP: アニメーション方向性の比較用プロトタイプ（ゲーム本体には未統合）。
 // 読み取りのみで 02_src の art.js / palette.js / bodies.js を import（編集しない）。
 // 論理座標 360x640 を canvas に DPR 倍でスケール。3スタイル（A/B/C）は同じレイアウト・データで描画と動きの強さだけ変える。
-import { drawShip, drawAstronaut, drawFlag, FONT, rgba, mixHex } from '../../02_src/art.js?v=6a1ae490e6';
+import { drawShip, drawAstronaut, drawFlag, FONT, rgba, mixHex } from '../../02_src/art.js?v=85480c339f';
 import { P } from '../../02_src/core/palette.js?v=a36de9d9c3';
 import { BODIES } from '../../02_src/bodies.js?v=c71a2c1144';
 

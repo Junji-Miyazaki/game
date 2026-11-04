@@ -19,8 +19,10 @@ import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openCha
 import { i18nBind, i18nLang, i18nInverted } from './core/i18n.js';
 import { HtCard, htSkipGet } from './howto.js';
 import { Pod, podPlan, podRng, podUnlock } from './pods.js';
-import { xpDrawAccepted, XP_ACC } from './expscene.js';
-import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawShieldBubble, drawShieldButton, SHIELD_BTN_SMALL, drawShieldBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine , txt } from './art.js';
+import { xpUnplayed, xpDrawBody } from './expdata.js';
+import { expMission } from './expedition/index.js';
+import { xpDrawAccepted, xpAcceptedHit, XP_ACC } from './expscene.js';
+import { veil, drawBackdrop, drawTerrain, drawPad, drawBeacon, drawParticles, drawShieldRing, drawRadar, drawShip, drawHatch, drawLadder, drawAstronaut, drawFlag, drawCelebFx, drawObstacles, drawGuide, drawOnCourse, drawOnCourseLabel, drawHaze, drawFog, drawHUD, drawHudTip, drawControls, drawIntro, drawBonusBanner, drawTouchdown, drawClearPanel, drawCrashPanel, drawBonusFailedPanel, drawModuleCards, drawBonusCards, drawGameOverFrame, drawGameOverFooter, drawDebugPanel, drawDebugTag, drawSpeaker, drawHoldButton, drawHoldPanel, drawAdminPanel, drawNote, drawLandableSpots, drawGroundShadow, drawGroundedBanner, drawTouchHint, mixHex, drawRing, drawPowerRing, drawFloat, drawPowerBanner, drawHorizonGlare, drawLandableLabels, drawShieldBubble, drawShieldButton, SHIELD_BTN_SMALL, drawShieldBanner, drawDimTint, drawWaypoint, drawPadLocked, drawSlidingCue, drawWaypointBanner, drawGoalLine , txt, rr, rgba } from './art.js';
 
 export const meta = {
   id: 'lander',
@@ -405,6 +407,7 @@ function hexA(hex, a) {
 export class Game extends Scene {
 
   enter() {
+    if (this._suspended) { this._resumeFromDetour(); return; }   // 寄り道から戻った: ランの状態はそのまま
     if (this._champ) this._champ.close();
     this._champTok = (this._champTok || 0) + 1; this._champ = null;
     hideNameOverlay(); hideChampionEntry();   // 名前入力DOMがゲーム画面に残らないように
@@ -448,7 +451,9 @@ export class Game extends Scene {
     if (!this._maybeShowHowto()) this._maybeShowTip();
   }
 
-  exit() { this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+  exit() {
+    if (this._suspended) { this._duck(false); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; return; }   // 寄り道へ: 音だけ止めて状態は保持
+    this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
@@ -625,12 +630,17 @@ export class Game extends Scene {
     this._podRnd = this._podRnd || podRng((Date.now() ^ (this.stage * 2654435761)) >>> 0);
     const plan = podPlan(this.engine.storage, pilot, this._body.id, this._podRnd);
     if (plan) { this._pod = new Pod(plan.id, this._podRnd); this._podPilot = pilot; }
+    // 再案内（beta.9）: この天体の探査を解放済みで、まだ一度も遊んでいない → このステージをクリアした後に1回だけ案内（ランごとに1回）
+    this._offerId = null;
+    if (!plan) { const id = xpUnplayed(this.engine.storage, pilot, this._body.id); if (id && !(this._offered && this._offered[id])) this._offerId = id; }
   }
   _podTick(dt) {
     if (this._podToastT > 0) this._podToastT = Math.max(0, this._podToastT - dt);
     if (this._pod && this.state === 'play') {
       const alt = this._terrainYAt(this.x) - (this.y + 16);
-      if (this._pod.step(dt, { x: this.x, y: this.y }, alt) === 'got') {
+      const ev = this._pod.step(dt, { x: this.x, y: this.y }, alt, (x) => this._terrainYAt(x));
+      if (ev === 'appear') { try { musicOf(this.engine).sfx.podAppear(); } catch (_) { /* 音なし */ } }
+      if (ev === 'got') {
         podUnlock(this.engine.storage, this._podPilot, this._pod.id);
         this._podGot = this._pod.id; this._podWait = 1.1; this._podToastT = 2.6;
         try { musicOf(this.engine).sfx.power(); } catch (_) { /* 音なし */ }
@@ -640,15 +650,36 @@ export class Game extends Scene {
     if (this._podGot && !this._live() && this.state !== 'hold' && this.state !== 'tip' && this.state !== 'debug') {
       if (this.state === 'gameover') { this._podGot = null; return; }
       this._podWait -= dt;
-      if (this._podWait <= 0) { this._podShow = { id: this._podGot, t: 0, stamped: false }; this._podGot = null; this._duck(true); }
+      if (this._podWait <= 0) { this._podShow = { id: this._podGot, t: 0, stamped: false, kind: 'pod' }; this._podGot = null; this._duck(true); }
+    }
+    if (this._offerId && this.state === 'cleared' && !this._podShow) {
+      if (this._offerWait == null) this._offerWait = 1.1;
+      this._offerWait -= dt;
+      if (this._offerWait <= 0) {
+        (this._offered = this._offered || {})[this._offerId] = true;
+        this._podShow = { id: this._offerId, t: XP_ACC.stamp, stamped: true, kind: 'offer' }; this._offerId = null; this._offerWait = null; this._duck(true);
+      }
     }
   }
   _podShowTick(dt) {
     const s = this._podShow; s.t += dt;
     if (!s.stamped && s.t >= XP_ACC.stamp) { s.stamped = true; try { musicOf(this.engine).playJingle({ tier: 2, perfect: true }); } catch (_) { /* 音なし */ } }
-    if (s.t >= XP_ACC.auto) this._podClose();
   }
   _podClose() { this._podShow = null; this._duck(false); this._overlayAt = (typeof performance !== 'undefined' ? performance.now() : 0); }
+  // 「いま向かう」: ツアーをこの画面のまま止めて保持し、探査へ寄り道（main.js の engine.toDetour）。戻ると enter() が再開だけをする
+  _podGo(id) {
+    this._podClose();
+    if (!this.engine.toDetour) return;
+    this._thrustMain = false; this._thrustRcsL = false; this._thrustRcsR = false;
+    if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
+    this._suspended = true;
+    this.engine.toDetour(id, this);
+  }
+  _resumeFromDetour() {
+    this._suspended = false; this._resumeT = 0.5; this._inputLock = Math.max(this._inputLock || 0, 0.3);
+    this._overlayAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    hideNameOverlay();
+  }
 
   // ステージ開始ごとに保存（ボーナス中は「ボーナスの次のステージ」を保存＝再開がボーナスの途中にならない）。デバッグ中/デバッグ操作ランは保存しない
   _saveCheckpoint() {
@@ -680,7 +711,10 @@ export class Game extends Scene {
     if (this._ht) { this._ht.input(action, data); return; }   // HOW TO PLAY 表示中は全入力を消費
     if (this._podShow) {   // MISSION ACCEPTED: 印の前のタップは印まで飛ばす、印の後のタップで閉じる（キーのオートリピートは無視）
       if ((action === 'tap' || action === 'confirm') && !(data && data.repeat)) {
-        if (this._podShow.t >= XP_ACC.close) this._podClose(); else if (this._podShow.t >= 0.8) this._podShow.t = Math.max(this._podShow.t, XP_ACC.stamp - 0.05);
+        const s = this._podShow, h = action === 'tap' && data ? xpAcceptedHit(s, data.x, data.y) : null;
+        if (h === 'go') this._podGo(s.id);
+        else if (h === 'tour' || (action === 'confirm' && s.t >= XP_ACC.close + XP_ACC.armed)) this._podClose();   // Enter / Space = ツアーを続ける
+        else if (s.t < XP_ACC.close && s.t >= 0.8) s.t = XP_ACC.close;   // ボタンが出る前のタップは最後まで飛ばす
       }
       return;
     }
@@ -766,6 +800,7 @@ export class Game extends Scene {
     }
     if (this.state === 'gameover') {
       if (action === 'tap' && data && this._inputLock <= 0 && rankTabsTap(this.rankTabs, 32, 146, data.x, data.y, W - 64)) return;
+      if (action === 'tap' && data && this._inputLock <= 0 && this._xpEntry && this._inRect(this._xpEntryRect(), data)) { this._uiTap(); this.engine.toExpedition(this._xpEntry); return; }
       if (confirm && this._inputLock <= 0) this.engine.toMenu();
       if (action === 'back') this.engine.toMenu();
       return;
@@ -1079,6 +1114,9 @@ export class Game extends Scene {
       this.engine.storage.setHigh(meta.id, this.high);
     }
     this._setOverlayState('gameover');
+    // 終了画面の入口（beta.9）: 解放済みでまだ一度も遊んでいない探査があれば、そこから直接始められる
+    this._xpEntry = null;
+    if (this.engine.pods && !dbgRun && this.engine.toExpedition) { try { const pr = getActiveProfile(this.engine.storage); this._xpEntry = xpUnplayed(this.engine.storage, (pr && pr.name) || ''); } catch (_) { this._xpEntry = null; } }
     if (!dbgRun && !keepCheckpoint) clearCheckpoint(this.engine.storage);   // 本当のゲームオーバー（残機切れ/GIVE UP）で破棄
     this.rankList = loadRanking(this.engine.storage);
     this.rankTabs = createRankTabs();
@@ -1146,6 +1184,7 @@ export class Game extends Scene {
     musicOf(this.engine).tick(dt);
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
+    if (this._resumeT > 0) this._resumeT = Math.max(0, this._resumeT - dt);
     if (this._podShow) { this._podShowTick(dt); return; }   // MISSION ACCEPTED 表示中: 全て凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
@@ -2117,6 +2156,7 @@ export class Game extends Scene {
     }
 
     if (championEntryOpen(this._champ)) veil(ctx, 0.5);
+    if (this._resumeT > 0) veil(ctx, this._resumeT / 0.5);   // 寄り道から戻った直後のフェード
 
     // デバッグ: DBGボタン
     if (isDebug() && DBG_STATES.indexOf(this.state) >= 0) drawDebugTag(ctx, this._dbgBtnRect());
@@ -2358,5 +2398,18 @@ export class Game extends Scene {
     drawRankPanel(this.engine, ctx, this.rankTabs || createRankTabs(), this.rankList || [], 32, 146, W - 64, this.newIdx);
     if (this._worldNote) drawNote(ctx, this._worldNote);
     drawGameOverFooter(ctx);
+    if (this._xpEntry) this._drawXpEntry(ctx);
+  }
+  // 終了画面の探査の入口（画面下の操作ボタンの帯）
+  _xpEntryRect() { return { x: 40, y: 572, w: 280, h: 48 }; }
+  _drawXpEntry(ctx) {
+    const m = expMission(this._xpEntry); if (!m) return;
+    const r = this._xpEntryRect(), p = P(), ja = i18nLang() === 'ja', hot = 0.5 + 0.5 * Math.sin((this._clock || 0) * 4.5);
+    ctx.save(); ctx.fillStyle = 'rgba(4,6,12,0.92)'; ctx.fillRect(0, 564, W, 76);
+    rr(ctx, r.x, r.y, r.w, r.h, 22); ctx.fillStyle = rgba(p.warn, 0.14 + 0.1 * hot); ctx.fill(); ctx.strokeStyle = rgba(p.warn, 0.9); ctx.lineWidth = 1.4; ctx.stroke();
+    xpDrawBody(ctx, m.id, r.x + 28, r.y + r.h / 2, 13, this._clock || 0);
+    txt(ctx, ja ? '未挑戦の探査があります' : 'NEW EXPEDITION READY', r.x + 52, r.y + 9, ja ? 10 : 8, p.dim, 'left', { w: 600, sp: ja ? 0 : 1.2 });
+    txt(ctx, m.name + '  ▸  ' + (ja ? '挑戦' : 'PLAY'), r.x + 52, r.y + 24, 13, p.warn, 'left', { w: 800, sp: 1.4 });
+    ctx.restore();
   }
 }

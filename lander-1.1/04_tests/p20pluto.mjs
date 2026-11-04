@@ -261,8 +261,8 @@ const plutoStage = (stage) => { const r = stageGame(stage); r.g.obstacles = []; 
 // ---------- 9. 版・UPDATE INFORMATION ----------
 {
   const E = WHATSNEW.entries;
-  ok(E[3].version === '1.1.0-beta.5' && E[3].date === '2026.10.26', 'beta.5 is the fourth entry (2026.10.26)');
-  ok(E[3].items.join('|') === ['新天体：冥王星（氷で滑る・中継着陸）', 'ツアーは1周16ステージに', '★は48個、パッチは8枚に'].join('|') && E[3].items.every((l) => l.length <= 22), 'beta.5 items as specified, each <= 22 chars');
+  ok(E[4].version === '1.1.0-beta.5' && E[4].date === '2026.10.26', 'beta.5 is the fifth entry (2026.10.26)');
+  ok(E[4].items.join('|') === ['新天体：冥王星（氷で滑る・中継着陸）', 'ツアーは1周16ステージに', '★は48個、パッチは8枚に'].join('|') && E[4].items.every((l) => l.length <= 22), 'beta.5 items as specified, each <= 22 chars');
 }
 
 console.log('p20pluto: ' + pass + '/' + (pass + fail) + (fail ? ' FAIL' : ' PASS'));
