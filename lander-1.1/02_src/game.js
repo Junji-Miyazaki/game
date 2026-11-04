@@ -569,6 +569,7 @@ export class Game extends Scene {
     this._guideDevTotal = 0;
     this._guideDevCount = 0;
     this._stageScore    = 0;
+    this._highBefore    = null;
     this._guideBonus    = 0;
     this._bonusScore    = 0;
     this._bonusGrant    = false;
@@ -1867,6 +1868,7 @@ export class Game extends Scene {
     this._recordStageBest(this._grade);
     this._touchdownFx(1);
 
+    this._highBefore = this.high || 0;   // 表示用（クリア画面の集計が合計に届くまで、右上の得点と BEST は加算前の値）
     if (!this._isDebugRun() && this.totalScore > this.high) {
       this.high = this.totalScore;
       this.engine.storage.setHigh(meta.id, this.high);
@@ -1925,6 +1927,15 @@ export class Game extends Scene {
     const ts = (n + 1) * CLEAR_SLOT_S + 0.05;
     if (prev <= ts && cur > ts) this._sfx('thud', 0.8);
   }
+  // 表示する得点: 着陸の演出中は加算前、クリア画面では合計の行が数え上がるのに合わせて増やす（集計より先に結果が見えないように）
+  _scoreShown() {
+    const add = this._stageScore || 0;
+    if (!add || this._highBefore == null) return this.totalScore;
+    if (this.state === 'landing') return this.totalScore - add;
+    if (this.state === 'cleared' && this._clearT != null) return this.totalScore - Math.round(add * (1 - this._clearView().tot));
+    return this.totalScore;
+  }
+  _highShown() { const h = this.high || 0; if (this._highBefore == null || h === this._highBefore) return h; return Math.max(this._highBefore, this._scoreShown()); }
   _skipClear() { if (this._clearT != null) { this._clearT = this._clearEnd(); this._starT = 99; } }
   _clearView() {
     const n = this._breakdown ? this._breakdown.length : 0;
@@ -2322,7 +2333,7 @@ export class Game extends Scene {
     const b = this._body;
     h.stage = this.stage; h.bodyName = this.state === 'bonusselect' ? TERRA.name : (b ? b.name : ''); h.bonus = !!this.bonus;
     h.mission = (this.bonus && this._mission) ? this._mission.name : '';
-    h.total = this.totalScore; h.high = this.high || 0;
+    h.total = this._scoreShown(); h.high = this._highShown();
     h.fuel = (this.fuel || 0) / this._fuelMax();
     h.shield = Math.min(1, (this._gauge || 0) / SH_FULL_S); h.shieldOn = this._shT > 0;   // 値のみ（HUD には描かない。表示は SHIELD ボタン）
     h.continues = this.continues || 0;
@@ -2363,8 +2374,8 @@ export class Game extends Scene {
     else if (this.stage % BONUS_EVERY === 0) next = 'TAP  ·  BONUS MISSION';
     else next = 'TAP  ·  STAGE ' + (this.stage + 1);
     const cols = b
-      ? [['CONTINUE', this._bonusGrant ? '+1' : '\u2013', this._bonusGrant ? P().mid : P().dim], ['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]]
-      : [['TOTAL', String(this.totalScore)], ['BEST', String(this.high || 0)]];
+      ? [['CONTINUE', this._bonusGrant ? '+1' : '\u2013', this._bonusGrant ? P().mid : P().dim], ['TOTAL', String(this._scoreShown())], ['BEST', String(this._highShown())]]
+      : [['TOTAL', String(this._scoreShown())], ['BEST', String(this._highShown())]];
     const cv = this._clearView();
     const slot = drawClearPanel(ctx, this._clearPanelRect(), {
       patchRoom: this._patchInfo ? PATCH_ROOM : 0,
