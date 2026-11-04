@@ -44,7 +44,15 @@ for (let x = 0; x <= W; x += 3) terrain.push({ x, y: terrainFn(x) });
 
 // 装飾（固定乱数）
 let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-const STARS = Array.from({ length: 80 }, () => ({ x: rnd() * W, y: rnd() * 480, r: 0.4 + rnd() * 0.9, a: 0.25 + rnd() * 0.6 }));
+// 星空は小天体の自転に合わせて、地表の弧の中心（CURVE.cx, GY + R）のまわりをごくゆっくり回る（上空で左へ 約 1 px/s）。
+// 遠い（暗い）星ほど速く、明るい星は 0.6 倍（奥行き）。機体の速さ（8〜10 px/s 以下を読む遊び）を邪魔しない遅さにとどめる。
+// 星は角度 ±SKY.span の帯に置き、帯の端（画面の外）で反対側へ戻る。密度は元の 80 個/画面と同程度。
+const SKY = { cy: GY + CURVE.R, span: 30 * Math.PI / 180, r0: CURVE.R + GY - 480 - 30, r1: 1000, n: 195, w: 1 / 800, wBright: 0.6 };
+const STARS = Array.from({ length: SKY.n }, () => {
+  const r = Math.sqrt(SKY.r0 * SKY.r0 + rnd() * (SKY.r1 * SKY.r1 - SKY.r0 * SKY.r0)), th = (rnd() * 2 - 1) * SKY.span, sz = 0.4 + rnd() * 0.9, a = 0.25 + rnd() * 0.6;
+  return { rr: r, th, r: sz, a, w: SKY.w * (sz > 1.0 || a > 0.7 ? SKY.wBright : 1) };
+});
+const starPos = (st, t) => { const th = ((st.th - st.w * t + SKY.span) % (2 * SKY.span) + 2 * SKY.span) % (2 * SKY.span) - SKY.span; return { x: CURVE.cx + st.rr * Math.sin(th), y: SKY.cy - st.rr * Math.cos(th) }; };
 const PEBBLES = Array.from({ length: 90 }, () => { const x = rnd() * W; return { x, dy: 3 + rnd() * 40, r: 0.8 + rnd() * 2.6, s: rnd() }; });
 
 const lab = createLab({
@@ -234,10 +242,11 @@ function clang(k) {
 }
 
 // ---------------------------------------------------------------- 描画
-function onDrawBack(ctx) {
+function onDrawBack(ctx, l) {
   const g = ctx.createLinearGradient(0, 0, 0, 540); g.addColorStop(0, '#010207'); g.addColorStop(1, '#0b0d16');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  for (const s of STARS) { ctx.fillStyle = rgba('#ffffff', s.a); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill(); }
+  const t = l.clock;
+  for (const st of STARS) { const q = starPos(st, t); if (q.x < -2 || q.x > W + 2 || q.y < -2 || q.y > 545) continue; ctx.fillStyle = rgba('#ffffff', st.a); ctx.beginPath(); ctx.arc(q.x, q.y, st.r, 0, 7); ctx.fill(); }
   const sun = ctx.createRadialGradient(28, 60, 2, 28, 60, 120); sun.addColorStop(0, 'rgba(255,244,214,0.9)'); sun.addColorStop(0.08, 'rgba(255,230,180,0.35)'); sun.addColorStop(1, 'rgba(255,220,160,0)');
   ctx.fillStyle = sun; ctx.fillRect(0, 0, 160, 190);
   ctx.fillStyle = '#7fb4ff'; ctx.beginPath(); ctx.arc(300, 150, 1.8, 0, 7); ctx.fill();   // 地球（遠い青い点）
@@ -421,5 +430,5 @@ sh.addResetButton();
 if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=62954a6e44').then((mod) => mod.install(lab));
 window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
-window.__tag = { GY, TGT, CLEAR, ROCKS, ENTRY, CURVE, arcY, REBOUND, SETTLE, AWAY, PERFECT, TOUCH_TILT, LINE_Y, terrain, footSlopeDeg };
+window.__tag = { SKY, STARS, starPos, GY, TGT, CLEAR, ROCKS, ENTRY, CURVE, arcY, REBOUND, SETTLE, AWAY, PERFECT, TOUCH_TILT, LINE_Y, terrain, footSlopeDeg };
 lab.start();
