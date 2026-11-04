@@ -10,7 +10,7 @@ import { P } from '../../../02_src/core/palette.js?v=a36de9d9c3';
 import { createShell, LIFE_LOST_S, mmss } from '../00_harness/shell.js?v=812922afc6';
 
 const sh = createShell({ id: 'anchor', expLabel: 'EXPEDITION 04', title: 'COMET 67P ANCHOR',
-  brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が舞うとガスが来る。押されたら逆へ噴く', fact: ['67P はチュリュモフ・ゲラシメンコ彗星の番号。', '2014 年、着陸機フィラエは銛が作動せず、', '跳ねて日陰に止まった。'] } });
+  brief: { title: 'COMET 67P — ANCHOR', sub: '彗星に錨を打つ', goals: ['・二つの塊のくびれの底にある目標へ降りる', '・10 px/s 以下で触れると錨が刺さって成功', '・速すぎると跳ね返る。横からのガスに注意'], stars: ['クリア', '一度も跳ね返らずに錨', 'PERFECT タッチ（3 以下・直立）'], tip: 'コツ：霜が多いと強いガス。押されたら逆へ噴く', fact: ['67P はチュリュモフ・ゲラシメンコ彗星の番号。', '2014 年、着陸機フィラエは銛が作動せず、', '跳ねて日陰に止まった。'] } });
 const sess = sh.sess;
 const OUT = { x0: -10, x1: 370, y0: -30 };
 const GY = 524;                               // くびれの底の高さ（目標はここで平ら）
@@ -28,6 +28,9 @@ const BOULDERS = [{ x: 163, r: 8, h: 9 }, { x: 236, r: 7, h: 8 }, { x: 74, r: 10
 const JETS = [{ x: 128, dir: 1, P: 10, O: 4.0 }, { x: 268, dir: -1, P: 10, O: 9.0 }];
 const JET = { tele: 1.2, rise: 0.3, hold: 1.6, fade: 0.8, len: 150 };   // 前触れ / 立ち上がり / 最大 / 消える（秒）/ 届く長さ px
 const JET_S = JET.rise + JET.hold + JET.fade;
+const GAS_LV = [3, 5, 7];                     // 1 回ごとのガスの強さ（弱・中・強、px/s²。スライダー jet = 5 を基準に比例）
+// 跳ね返り: 上へ POP の速さで跳ね、REB.h px 上で止まり、そのまま REB.vt px/s のゆっくりした降下に戻る（逆さにして噴かなくても降り直せる）
+const REB = { h: 24, vt: 5, pop0: 6, k: 0.6, popMin: 10, popMax: 18, spin: 2, vxK: 1.0 };
 
 // ---- 地形 ----------------------------------------------------------------------------------------
 const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -54,20 +57,28 @@ const ICE = Array.from({ length: 70 }, () => { const x = rnd() * W; return { x, 
 const MOTES = Array.from({ length: 34 }, () => ({ x: rnd() * W, y: rnd() * 520, s: 4 + rnd() * 10, r: 0.5 + rnd() * 1.1, ph: rnd() * 7 }));
 
 // ---- ガスの時間関係（T = 開始からの秒）----------------------------------------------------------
+// n = 何回目の噴出か（前触れの間は次の回）。強さは n ごとに決まる
 function jetAt(j, T) {
-  let a = -1, toNext;
-  if (T < j.O) toNext = j.O - T;
-  else { const u = (T - j.O) % j.P; if (u < JET_S) a = u; toNext = j.P - u; }
+  let a = -1, toNext, n;
+  if (T < j.O) { toNext = j.O - T; n = 0; }
+  else { const c = Math.floor((T - j.O) / j.P), u = (T - j.O) - c * j.P; if (u < JET_S) { a = u; n = c; } else n = c + 1; toNext = j.P - u; }
   const tele = a < 0 && toNext < JET.tele ? 1 - toNext / JET.tele : 0;
   const env = a < 0 ? 0 : a < JET.rise ? a / JET.rise : a < JET.rise + JET.hold ? 1 : Math.max(0, 1 - (a - JET.rise - JET.hold) / JET.fade);
-  return { a, tele, env, toNext };
+  return { a, tele, env, toNext, n };
 }
-// 位置 (x, y) での横向き加速度 px/s²（噴出口から離れるほど弱く、縦は噴流の幅で減る）
-function jetForce(j, x, y, T, f) {
+// 噴出口 ji の n 回目の強さ（GAS_LV のどれか）。seed はラン開始ごとに変わる（同じランの中では決まっている）
+function gasLevel(seed, ji, n) {
+  let h = (seed ^ Math.imul(ji + 1, 0x9E3779B1) ^ Math.imul(n + 1, 0x85EBCA77)) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x2C1B3C6D) >>> 0; h = Math.imul(h ^ (h >>> 12), 0x297A2D39) >>> 0; h = (h ^ (h >>> 15)) >>> 0;
+  return GAS_LV[h % GAS_LV.length];
+}
+const gasK = (m, ji, n) => gasLevel(m.gasSeed, ji, n) / 5;   // 強さの倍率（弱 0.6・中 1・強 1.4）
+// 位置 (x, y) での横向き加速度 px/s²（噴出口から離れるほど弱く、縦は噴流の幅で減る）。k = その回の強さの倍率
+function jetForce(j, x, y, T, f, k = 1) {
   const e = jetAt(j, T).env; if (!e) return 0;
   const d = (x - j.x) * j.dir; if (d < -4 || d > JET.len) return 0;
   const hw = 7 + 0.22 * Math.max(0, d), dy = y - j.y;
-  return j.dir * f * e * (1 - 0.5 * Math.max(0, d) / JET.len) * Math.exp(-(dy * dy) / (hw * hw));
+  return j.dir * f * k * e * (1 - 0.5 * Math.max(0, d) / JET.len) * Math.exp(-(dy * dy) / (hw * hw));
 }
 
 const lab = createLab({
@@ -81,7 +92,7 @@ const lab = createLab({
   world: { terrain, pads: [] },
   start, onUpdate, onTouchdown, onLiftoff, onCrash, onTap, forces,
   onDrawBack, onDrawMid, onDrawFront, drawTerrain, hud: false,
-  telemetryExtra: (l) => `anchored ${l.m.phase === 'anchor' || l.m.result === 'win' ? 'yes' : 'no'}  bounces ${l.m.bounces}  bumps ${l.m.bumps}\njet ${JETS.map((j) => jetAt(j, l.m.flyT).env.toFixed(2)).join(' / ')}  push ${l.m.push.toFixed(2)}`,
+  telemetryExtra: (l) => `anchored ${l.m.phase === 'anchor' || l.m.result === 'win' ? 'yes' : 'no'}  bounces ${l.m.bounces}  bumps ${l.m.bumps}\njet ${JETS.map((j) => jetAt(j, l.m.flyT).env.toFixed(2)).join(' / ')}  push ${l.m.push.toFixed(2)}  gas ${JETS.map((j, i) => gasLevel(l.m.gasSeed, i, jetAt(j, l.m.flyT).n)).join('/')}${l.m.reb ? '  rebound' : ''}`,
 });
 const wrap180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
 const speedOf = (s) => Math.hypot(s.vx, s.vy);
@@ -92,7 +103,8 @@ function start(l) {
   l.resetShip({ x: ENTRY.x, y: ENTRY.y, vx: 0, vy: 0, angle: 0 });
   l.frozen = true; l.controlsEnabled = false;   // 開始待ち
   l.m = { menu: sess.mode === 'menu', waiting: true, started: false, flyT: 0, relT: 0, phase: null, anchorT: 0, touch: null, touchX: TGT.x, push: 0,
-    strandT: 0, result: null, resultT: 0, final: null, failed: false, lifeLost: false, toast: '', toastT: 0, toastBad: false, bumpT: 0, shakeT: 0, bumps: 0, bounces: 0, bounceT: 0, hissed: [-1, -1] };
+    strandT: 0, result: null, resultT: 0, final: null, failed: false, lifeLost: false, toast: '', toastT: 0, toastBad: false, bumpT: 0, shakeT: 0, bumps: 0, bounces: 0, bounceT: 0, hissed: [-1, -1],
+    reb: null, gasSeed: (Math.random() * 4294967296) >>> 0 };
   if (l.m.menu) l.hideShip = true;
 }
 const begin = (l, mode, opt) => sh.begin(l, mode, opt);
@@ -134,8 +146,12 @@ function win(l) {
 // ---------------------------------------------------------------- 外力と接触（物理サブステップごと）
 function forces(l, dt) {
   const m = l.m, s = l.ship, pr = l.params; if (!m.started || m.result || m.phase) return;
-  let push = 0; for (const j of JETS) push += jetForce(j, s.x, s.y, m.flyT, pr.jet);
+  let push = 0; JETS.forEach((j, i) => { push += jetForce(j, s.x, s.y, m.flyT, pr.jet, gasK(m, i, jetAt(j, m.flyT).n)); });
   s.vx += push * dt; m.push = push;
+  if (m.reb) {   // 跳ね返りの後: 下向きに引き戻して REB.h px 上で止め、REB.vt px/s の降下に戻す。横の流れも弱める
+    s.vy += m.reb.a * dt; s.vx *= Math.exp(-REB.vxK * dt);
+    if (s.vy >= REB.vt) { s.vy = Math.min(s.vy, REB.vt); m.reb = null; }
+  }
   const nx = s.x + s.vx * dt, ny = s.y + s.vy * dt, sp = speedOf(s);
   // 壁（塊の側面）に機体の横がぶつかる: そっとなら押し返す、速ければ墜落
   for (const sx of [-1, 1]) {
@@ -153,7 +169,9 @@ function forces(l, dt) {
     if (sp <= pr.vtouch && tilt <= TOUCH_TILT) return anchor(l, { sp, tilt, om, dx });
     const B = C.BOUNCE;
     if (Math.abs(s.vy) <= B.vy && Math.abs(s.vx) <= B.vx && tilt <= B.ang && om <= B.om) {   // 錨が刺さらず大きく跳ね返る（墜落ではない）
-      s.vy = -Math.max(4, 0.6 * Math.abs(s.vy)); s.vx = s.vx * 0.7 + (dx >= 0 ? 1 : -1) * 2; s.omega += (dx >= 0 ? 1 : -1) * 12; s.y = Math.min(s.y, GY - C.LEG_Y - 0.5);
+      const pop = Math.max(REB.popMin, Math.min(REB.popMax, REB.pop0 + REB.k * Math.abs(s.vy)));
+      s.vy = -pop; s.vx = s.vx * 0.7 + (dx >= 0 ? 1 : -1) * 2; s.omega += (dx >= 0 ? 1 : -1) * REB.spin; s.y = Math.min(s.y, GY - C.LEG_Y - 0.5);
+      m.reb = { a: pop * pop / (2 * REB.h), pop, y0: s.y, peak: s.y };
       m.bounces++; m.bounceT = 1.2; m.shakeT = 0.25; clang(0.6);
       toast(l, sp > pr.vtouch ? 'TOO FAST · ANCHOR FAILED (' + sp.toFixed(0) + ' > ' + pr.vtouch + ')' : 'TILTED · ANCHOR FAILED', 2.4, true);
     }
@@ -191,7 +209,8 @@ function onUpdate(l, dt) {
     return;
   }
   m.flyT += dt;
-  JETS.forEach((j, i) => { const a = jetAt(j, m.flyT); if (a.a >= 0 && m.hissed[i] !== Math.floor((m.flyT - j.O) / j.P)) { m.hissed[i] = Math.floor((m.flyT - j.O) / j.P); hiss(); } });
+  if (m.reb) m.reb.peak = Math.min(m.reb.peak, s.y);
+  JETS.forEach((j, i) => { const a = jetAt(j, m.flyT); if (a.a >= 0 && m.hissed[i] !== a.n) { m.hissed[i] = a.n; hiss(gasK(m, i, a.n)); } });
   if (s.x < OUT.x0 || s.x > OUT.x1 || s.y < OUT.y0) return l.crash('LEFT THE AREA', 'You drifted out of range');
   if (sh.fuelOut(l, dt, onCrash)) return;   // 燃料切れ: 流れて DRIFT_S 秒で LOST CONTROL
   if (m.bumpT > 0) m.bumpT -= dt;
@@ -204,12 +223,12 @@ let actx = null, noiseBuf = null;
 const audioWake = () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) { /* 音なし */ } };
 const audioOn = () => actx && !lab.script;
 const noise = () => { if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } return noiseBuf; };
-function hiss() {   // ガスの噴出: 低めのシューという音（噴出の長さ）
+function hiss(k = 1) {   // ガスの噴出: 低めのシューという音（噴出の長さ）。強いガスほど大きく低い
   if (!audioOn()) return;
   try {
     const t = actx.currentTime, src = actx.createBufferSource(); src.buffer = noise();
-    const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.5;
-    const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + JET.rise); g.gain.setValueAtTime(0.07, t + JET.rise + JET.hold); g.gain.exponentialRampToValueAtTime(0.0001, t + JET_S);
+    const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100 - 300 * k; f.Q.value = 0.5;
+    const v = 0.07 * k, g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + JET.rise); g.gain.setValueAtTime(v, t + JET.rise + JET.hold); g.gain.exponentialRampToValueAtTime(0.0001, t + JET_S);
     src.connect(f); f.connect(g); g.connect(actx.destination); src.start(t); src.stop(t + JET_S + 0.05);
   } catch (e) { /* 音なしでも続行 */ }
 }
@@ -312,27 +331,30 @@ function drawTarget(ctx, l) {
 function onDrawMid(ctx, l) {
   const p = P(), m = l.m, t = l.clock; if (m.menu) return;
   const T = m.flyT;
-  for (const j of JETS) {
-    const st = m.started ? jetAt(j, T) : { tele: 0, env: 0, a: -1 };
+  JETS.forEach((j, ji) => {
+    const st = m.started ? jetAt(j, T) : { tele: 0, env: 0, a: -1, n: 0 };
+    const k = m.started ? gasK(m, ji, st.n) : 1, lv = k < 0.8 ? 0 : k > 1.2 ? 2 : 1;   // 0 弱 / 1 中 / 2 強
     ctx.save();
     ctx.fillStyle = '#0a0908'; ctx.beginPath(); ctx.ellipse(j.x, j.y + 1, 3, 5, 0, 0, 7); ctx.fill();   // 噴出口
     ctx.fillStyle = rgba('#bfe6ff', 0.25 + 0.6 * Math.max(st.tele, st.env)); ctx.beginPath(); ctx.arc(j.x + j.dir * 2, j.y, 2, 0, 7); ctx.fill();
-    if (st.tele > 0) {   // 前触れ: 霜が舞う + 届く範囲の点線 + 「GAS」
-      for (let i = 0; i < 10; i++) { const q = (t * 1.7 + i / 10) % 1; ctx.fillStyle = rgba('#e8f6ff', (1 - q) * 0.8 * st.tele); ctx.beginPath(); ctx.arc(j.x + j.dir * (3 + q * 16), j.y - 4 + Math.sin(i * 3.1) * 7 * q, 1.1, 0, 7); ctx.fill(); }
-      ctx.setLineDash([3, 4]); ctx.strokeStyle = rgba('#bfe6ff', 0.45 * st.tele); ctx.lineWidth = 1;
+    if (st.tele > 0) {   // 前触れ: 霜が舞う（強いガスほど多く・遠くまで）+ 届く範囲の点線 + 「GAS」（強いほど大きい）
+      const nf = [5, 12, 24][lv], reach = [10, 16, 26][lv];
+      for (let i = 0; i < nf; i++) { const q = (t * 1.7 + i / nf) % 1; ctx.fillStyle = rgba('#e8f6ff', (1 - q) * 0.8 * st.tele); ctx.beginPath(); ctx.arc(j.x + j.dir * (3 + q * reach), j.y - 4 + Math.sin(i * 3.1) * (5 + 3 * lv) * q, 0.9 + 0.25 * lv, 0, 7); ctx.fill(); }
+      ctx.setLineDash([3, 4]); ctx.strokeStyle = rgba('#bfe6ff', (0.25 + 0.2 * lv) * st.tele); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(j.x, j.y - 7); ctx.lineTo(j.x + j.dir * JET.len, j.y - 7 - 0.22 * JET.len); ctx.moveTo(j.x, j.y + 7); ctx.lineTo(j.x + j.dir * JET.len, j.y + 7 + 0.22 * JET.len); ctx.stroke(); ctx.setLineDash([]);
-      txt(ctx, 'GAS', j.x + j.dir * 22, j.y - 20, 7.5, p.warn, 'center', { w: 800, sp: 1.5, a: 0.5 + 0.5 * Math.sin(t * 14) });
+      txt(ctx, lv === 2 ? 'GAS!' : 'GAS', j.x + j.dir * 22, j.y - 20 - 2 * lv, [6.5, 7.5, 9.5][lv], lv === 2 ? p.bad : p.warn, 'center', { w: 800, sp: 1.5, a: 0.5 + 0.5 * Math.sin(t * 14) });
     }
     if (st.env > 0) {   // 噴出中
-      const cg = ctx.createLinearGradient(j.x, 0, j.x + j.dir * JET.len, 0); cg.addColorStop(0, rgba('#e6f4ff', 0.32 * st.env)); cg.addColorStop(1, rgba('#e6f4ff', 0));
+      const cg = ctx.createLinearGradient(j.x, 0, j.x + j.dir * JET.len, 0); cg.addColorStop(0, rgba('#e6f4ff', (0.18 + 0.14 * k) * st.env)); cg.addColorStop(1, rgba('#e6f4ff', 0));
       ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(j.x, j.y - 6); ctx.lineTo(j.x + j.dir * JET.len, j.y - 6 - 0.22 * JET.len); ctx.lineTo(j.x + j.dir * JET.len, j.y + 6 + 0.22 * JET.len); ctx.lineTo(j.x, j.y + 6); ctx.closePath(); ctx.fill();
-      for (let i = 0; i < 40; i++) {
-        const q = (t * 1.3 + i / 40) % 1, d = q * JET.len, hw = 7 + 0.22 * d;
+      const np = Math.round(40 * k);
+      for (let i = 0; i < np; i++) {
+        const q = (t * (0.9 + 0.4 * k) + i / np) % 1, d = q * JET.len, hw = 7 + 0.22 * d;
         ctx.fillStyle = rgba('#f2f9ff', 0.5 * st.env * (1 - q)); ctx.beginPath(); ctx.arc(j.x + j.dir * d, j.y + Math.sin(i * 7.3) * hw * 0.8, 1 + 3 * q, 0, 7); ctx.fill();
       }
     }
     ctx.restore();
-  }
+  });
 }
 
 // HUD（左上）: 燃料 + SPEED（合成速度。≤vtouch で緑）/ TILT（≤20 で緑）/ SPIN / ALT
@@ -402,8 +424,8 @@ function onDrawFront(ctx, l) {
 
 sh.bindLab(lab);
 sh.addResetButton();
-if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=24a7fba2c8').then((mod) => mod.install(lab));
+if (new URLSearchParams(location.search).get('test') === '1') import('./autotest.js?v=65add40752').then((mod) => mod.install(lab));
 window.__score = { mult: sh.lifeMult, timeBonus: sh.timeBonus, KEY_B: sh.KEY_B, KEY_T: sh.KEY_T, KEY_S: sh.KEY_S };
 window.__flow = { sess, begin: (mode, opt) => begin(lab, mode, opt), tap: (x, y) => onTap(lab, x, y), BTN: sh.BTN, LIFE_LOST_S };
-window.__tag = { GY, TGT, CLEAR, LOBES, BOULDERS, JETS, JET, ENTRY, PERFECT, TOUCH_TILT, ANCHOR_S, HULL, jetAt, jetForce, terrain, terrainFn, footSlopeDeg };
+window.__tag = { GY, TGT, CLEAR, LOBES, BOULDERS, JETS, JET, GAS_LV, REB, gasLevel, gasK, ENTRY, PERFECT, TOUCH_TILT, ANCHOR_S, HULL, jetAt, jetForce, terrain, terrainFn, footSlopeDeg };
 lab.start();

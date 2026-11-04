@@ -1,4 +1,5 @@
 // テスト専用（?test=1 のときだけ mission.js が読み込む）。window.__auto に検証用の自動操縦を置く。
+// ガスの強さはラン開始ごとに変わる（opt.seed で固定できる）。
 // 流れ: waiting(タップで開始) → 塊より上の高さで目標の真上へ → くびれへ降下して touchV で接触 → 錨 → 演出 → 勝利。
 // 注意: 姿勢と横速度は「理想的に」直接セットする（横の補正は最大 5 px/s² = 機体を倒して全推力と同程度）。人間の腕前の保証ではない。
 // ガスの押し・接触（錨・跳ね返り・壁と岩の押し返し）は理想化せず本物の物理で動く。
@@ -29,6 +30,7 @@ export function install(lab) {
   const step = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) lab.step(1 / 60); };
   const run = (opt = {}) => {
     if (opt.mode) F().begin(opt.mode, opt); else lab.reset();
+    if (opt.seed != null) lab.m.gasSeed = opt.seed >>> 0;   // ガスの強さの並びを固定
     const ctl = makeCtl(opt), log = []; let last = '';
     if (lab.m.waiting) { step(opt.wait || 1); F().tap(180, 320); }
     for (let i = 0; i < 60 * 150; i++) {
@@ -58,10 +60,16 @@ export function install(lab) {
     fresh(); place(TGT.x + 14, 1, 0, 9.5); until(() => lab.m.phase === 'anchor'); ok.anchor.push(lab.m.phase === 'anchor' && !lab.m.final.s3);
     fresh(); place(TGT.x, 1, 5, 6); until(() => lab.m.phase === 'anchor' || lab.m.bounces > 0); ok.anchor.push(lab.m.phase === 'anchor');
     fresh(); place(TGT.x, 1, 0, 2.5, 8); until(() => lab.m.phase === 'anchor'); ok.anchor.push(lab.m.phase === 'anchor' && !lab.m.final.s3);
-    // 速すぎ（14 px/s）→ 錨なし・大きく跳ね返る・墜落でない。その後そっと触れて錨 → ★2 なし
+    // 速すぎ（14 px/s）→ 錨なし・跳ね返る・墜落でない。操作しなくても REB.h px ほど上で止まり、ゆっくり降りて錨 → ★2 なし（燃料は減らない）
     fresh(); place(TGT.x, 1, 0, 14); until(() => lab.m.bounces > 0);
-    ok.bounce = [!lab.m.phase, lab.ship.vy < -7, !lab.m.result, lab.m.bounces === 1]; step(1); ok.bounce.push(!lab.m.result, lab.ship.y < GY - 16 - 5);
-    place(TGT.x, 1, 0, 2); until(() => lab.m.phase === 'anchor'); ok.bounce.push(lab.m.phase === 'anchor' && lab.m.final.s2 === false && lab.m.final.bounces === 1);
+    ok.bounce = [!lab.m.phase, lab.ship.vy < -7, !lab.m.result, lab.m.bounces === 1, !!lab.m.reb]; step(1); ok.bounce.push(!lab.m.result, lab.ship.y < GY - 16 - 5);
+    { let peak = lab.ship.y, vmax = 0, tb = 0; const y0 = GY - 16;
+      for (let i = 0; i < 20 * 60 && lab.m.phase !== 'anchor' && !lab.m.result; i++) { lab.step(1 / 60); tb += 1 / 60; peak = Math.min(peak, lab.ship.y); if (!lab.m.reb) vmax = Math.max(vmax, lab.ship.vy); }
+      const h = y0 - peak; ok.bounce.push(h > T.REB.h - 6 && h < T.REB.h + 8, vmax <= T.REB.vt + 0.3, lab.m.phase === 'anchor' && lab.m.final.s2 === false && lab.m.final.bounces === 1, lab.ship.fuel === 100, tb < 14);
+      window.__lastBounce = { h: +h.toFixed(1), t: +(tb + 1).toFixed(1), vmax: +vmax.toFixed(2), tilt: lab.m.touch && +lab.m.touch.tilt.toFixed(1) }; }
+    // 最大の跳ね返り（40 px/s）でも高さは REB.h 前後で、戻ってこられる
+    fresh(); place(TGT.x, 1, 0, 40); until(() => lab.m.bounces > 0); { let peak = lab.ship.y; for (let i = 0; i < 20 * 60 && lab.m.phase !== 'anchor' && !lab.m.result; i++) { lab.step(1 / 60); peak = Math.min(peak, lab.ship.y); }
+      ok.bounce.push(GY - 16 - peak < T.REB.h + 8, lab.m.phase === 'anchor'); }
     // 傾き 25°・低速 → 跳ね返る / 50 px/s → 墜落
     fresh(); place(TGT.x, 1, 0, 3, 25); until(() => lab.m.bounces > 0); ok.bounce.push(!lab.m.phase, !lab.m.result, lab.ship.vy < 0);
     fresh(); place(TGT.x, 3, 0, 50); until(() => lab.m.result); ok.bounce.push(lab.m.result === 'lose' && lab.m.reason === 'HARD IMPACT');
@@ -79,6 +87,14 @@ export function install(lab) {
     ok.jet.push(T.jetForce(J2, J2.x - 60, J2.y, t2, 5) < -2);
     fresh(); lab.params.jet = jet0; lab.m.flyT = tFull - 0.05; Object.assign(lab.ship, { x: J.x + 50, y: J.y, vx: 0, vy: 0, angle: 0, omega: 0 }); step(0.5);
     ok.jet.push(lab.ship.vx > 1, !lab.m.result);
+    // 強さは 1 回ごとに 3 / 5 / 7 のどれか（同じ seed なら同じ並び、seed が違えば並びも違う）。強いほど強く押す
+    const seq = (sd) => Array.from({ length: 24 }, (_, n) => T.gasLevel(sd, 0, n)).join(',');
+    const lvs = new Set(); for (let n = 0; n < 30; n++) for (const ji of [0, 1]) lvs.add(T.gasLevel(12345, ji, n));
+    ok.gas = [lvs.size === 3 && [3, 5, 7].every((v) => lvs.has(v)), seq(1) === seq(1), seq(1) !== seq(2), T.jetForce(J, J.x + 60, J.y, tFull, 5, 1.4) > 1.9 * T.jetForce(J, J.x + 60, J.y, tFull, 5, 0.6)];
+    const seedFor = (lv) => { for (let sd = 1; sd < 5000; sd++) if (T.gasLevel(sd, 0, 0) === lv) return sd; return null; };
+    const pushWith = (sd) => { fresh(); lab.params.jet = jet0; lab.m.gasSeed = sd; lab.m.flyT = tFull - 0.05; Object.assign(lab.ship, { x: J.x + 50, y: J.y, vx: 0, vy: 0, angle: 0, omega: 0 }); step(0.5); return lab.ship.vx; };
+    const vW = pushWith(seedFor(3)), vS = pushWith(seedFor(7)); ok.gas.push(vS > 2 * vW, vW > 0.5);
+    { let tele = null; for (let tt = J.O + J.P - 1; tt < J.O + J.P; tt += 0.01) if (T.jetAt(J, tt).tele > 0) { tele = tt; break; } ok.gas.push(tele != null && T.jetAt(J, tele).n === T.jetAt(J, J.O + J.P + 0.5).n); }   // 前触れの強さ = その次の噴出の強さ
     // 失敗: 画面外 / 燃料 0 のまま 2 秒
     fresh(); Object.assign(lab.ship, { x: 100, y: -40, vx: 0, vy: -5 }); step(0.2); ok.fail = [lab.m.reason === 'LEFT THE AREA'];
     fresh(); lab.ship.fuel = 0; lab.ship.y = 200; const fx0 = lab.ship.x, fy0 = lab.ship.y; step(1.5); ok.fail.push(!lab.m.result, Math.hypot(lab.ship.x - fx0, lab.ship.y - fy0) > 3, Math.abs(lab.ship.omega) >= 9); step(4); ok.fail.push(lab.m.reason === 'LOST CONTROL', lab.state !== 'crashed', !lab.hideShip, lab.frozen === true);   // 燃料切れ: 爆発せず流れて 5 秒で LOST CONTROL
@@ -136,9 +152,9 @@ export function install(lab) {
   };
   // 通常クリア（ミッション）: 接触速度・狙いのずれを変える（ガスの時刻は開始からなので全回同じ。降り方の違いで当たり方が変わる）
   const five = () => {
-    const rows = [[2, 0], [6, 10], [4, -12], [2.5, 4], [9, 0], [5, -6]].map(([touchV, aimDx]) => {
-      const r = run({ mode: 'mission', touchV, aimDx });
-      return { touchV, aimDx, ok: r.result === 'win' && r.final.lives === 3, t: +r.t.toFixed(1), fuel: r.final && Math.round(r.final.fuel), sp: r.touch && +r.touch.sp.toFixed(1), dx: r.touch && +r.touch.dx.toFixed(1), s2: r.final && r.final.s2, s3: r.final && r.final.s3, bumps: r.bumps, why: r.result === 'win' ? '' : r.reason + ' / ' + r.log };
+    const rows = [[2, 0], [6, 10], [4, -12], [2.5, 4], [9, 0], [5, -6]].map(([touchV, aimDx], i) => {
+      const seed = 101 + i * 7919, r = run({ mode: 'mission', touchV, aimDx, seed });
+      return { touchV, aimDx, seed, ok: r.result === 'win' && r.final.lives === 3, t: +r.t.toFixed(1), fuel: r.final && Math.round(r.final.fuel), sp: r.touch && +r.touch.sp.toFixed(1), dx: r.touch && +r.touch.dx.toFixed(1), s2: r.final && r.final.s2, s3: r.final && r.final.s3, bumps: r.bumps, why: r.result === 'win' ? '' : r.reason + ' / ' + r.log };
     });
     localStorage.removeItem(window.__score.KEY_B); localStorage.removeItem(window.__score.KEY_T); lab.script = null; F().begin('menu');
     return { rows, pass: rows.every((r) => r.ok) };
