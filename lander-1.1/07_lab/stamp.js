@@ -2,6 +2,7 @@
 // 07_lab の .html/.js が参照する「相対の .js/.css」に ?v=<対象ファイルの内容ハッシュ> を刻む（キャッシュ対策）。
 // 依存順に固定点まで繰り返す（最大6回）ので、import 先のハッシュ変化が上流へ伝わる。外部URLは触らない。
 // 使い方: node 07_lab/stamp.js   （lab を変更したらコミット前に実行）
+// 02_src/expedition/（EXPEDITION の正本。試作ページが import する）も刻む。本編のバンドルは import 行ごと消すので影響しない。
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const ROOT = __dirname;
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : /\.(html|js)$/.test(e.name) && e.name !== 'stamp.js' ? [path.join(d, e.name)] : []);
@@ -21,7 +22,7 @@ function hashOf(f, stack = []) {
 let changed = 0;
 for (let pass = 1; pass <= 6; pass++) {
   cache.clear(); let n = 0;
-  for (const f of walk(ROOT)) {
+  for (const f of [...walk(ROOT), ...walk(path.join(ROOT, '..', '02_src', 'expedition'))]) {
     const src = fs.readFileSync(f, 'utf8');
     const out = src.replace(RE, (m, pre, q, rel, old) => {
       const abs = path.resolve(path.dirname(f), rel);
