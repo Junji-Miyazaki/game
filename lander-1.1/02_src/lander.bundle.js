@@ -10586,6 +10586,7 @@ const PAD_Y_RANGE = 60;   // パッド面Y = PAD_Y_MIN .. PAD_Y_MIN+60 (=515)。
 
 // ---- Continues / bonus / landing sequence ----
 const CONTINUES_MAX     = 3;
+const WORLD_RETRY_MS    = 21000;   // 中継の同一 IP 送信間隔（20 秒）より少し長く待って送り直す
 const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
 const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
 const BOUNCE_AIRBORNE_PX = 30;   // 地面からこれ以上離れたら「離陸」とみなしバウンス状態を解除
@@ -10949,6 +10950,7 @@ class Game extends Scene {
 
   exit() {
     if (this._suspended) { this._duck(false); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; return; }   // 寄り道へ: 音だけ止めて状態は保持
+    if (this.state !== 'gameover') { try { const pw = this._worldSend(false); if (pw) pw.catch(() => {}); } catch (_) { /* ignore */ } }   // 途中でタイトルへ戻った: ここまでの得点を送る（CONTINUE MISSION は残る）
     this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
@@ -11635,13 +11637,33 @@ class Game extends Scene {
     if (!dbgRun && relayEnabled() && this.totalScore > 0) {
       const score = this.totalScore, tok = this._champTok = (this._champTok || 0) + 1;
       try {
-        Promise.resolve(WorldNet.submit({ name: nm, score, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined })).then((r) => {
+        Promise.resolve(this._worldSend(true, nm, prof)).then((r) => {
           if (r && r.ok === false && r.error === 'updating') this._worldNote = 'WORLD: UPDATING';
           else if (r && r.ok === false && (r.status === 403 || r.status === 409)) this._worldNote = 'WORLD: NAME OWNED BY ANOTHER DEVICE';
           if (r && r.ok === true && prof && prof.key) return this._maybeChampion(nm, prof.key, score, tok);
         }, () => {}).catch(() => {});
       } catch (_) { /* 送信失敗はゲームに影響させない */ }
     }
+  }
+
+  // ---- 世界ランキングへの送信（beta.9）----
+  // GAME OVER だけでなく、ステージをクリアするたび（途中でタブを閉じても載る）と、途中でタイトルへ戻った時にも送る。
+  // 中継は名前ごとに最高点だけを残すので、何度送っても記録は増えない。送るのは「このランで送った最高」より高い時だけ（force = GAME OVER は称号判定のため常に）。
+  // 中継の同一 IP 20 秒の制限（429）に当たったら、1 回だけ待って送り直す。失敗したら次の機会に送り直せるよう送信済みの値を戻す。
+  _worldSend(force, name, prof) {
+    if (this._isDebugRun() || !relayEnabled()) return null;
+    const score = this.totalScore; if (!(score > 0)) return null;
+    const prev = this._worldSent || 0;
+    if (!force && score <= prev) return null;
+    if (prof === undefined) { try { prof = getActiveProfile(this.engine.storage); } catch (_) { prof = null; } }
+    if (!force && !(prof && prof.key)) return null;   // 名前の鍵がない送信は中継が受け付けない
+    const e = { name: name || (prof && prof.name) || 'PILOT', score, stage: this.stage, startStage: this.startStage, key: prof ? prof.key : undefined };
+    this._worldSent = Math.max(prev, score);
+    const send = () => Promise.resolve(WorldNet.submit(e));
+    return send()
+      .then((r) => (r && r.ok === false && r.status === 429 ? new Promise((res) => setTimeout(res, WORLD_RETRY_MS)).then(send) : r))
+      .then((r) => { if (!(r && r.ok === true) && this._worldSent === score) this._worldSent = prev; return r; },
+        () => { if (this._worldSent === score) this._worldSent = prev; return null; });
   }
 
   // 送信成功後に WORLD を再取得。自分が #1 で、この記録のスコアなら称号入力（NEW WORLD RECORD）を出す。失敗・遅延しても何もしない
@@ -12350,6 +12372,7 @@ class Game extends Scene {
       if (wpScore > 0) this._breakdown.push(['WAYPOINT', wpScore]);
     }
     this.totalScore  += this._stageScore;
+    try { const pw = this._worldSend(false); if (pw) pw.catch(() => {}); } catch (_) { /* 送信失敗はゲームに影響させない */ }   // クリアのたびに世界ランキングへ（最高点だけ残る）
     // グレード: 最初の接触の速度・姿勢（バウンスしても最初の衝撃で評価）とパッド中心からの距離。PERFECT は祝福に星のバーストが付く
     const c0 = this._contact0 || { vy: landVy, vx: landVx, ang: absAngle || 0, om: absOmega || 0 };
     this._contact0 = null;
