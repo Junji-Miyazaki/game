@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LIGHTHOUSE 試作 v8</title>
+<style>
+  body { margin: 0; background: #1b1f26; color: #c9ced6; font: 13px -apple-system, "Helvetica Neue", sans-serif; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 16px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 8px; cursor: pointer; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  button { background: transparent; color: inherit; border: 1px solid #555c66; border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
+  p { color: #8d949e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="cv" width="640" height="360"></canvas>
+  <div class="bar"><button id="b1"></button><button id="b2"></button><button id="b3"></button><button id="rs">最初から</button><button id="ff">早送り ×1</button></div>
+  <p>試作 v8（2026-11-06）。会話の中で作った見本をそのまま保存したもの。本編のコードではない。クリックした場所へ群れが集まる。右上の赤い印が中ボス。</p>
+</div>
+<script src="proto.js"></script>
+</body>
+</html>

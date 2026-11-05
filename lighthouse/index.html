@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1f26">
+<title>LIGHTHOUSE — prototype</title>
+<style>
+  html, body { margin: 0; background: #1b1f26; color: #c9ced6; font: 13px -apple-system, "Helvetica Neue", sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 10px 12px 16px; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .12em; margin: 2px 0 8px; color: #e4e7ec; }
+  h1 span { font-weight: 400; letter-spacing: 0; color: #8d949e; font-size: 12px; margin-left: 8px; }
+  canvas { width: min(100%, calc((100vh - 110px) * 16 / 9)); height: auto; margin: 0 auto; display: block; border-radius: 8px; cursor: pointer; touch-action: manipulation; background: #c3c8cf; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  button { background: transparent; color: inherit; border: 1px solid #555c66; border-radius: 6px; padding: 8px 12px; font: inherit; cursor: pointer; touch-action: manipulation; }
+  button:active { background: #2a3039; }
+  p { color: #8d949e; margin: 8px 0 0; line-height: 1.6; }
+  .rot { display: none; color: #e0b46a; }
+  @media (orientation: portrait) and (max-width: 700px) { .rot { display: block; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LIGHTHOUSE<span>prototype v8 · 2026-11-06</span></h1>
+  <p class="rot">スマホは横向きがおすすめです。</p>
+  <canvas id="cv" width="640" height="360"></canvas>
+  <div class="bar"><button id="b1"></button><button id="b2"></button><button id="b3"></button><button id="rs">最初から</button><button id="ff">早送り ×1</button></div>
+  <p>鳥の群れが自動で右へ飛び、建物に体当たりして壊します。壊すとポイントが貯まり、仲間・守り・攻撃を強化できます。画面をタップ（クリック）すると、その場所へ群れが集まって集中攻撃します。右上の赤い印は中ボス（時計塔・給水塔）、最後は灯台のランプを壊すと LIGHT OUT。</p>
+  <p>試作版です。音・タイトル画面・ランキングはまだありません。</p>
+</div>
+<script src="07_lab/proto_v8/proto.js?v=5db3956d7d"></script>
+</body>
+</html>

@@ -56,6 +56,14 @@
         "lander-1.1/server.js"
       ],
       "port": 4177
+    },
+    {
+      "name": "lighthouse",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "lighthouse/server.js"
+      ],
+      "port": 4178
     }
   ]
 }
