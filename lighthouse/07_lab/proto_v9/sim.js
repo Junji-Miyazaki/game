@@ -9,7 +9,7 @@ const src = fs.readFileSync(path.join(__dirname, 'proto.js'), 'utf8');
 const noop = () => {};
 const grad = { addColorStop: noop };
 const ctx = new Proxy({}, {
-  get: (t, k) => (k in t ? t[k] : k === 'createLinearGradient' ? () => grad : k === 'measureText' ? () => ({ width: 10 }) : noop),
+  get: (t, k) => (k in t ? t[k] : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => grad : k === 'measureText' ? () => ({ width: 10 }) : noop),
   set: (t, k, v) => { t[k] = v; return true; },
 });
 const els = {};
@@ -20,15 +20,17 @@ global.document = {
 };
 eval(src + `
 for (let run = 0; run < RUNS; run++) {
-  start(); let ev = [], ps = 0, n = 0;
+  start(); let ev = [], ps = 0, n = 0, lo = 0;
   while (S.mode === 'play' && S.t < 400) {
     step(1 / 60); n++;
     if (MODE === 'auto') for (const k of ['b1', 'b3', 'b2']) if (S.pts >= S.cost[k]) buy(k);
     if (S.siege && !ps) { ps = S.t; ev.push(S.boss.name + '包囲 ' + S.t.toFixed(0) + 's(' + aliveN() + '羽)'); }
+    if (S.lightOut && !lo) { lo = S.t; ev.push('灯り消灯 ' + (S.t - ps).toFixed(1) + 's'); }
     if (!S.siege && ps) { ev.push('撃破 ' + (S.t - ps).toFixed(1) + 's'); ps = 0; }
     if (n % 600 === 0) draw(n / 60);
   }
-  for (let i = 0; i < 90; i++) { step(1 / 60); draw(i / 60); }
+  if (lo) ev.push('崩しきるまで ' + (S.t - lo).toFixed(1) + 's');
+  for (let i = 0; i < 200; i++) { step(1 / 60); draw(i / 60); }
   console.log(MODE, run, S.mode.toUpperCase(), 't=' + S.t.toFixed(0) + 's', '得点=' + S.score, '最大' + S.peak + '羽', ev.join(' / '));
 }
 reset('title'); for (let i = 0; i < 120; i++) { step(1 / 60); draw(i / 60); } console.log('title ok', aliveN() + '羽');

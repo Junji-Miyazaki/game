@@ -5,7 +5,7 @@
 ## 1. 現状
 | 対象 | 場所 | 公開 URL | 状態 |
 |---|---|---|---|
-| 試作 v9（公開ページ） | `index.html` ＋ `07_lab/proto_v9/proto.js` | https://junji-miyazaki.github.io/game/lighthouse/index.html | 縦向き 360×640。タイトル・結果・強化パネル・効果音・最高得点あり。ランキングなし |
+| 試作 v9（公開ページ） | `index.html` ＋ `07_lab/proto_v9/proto.js` | https://junji-miyazaki.github.io/game/lighthouse/index.html | 縦向き 360×640。タイトル・結果・強化カード・『鳥』風の音（BGM なし）・最高得点あり。灯台は消灯後も崩しきるまで続く。ランキングなし |
 | 試作 v8（旧） | `07_lab/proto_v8/` | — | 横向き 640×360。記録として残す |
 | 設計 | `01_docs/PLAN.md` | — | §10 に未決事項 6 つ（縦持ちは決定） |
 
