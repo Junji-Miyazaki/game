@@ -259,6 +259,7 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
     const body = init && init.body ? JSON.parse(init.body) : null;
     if (/\/admin\/list/.test(u)) return { ok: true, status: 200, json: async () => ({ names: admin.names }) };
     if (/\/admin\/pin-reset/.test(u)) { admin.names = admin.names.map((n) => (n.name === body.name ? { ...n, hasPin: false } : n)); return { ok: true, status: 200, json: async () => ({ ok: true }) }; }
+    if (/\/admin\/pin-set/.test(u)) { if (body.name === 'GONE') return { ok: false, status: 404, json: async () => ({ error: 'unknown' }) }; admin.names = admin.names.map((n) => (n.name === body.name ? { ...n, hasPin: true } : n)); return { ok: true, status: 200, json: async () => ({ ok: true }) }; }
     return { ok: false, status: 404, json: async () => ({}) };
   };
   const g = new Game(makeEngine(new Map([['hudTipSeen', '1'], ['howtoSkip', '1']]))); g.enter(); g._dbgPrev = 'play'; g.state = 'debug';
@@ -267,7 +268,22 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
   let Rr = g._adminRects(); ok(Rr.rows.length === 2 && Rr.rows[0].hasPin && !Rr.rows[1].hasPin, 'admin rows know hasPin');
   ok(!(Rr.rows[0].pin.x < Rr.rows[0].del.x + Rr.rows[0].del.w && Rr.rows[0].del.x < Rr.rows[0].pin.x + Rr.rows[0].pin.w), 'PIN RESET and DEL do not overlap');
   const cx = makeCtx(); g.render(cx.ctx); ok(cx.rec.texts.includes('PIN RESET'), 'PIN RESET button drawn');
-  g.onInput('tap', center(Rr.rows[1].pin)); ok(!g._admin.confirm, 'no PIN -> button inert');
+  // PIN なし → SET PIN（管理者の仮 PIN）
+  ok(cx.rec.texts.includes('SET PIN'), 'SET PIN button drawn for a name without PIN');
+  calls.length = 0; g.onInput('tap', center(Rr.rows[1].pin));
+  ok(!g._admin.confirm && g._admin.pinEntry && g._admin.pinEntry.open && g._admin.pinEntry.mode === 'set', 'no PIN -> SET PIN opens the PIN entry');
+  g.onInput('tap', center(Rr.rows[0].del)); ok(!g._admin.confirm, 'list is inert while the PIN entry is open');
+  let sr = await g._admin.pinEntry.submit('12'); ok(sr && sr.ok === false && !calls.some((c) => /pin-set/.test(c.url)), 'short PIN rejected locally, nothing sent');
+  sr = await g._admin.pinEntry.submit('246810'); await tick(30);
+  const ps = calls.find((c) => /\/admin\/pin-set$/.test(c.url));
+  ok(ps && ps.init.headers['X-Admin-Key'] === 'adminsecret' && JSON.parse(ps.init.body).name === 'BBB' && JSON.parse(ps.init.body).pin === '246810', 'pin-set sent with admin header, name and pin');
+  ok(sr && sr.ok === true, 'pin-set ok');
+  await new Promise((res) => setTimeout(res, 800)); await tick(30);
+  ok(!g._admin.pinEntry && /PIN SET: BBB/.test(g._admin.msg) && !/246810/.test(g._admin.msg), 'entry closes, message shown without the PIN');
+  ok(g._admin.names.find((n) => n.name === 'BBB').hasPin === true, 'list refreshed: BBB has PIN');
+  g._adminPinSet('GONE'); sr = await g._admin.pinEntry.submit('1234'); ok(sr && sr.ok === false && sr.msg === 'NAME NOT FOUND', 'unknown name -> NAME NOT FOUND');
+  g.onInput('back'); ok(!g._admin.pinEntry && g._admin, 'back closes the PIN entry only');
+  Rr = g._adminRects();
   g.onInput('tap', center(Rr.rows[0].pin)); ok(g._admin.confirm === 'AAA' && g._admin.confirmKind === 'pin', 'PIN RESET asks confirmation');
   const cy = makeCtx(); g.render(cy.ctx); ok(cy.rec.texts.some((t) => /RESET PIN OF AAA/.test(t)) && cy.rec.texts.includes('CONFIRM RESET'), 'confirm text');
   g.onInput('tap', center(g._adminConfirmRects().no)); ok(g._admin.confirm === null, 'cancel');

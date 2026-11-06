@@ -22,7 +22,7 @@
 // API
 //   GET  /ranking?board= → { board, top: [{name,score,stage,date}, ...] }（上位20、名前ごとに1行。board 省略=v1.0、未知は 400）
 //   GET  /name?n=  → { taken, hasPin }（空は 400）
-//   POST /pin/set {name,key,pin} / /pin/clear {name,key} / /pin/login {name,pin,newKey}、POST /admin/pin-reset {name}（README 参照）
+//   POST /pin/set {name,key,pin} / /pin/clear {name,key} / /pin/login {name,pin,newKey}、POST /admin/pin-reset {name} / /admin/pin-set {name,pin}（README 参照）
 //   POST /submit   ← { name, score, stage, key, board? }  → { ok: true } / 403 name-taken（キー不一致）
 //   POST /delete   ← { name, key }  → { ok: true }（台帳と top.json から削除。月ログは残す）
 //   POST /title    ← { name, key, title, board? }  → { ok:true, title } / 400 invalid / 403 forbidden / 404 unknown / 409 not-champion
@@ -412,7 +412,7 @@ function pinIpOk(ip) {
   if (e.n >= PIN_IP_MAX) return Math.ceil((e.t + PIN_IP_WIN_MS - now) / 1000);
   e.n++; return 0;
 }
-const ADMIN_PATHS = ['/admin/list', '/admin/delete', '/admin/title', '/admin/pin-reset'];
+const ADMIN_PATHS = ['/admin/list', '/admin/delete', '/admin/title', '/admin/pin-reset', '/admin/pin-set'];
 const PIN_PATHS = ['/pin/set', '/pin/clear', '/pin/login'];
 
 export default {
@@ -593,6 +593,23 @@ export default {
           }, (e) => 'pin: ' + e.name);
           if (out.status === 'unknown') return json({ error: 'unknown' }, 404, h);
           await pinLog(env, n, 'admin-reset');
+          namesCache = null;
+          return json({ ok: true }, 200, h);
+        }
+        // 端末キーを失った本人の救済: 管理者が仮の PIN を設定 → 本人が /pin/login で新しい端末キーを登録する。鍵・記録・二つ名は残す。失敗カウンタは消す
+        if (req.method === 'POST' && url.pathname === '/admin/pin-set') {
+          if (!env.PIN_PEPPER) return json({ error: 'pin-disabled' }, 503, h);
+          const body = await req.json().catch(() => null);
+          const n = isObj(body) ? cleanNameRaw(body.name) : '';
+          if (!n || typeof body.pin !== 'string' || !PIN_RE.test(body.pin)) return json({ error: 'invalid' }, 400, h);
+          const pin = body.pin;
+          const out = await updateEntry(env, normName(n), async (e) => {
+            const { pinHash: _a, pinSalt: _b, fails: _c, lockUntil: _d, pinIp: _e, pinDay: _g, ...rest } = e;
+            const pinSalt = newSalt();
+            return { entry: { ...rest, pinSalt, pinHash: await pinHashOf(env, pinSalt, pin) }, result: 'ok' };
+          }, (e) => 'pin: ' + e.name);
+          if (out.status === 'unknown') return json({ error: 'unknown' }, 404, h);
+          await pinLog(env, n, 'admin-set');
           namesCache = null;
           return json({ ok: true }, 200, h);
         }

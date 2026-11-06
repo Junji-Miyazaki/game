@@ -336,6 +336,36 @@ for (let n = 0; n < 5; n++) await login('Adm', '0000', K('a' + n), '6.6.6.6');
   r = await rawPost('/admin/pin-reset', { name: 'Adm' }, { e: env, headers: { 'X-Admin-Key': AK } }); ok(r.status === 200 && !('pinHash' in names().Adm), 'admin/pin-reset works without pepper');
 }
 
+// ===== 7b. admin pin-set（端末キーを失った本人の救済）。8 が 7 の Adm を使うので reset しない =====
+await submit('Lost', 900, 2);
+{
+  const keys = names().Lost.keys.slice();
+  const as = (b, key, e) => rawPost('/admin/pin-set', b, { e, headers: key === undefined ? {} : { 'X-Admin-Key': key } });
+  let r = await as({ name: 'Lost', pin: '2468' }); ok(r.status === 401 && !('pinHash' in names().Lost), 'admin/pin-set: no key -> 401, unchanged');
+  r = await as({ name: 'Lost', pin: '2468' }, 'wrong'); ok(r.status === 401 && !('pinHash' in names().Lost), 'admin/pin-set: wrong key -> 401, unchanged');
+  r = await as({ name: 'Lost', pin: '12' }, AK); ok(r.status === 400, 'admin/pin-set: short pin -> 400');
+  r = await as({ name: 'Lost', pin: 'abcd' }, AK); ok(r.status === 400, 'admin/pin-set: non-digit pin -> 400');
+  r = await as({ name: 'Lost' }, AK); ok(r.status === 400, 'admin/pin-set: missing pin -> 400');
+  r = await as({ name: '', pin: '2468' }, AK); ok(r.status === 400, 'admin/pin-set: empty name -> 400');
+  r = await as({ name: 'Zzz', pin: '2468' }, AK); ok(r.status === 404, 'admin/pin-set: unknown -> 404');
+  r = await as({ name: 'Lost', pin: '2468' }, AK, env); ok(r.status === 503 && (await jb(r)).error === 'pin-disabled', 'admin/pin-set: no pepper -> 503');
+  r = await as({ name: ' Lost ', pin: '2468' }, AK); const e = names().Lost;
+  ok(r.status === 200 && typeof e.pinHash === 'string' && typeof e.pinSalt === 'string' && e.keys.join() === keys.join(), 'admin/pin-set: pin stored (trimmed name), keys kept');
+  ok(!JSON.stringify(e).includes('2468'), 'admin/pin-set: pin not stored in plain text');
+  ok(logsOf('log/').some((x) => x.kind === 'pin' && x.action === 'admin-set' && !JSON.stringify(x).includes('2468')), 'admin/pin-set: logged without the pin');
+  ok((await nameInfo('Lost')).hasPin === true, 'admin/pin-set: /name shows hasPin');
+  r = await login('Lost', '2468', K('LostNew'));
+  ok(r.status === 200 && names().Lost.keys.includes(await sha(K('LostNew'))), 'admin/pin-set: owner logs in on a new key');
+  ok((await submit('Lost', 1200, 2, {}, K('LostNew'))).status === 200, 'admin/pin-set: new key can submit for the name');
+  // 失敗でロック中でも管理者の設定で解ける
+  for (let n = 0; n < 5; n++) await login('Lost', '0000', K('lx' + n), '7.7.9.9');
+  ok(Object.values(names().Lost.pinIp || {}).some((v) => v.until > Date.now()), 'admin/pin-set: precondition locked');
+  r = await as({ name: 'Lost', pin: '1357' }, AK);
+  ok(r.status === 200 && !('pinIp' in names().Lost) && !('pinDay' in names().Lost), 'admin/pin-set: clears fail counters');
+  r = await login('Lost', '1357', K('lx-ok'), '7.7.9.9'); ok(r.status === 200, 'admin/pin-set: locked IP can log in after reset');
+  r = await login('Lost', '2468', K('lx-old')); ok(r.status === 403, 'admin/pin-set: previous pin no longer works');
+}
+
 // ===== 8. no secrets in responses =====
 {
   await pinSet('Adm', K('Adm'), '7777'); bust();

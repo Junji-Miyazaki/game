@@ -189,3 +189,5 @@ export function clearPin(name, key, timeoutMs = NET_TIMEOUT_MS) { return pinCall
 // 成功すると中継がこの端末の newKey を登録する。-> { ok:true, name, title? }
 export function loginWithPin(name, pin, newKey, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/pin/login', {}, { name, pin, newKey }, timeoutMs); }
 export function adminResetPin(adminKey, name, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-reset', { 'X-Admin-Key': String(adminKey || '') }, { name }, timeoutMs); }
+// 端末キーを失った本人の救済: 管理者が仮の PIN を設定（本人はそれで /pin/login → 自分の PIN に変更）
+export function adminSetPin(adminKey, name, pin, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-set', { 'X-Admin-Key': String(adminKey || '') }, { name, pin }, timeoutMs); }

@@ -14,8 +14,8 @@ import { buildRings, newRingState, ringStep, allRingsGot, POWER_DEFS, POWER_FUEL
 import { recordStage, STAR_LANDED, STAR_RINGS, STAR_PERFECT } from './stars.js';
 import { patchesSummary, patchIsNew, drawPatchAward, PATCH_AWARD_S, PATCH_CHIME_S } from './patches.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
-import { relayEnabled, adminList, adminDelete, adminResetPin } from './net.js';
-import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry } from './title.js';
+import { relayEnabled, adminList, adminDelete, adminResetPin, adminSetPin } from './net.js';
+import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry, openPinEntry, pinEntryOpen } from './title.js';
 import { i18nBind, i18nLang, i18nInverted } from './core/i18n.js';
 import { HtCard, htSkipGet } from './howto.js';
 import { Pod, podPlan, podRng, podUnlock } from './pods.js';
@@ -455,7 +455,7 @@ export class Game extends Scene {
   exit() {
     if (this._suspended) { this._duck(false); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; return; }   // 寄り道へ: 音だけ止めて状態は保持
     if (this.state !== 'gameover') { try { const pw = this._worldSend(false); if (pw) pw.catch(() => {}); } catch (_) { /* ignore */ } }   // 途中でタイトルへ戻った: ここまでの得点を送る（CONTINUE MISSION は残る）
-    this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+    this._adminPinClose(); this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
@@ -939,6 +939,7 @@ export class Game extends Scene {
   _adminConfirmRects() { const pin = this._admin && this._admin.confirmKind === 'pin'; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: pin ? 'CONFIRM RESET' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
   _adminInput(action, data) {
     const a = this._admin;
+    if (pinEntryOpen(a.pinEntry)) { if (action === 'back') this._adminPinClose(); return; }   // 仮 PIN の入力中は下の一覧を触らせない
     if (action === 'back') { if (a.confirm) a.confirm = null; else { this._admin = null; this._adminTok++; } return; }
     if (action !== 'tap' || !data) return;
     if (a.confirm) {
@@ -948,12 +949,12 @@ export class Game extends Scene {
       return;
     }
     const R = this._adminRects();
-    if (this._inRect(R.close, data)) { this._admin = null; this._adminTok++; return; }
+    if (this._inRect(R.close, data)) { this._adminPinClose(); this._admin = null; this._adminTok++; return; }
     if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
     if (R.next && this._inRect(R.next, data)) { a.page++; return; }
     for (const r of R.rows) {
       if (this._inRect(r.del, data)) { a.confirm = r.name; a.confirmKind = 'delete'; return; }
-      if (r.hasPin && this._inRect(r.pin, data)) { a.confirm = r.name; a.confirmKind = 'pin'; return; }
+      if (this._inRect(r.pin, data)) { if (r.hasPin) { a.confirm = r.name; a.confirmKind = 'pin'; } else this._adminPinSet(r.name); return; }
     }
   }
   async _adminDelete(name) {
@@ -971,6 +972,25 @@ export class Game extends Scene {
     if (r && r.ok) { a.msg = 'PIN RESET: ' + String(name).slice(0, 14); await this._adminLoad(); if (this._admin === a && a.phase === 'list') a.msg = 'PIN RESET: ' + String(name).slice(0, 14); }
     else { a.phase = 'list'; a.msg = this._adminErr(r); }
   }
+  // 仮 PIN の設定（端末キーを失った本人の救済）。PIN はこの入力欄の中だけで扱い、メッセージや保存には残さない
+  _adminPinSet(name) {
+    const a = this._admin; if (!a) return;
+    a.msg = '';
+    a.pinEntry = openPinEntry({ mode: 'set', name, heading: 'SET TEMP PIN', reveal: true, label: 'TEMP PIN (4-6 DIGITS)',
+      note: 'Tell this PIN only to the owner. They log in with THIS IS MY NAME, then change it in PILOTS.',
+      onSubmit: async (pin) => {
+        let r; try { r = await adminSetPin(_adminKeyMem, name, pin); } catch (_) { r = { ok: false }; }
+        if (r && r.ok) return { ok: true, msg: 'PIN SET' };
+        const e = String((r && r.error) || '').toLowerCase();
+        return { ok: false, msg: e === 'unknown' ? 'NAME NOT FOUND' : e === 'pin-disabled' ? 'PIN DISABLED ON RELAY' : e === 'invalid' ? 'PIN MUST BE 4-6 DIGITS' : e === 'unavailable' ? 'RELAY NOT UPDATED YET' : this._adminErr(r) };
+      },
+      onClose: (c) => {
+        if (this._admin !== a) return;
+        a.pinEntry = null;
+        if (c && c.ok) { const m = 'PIN SET: ' + String(name).slice(0, 14); a.msg = m; this._adminLoad().then(() => { if (this._admin === a && a.phase === 'list') a.msg = m; }); }
+      } });
+  }
+  _adminPinClose() { const a = this._admin; if (a && a.pinEntry) { const c = a.pinEntry; a.pinEntry = null; try { c.close(); } catch (_) { /* ignore */ } } }
   _drawAdmin(ctx) {
     const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
     drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,

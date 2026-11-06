@@ -2095,8 +2095,10 @@ export function drawAdminPanel(ctx, d) {
     txt(ctx, ellipsize(ctx, r.label, 11, 500, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
     txt(ctx, ellipsize(ctx, r.sub, 8, 400, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
     if (r.pin) {
-      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.45 : 0.12));
-      txt(ctx, 'PIN RESET', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 8, r.hasPin ? p.warn : p.dim, 'center', { sp: 1.5, w: 500 });
+      // PIN あり → PIN RESET（消す）／なし → SET PIN（管理者が仮の PIN を設定）
+      const c = r.hasPin ? p.warn : p.mid;
+      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, rgba(c, 0.08), rgba(c, 0.45));
+      txt(ctx, r.hasPin ? 'PIN RESET' : 'SET PIN', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 8, c, 'center', { sp: 1.5, w: 500 });
     }
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });

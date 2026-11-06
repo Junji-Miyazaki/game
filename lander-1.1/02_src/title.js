@@ -204,10 +204,11 @@ export function openPinEntry(o) {
       const user = document.createElement('input');   // パスワードマネージャ用のアカウント名（画面外・読み取り専用）
       user.type = 'text'; user.name = 'username'; user.id = 'lander-pin-user'; user.value = o.name; user.readOnly = true; user.tabIndex = -1;
       user.setAttribute('autocomplete', 'username'); user.setAttribute('aria-hidden', 'true'); user.className = 'pe-user';
-      const label = document.createElement('label'); label.className = 'pe-label'; label.htmlFor = 'lander-pin-pw'; label.textContent = login ? 'PIN (4-6 DIGITS)' : 'NEW PIN (4-6 DIGITS, 6 RECOMMENDED)';
+      const label = document.createElement('label'); label.className = 'pe-label'; label.htmlFor = 'lander-pin-pw'; label.textContent = o.label || (login ? 'PIN (4-6 DIGITS)' : 'NEW PIN (4-6 DIGITS, 6 RECOMMENDED)');
       const pw = document.createElement('input');
-      pw.type = 'password'; pw.name = 'password'; pw.id = 'lander-pin-pw'; pw.maxLength = 6; pw.pattern = '\\d{4,6}'; pw.spellcheck = false;
-      pw.setAttribute('inputmode', 'numeric'); pw.setAttribute('autocomplete', login ? 'current-password' : 'new-password'); pw.setAttribute('autocapitalize', 'off');
+      // o.reveal（管理者の仮 PIN）: 打ち間違いを防ぐため見える入力にし、パスワードマネージャに本人名義で保存させない
+      pw.type = o.reveal ? 'text' : 'password'; pw.name = o.reveal ? 'temp-pin' : 'password'; pw.id = 'lander-pin-pw'; pw.maxLength = 6; pw.pattern = '\\d{4,6}'; pw.spellcheck = false;
+      pw.setAttribute('inputmode', 'numeric'); pw.setAttribute('autocomplete', o.reveal ? 'off' : (login ? 'current-password' : 'new-password')); pw.setAttribute('autocapitalize', 'off');
       const ok = document.createElement('button'); ok.type = 'submit'; ok.textContent = 'OK'; ok.className = 'pe-btn pe-go';
       const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'CANCEL'; cancel.className = 'pe-btn pe-cancel';
       const row = document.createElement('div'); row.className = 'pe-row'; row.appendChild(ok); row.appendChild(cancel);
@@ -216,8 +217,9 @@ export function openPinEntry(o) {
       cancel.addEventListener('click', () => c.close());
       pw.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); c.close(); } });
       pw.addEventListener('input', () => { const v = pw.value.replace(/\D/g, '').slice(0, 6); if (v !== pw.value) pw.value = v; });
-      [head, nm, user, label, pw, row, msg].forEach((n) => form.appendChild(n));
-      if (!login) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = PIN_NOTE; form.appendChild(note); }
+      [head, nm, ...(o.reveal ? [] : [user]), label, pw, row, msg].forEach((n) => form.appendChild(n));
+      if (o.note) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = String(o.note); form.appendChild(note); }
+      else if (!login) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = PIN_NOTE; form.appendChild(note); }
       wrap.appendChild(form);
       document.body.appendChild(wrap);
       c._dom = { wrap, form, pw, ok, cancel, msg, user };

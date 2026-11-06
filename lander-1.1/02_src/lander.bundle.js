@@ -1148,6 +1148,8 @@ function clearPin(name, key, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/pin/
 // 成功すると中継がこの端末の newKey を登録する。-> { ok:true, name, title? }
 function loginWithPin(name, pin, newKey, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/pin/login', {}, { name, pin, newKey }, timeoutMs); }
 function adminResetPin(adminKey, name, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-reset', { 'X-Admin-Key': String(adminKey || '') }, { name }, timeoutMs); }
+// 端末キーを失った本人の救済: 管理者が仮の PIN を設定（本人はそれで /pin/login → 自分の PIN に変更）
+function adminSetPin(adminKey, name, pin, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-set', { 'X-Admin-Key': String(adminKey || '') }, { name, pin }, timeoutMs); }
 
 
 // ---- 02_src/debug.js ----
@@ -3813,8 +3815,10 @@ function drawAdminPanel(ctx, d) {
     txt(ctx, ellipsize(ctx, r.label, 11, 500, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 4, 11, p.fg, 'left', { sp: 1.5, w: 500 });
     txt(ctx, ellipsize(ctx, r.sub, 8, 400, 1.5, (r.pin ? r.pin.x : r.del.x) - 44), 36, r.del.y + 22, 8, p.dim, 'left', { sp: 1.5, w: 400 });
     if (r.pin) {
-      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, r.hasPin ? rgba(p.warn, 0.08) : null, rgba(p.warn, r.hasPin ? 0.45 : 0.12));
-      txt(ctx, 'PIN RESET', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 8, r.hasPin ? p.warn : p.dim, 'center', { sp: 1.5, w: 500 });
+      // PIN あり → PIN RESET（消す）／なし → SET PIN（管理者が仮の PIN を設定）
+      const c = r.hasPin ? p.warn : p.mid;
+      pill(ctx, r.pin.x, r.pin.y, r.pin.w, r.pin.h, rgba(c, 0.08), rgba(c, 0.45));
+      txt(ctx, r.hasPin ? 'PIN RESET' : 'SET PIN', r.pin.x + r.pin.w / 2, r.pin.y + r.pin.h / 2 - 4, 8, c, 'center', { sp: 1.5, w: 500 });
     }
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
@@ -9495,10 +9499,11 @@ function openPinEntry(o) {
       const user = document.createElement('input');   // パスワードマネージャ用のアカウント名（画面外・読み取り専用）
       user.type = 'text'; user.name = 'username'; user.id = 'lander-pin-user'; user.value = o.name; user.readOnly = true; user.tabIndex = -1;
       user.setAttribute('autocomplete', 'username'); user.setAttribute('aria-hidden', 'true'); user.className = 'pe-user';
-      const label = document.createElement('label'); label.className = 'pe-label'; label.htmlFor = 'lander-pin-pw'; label.textContent = login ? 'PIN (4-6 DIGITS)' : 'NEW PIN (4-6 DIGITS, 6 RECOMMENDED)';
+      const label = document.createElement('label'); label.className = 'pe-label'; label.htmlFor = 'lander-pin-pw'; label.textContent = o.label || (login ? 'PIN (4-6 DIGITS)' : 'NEW PIN (4-6 DIGITS, 6 RECOMMENDED)');
       const pw = document.createElement('input');
-      pw.type = 'password'; pw.name = 'password'; pw.id = 'lander-pin-pw'; pw.maxLength = 6; pw.pattern = '\\d{4,6}'; pw.spellcheck = false;
-      pw.setAttribute('inputmode', 'numeric'); pw.setAttribute('autocomplete', login ? 'current-password' : 'new-password'); pw.setAttribute('autocapitalize', 'off');
+      // o.reveal（管理者の仮 PIN）: 打ち間違いを防ぐため見える入力にし、パスワードマネージャに本人名義で保存させない
+      pw.type = o.reveal ? 'text' : 'password'; pw.name = o.reveal ? 'temp-pin' : 'password'; pw.id = 'lander-pin-pw'; pw.maxLength = 6; pw.pattern = '\\d{4,6}'; pw.spellcheck = false;
+      pw.setAttribute('inputmode', 'numeric'); pw.setAttribute('autocomplete', o.reveal ? 'off' : (login ? 'current-password' : 'new-password')); pw.setAttribute('autocapitalize', 'off');
       const ok = document.createElement('button'); ok.type = 'submit'; ok.textContent = 'OK'; ok.className = 'pe-btn pe-go';
       const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'CANCEL'; cancel.className = 'pe-btn pe-cancel';
       const row = document.createElement('div'); row.className = 'pe-row'; row.appendChild(ok); row.appendChild(cancel);
@@ -9507,8 +9512,9 @@ function openPinEntry(o) {
       cancel.addEventListener('click', () => c.close());
       pw.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); c.close(); } });
       pw.addEventListener('input', () => { const v = pw.value.replace(/\D/g, '').slice(0, 6); if (v !== pw.value) pw.value = v; });
-      [head, nm, user, label, pw, row, msg].forEach((n) => form.appendChild(n));
-      if (!login) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = PIN_NOTE; form.appendChild(note); }
+      [head, nm, ...(o.reveal ? [] : [user]), label, pw, row, msg].forEach((n) => form.appendChild(n));
+      if (o.note) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = String(o.note); form.appendChild(note); }
+      else if (!login) { const note = document.createElement('div'); note.className = 'pe-note'; note.textContent = PIN_NOTE; form.appendChild(note); }
       wrap.appendChild(form);
       document.body.appendChild(wrap);
       c._dom = { wrap, form, pw, ok, cancel, msg, user };
@@ -10951,7 +10957,7 @@ class Game extends Scene {
   exit() {
     if (this._suspended) { this._duck(false); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; return; }   // 寄り道へ: 音だけ止めて状態は保持
     if (this.state !== 'gameover') { try { const pw = this._worldSend(false); if (pw) pw.catch(() => {}); } catch (_) { /* ignore */ } }   // 途中でタイトルへ戻った: ここまでの得点を送る（CONTINUE MISSION は残る）
-    this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
+    this._adminPinClose(); this._admin = null; this._champTok = (this._champTok || 0) + 1; if (this._champ) this._champ.close(); hideChampionEntry(); this._duck(false); hideNameOverlay(); const m = musicOf(this.engine); m.stopJingle(0.3); m.stopAll(0.6); this._bgmOn = false; }   // タイトルへ戻る/シーン終了で音楽をフェード
 
   // 名前入力中は BACK を無効化（誤タップで入力が消えるのを防ぐ）
   // ---- 初回の計器ヒント（'hudTipSeen' が無い端末で、プレイ開始時に1度だけ）。表示中は物理を凍結（state 'tip'）----
@@ -11435,6 +11441,7 @@ class Game extends Scene {
   _adminConfirmRects() { const pin = this._admin && this._admin.confirmKind === 'pin'; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: pin ? 'CONFIRM RESET' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
   _adminInput(action, data) {
     const a = this._admin;
+    if (pinEntryOpen(a.pinEntry)) { if (action === 'back') this._adminPinClose(); return; }   // 仮 PIN の入力中は下の一覧を触らせない
     if (action === 'back') { if (a.confirm) a.confirm = null; else { this._admin = null; this._adminTok++; } return; }
     if (action !== 'tap' || !data) return;
     if (a.confirm) {
@@ -11444,12 +11451,12 @@ class Game extends Scene {
       return;
     }
     const R = this._adminRects();
-    if (this._inRect(R.close, data)) { this._admin = null; this._adminTok++; return; }
+    if (this._inRect(R.close, data)) { this._adminPinClose(); this._admin = null; this._adminTok++; return; }
     if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
     if (R.next && this._inRect(R.next, data)) { a.page++; return; }
     for (const r of R.rows) {
       if (this._inRect(r.del, data)) { a.confirm = r.name; a.confirmKind = 'delete'; return; }
-      if (r.hasPin && this._inRect(r.pin, data)) { a.confirm = r.name; a.confirmKind = 'pin'; return; }
+      if (this._inRect(r.pin, data)) { if (r.hasPin) { a.confirm = r.name; a.confirmKind = 'pin'; } else this._adminPinSet(r.name); return; }
     }
   }
   async _adminDelete(name) {
@@ -11467,6 +11474,25 @@ class Game extends Scene {
     if (r && r.ok) { a.msg = 'PIN RESET: ' + String(name).slice(0, 14); await this._adminLoad(); if (this._admin === a && a.phase === 'list') a.msg = 'PIN RESET: ' + String(name).slice(0, 14); }
     else { a.phase = 'list'; a.msg = this._adminErr(r); }
   }
+  // 仮 PIN の設定（端末キーを失った本人の救済）。PIN はこの入力欄の中だけで扱い、メッセージや保存には残さない
+  _adminPinSet(name) {
+    const a = this._admin; if (!a) return;
+    a.msg = '';
+    a.pinEntry = openPinEntry({ mode: 'set', name, heading: 'SET TEMP PIN', reveal: true, label: 'TEMP PIN (4-6 DIGITS)',
+      note: 'Tell this PIN only to the owner. They log in with THIS IS MY NAME, then change it in PILOTS.',
+      onSubmit: async (pin) => {
+        let r; try { r = await adminSetPin(_adminKeyMem, name, pin); } catch (_) { r = { ok: false }; }
+        if (r && r.ok) return { ok: true, msg: 'PIN SET' };
+        const e = String((r && r.error) || '').toLowerCase();
+        return { ok: false, msg: e === 'unknown' ? 'NAME NOT FOUND' : e === 'pin-disabled' ? 'PIN DISABLED ON RELAY' : e === 'invalid' ? 'PIN MUST BE 4-6 DIGITS' : e === 'unavailable' ? 'RELAY NOT UPDATED YET' : this._adminErr(r) };
+      },
+      onClose: (c) => {
+        if (this._admin !== a) return;
+        a.pinEntry = null;
+        if (c && c.ok) { const m = 'PIN SET: ' + String(name).slice(0, 14); a.msg = m; this._adminLoad().then(() => { if (this._admin === a && a.phase === 'list') a.msg = m; }); }
+      } });
+  }
+  _adminPinClose() { const a = this._admin; if (a && a.pinEntry) { const c = a.pinEntry; a.pinEntry = null; try { c.close(); } catch (_) { /* ignore */ } } }
   _drawAdmin(ctx) {
     const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
     drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,

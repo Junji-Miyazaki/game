@@ -3,6 +3,14 @@
 新しい順。各エントリ: 実施内容 / 判断と理由 / 問題点 / 次アクション。
 v1.0 以前の経緯は `../lander/00_log/LOG.md`、計画と決定は `01_docs/PLAN.md`（§7h〜§7j）。
 
+## 2026-11-06 管理画面から仮の PIN を設定できるように（端末キーを失った本人の救済、版は上げず）
+- 発端: 別のプレイヤーが、世界記録のある名前で同じ端末・ブラウザから入れない（NAME ALREADY REGISTERED で弾かれる）。
+- 原因の見立て: 名前の持ち主の証明は端末の保存データ（プロフィールの端末キー）だけ。それが消えると（iPhone Safari の長期未訪問による削除・履歴消去・プライベート・ホーム画面アプリと Safari の別保存［どれかは要確認］）新規入力扱いになり弾かれる。名前は大文字小文字を区別し前後の空白だけ除く（`normName`）。上位の名前は全員 PIN 未設定（公開の `/name` で確認）なので PIN ログインもできない。管理画面には DELETE（記録も消える）と PIN RESET しか無かった。
+- 実施: Worker に `POST /admin/pin-set {name,pin}`（管理鍵必須・PIN_PEPPER 必須・4〜6 桁・端末キー/記録/二つ名は残す・失敗カウンタを消す・ログ `admin-set`、PIN 値は書かない）。net.js `adminSetPin`。管理画面（DEBUG → WORLD ADMIN）の行のボタンを、PIN あり = PIN RESET／なし = SET PIN に。SET PIN は PIN 入力欄を見える文字で開く（`openPinEntry` の `reveal`・`label`・`note`。パスワードマネージャに保存させない）。入力中は一覧を触れない。メッセージに PIN を出さない。
+- テスト: p11net に 19 項目（認証・形式・未登録・ペッパー無し・平文で保存しない・ログ・本人の新端末ログイン → 送信・ロック中でも解ける・旧 PIN 無効）、p12v11 に 10 項目。v1.1 の 34 ファイル全通過、v1.0 の p4/p9/p11net も通過。
+- 要対応（ユーザー）: Worker を Cloudflare に再デプロイ（`lander/06_server/ranking-worker.js`）。それまで SET PIN は 404 で失敗する。
+- 未確認: 実際の本人の救済（デプロイ後）。
+
 ## 2026-11-04 beta.8: EXPEDITION を本編へ組み込み（再開 → 完了）
 - ユーザー: 「再開して」。推奨案 11 項目どおり（PLAN §7t）。
 - 実施: `build.js` に閉じたスコープ（EXP_*。同名のトップレベルが多いミッションを包む。外側からの import は `const { … } = EXP_x;`、同じ名前は一度だけ宣言）。`02_src/expedition/index.js`（4 ミッションの一覧・POD の天体・任務文 JA/EN）、`expdata.js`（パイロットごとの保存 `xp.<名前>.<id>.*`・解放・正体を見せた印・POD の外れ回数・★まとめ・全解放 `?expedition=all`・探査天体の絵）、`expscene.js`（ExpeditionScene・MISSION ACCEPTED）、`pods.js`（POD）。game.js: `_podInit/_podTick/_podShowTick`（engine.pods の時だけ、自前の乱数）、ステージ後 1.1 秒で全画面演出（全て凍結・BACK 不可・タップで印へ / 閉じる）。title.js: マップに探査の状態を渡す・`{expedition}` で main.js の toExpedition・`openMap` で戻る。solarmap.js: 下段（COMING SOON → EXPEDITION ★x/12、4 つ）・惑星系のカード（earth/mars/saturn/pluto）・正体が現れる演出・★ x/60。ミッション: 音を本編の AudioContext とミュートに従わせた。説明カードの英文。beta.8・UPDATE INFORMATION（JA/EN 4 行）。

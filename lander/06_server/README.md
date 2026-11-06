@@ -26,9 +26,9 @@
   - 加えて同一IPのメモリ内制限（10分に30回、isolate 単位のベストエフォート）は従来どおり。
   - 計算［計算値、未実測］: 日次上限50回なら、全探索（平均はその半分）に 6桁 = 10^6/50 = 2万日 ≒ 55年、4桁 = 10^4/50 = 200日。
   - **残るリスク**: 多数のIPを使える攻撃者は日次上限50回を消費して本人を最大1日締め出せる（本人はその日 PIN ログインできない。翌 UTC 日または管理者の `/admin/pin-reset` で復旧）。ただし組ロック方式の「5回で即締め出し」よりは桁違いにコストが高い。将来案B: PIN とは別の非公開ログインID（名前と別に持つ）を導入し、公開名では試行を受け付けない。
-- **限界**: 4桁は10,000通りしかなく、試行を続ければ破れる（1つのIPからは15分に5回 ≒ 1日約480回だが、名前ごとの日次上限50回で、全IP合計でも4桁の全探索に約200日かかる計算）。ペッパーが漏れ、かつ `names.json` が漏れた場合のみオフライン総当たりが可能（6桁でも短時間で可能）。他サービスのパスワードを使い回さないこと。ゲームスコアの名前を守る程度の強度で、重要な資産の保護には使わない。名前を狙った締め出しは上記の日次上限分のコストが要る（上の「残るリスク」）。忘れた場合は管理者が `POST /admin/pin-reset` で初期化（鍵は残る）。
+- **限界**: 4桁は10,000通りしかなく、試行を続ければ破れる（1つのIPからは15分に5回 ≒ 1日約480回だが、名前ごとの日次上限50回で、全IP合計でも4桁の全探索に約200日かかる計算）。ペッパーが漏れ、かつ `names.json` が漏れた場合のみオフライン総当たりが可能（6桁でも短時間で可能）。他サービスのパスワードを使い回さないこと。ゲームスコアの名前を守る程度の強度で、重要な資産の保護には使わない。名前を狙った締め出しは上記の日次上限分のコストが要る（上の「残るリスク」）。忘れた場合は管理者が `POST /admin/pin-reset` で初期化（鍵は残る）。端末キーを失い PIN も無い場合は、管理者が `POST /admin/pin-set` で仮の PIN を設定して本人にだけ伝える（本人確認は管理者の責任）。
 - `PIN_PEPPER` が未設定なら `/pin/*` は 503 `pin-disabled`（他の機能は通常どおり）。ペッパーを**変更すると既存の PIN はすべて無効**になる（各自が再設定、または管理者が初期化）。
-- 応答に `pinHash` / `pinSalt` / `keys` / `PIN_PEPPER` は一切含まれない。比較は定数時間。PIN 操作は月ログに `{ "kind":"pin", "name", "action":"set|clear|login-ok|login-fail|lock|lock-name|admin-reset", "date" }` として追記（PIN 値は書かない。読み取り側は `kind` のある行を除外すること）。
+- 応答に `pinHash` / `pinSalt` / `keys` / `PIN_PEPPER` は一切含まれない。比較は定数時間。PIN 操作は月ログに `{ "kind":"pin", "name", "action":"set|clear|login-ok|login-fail|lock|lock-name|admin-reset|admin-set", "date" }` として追記（PIN 値は書かない。読み取り側は `kind` のある行を除外すること）。
 
 ## ボードの意味（名前ごとのベスト）
 - WORLD は **名前ごとに1行のベストスコア**。同じ名前の再送は、高い方（同点は stage が高い方→早い日時）だけが残り、表示名は保存済みの行のものを維持。既存 `top.json` の重複行は最初の書き込みで統合される。
@@ -55,6 +55,7 @@
 | POST | `/pin/login` | `{ name, pin, newKey }`。成功で `newKey` の SHA-256 を `keys` に追加し `{ ok:true, name, title? }`。404 `unknown` / 409 `no-pin` / 403 `bad-pin` / 429 `locked`(`retryAfter` 秒。名前日次上限は `scope:"name"` 付き) / 429 `rate` / 400 `invalid`（`newKey` は hex 32〜128） |
 | GET | `/admin/list` | ヘッダ `X-Admin-Key`。`{ names: [{ name, first, title?, best, bests:{v1.0,v1.1}, hasPin, devices }] }`（`best`/`bests.*` は `{score,stage,date}` または null） |
 | POST | `/admin/pin-reset` | ヘッダ `X-Admin-Key`、`{ name }`。PIN・失敗カウンタ(pinIp/pinDay)を消す（端末キーは残す。`PIN_PEPPER` 無しでも可）。`{ ok:true }` / 404 |
+| POST | `/admin/pin-set` | ヘッダ `X-Admin-Key`、`{ name, pin }`。管理者が仮の PIN を設定（`/^\d{4,6}$/` 以外は 400）。端末キーを失った本人の救済用: 本人は名前入力 →「THIS IS MY NAME — ENTER PIN」でこの PIN を入れて新しい端末キーを登録し、PILOTS で自分の PIN に変える。端末キー・記録・二つ名は残し、失敗カウンタ(pinIp/pinDay)は消す。ログは `admin-set`（PIN 値は書かない）。`{ ok:true }` / 400 / 401 / 404 `unknown` / 503 `pin-disabled`（`PIN_PEPPER` 未設定） |
 | POST | `/admin/delete` | ヘッダ `X-Admin-Key`、`{ name }`。台帳と `top.json` から削除 |
 | POST | `/admin/title` | ヘッダ `X-Admin-Key`、`{ name, title }`。順位に関係なく任意の名前の二つ名を設定/消去。`200 { ok:true, title }` / 400 / 404 / 401 / 503 |
 
