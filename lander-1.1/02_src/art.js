@@ -2103,12 +2103,12 @@ export function drawAdminPanel(ctx, d) {
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
   }
-  for (const k of ['prev', 'next', 'close']) {
+  for (const k of ['prev', 'next', 'close', 'fill']) {
     const b = d[k]; if (!b) continue;
     pill(ctx, b.x, b.y, b.w, b.h, null, rgba(p.fg, 0.25));
     txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 4, 9, p.fg, 'center', { sp: 2, w: 500 });
   }
-  if (d.pages > 1) txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, 548, 9, p.dim, 'center', { sp: 3, w: 500 });
+  if (d.pages > 1) txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, 538, 9, p.dim, 'center', { sp: 3, w: 500 });
 }
 // タイトル: PILOTS パネル / PUBLIC BETA。d = { mode:'list'|'confirm', rows:[{name,active,sel,del}], add, close, msg, confirm:{text,yes,no} }
 export function drawProfilePanel(ctx, d) {

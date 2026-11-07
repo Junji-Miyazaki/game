@@ -259,6 +259,7 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
     const body = init && init.body ? JSON.parse(init.body) : null;
     if (/\/admin\/list/.test(u)) return { ok: true, status: 200, json: async () => ({ names: admin.names }) };
     if (/\/admin\/pin-reset/.test(u)) { admin.names = admin.names.map((n) => (n.name === body.name ? { ...n, hasPin: false } : n)); return { ok: true, status: 200, json: async () => ({ ok: true }) }; }
+    if (/\/admin\/backfill/.test(u)) return { ok: true, status: 200, json: async () => ({ ok: true, week: '2026-11-02', weekRows: 4, reachRows: 7, logRows: 9 }) };
     if (/\/admin\/pin-set/.test(u)) { if (body.name === 'GONE') return { ok: false, status: 404, json: async () => ({ error: 'unknown' }) }; admin.names = admin.names.map((n) => (n.name === body.name ? { ...n, hasPin: true } : n)); return { ok: true, status: 200, json: async () => ({ ok: true }) }; }
     return { ok: false, status: 404, json: async () => ({}) };
   };
@@ -292,6 +293,15 @@ globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init })
   ok(pc && pc.init.headers['X-Admin-Key'] === 'adminsecret' && JSON.parse(pc.init.body).name === 'AAA', 'pin-reset sent with admin header and name');
   ok(g._admin.names.find((n) => n.name === 'AAA').hasPin === false && /PIN RESET: AAA/.test(g._admin.msg), 'list refreshed, message shown');
   ok(!calls.some((c) => /\/admin\/delete/.test(c.url)), 'did not delete');
+  // FILL WEEK / STAGE（追加ランキングの埋め込み）
+  { const R2 = g._adminRects(); const cz = makeCtx(); g.render(cz.ctx); ok(cz.rec.texts.includes('FILL WEEK / STAGE'), 'FILL button drawn');
+    ok(R2.fill.y >= R2.close.y + R2.close.h && R2.fill.y + R2.fill.h <= 590, 'FILL sits below PREV/CLOSE/NEXT inside the panel');
+    calls.length = 0; g.onInput('tap', center(R2.fill)); ok(g._admin.confirm === 'fill' && g._admin.confirmKind === 'fill' && !calls.length, 'FILL asks confirmation first');
+    const cw = makeCtx(); g.render(cw.ctx); ok(cw.rec.texts.some((t) => /FILL WEEK \/ STAGE FROM RECORDS\?/.test(t)) && cw.rec.texts.includes('CONFIRM FILL'), 'fill confirm text');
+    g.onInput('tap', center(g._adminConfirmRects().yes)); await tick(30);
+    const bc = calls.find((c) => /\/admin\/backfill$/.test(c.url));
+    ok(bc && bc.init.headers['X-Admin-Key'] === 'adminsecret' && bc.init.method === 'POST', 'backfill sent with admin header');
+    ok(/FILLED +WEEK 4 .*STAGE 7/.test(g._admin.msg), 'result message: ' + g._admin.msg); }
   setDebug(false);
 }
 

@@ -213,5 +213,17 @@ export function clearPin(name, key, timeoutMs = NET_TIMEOUT_MS) { return pinCall
 // 成功すると中継がこの端末の newKey を登録する。-> { ok:true, name, title? }
 export function loginWithPin(name, pin, newKey, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/pin/login', {}, { name, pin, newKey }, timeoutMs); }
 export function adminResetPin(adminKey, name, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-reset', { 'X-Admin-Key': String(adminKey || '') }, { name }, timeoutMs); }
+// 追加ランキング（今週・到達）を既存の記録から埋める。-> { ok:true, week, weekRows, reachRows, logRows } | { ok:false, error }
+export async function adminBackfill(adminKey, timeoutMs = 15000) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    return await request(RELAY_URL + '/admin/backfill', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Key': String(adminKey || '') }, body: '{}' }, timeoutMs, async (res) => {
+      let j = null; try { j = await res.json(); } catch (_) { /* 本文なし */ }
+      if (res && res.ok && j && j.ok) return { ok: true, week: j.week, weekRows: j.weekRows, reachRows: j.reachRows, logRows: j.logRows };
+      if (res && res.status === 404) return { ok: false, error: 'unavailable' };
+      return { ok: false, error: errOf(res) };
+    });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
 // 端末キーを失った本人の救済: 管理者が仮の PIN を設定（本人はそれで /pin/login → 自分の PIN に変更）
 export function adminSetPin(adminKey, name, pin, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-set', { 'X-Admin-Key': String(adminKey || '') }, { name, pin }, timeoutMs); }

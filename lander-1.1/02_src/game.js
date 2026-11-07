@@ -14,7 +14,7 @@ import { buildRings, newRingState, ringStep, allRingsGot, POWER_DEFS, POWER_FUEL
 import { recordStage, STAR_LANDED, STAR_RINGS, STAR_PERFECT } from './stars.js';
 import { patchesSummary, patchIsNew, drawPatchAward, PATCH_AWARD_S, PATCH_CHIME_S } from './patches.js';
 import { MODULE_DEFS, moduleDef, newModules, rollOffers, fuelMulFor, angDampFor, SAFE_VY_PER_LEVEL, BOUNCE_VY_PER_LEVEL } from './modules.js';
-import { relayEnabled, adminList, adminDelete, adminResetPin, adminSetPin } from './net.js';
+import { relayEnabled, adminList, adminDelete, adminResetPin, adminSetPin, adminBackfill } from './net.js';
 import { musicOf, toggleMute, isMuted, hideNameOverlay, showNameOverlay, openChampionEntry, championEntryOpen, hideChampionEntry, openPinEntry, pinEntryOpen } from './title.js';
 import { i18nBind, i18nLang, i18nInverted } from './core/i18n.js';
 import { HtCard, htSkipGet } from './howto.js';
@@ -934,9 +934,10 @@ export class Game extends Scene {
     return { rows, pages,
       prev: a.page > 0 ? { x: 30, y: 496, w: 80, h: 36, label: 'PREV' } : null,
       next: a.page < pages - 1 ? { x: W - 110, y: 496, w: 80, h: 36, label: 'NEXT' } : null,
-      close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' } };
+      close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' },
+      fill: { x: W / 2 - 90, y: 552, w: 180, h: 30, label: 'FILL WEEK / STAGE' } };   // 追加ランキングを既存の記録から埋める（何度押しても同じ結果）
   }
-  _adminConfirmRects() { const pin = this._admin && this._admin.confirmKind === 'pin'; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: pin ? 'CONFIRM RESET' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
+  _adminConfirmRects() { const k = this._admin && this._admin.confirmKind; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: k === 'pin' ? 'CONFIRM RESET' : k === 'fill' ? 'CONFIRM FILL' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
   _adminInput(action, data) {
     const a = this._admin;
     if (pinEntryOpen(a.pinEntry)) { if (action === 'back') this._adminPinClose(); return; }   // 仮 PIN の入力中は下の一覧を触らせない
@@ -945,13 +946,14 @@ export class Game extends Scene {
     if (a.confirm) {
       const c = this._adminConfirmRects();
       if (this._inRect(c.no, data)) a.confirm = null;
-      else if (this._inRect(c.yes, data)) { if (a.confirmKind === 'pin') this._adminPinReset(a.confirm); else this._adminDelete(a.confirm); }
+      else if (this._inRect(c.yes, data)) { if (a.confirmKind === 'pin') this._adminPinReset(a.confirm); else if (a.confirmKind === 'fill') this._adminBackfill(); else this._adminDelete(a.confirm); }
       return;
     }
     const R = this._adminRects();
     if (this._inRect(R.close, data)) { this._adminPinClose(); this._admin = null; this._adminTok++; return; }
     if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
     if (R.next && this._inRect(R.next, data)) { a.page++; return; }
+    if (a.phase === 'list' && this._inRect(R.fill, data)) { a.confirm = 'fill'; a.confirmKind = 'fill'; return; }
     for (const r of R.rows) {
       if (this._inRect(r.del, data)) { a.confirm = r.name; a.confirmKind = 'delete'; return; }
       if (this._inRect(r.pin, data)) { if (r.hasPin) { a.confirm = r.name; a.confirmKind = 'pin'; } else this._adminPinSet(r.name); return; }
@@ -990,11 +992,20 @@ export class Game extends Scene {
         if (c && c.ok) { const m = 'PIN SET: ' + String(name).slice(0, 14); a.msg = m; this._adminLoad().then(() => { if (this._admin === a && a.phase === 'list') a.msg = m; }); }
       } });
   }
+  async _adminBackfill() {
+    const a = this._admin; if (!a) return;
+    a.confirm = null; a.msg = 'FILLING\u2026';
+    let r; try { r = await adminBackfill(_adminKeyMem); } catch (_) { r = { ok: false }; }
+    if (this._admin !== a) return;
+    if (r && r.ok) a.msg = 'FILLED  WEEK ' + r.weekRows + '  \u00b7  STAGE ' + r.reachRows;
+    else a.msg = r && r.error === 'unavailable' ? 'RELAY NOT UPDATED YET' : this._adminErr(r);
+  }
   _adminPinClose() { const a = this._admin; if (a && a.pinEntry) { const c = a.pinEntry; a.pinEntry = null; try { c.close(); } catch (_) { /* ignore */ } } }
   _drawAdmin(ctx) {
     const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
     drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,
-      confirm: a.confirm ? { text: (a.confirmKind === 'pin' ? 'RESET PIN OF ' : 'DELETE ') + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
+      fill: a.phase === 'list' ? R.fill : null,
+      confirm: a.confirm ? { text: a.confirmKind === 'fill' ? 'FILL WEEK / STAGE FROM RECORDS?' : (a.confirmKind === 'pin' ? 'RESET PIN OF ' : 'DELETE ') + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
   }
   _dbgClose() { this.state = this._dbgPrev || 'play'; }
   // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）

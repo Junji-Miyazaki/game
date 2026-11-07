@@ -208,6 +208,24 @@ async function updateBest(env, path, entry, better, sort, message) {
   }
   throw new Error('github board conflict');
 }
+// まとめて統合（埋め込み用）。entries を名前ごとのベストで既存行に足し、変わった時だけ1回書く。-> 統合後の行数
+async function mergeBest(env, path, entries, better, sort, message) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await ghRead(env, path, true);
+    const m = new Map(parseRows(cur.text).map((r) => [normName(r.name), r]));
+    let changed = false;
+    for (const e of entries) {
+      const k = normName(e.name), old = m.get(k);
+      if (old && !better(e, old)) continue;
+      m.set(k, old ? { ...e, name: old.name } : e); changed = true;
+    }
+    const rows = Array.from(m.values()).sort(sort).slice(0, XB_KEEP);
+    if (!changed) return rows.length;
+    if (await ghPut(env, path, JSON.stringify(rows) + '\n', cur.sha, message)) return rows.length;
+    await backoff(attempt);
+  }
+  throw new Error('github board conflict');
+}
 // 名前を追加ランキング（今週・到達・EXPEDITION）から消す
 async function removeFromExtras(env, key) {
   const paths = [weekPath(weekIdOf(weekStart(Date.now()))), reachPath(), ...XP_IDS.map(xpPath)];
@@ -489,7 +507,7 @@ function pinIpOk(ip) {
   if (e.n >= PIN_IP_MAX) return Math.ceil((e.t + PIN_IP_WIN_MS - now) / 1000);
   e.n++; return 0;
 }
-const ADMIN_PATHS = ['/admin/list', '/admin/delete', '/admin/title', '/admin/pin-reset', '/admin/pin-set'];
+const ADMIN_PATHS = ['/admin/list', '/admin/delete', '/admin/title', '/admin/pin-reset', '/admin/pin-set', '/admin/backfill'];
 const PIN_PATHS = ['/pin/set', '/pin/clear', '/pin/login'];
 
 export default {
@@ -718,6 +736,32 @@ export default {
           await pinLog(env, n, 'admin-set');
           namesCache = null;
           return json({ ok: true }, 200, h);
+        }
+        // 追加ランキングを既存の記録から埋める（何度実行しても同じ結果）。到達 = v1.1 の top の各行、今週 = 今週の v1.1 の月ログ。台帳に無い（削除済みの）名前は除く
+        if (req.method === 'POST' && url.pathname === '/admin/backfill') {
+          const now = Date.now(), start = weekStart(now), wid = weekIdOf(start);
+          const known = (await readNames(env)).map;
+          const live = (r) => known.has(normName(r.name));
+          const top = dedupeBest(parseTop((await ghRead(env, topPath(env, 'v1.1'), true)).text)).filter(live);
+          const reach = await mergeBest(env, reachPath(), top.map((r) => ({ name: r.name, stage: r.stage, score: r.score, date: r.date })), (a, b) => cmpReach(a, b) < 0, cmpReach, 'reach: backfill');
+          const months = [...new Set([new Date(start).toISOString().slice(0, 7), new Date(now).toISOString().slice(0, 7)])];
+          const rows = [];
+          for (const mo of months) {
+            for (let n = 1; n <= 200; n++) {
+              const f = await ghRead(env, monthPath(env, mo, n, 'v1.1'), true);
+              if (!f.sha) break;
+              for (const line of f.text.split('\n')) {
+                let o; try { o = JSON.parse(line); } catch { continue; }
+                if (!isObj(o) || o.kind || typeof o.name !== 'string' || !Number.isFinite(o.score) || !Number.isFinite(o.stage) || o.score <= 0) continue;
+                const t = Date.parse(o.date);
+                if (!(t >= start && t < start + WEEK_MS) || !live(o)) continue;
+                rows.push({ name: o.name, score: o.score, stage: o.stage, date: o.date });
+              }
+            }
+          }
+          const week = await mergeBest(env, weekPath(wid), rows, (a, b) => cmp(a, b) < 0, cmp, 'week: backfill');
+          cached.clear();
+          return json({ ok: true, week: wid, weekRows: week, reachRows: reach, logRows: rows.length }, 200, h);
         }
         if (req.method === 'POST' && url.pathname === '/admin/title') {
           const body = await req.json().catch(() => null);

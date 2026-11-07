@@ -60,6 +60,7 @@
 | GET | `/admin/list` | ヘッダ `X-Admin-Key`。`{ names: [{ name, first, title?, best, bests:{v1.0,v1.1}, hasPin, devices }] }`（`best`/`bests.*` は `{score,stage,date}` または null） |
 | POST | `/admin/pin-reset` | ヘッダ `X-Admin-Key`、`{ name }`。PIN・失敗カウンタ(pinIp/pinDay)を消す（端末キーは残す。`PIN_PEPPER` 無しでも可）。`{ ok:true }` / 404 |
 | POST | `/admin/pin-set` | ヘッダ `X-Admin-Key`、`{ name, pin }`。管理者が仮の PIN を設定（`/^\d{4,6}$/` 以外は 400）。端末キーを失った本人の救済用: 本人は名前入力 →「THIS IS MY NAME — ENTER PIN」でこの PIN を入れて新しい端末キーを登録し、PILOTS で自分の PIN に変える。端末キー・記録・二つ名は残し、失敗カウンタ(pinIp/pinDay)は消す。ログは `admin-set`（PIN 値は書かない）。`{ ok:true }` / 400 / 401 / 404 `unknown` / 503 `pin-disabled`（`PIN_PEPPER` 未設定） |
+| POST | `/admin/backfill` | ヘッダ `X-Admin-Key`。追加ランキングを既存の記録から埋める: 到達 = `top-v1.1.json` の各行、今週 = 今週の `log/v1.1/` の得点行（kind 付きの行・0 点・台帳に無い名前は除く）。名前ごとのベストで統合し、変わった時だけ書く（何度実行しても同じ）。`{ ok:true, week, weekRows, reachRows, logRows }`。管理画面の FILL WEEK / STAGE |
 | POST | `/admin/delete` | ヘッダ `X-Admin-Key`、`{ name }`。台帳と `top.json` から削除 |
 | POST | `/admin/title` | ヘッダ `X-Admin-Key`、`{ name, title }`。順位に関係なく任意の名前の二つ名を設定/消去。`200 { ok:true, title }` / 400 / 404 / 401 / 503 |
 

@@ -158,5 +158,46 @@ const weekOf = (now) => { const j = new Date(now + 9 * 3600e3); const dow = (j.g
   ok((await (await get('/ranking?board=v9')).status) === 400, 'unknown board still 400');
 }
 
+// ===== 8. 管理者の埋め込み（到達 = v1.1 の top、今週 = 今週の月ログ）=====
+{
+  files.clear(); bust();
+  const wk = weekOf(Date.now()), iso = (t) => new Date(t).toISOString();
+  const put = (p, text) => files.set(p, { text, sha: 's' + (++gh.n) });
+  put('names.json', JSON.stringify({ Ann: { name: 'Ann', keys: ['x'], first: '' }, Bob: { name: 'Bob', keys: ['y'], first: '' }, Cat: { name: 'Cat', keys: ['z'], first: '' } }));
+  put('top-v1.1.json', JSON.stringify([{ name: 'Ann', score: 9000, stage: 8, date: iso(wk.start - 86400e3) }, { name: 'Bob', score: 4000, stage: 5, date: iso(wk.start + 3600e3) }, { name: 'Gone', score: 7000, stage: 9, date: iso(wk.start - 86400e3) }]));
+  const line = (o) => JSON.stringify(o);
+  const inWeek = (h) => iso(wk.start + h * 3600e3), before = iso(wk.start - 3600e3);
+  const logs = [
+    line({ name: 'Ann', score: 9000, stage: 8, date: before }),      // 先週 → 今週に入れない
+    line({ name: 'Ann', score: 1500, stage: 3, date: inWeek(2) }),
+    line({ name: 'Ann', score: 2500, stage: 4, date: inWeek(5) }),
+    line({ name: 'Bob', score: 4000, stage: 5, date: inWeek(1) }),
+    line({ name: 'Gone', score: 9999, stage: 9, date: inWeek(3) }),  // 削除済みの名前
+    line({ kind: 'xp', mission: 'ryugu', name: 'Cat', time: 30, date: inWeek(4) }),
+    line({ kind: 'title', name: 'Ann', title: 'X', date: inWeek(4) }),
+    line({ name: 'Cat', score: 0, stage: 1, date: inWeek(6) }),       // 0 点
+  ];
+  const months = [...new Set([iso(wk.start).slice(0, 7), iso(Date.now()).slice(0, 7)])];
+  put('log/v1.1/' + months[0] + '.jsonl', logs.slice(0, 5).join('\n') + '\n');
+  if (months[1]) put('log/v1.1/' + months[1] + '.jsonl', logs.slice(5).join('\n') + '\n');
+  else files.set('log/v1.1/' + months[0] + '.jsonl', { text: logs.join('\n') + '\n', sha: 's' + (++gh.n) });
+  const bf = (key) => post('/admin/backfill', {}, { headers: key === undefined ? {} : { 'X-Admin-Key': key } });
+  let r = await bf(); ok(r.status === 401, 'backfill: no key -> 401');
+  r = await bf('wrong'); ok(r.status === 401 && !files.has('reach-v1.1.json'), 'backfill: wrong key -> 401, nothing written');
+  r = await bf(AK); const j = await r.json();
+  ok(r.status === 200 && j.ok && j.week === wk.id, 'backfill ok: ' + JSON.stringify(j));
+  const reach = rows('reach-v1.1.json'), week = rows('week/v1.1/' + wk.id + '.json');
+  ok(reach && reach.map((x) => x.name + x.stage).join() === 'Ann8,Bob5', 'reach filled from top (deleted names excluded): ' + JSON.stringify(reach));
+  ok(week && week.map((x) => x.name + x.score).join() === 'Bob4000,Ann2500', 'week filled from this week\'s log only, best per name: ' + JSON.stringify(week));
+  ok(j.weekRows === 2 && j.reachRows === 2 && j.logRows === 3, 'backfill counts');
+  // もう一度実行しても同じ（書かない）
+  gh.puts.length = 0; r = await bf(AK);
+  ok(r.status === 200 && gh.puts.length === 0, 'backfill is idempotent (no writes the second time)');
+  // 既にあるより良い記録は残す
+  put('reach-v1.1.json', JSON.stringify([{ name: 'Ann', stage: 10, score: 100, date: inWeek(7) }]));
+  await bf(AK); ok(rows('reach-v1.1.json').find((x) => x.name === 'Ann').stage === 10, 'backfill keeps a better existing record');
+  const g = await board('v1.1-week'); ok(g.top.length === 2 && g.top[0].name === 'Bob', 'GET week shows the filled rows');
+}
+
 console.log(`p27boards: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

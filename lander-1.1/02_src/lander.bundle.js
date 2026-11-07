@@ -1172,6 +1172,18 @@ function clearPin(name, key, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/pin/
 // 成功すると中継がこの端末の newKey を登録する。-> { ok:true, name, title? }
 function loginWithPin(name, pin, newKey, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/pin/login', {}, { name, pin, newKey }, timeoutMs); }
 function adminResetPin(adminKey, name, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-reset', { 'X-Admin-Key': String(adminKey || '') }, { name }, timeoutMs); }
+// 追加ランキング（今週・到達）を既存の記録から埋める。-> { ok:true, week, weekRows, reachRows, logRows } | { ok:false, error }
+async function adminBackfill(adminKey, timeoutMs = 15000) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    return await request(RELAY_URL + '/admin/backfill', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Key': String(adminKey || '') }, body: '{}' }, timeoutMs, async (res) => {
+      let j = null; try { j = await res.json(); } catch (_) { /* 本文なし */ }
+      if (res && res.ok && j && j.ok) return { ok: true, week: j.week, weekRows: j.weekRows, reachRows: j.reachRows, logRows: j.logRows };
+      if (res && res.status === 404) return { ok: false, error: 'unavailable' };
+      return { ok: false, error: errOf(res) };
+    });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
 // 端末キーを失った本人の救済: 管理者が仮の PIN を設定（本人はそれで /pin/login → 自分の PIN に変更）
 function adminSetPin(adminKey, name, pin, timeoutMs = NET_TIMEOUT_MS) { return pinCall('/admin/pin-set', { 'X-Admin-Key': String(adminKey || '') }, { name, pin }, timeoutMs); }
 
@@ -3958,12 +3970,12 @@ function drawAdminPanel(ctx, d) {
     pill(ctx, r.del.x, r.del.y, r.del.w, r.del.h, rgba(p.bad, 0.08), rgba(p.bad, 0.4));
     txt(ctx, 'DEL', r.del.x + r.del.w / 2, r.del.y + r.del.h / 2 - 4, 9, p.bad, 'center', { sp: 2, w: 500 });
   }
-  for (const k of ['prev', 'next', 'close']) {
+  for (const k of ['prev', 'next', 'close', 'fill']) {
     const b = d[k]; if (!b) continue;
     pill(ctx, b.x, b.y, b.w, b.h, null, rgba(p.fg, 0.25));
     txt(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 - 4, 9, p.fg, 'center', { sp: 2, w: 500 });
   }
-  if (d.pages > 1) txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, 548, 9, p.dim, 'center', { sp: 3, w: 500 });
+  if (d.pages > 1) txt(ctx, (d.page + 1) + ' / ' + d.pages, AW / 2, 538, 9, p.dim, 'center', { sp: 3, w: 500 });
 }
 // タイトル: PILOTS パネル / PUBLIC BETA。d = { mode:'list'|'confirm', rows:[{name,active,sel,del}], add, close, msg, confirm:{text,yes,no} }
 function drawProfilePanel(ctx, d) {
@@ -11615,9 +11627,10 @@ class Game extends Scene {
     return { rows, pages,
       prev: a.page > 0 ? { x: 30, y: 496, w: 80, h: 36, label: 'PREV' } : null,
       next: a.page < pages - 1 ? { x: W - 110, y: 496, w: 80, h: 36, label: 'NEXT' } : null,
-      close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' } };
+      close: { x: W / 2 - 40, y: 496, w: 80, h: 36, label: 'CLOSE' },
+      fill: { x: W / 2 - 90, y: 552, w: 180, h: 30, label: 'FILL WEEK / STAGE' } };   // 追加ランキングを既存の記録から埋める（何度押しても同じ結果）
   }
-  _adminConfirmRects() { const pin = this._admin && this._admin.confirmKind === 'pin'; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: pin ? 'CONFIRM RESET' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
+  _adminConfirmRects() { const k = this._admin && this._admin.confirmKind; return { yes: { x: 60, y: 300, w: W - 120, h: 44, label: k === 'pin' ? 'CONFIRM RESET' : k === 'fill' ? 'CONFIRM FILL' : 'CONFIRM DELETE' }, no: { x: 60, y: 360, w: W - 120, h: 44, label: 'CANCEL' } }; }
   _adminInput(action, data) {
     const a = this._admin;
     if (pinEntryOpen(a.pinEntry)) { if (action === 'back') this._adminPinClose(); return; }   // 仮 PIN の入力中は下の一覧を触らせない
@@ -11626,13 +11639,14 @@ class Game extends Scene {
     if (a.confirm) {
       const c = this._adminConfirmRects();
       if (this._inRect(c.no, data)) a.confirm = null;
-      else if (this._inRect(c.yes, data)) { if (a.confirmKind === 'pin') this._adminPinReset(a.confirm); else this._adminDelete(a.confirm); }
+      else if (this._inRect(c.yes, data)) { if (a.confirmKind === 'pin') this._adminPinReset(a.confirm); else if (a.confirmKind === 'fill') this._adminBackfill(); else this._adminDelete(a.confirm); }
       return;
     }
     const R = this._adminRects();
     if (this._inRect(R.close, data)) { this._adminPinClose(); this._admin = null; this._adminTok++; return; }
     if (R.prev && this._inRect(R.prev, data)) { a.page--; return; }
     if (R.next && this._inRect(R.next, data)) { a.page++; return; }
+    if (a.phase === 'list' && this._inRect(R.fill, data)) { a.confirm = 'fill'; a.confirmKind = 'fill'; return; }
     for (const r of R.rows) {
       if (this._inRect(r.del, data)) { a.confirm = r.name; a.confirmKind = 'delete'; return; }
       if (this._inRect(r.pin, data)) { if (r.hasPin) { a.confirm = r.name; a.confirmKind = 'pin'; } else this._adminPinSet(r.name); return; }
@@ -11671,11 +11685,20 @@ class Game extends Scene {
         if (c && c.ok) { const m = 'PIN SET: ' + String(name).slice(0, 14); a.msg = m; this._adminLoad().then(() => { if (this._admin === a && a.phase === 'list') a.msg = m; }); }
       } });
   }
+  async _adminBackfill() {
+    const a = this._admin; if (!a) return;
+    a.confirm = null; a.msg = 'FILLING\u2026';
+    let r; try { r = await adminBackfill(_adminKeyMem); } catch (_) { r = { ok: false }; }
+    if (this._admin !== a) return;
+    if (r && r.ok) a.msg = 'FILLED  WEEK ' + r.weekRows + '  \u00b7  STAGE ' + r.reachRows;
+    else a.msg = r && r.error === 'unavailable' ? 'RELAY NOT UPDATED YET' : this._adminErr(r);
+  }
   _adminPinClose() { const a = this._admin; if (a && a.pinEntry) { const c = a.pinEntry; a.pinEntry = null; try { c.close(); } catch (_) { /* ignore */ } } }
   _drawAdmin(ctx) {
     const a = this._admin, R = this._adminRects(), c = this._adminConfirmRects();
     drawAdminPanel(ctx, { phase: a.phase, msg: a.msg, rows: a.phase === 'error' ? [] : R.rows, prev: R.prev, next: R.next, close: R.close, page: a.page, pages: R.pages,
-      confirm: a.confirm ? { text: (a.confirmKind === 'pin' ? 'RESET PIN OF ' : 'DELETE ') + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
+      fill: a.phase === 'list' ? R.fill : null,
+      confirm: a.confirm ? { text: a.confirmKind === 'fill' ? 'FILL WEEK / STAGE FROM RECORDS?' : (a.confirmKind === 'pin' ? 'RESET PIN OF ' : 'DELETE ') + String(a.confirm).slice(0, 14) + '?', yes: c.yes, no: c.no } : null });
   }
   _dbgClose() { this.state = this._dbgPrev || 'play'; }
   // 状態を作り直して 'play' から始める（デバッグ操作の共通前処理）
