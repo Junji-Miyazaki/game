@@ -64,6 +64,14 @@
         "lighthouse/server.js"
       ],
       "port": 4178
+    },
+    {
+      "name": "birds-reclaim",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "birds-reclaim/server.js"
+      ],
+      "port": 4179
     }
   ]
 }
