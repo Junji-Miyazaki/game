@@ -147,7 +147,7 @@ function drawMap(t) {
   const placed = [];
   for (const i of [M.sel, ...CITIES.map((_, j) => j).filter(j => j !== M.sel)]) {
     const C = CITIES[i]; if (!C.vis) continue; const st = stOf(C), sel = i === M.sel; if (st === 'soon' && !sel) continue;
-    const lab = C.en.split(' → ')[0]; c.font = F(9, 700); const w = c.measureText(lab).width, bx = C.px + 9, by = C.py - 16;
+    const lab = C.en.split(' → ')[0]; c.font = F(9, 700); const w = c.measureText(lab).width, bx = C.px + 9 + w > W - 4 ? C.px - 9 - w : C.px + 9, by = C.py - 16; // 右端では点の左に出す
     if (!sel && placed.some(b => bx < b[0] + b[2] + 4 && bx + w + 4 > b[0] && by < b[1] + 12 && by + 12 > b[1])) continue;
     placed.push([bx, by, w]); c.globalAlpha = Math.min(1, C.pz * 3); txt(lab, bx, C.py - 7, 9, sel ? '#F3F4F6' : colOf(st), 700); c.globalAlpha = 1;
   }

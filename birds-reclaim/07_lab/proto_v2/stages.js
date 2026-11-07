@@ -1,4 +1,4 @@
-// BIRDS RECLAIM 試作 v2 — 材質・都市（ステージ）・建物の図面
+// BIRDS RECLAIM 試作 v2 — 材質・都市（ステージ）・建物の図面（第2弾で13都市）
 // 実在の名前を出す（商用にしない）。ロゴは描かない。宗教施設・慰霊の場・惨事の現場は入れない。
 // ボスは観光名所の分かりやすさではなく、いまの時代の権力と資本の新しい象徴を選ぶ（01_docs/CITIES_PROPOSAL.md §8）。
 // 昔からの名所は、道中の「名所」（名前の札が付いた普通の建物）に回す。
@@ -30,12 +30,17 @@ const MAT = {
   px: { hp: 3, col: [120, 138, 158], pt: 4, f: .3 }, pv: { hp: 2, col: [64, 74, 88], pt: 3, f: .3 }, l8: { hp: 3, col: [150, 170, 188], pt: 4, f: .3 },
   mb: { hp: 3.4, col: [214, 212, 204], pt: 4, f: .3 }, gf: { hp: 2.6, col: [214, 172, 72], pt: 5, f: .3 }, sw: { hp: 3, col: [236, 236, 230], pt: 4, f: .3 },
   bh: { hp: 3.4, col: [162, 178, 198], pt: 4, f: .3 },
+  fv: { hp: 2, col: [186, 212, 226], pt: 3, f: .3 }, cb: { hp: 3, col: [216, 200, 162], pt: 4, f: .3 }, dg: { hp: 3, col: [92, 126, 160], pt: 4, f: .3 },
+  eg: { hp: 3, col: [118, 140, 158], pt: 4, f: .3 }, nv: { hp: 3, col: [66, 72, 70], pt: 4, f: .3 }, lx: { hp: 3, col: [50, 54, 66], pt: 4, f: .3 },
+  sp: { hp: 3, col: [36, 40, 58], pt: 4, f: .3 }, tw: { hp: 2.4, col: [224, 226, 228], pt: 3, f: .3 },
   // 核（光る）
   nc: { hp: 40, col: [255, 120, 176], pt: 30, f: .3 }, sc: { hp: 30, col: [110, 196, 255], pt: 25, f: .3 },
   kc: { hp: 40, col: [255, 238, 196], pt: 30, f: .3 }, gc: { hp: 34, col: [252, 208, 96], pt: 30, f: .3 },
   rc: { hp: 45, col: [255, 84, 72], pt: 30, f: .3 }, fc: { hp: 22, col: [255, 138, 58], pt: 30, f: .3 },
   tc: { hp: 150, col: [255, 204, 92], pt: 40, f: .3 }, cs: { hp: 30, col: [255, 176, 64], pt: 30, f: .3 },
   dm: { hp: 40, col: [255, 214, 90], pt: 30, f: .3 }, pc: { hp: 26, col: [196, 140, 255], pt: 25, f: .3 }, pl: { hp: 40, col: [84, 200, 232], pt: 30, f: .3 },
+  ev: { hp: 30, col: [110, 240, 200], pt: 30, f: .3 }, eu: { hp: 40, col: [255, 214, 60], pt: 30, f: .3 }, pk: { hp: 36, col: [150, 250, 120], pt: 30, f: .3 },
+  ai: { hp: 34, col: [150, 255, 80], pt: 30, f: .3 }, bm: { hp: 30, col: [255, 248, 214], pt: 30, f: .3 }, ey: { hp: 40, col: [70, 140, 255], pt: 30, f: .3 },
 };
 
 // ---------- 道具 ----------
@@ -79,7 +84,28 @@ const GEN = {
   sand(x) { const w = ri(8, 5), h = ri(4, 3), b = mk(x, w, 'sd'); box(b, 0, h - 1, 0, w - 1, 'sd'); const k0 = ri(1, w - 3); box(b, h, h + 3, k0, k0 + 1, 'sd'); return fin(b); },
   // 鏡のガラスの塔
   mirror(x) { const w = ri(7, 5), h = ri(20, 16), b = mk(x, w, 'mg'); for (let r = 0; r < h; r++) for (let k = 0; k < w; k++) put(b, r, k, r % 7 === 0 ? 'ss' : (k % 3 === 0 ? 'au' : 'mg')); return fin(b); },
+  // ドイツの木組みの家：白い壁に木の梁、急な切妻屋根
+  gable(x) { const w = ri(7, 4), h = ri(6, 4), b = mk(x, w, 'wt'); for (let r = 0; r < h; r++) for (let k = 0; k < w; k++) put(b, r, k, (r % 3 === 0 || k === 0 || k === w - 1) ? 'wd' : (r % 3 === 2 && k % 2) ? 'gl' : 'wt'); for (let r = 0; r < Math.ceil(w / 2); r++) for (let k = r; k < w - r; k++) { put(b, h + r * 2, k, 'rd'); put(b, h + r * 2 + 1, k, 'rd'); } return fin(b); },
+  // パリのオスマン建築：クリーム色の石、鉄のバルコニー、灰色のマンサード屋根
+  haussmann(x) { const w = ri(10, 4), h = ri(8, 3), b = mk(x, w, 'ls'); for (let r = 0; r < h; r++) for (let k = 0; k < w; k++) put(b, r, k, (r === 2 || r === h - 2) && k % 2 ? 'sl' : (r % 2 && k % 3 === 1) ? 'wn' : 'ls'); for (let r = 0; r < 3; r++) for (let k = r; k < w - r; k++) put(b, h + r, k, (r === 1 && k % 3 === 1) ? 'gl' : 'mt'); return fin(b); },
+  // 地中海の家：白や淡い色の壁、緑の鎧戸、素焼きの屋根
+  riviera(x) { const w = ri(7, 4), h = ri(5, 4), m = ['wt', 'p1', 'p3', 'wt'][ri(0, 4)], b = mk(x, w, m); for (let r = 0; r < h; r++) for (let k = 0; k < w; k++) put(b, r, k, (r % 3 === 1 && k % 2) ? 'gn' : m); box(b, h, h, 0, w - 1, 'or'); return fin(b); },
+  // ラ・マンチャの風車：白い塔、とがった屋根、十字の羽
+  windmill(x) { const b = mk(x, 11, 'wt'), cx = 5, h = ri(8, 3); box(b, 0, h - 1, cx - 2, cx + 2, 'wt'); trap(b, h, h + 2, cx, 2, 0, 'sl'); for (let i = 1; i <= 4; i++) { put(b, h - 2 + i, cx, 'wd'); put(b, h - 2 - i, cx, 'wd'); put(b, h - 2, cx + 1 + i, 'wd'); put(b, h - 2, cx - 1 - i, 'wd'); } return fin(b); },
+  // サンフランシスコのヴィクトリア様式の家：淡い色、出窓、とがった破風
+  victorian(x) { const w = ri(5, 2), h = ri(7, 3), m = ['p1', 'p2', 'p3', 'pu', 'yr'][ri(0, 5)], b = mk(x, w, m); for (let r = 0; r < h; r++) for (let k = 0; k < w; k++) put(b, r, k, (k === 1 && r > 0 && r < h - 1) ? 'wt' : (r % 3 === 1 && k > 1) ? 'gl' : m); for (let r = 0; r < Math.ceil(w / 2); r++) for (let k = r; k < w - r; k++) put(b, h + r, k, 'sl'); return fin(b); },
+  // ラスベガスのカジノ：低く横に長い箱、屋根の縁のネオン、端に縦の電飾看板
+  casino(x) { const w = ri(14, 8), h = ri(5, 4), b = mk(x, w + 2, 'co'); for (let r = 0; r < h; r++) for (let k = 0; k < w; k++) put(b, r, k, r >= h - 2 ? (k % 2 ? 'ne' : 'ny') : (r === 1 && k % 3 === 1) ? 'gl' : 'co'); for (let r = 0; r < h + 6; r++) { put(b, r, w, r > h ? 'ny' : 'co'); put(b, r, w + 1, r > h ? 'ne' : 'co'); } return fin(b); },
 };
+// エッフェル塔の形（パリの本物と、ラスベガスの半分の大きさの偽物で使う）
+function eiffelB(x, h) {
+  const hw0 = Math.round(h * .27), b = mk(x, hw0 * 2 + 1, 'bz'), cx = hw0;
+  for (let r = 0; r <= h; r++) {
+    const hw = Math.max(0, Math.round(hw0 * Math.pow(1 - r / h, 2.2))), deck = r === Math.round(h * .17) || r === Math.round(h * .38) || r === Math.round(h * .8);
+    for (let k = -hw; k <= hw; k++) { const inner = Math.abs(k) < hw - 1; if (inner && !deck && (r % 3 || (r < h * .17 && Math.abs(k) < hw * .6))) continue; put(b, r, k + cx, deck ? 'au' : 'bz'); }
+  }
+  box(b, h + 1, h + 3, cx, cx, 'sl'); return fin(b);
+}
 
 // ---------- 名所（名前の札が付く普通の建物） ----------
 // 倒すと「◯◯、還る」と出て点が入る。real=人工の木など（倒すと本物の大きな木が育つ）
@@ -128,6 +154,42 @@ const LM = {
   chrysler: { name: 'クライスラー・ビル', make(x) { const b = mk(x, 14, 'ls'), cx = 7; for (let r = 0; r <= 44; r++) for (let k = 0; k <= 13; k++) put(b, r, k, (k % 2 && r % 2) ? 'wn' : 'ls'); for (let r = 45; r <= 56; r++) { const hw = Math.max(1, Math.round(6 - (r - 45) * .45)); for (let k = cx - hw; k <= cx + hw - 1; k++) { if ((r - 45) % 3 === 2 && Math.abs(k - cx) < hw - 1) continue; put(b, r, k, 'ss'); } } box(b, 57, 62, cx - 1, cx - 1, 'sl'); return fin(b); } },
   nyse: { name: 'ニューヨーク証券取引所', make(x) { const b = mk(x, 28, 'wt'), cx = 14; box(b, 0, 1, 0, 27, 'ls'); for (let r = 2; r <= 13; r++) for (let k = 0; k <= 27; k++) put(b, r, k, k % 4 === 1 ? 'wt' : 'ls'); for (let r = 5; r <= 12; r++) for (let k = 5; k <= 22; k++) put(b, r, k, (k <= 11 && r >= 9) ? 'gb' : (r % 2 ? 'rd' : 'wt')); box(b, 14, 14, 0, 27, 'ls'); trap(b, 15, 17, cx, 13, 4, 'ls'); return fin(b); } },
   bull: { name: 'チャージング・ブル', make(x) { const b = mk(x, 14, 'bz'); box(b, 0, 1, 0, 13, 'ls'); for (const k of [1, 2, 8, 9]) box(b, 2, 3, k, k, 'bz'); box(b, 4, 7, 0, 10, 'bz'); box(b, 5, 8, 11, 13, 'bz'); put(b, 9, 13, 'bz'); put(b, 9, 11, 'bz'); put(b, 8, 0, 'bz'); return fin(b); } },
+  // ベルリン〜フランクフルト
+  brandenburg: { name: 'ブランデンブルク門', make(x) { const b = mk(x, 30, 'ls'); box(b, 0, 1, 0, 29, 'ls'); for (let i = 0; i < 6; i++) box(b, 2, 12, i * 5 + 1, i * 5 + 2, 'ls'); box(b, 13, 15, 0, 29, 'ls'); box(b, 16, 17, 6, 23, 'ls'); box(b, 18, 20, 12, 17, 'cu'); put(b, 21, 14, 'cu'); put(b, 21, 15, 'cu'); return fin(b); } },
+  fernsehturm: { name: 'ベルリンのテレビ塔', make(x) { const b = mk(x, 13, 'co'), cx = 6; trap(b, 0, 3, cx, 5, 2, 'co'); box(b, 4, 42, cx - 1, cx + 1, 'co'); for (let r = 43; r <= 53; r++) { const hw = Math.round(Math.sqrt(Math.max(0, 30 - (r - 48) * (r - 48)))); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, r === 48 ? 'gl' : 'ss'); } box(b, 54, 62, cx, cx, 'rd'); return fin(b); } },
+  sonycenter: { name: 'ソニーセンター', make(x) { const b = mk(x, 36, 'gl'); for (let r = 0; r <= 14; r++) for (let k = 0; k <= 35; k++) { if (r > 1 && k > 8 && k < 27) continue; put(b, r, k, r % 4 === 0 ? 'co' : 'gl'); } for (let k = 0; k <= 35; k++) { const h = 15 + Math.round(5 * Math.sin(Math.PI * k / 35)); for (let r = 15; r <= h; r++) put(b, r, k, (k + r) % 4 === 0 ? 'wt' : 'fv'); } return fin(b); } },
+  commerzbank: { name: 'コメルツバンク・タワー', make(x) { const b = mk(x, 14, 'gl'), cx = 7; for (let r = 0; r <= 52; r++) for (let k = 0; k <= 13; k++) put(b, r, k, (k === 0 || k === 13 || r % 6 === 0) ? 'ss' : (Math.floor(r / 6) % 3 === 1 && k > 3 && k < 10) ? 'gn' : 'gl'); box(b, 53, 56, cx - 3, cx + 3, 'ss'); box(b, 57, 61, cx, cx, 'sl'); return fin(b); } },
+  messeturm: { name: 'メッセトゥルム', make(x) { const b = mk(x, 13, 'rb'), cx = 6; for (let r = 0; r <= 44; r++) for (let k = 0; k <= 12; k++) put(b, r, k, (k % 3 === 1 && r % 2) ? 'wn' : 'rb'); for (let r = 45; r <= 50; r++) for (let k = 1; k <= 11; k++) put(b, r, k, 'gl'); trap(b, 51, 56, cx, 5, 0, 'rb'); return fin(b); } },
+  // パリ〜モナコ（昔からの名所は札に回す）
+  lafayette: { name: 'ギャラリー・ラファイエット', make(x) { const b = mk(x, 34, 'ls'), cx = 17; for (let r = 0; r <= 10; r++) for (let k = 0; k <= 33; k++) put(b, r, k, (r % 3 === 1 && k % 3 === 1) ? 'wn' : 'ls'); for (let r = 11; r <= 18; r++) { const hw = Math.round(Math.sqrt(Math.max(0, 81 - (r - 10) * (r - 10) * 1.2))); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, (k + r) % 3 ? 'cr' : 'gl'); } return fin(b); } },
+  louvre: { name: 'ルーヴルのピラミッド', make(x) { const b = mk(x, 25, 'gl'), cx = 12; for (let r = 0; r <= 12; r++) { const hw = 12 - r; for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, ((k - cx + r) % 3 === 0 || (cx - k + r) % 3 === 0) ? 'ss' : 'gl'); } return fin(b); } },
+  pompidou: { name: 'ポンピドゥー・センター', make(x) { const b = mk(x, 40, 'gl'), P = ['gb', 'rd', 'gn', 'yr']; for (let r = 0; r <= 15; r++) for (let k = 0; k <= 39; k++) put(b, r, k, k % 5 === 0 ? P[(k / 5) % 4] : r % 4 === 0 ? 'wt' : 'gl'); box(b, 16, 16, 0, 39, 'wt'); return fin(b); } },
+  montparnasse: { name: 'モンパルナス・タワー', make(x) { const b = mk(x, 12, 'pv'); for (let r = 0; r <= 50; r++) for (let k = 0; k <= 11; k++) put(b, r, k, r % 2 ? 'pv' : 'mt'); box(b, 51, 52, 1, 10, 'co'); return fin(b); } },
+  eiffel: { name: 'エッフェル塔', make(x) { return eiffelB(x, 60); } },
+  // バルセロナ〜マドリード（サグラダ・ファミリアは宗教施設なので入れない）
+  boqueria: { name: 'ボケリア市場', make(x) { const b = mk(x, 30, 'p2'), cx = 15; for (let r = 0; r <= 7; r++) for (let k = 0; k <= 29; k++) put(b, r, k, (r % 3 === 1 && k % 3 === 1) ? 'yr' : 'p2'); for (let r = 8; r <= 14; r++) { const hw = Math.round(14 * Math.sqrt(Math.max(0, 1 - ((r - 7) / 8) ** 2))); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, (r === 11 && k % 2) ? 'or' : 'gl'); } return fin(b); } },
+  casamila: { name: 'カサ・ミラ', make(x) { const b = mk(x, 30, 'ls'); for (let k = 0; k <= 29; k++) { const h = 14 + Math.round(1.5 * Math.sin(k * .5)); for (let r = 0; r <= h; r++) put(b, r, k, (r % 3 === 1 && (k + Math.round(Math.sin(r) * 2)) % 4 === 1) ? 'sl' : (r === h ? 'wt' : 'ls')); } for (const k of [5, 13, 22]) box(b, 12, 18, k, k + 1, 'wt'); return fin(b); } },
+  cuatrotorres: { name: 'クアトロ・トーレス', make(x) { const b = mk(x, 44, 'gl'); box(b, 0, 1, 0, 43, 'co'); for (const [k0, h, m] of [[0, 52, 'gl'], [11, 56, 'mg'], [22, 50, 'bl'], [33, 54, 'ss']]) for (let r = 2; r <= h; r++) for (let k = k0 + 1; k <= k0 + 9; k++) put(b, r, k, r % 5 === 0 ? 'co' : m); return fin(b); } },
+  metropolis: { name: 'メトロポリス・ビル', make(x) { const b = mk(x, 16, 'wt'), cx = 8; for (let r = 0; r <= 22; r++) for (let k = 1; k <= 15; k++) put(b, r, k, (r % 3 === 1 && k % 2) ? 'wn' : 'wt'); for (let r = 23; r <= 30; r++) { const hw = Math.round(7 * Math.sqrt(Math.max(0, 1 - ((r - 22) / 9) ** 2))); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, 'sl'); } for (let r = 31; r <= 34; r++) put(b, r, cx, 'cr'); put(b, 33, cx - 1, 'cr'); put(b, 33, cx + 1, 'cr'); return fin(b); } },
+  palacioreal: { name: 'マドリード王宮', make(x) { const b = mk(x, 46, 'wt'); for (let r = 0; r <= 12; r++) for (let k = 0; k <= 45; k++) put(b, r, k, r <= 2 ? 'ls' : (r % 3 === 1 && k % 3 === 1) ? 'wn' : 'wt'); box(b, 13, 13, 0, 45, 'ls'); for (const k0 of [0, 20, 40]) box(b, 14, 16, k0, k0 + 5, 'wt'); return fin(b); } },
+  // シアトル
+  pikeplace: { name: 'パイク・プレイス・マーケット', make(x) { const b = mk(x, 34, 'br'); for (let r = 0; r <= 6; r++) for (let k = 0; k <= 33; k++) put(b, r, k, (r % 3 === 1 && k % 3 === 1) ? 'gl' : 'br'); box(b, 7, 7, 0, 33, 'co'); for (const k of [8, 24]) box(b, 8, 11, k, k, 'sl'); box(b, 12, 14, 4, 29, 'rd'); for (let k = 6; k <= 27; k += 2) put(b, 13, k, 'wt'); return fin(b); } },
+  columbia: { name: 'コロンビア・センター', make(x) { const b = mk(x, 14, 'pv'); for (let r = 0; r <= 60; r++) { const s = r > 50 ? 3 : r > 40 ? 1 : 0; for (let k = s; k <= 13 - s; k++) put(b, r, k, r % 4 === 0 ? 'mt' : 'pv'); } return fin(b); } },
+  library: { name: 'シアトル中央図書館', make(x) { const b = mk(x, 30, 'gl'); for (let r = 0; r <= 22; r++) { const a = Math.round(r < 8 ? 6 - r * .6 : r < 14 ? 2 + (r - 8) : Math.max(0, 8 - (r - 14))), z = Math.round(r < 12 ? 23 + r * .5 : 29 - (r - 12) * .6); for (let k = a; k <= z; k++) put(b, r, k, ((k + r) % 3 === 0 || (k - r + 30) % 3 === 0) ? 'ss' : 'gl'); } return fin(b); } },
+  spaceneedle: { name: 'スペース・ニードル', make(x) { const b = mk(x, 17, 'wt'), cx = 8; for (let r = 0; r <= 44; r++) { const hw = r < 30 ? Math.max(1, Math.round(4 - r * .1)) : Math.round(1 + (r - 30) * .1); put(b, r, cx - hw, 'wt'); put(b, r, cx + hw, 'wt'); put(b, r, cx, 'wt'); if (r % 8 === 4) for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, 'wt'); } for (let r = 45; r <= 49; r++) { const hw = r <= 47 ? 4 + (r - 45) * 2 : 8 - (r - 47) * 2; for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, r === 46 ? 'gl' : 'wt'); } trap(b, 50, 51, cx, 2, 1, 'wt'); box(b, 52, 58, cx, cx, 'sl'); return fin(b); } },
+  // サンフランシスコ〜シリコンバレー（ロゴは描かない）
+  goldengate: { name: 'ゴールデン・ゲート・ブリッジ', make(x) { const b = mk(x, 40, 'rd'), cab = k => 12 + Math.round(36 * Math.pow(1 - (k < 14 ? 14 - k : k - 24) / 15, 2)); for (const k of [14, 15, 23, 24]) box(b, 0, 52, k, k, 'rd'); for (const r of [24, 36, 48, 52]) box(b, r, r, 14, 24, 'rd'); box(b, 10, 11, 0, 39, 'rd'); for (let k = 0; k <= 39; k++) { if (k >= 14 && k <= 24) continue; const nb = k < 14 ? k + 1 : k - 1, r1 = cab(k), r2 = nb >= 14 && nb <= 24 ? r1 : cab(nb); for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) put(b, r, k, 'rd'); if (k % 3 === 0) box(b, 12, r1, k, k, 'rd'); } return fin(b); } },
+  paintedladies: { name: 'ペインテッド・レディース', make(x) { const b = mk(x, 30, 'p1'), M = ['p1', 'p3', 'p2', 'pu', 'yr']; for (let i = 0; i < 5; i++) { const k0 = i * 6, m = M[i], h = 7 + (i % 2); for (let r = 0; r < h; r++) for (let k = k0; k < k0 + 6; k++) put(b, r, k, (k === k0 + 1 && r > 0) ? 'wt' : (r % 3 === 1 && k > k0 + 2) ? 'gl' : m); for (let r = 0; r < 3; r++) for (let k = k0 + r; k < k0 + 6 - r; k++) put(b, h + r, k, 'sl'); } return fin(b); } },
+  transamerica: { name: 'トランスアメリカ・ピラミッド', make(x) { const b = mk(x, 19, 'wt'), cx = 9; for (let r = 0; r <= 52; r++) { const hw = Math.max(0, Math.round(9 * (1 - r / 54))); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, (r % 2 && Math.abs(k - cx) < hw) ? 'wn' : 'wt'); } for (const s of [-1, 1]) box(b, 30, 38, cx + s * 4, cx + s * 4, 'wt'); box(b, 53, 58, cx, cx, 'wt'); return fin(b); } },
+  salesforce: { name: 'セールスフォース・タワー', make(x) { const b = mk(x, 15, 'ls'), cx = 7; for (let r = 0; r <= 60; r++) { const hw = r < 50 ? 7 - Math.floor(r / 25) : Math.max(1, Math.round(6 - (r - 50) * .5)); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, r >= 52 ? 'ss' : (k - cx) % 2 ? 'gl' : 'ls'); } return fin(b); } },
+  meta: { name: 'Meta 本社（屋上の公園）', make(x) { const b = mk(x, 44, 'wt'); for (let r = 0; r <= 8; r++) for (let k = 0; k <= 43; k++) put(b, r, k, (r % 3 === 1 && k % 2) ? 'gl' : 'wt'); box(b, 9, 9, 0, 43, 'gn'); for (const k of [4, 12, 21, 30, 38]) { box(b, 10, 12, k, k, 'wd'); box(b, 13, 15, k - 2, k + 2, 'gn'); } return fin(b); } },
+  googleplex: { name: 'Googleplex', make(x) { const b = mk(x, 34, 'wt'); for (let r = 0; r <= 9; r++) for (let k = 0; k <= 33; k++) put(b, r, k, (r % 3 === 1 && k % 3 !== 0) ? 'gl' : 'wt'); for (const k of [3, 15, 27]) { box(b, 10, 11, k + 1, k + 1, 'wd'); box(b, 12, 15, k - 1, k + 3, 'gn'); } return fin(b); } },
+  // ラスベガス（偽物の名所は、ほかの都市の名所と並べて見せる）
+  welcome: { name: 'Welcome to Las Vegas の看板', make(x) { const b = mk(x, 15, 'wt'), cx = 7; box(b, 0, 6, 4, 4, 'sl'); box(b, 0, 6, 10, 10, 'sl'); for (let r = 7; r <= 17; r++) { const hw = 7 - Math.abs(r - 12) * .6 | 0; for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, Math.abs(k - cx) === hw || r === 7 || r === 17 ? 'rd' : (r === 12 ? 'ny' : 'wt')); } put(b, 18, cx, 'ny'); put(b, 19, cx, 'ny'); return fin(b); } },
+  nyny: { name: 'ニューヨーク・ニューヨーク（偽の摩天楼）', make(x) { const b = mk(x, 36, 'ls'); box(b, 0, 3, 0, 35, 'rd'); for (const [k0, w, h, m] of [[1, 6, 22, 'ls'], [8, 5, 30, 'ss'], [14, 7, 38, 'ls'], [22, 5, 26, 'bs'], [28, 7, 20, 'ls']]) for (let r = 4; r <= h; r++) for (let k = k0; k < k0 + w; k++) put(b, r, k, (r % 3 === 1 && k % 2) ? 'wn' : m); box(b, 39, 43, 17, 17, 'sl'); for (let k = 0; k <= 35; k++) put(b, 4 + Math.round(3 + 3 * Math.sin(k * .5)), k, 'rd'); return fin(b); } },
+  parislv: { name: 'パリス・ラスベガスのエッフェル塔（半分の大きさ）', make(x) { return eiffelB(x, 32); } },
+  bellagio: { name: 'ベラージオの噴水', make(x) { const b = mk(x, 44, 'sd'), cx = 22; box(b, 0, 1, 0, 43, 'gl'); for (let r = 2; r <= 36; r++) { const hw = Math.round(14 - Math.max(0, r - 22) * .6); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, (r % 3 === 1 && k % 2) ? 'wn' : 'sd'); } trap(b, 37, 38, cx, 6, 3, 'or'); for (const k of [2, 4, 39, 41]) box(b, 2, 9 + (k % 3), k, k, 'gl'); return fin(b); } },
+  caesars: { name: 'シーザーズ・パレス', make(x) { const b = mk(x, 22, 'wt'); for (let r = 0; r <= 4; r++) for (let k = 0; k <= 21; k++) put(b, r, k, k % 3 === 1 ? 'ls' : 'wt'); for (let r = 5; r <= 34; r++) for (let k = 3; k <= 18; k++) put(b, r, k, (r % 2 && k % 3 === 1) ? 'gb' : 'wt'); box(b, 35, 36, 2, 19, 'cr'); return fin(b); } },
 };
 
 // ---------- ボス（その都市の、いまの時代の象徴） ----------
@@ -305,14 +367,147 @@ const BOSS = {
       for (let r = 44; r <= 56; r++) { const k = cx - 4 - Math.floor((r - 44) / 6); box(b, r, r, k - 1, k, 'cu'); }
       const tx = cx - 6; trap(b, 57, 57, tx, 2, 2, 'tc'); trap(b, 58, 58, tx, 2, 2, 'tc'); trap(b, 59, 60, tx, 1, 1, 'tc'); put(b, 61, tx, 'tc'); return fin(b); },
   },
-  // 第2弾（シリコンバレー）で使う。今はどの都市にも置いていない
+  // ---- 第2弾 ----
+  tesla: {
+    shell: 16, name: 'テスラのギガファクトリー', kind: '中ボス', core: 'ev', place: 'ドイツ・ベルリン郊外グリューンハイデ', year: '2022年 操業',
+    fact: '松林を切り開いて建てた、電気自動車の巨大な工場', say: '「森を切って“緑の車”？ 計算が合わない」', after: '工場の跡に、松林が戻った', sub: '屋根の上の充電の光を消せ',
+    make(x) { const b = mk(x, 52, 'tw');
+      for (let r = 0; r <= 12; r++) for (let k = 0; k <= 51; k++) put(b, r, k, r % 5 === 2 ? 'bl' : 'tw');
+      box(b, 13, 13, 0, 51, 'co'); for (let r = 14; r <= 22; r++) for (let k = 38; k <= 51; k++) put(b, r, k, (r % 3 === 1 && k % 2) ? 'gl' : 'tw');
+      box(b, 14, 17, 6, 17, 'ev'); box(b, 14, 15, 22, 33, 'pv'); return fin(b); },
+  },
+  dbank: {
+    shell: 22, name: 'ドイツ銀行ツインタワー', kind: '中ボス', core: 'kc', place: 'ドイツ・フランクフルト', year: '1984年／155m',
+    fact: '鏡のガラスの双子の塔。あだ名は「借方と貸方」', say: '「貸し借りの帳尻、いま合わせる」', after: '双子の塔にツタが絡み、帳尻が合った', sub: '借方と貸方、2つの頂の灯を両方消せ',
+    make(x) { const b = mk(x, 34, 'dg');
+      for (let r = 0; r <= 5; r++) for (let k = 0; k <= 33; k++) put(b, r, k, r % 2 ? 'gl' : 'co');
+      for (const k0 of [2, 20]) { for (let r = 6; r <= 50; r++) for (let k = k0; k <= k0 + 11; k++) put(b, r, k, (k === k0 + 3 || k === k0 + 8) ? 'mg' : r % 6 === 0 ? 'ss' : 'dg'); box(b, 51, 53, k0 + 2, k0 + 9, 'kc'); }
+      return fin(b); },
+  },
+  ecb: {
+    shell: 34, coreHp: 100, name: '欧州中央銀行', kind: '象徴', core: 'eu', out: 'ユーロの灯が消えた', place: 'ドイツ・フランクフルト（マイン川のほとり）', year: '2014年／185m',
+    fact: 'ユーロの金利を決める中央銀行。古い卸売市場の上に、ねじれた双子の塔が建つ', say: '「金の流れより、川の流れ」', after: 'マイン川の岸に、ヨシ原が戻った', sub: '頂のユーロの灯を消し、崩しきれ',
+    make(x) { const b = mk(x, 54, 'eg');
+      for (let r = 0; r <= 9; r++) for (let k = 0; k <= 53; k++) put(b, r, k, (r >= 2 && r <= 7 && k % 4 === 1) ? 'gl' : 'br');
+      for (let r = 10; r <= 60; r++) { const s = Math.round((r - 10) * .08); for (let k = 14 + s; k <= 25; k++) put(b, r, k, r % 5 === 0 ? 'ss' : 'eg'); for (let k = 26; k <= 29; k++) put(b, r, k, r % 8 === 0 ? 'ss' : 'gl'); for (let k = 30; k <= 41 - s; k++) put(b, r, k, r % 5 === 0 ? 'ss' : 'eg'); }
+      box(b, 61, 63, 20, 35, 'eu'); return fin(b); },
+  },
+  arche: {
+    shell: 18, name: 'グランダルシュ', kind: '中ボス', core: 'kc', place: 'パリ・ラ・デファンス', year: '1989年／110m',
+    fact: 'ビジネス街ラ・デファンスの端に建つ、真ん中が空っぽの巨大な立方体の門。穴には「雲」と呼ばれる白い屋根が吊られている', say: '「真ん中が空っぽの門。金も人も、すり抜けていく」', after: '門の穴を、渡り鳥の群れが通り抜けた', sub: '頂の屋上の灯を壊せ',
+    make(x) { const b = mk(x, 40, 'ch');
+      box(b, 0, 2, 0, 39, 'ch');
+      for (let r = 3; r <= 33; r++) for (const k0 of [0, 34]) for (let k = k0; k <= k0 + 5; k++) put(b, r, k, (r % 3 === 1 && (k - k0) % 2) ? 'gl' : 'ch');
+      for (let r = 34; r <= 39; r++) for (let k = 0; k <= 39; k++) put(b, r, k, (r % 2 && k % 3 === 1) ? 'gl' : 'ch');
+      box(b, 12, 14, 9, 30, 'fv'); for (const k of [12, 27]) box(b, 15, 33, k, k, 'sl'); box(b, 39, 40, 12, 27, 'kc'); return fin(b); },
+  },
+  flv: {
+    shell: 18, name: 'ルイ・ヴィトン財団', kind: '中ボス', core: 'kc', gim: 'gust', place: 'パリ・ブローニュの森', year: '2014年',
+    fact: 'ラグジュアリーの巨大企業が、森の中に建てた美術館。ガラスの帆をまとった船の形', say: '「森にガラスの船を泊めるな。帆は風のものだ」', after: '帆の骨組みに、森のツタが登った', sub: 'ガラスの帆が風を起こし、群れを押し戻す — 風がやんだ隙に、帆の頂の灯を壊せ',
+    make(x) { const b = mk(x, 46, 'wt');
+      for (let r = 0; r <= 18; r++) for (let k = 6; k <= 39; k++) put(b, r, k, (r % 4 === 2 && k % 3 === 1) ? 'gl' : 'wt');
+      const sail = (cx, r0, r1, hm) => { for (let r = r0; r <= r1; r++) { const hw = Math.round(hm * Math.sin(Math.PI * (r - r0) / (r1 - r0))); for (let k = Math.max(0, cx - hw); k <= Math.min(45, cx + hw); k++) put(b, r, k, (k + r) % 5 === 0 ? 'ss' : 'fv'); } };
+      sail(10, 8, 26, 9); sail(37, 6, 24, 8); sail(24, 12, 34, 11); for (const q of [...b.cells.values()]) if (q.r >= 30 && q.k >= 17 && q.k <= 31) put(b, q.r, q.k, 'kc'); return fin(b); },
+  },
+  montecarlo: {
+    shell: 30, coreHp: 90, name: 'カジノ・ド・モンテカルロ', kind: '象徴', core: 'gc', out: '金の飾りが落ちた', place: 'モナコ・モンテカルロ', year: '1863年 開業',
+    fact: '税の避難所として知られる小さな国の、宮殿のようなカジノ', say: '「税の避難所はあっても、鳥の避難所はない」', after: 'カジノの屋根は、カモメの見晴らし台になった', sub: '屋根の上の金の飾りを落とし、崩しきれ',
+    make(x) { const b = mk(x, 50, 'cb'), cx = 25;
+      for (let r = 0; r <= 16; r++) for (let k = 0; k <= 49; k++) put(b, r, k, (r >= 3 && r <= 12 && k % 4 === 2) ? 'gl' : r === 16 ? 'gf' : 'cb');
+      for (let r = 17; r <= 26; r++) for (let k = 16; k <= 33; k++) put(b, r, k, (r % 4 === 1 && k % 3 === 1) ? 'gl' : 'cb');
+      trap(b, 27, 30, cx, 9, 5, 'cu'); trap(b, 31, 34, cx, 5, 2, 'gc');
+      for (const k0 of [2, 41]) { for (let r = 17; r <= 32; r++) for (let k = k0; k <= k0 + 6; k++) put(b, r, k, (r % 4 === 1 && (k - k0) % 2) ? 'gl' : 'cb'); trap(b, 33, 37, k0 + 3, 3, 0, 'cu'); }
+      return fin(b); },
+  },
+  glories: {
+    shell: 18, name: 'トッレ・グローリエス', kind: '中ボス', core: 'nc', place: 'バルセロナ・グローリエス', year: '2005年／144m',
+    fact: '水道会社の本社として建った弾丸形の塔。夜は外壁の LED が色を変える', say: '「水道会社の塔なら、まず水浴び場を作れ」', after: '弾丸の塔に、インコの大きな共同の巣がかかった', sub: '頂の光るドームを壊せ',
+    make(x) { const b = mk(x, 17, 'gb'), cx = 8, P = ['rd', 'or', 'gb', 'pu', 'gl'];
+      for (let r = 0; r <= 46; r++) { const hw = r < 30 ? 8 : Math.round(8 * Math.sqrt(Math.max(0, 1 - ((r - 30) / 17) ** 2))); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, r >= 40 ? 'nc' : P[Math.floor(hs(r >> 2, k >> 1) * 5)]); }
+      return fin(b); },
+  },
+  kio: {
+    shell: 20, name: 'プエルタ・デ・エウローパ', kind: '中ボス', core: 'kc', place: 'マドリード・カスティーリャ広場', year: '1996年／114m',
+    fact: '内側へ15度ずつ傾き、門のように向き合う双子の塔', say: '「傾いてまで寄り合って、何の相談だ」', after: '傾いた塔は、インコの滑り台になった', sub: '傾いた2本の塔の頂の灯を壊せ — 根元を削れば、塔ごと倒れる',
+    make(x) { const b = mk(x, 48, 'mt');
+      for (let r = 0; r <= 48; r++) { const s = Math.round(r * .27); for (let i = 0; i <= 9; i++) { const m = r >= 45 ? 'kc' : (r % 4 === 0 || i === 0 || i === 9) ? 'ss' : 'mt'; put(b, r, s + i, m); put(b, r, 47 - s - i, m); } }
+      return fin(b); },
+  },
+  bernabeu: {
+    shell: 28, coreHp: 90, name: 'サンティアゴ・ベルナベウ', kind: '象徴', core: 'sc', out: '巨大画面が消えた', place: 'スペイン・マドリード', year: '1947年 → 2024年 改装',
+    fact: 'サッカーの殿堂。改装で銀の金属の皮と、閉じる屋根と、ぐるりと一周する巨大画面をまとった', say: '「芝生は鳥の食堂だ。屋根で閉じるな」', after: '芝生に、鳥の大群が降りた', sub: '屋根の上の巨大画面を消し、崩しきれ',
+    make(x) { const b = mk(x, 54, 'ss');
+      for (let r = 0; r <= 22; r++) for (let k = 0; k <= 53; k++) put(b, r, k, (r + Math.floor(k / 5)) % 4 === 0 ? 'pv' : 'ss');
+      for (const k0 of [0, 47]) box(b, 23, 28, k0, k0 + 6, 'ss'); box(b, 23, 24, 7, 46, 'ss'); box(b, 25, 27, 16, 37, 'sc'); return fin(b); },
+  },
+  msft: {
+    shell: 18, name: 'マイクロソフト本社', kind: '中ボス', core: 'kc', gim: 'glare', shine: ['bl', 'kc'], place: 'アメリカ・レドモンド', year: '1986年 移転',
+    fact: 'パソコンの「窓」を世界に売った会社の、森の中の広い本社', say: '「窓を売るなら、鳥がぶつからない窓にしろ」', after: 'ガラスの壁に、ツタが這った', sub: 'ガラスが光ると群れの目がくらむ。光る前にタップで散らせ — 屋上の灯を壊せ',
+    make(x) { const b = mk(x, 44, 'bl');
+      for (let r = 0; r <= 4; r++) for (let k = 0; k <= 43; k++) put(b, r, k, r === 4 || k % 3 === 0 ? 'co' : 'bl');
+      for (const [k0, k1, h] of [[2, 15, 22], [16, 29, 28], [30, 41, 18]]) for (let r = 5; r <= h; r++) for (let k = k0; k <= k1; k++) put(b, r, k, (r % 4 === 0 || k === k0 || k === k1) ? 'co' : 'bl');
+      box(b, 29, 32, 18, 27, 'kc'); return fin(b); },
+  },
+  boeing: {
+    shell: 16, name: 'ボーイングのエバレット工場', kind: '中ボス', core: 'kc', place: 'アメリカ・エバレット', year: '1967年',
+    fact: '体積で世界一大きい建物。ここで旅客機を組み立てる', say: '「鉄の鳥をつくる工場か。本物の鳥に、あいさつはまだか」', after: '格納庫は、鳥の大きなねぐらになった', sub: '扉から出てくる旅客機の灯を壊せ',
+    make(x) { const b = mk(x, 54, 'fb');
+      for (let r = 0; r <= 20; r++) for (let k = 0; k <= 39; k++) put(b, r, k, (k >= 6 && k <= 37 && r <= 16) ? ((k - 6) % 6 === 0 ? 'co' : 'gb') : r % 5 === 4 ? 'co' : 'fb');
+      for (let r = 21; r <= 24; r++) for (let k = r - 21; k <= 39 - (r - 21); k++) put(b, r, k, 'co');
+      box(b, 0, 2, 44, 44, 'sl'); box(b, 0, 2, 30, 30, 'sl'); box(b, 3, 5, 24, 39, 'wt'); box(b, 3, 5, 40, 51, 'kc'); box(b, 4, 4, 52, 53, 'kc'); return fin(b); },
+  },
+  spheres: {
+    shell: 23, coreHp: 90, name: 'アマゾンのスフィア', kind: '象徴', core: 'pk', out: '球の森が解き放たれた', place: 'アメリカ・シアトル', year: '2018年',
+    fact: '物流の巨大企業の本社に建つ3つのガラスの球。中に世界じゅうの植物を閉じ込めている', say: '「森をガラス玉に閉じ込めて、社員の癒やし？ 出してやる」', after: '閉じ込められた森が、街じゅうに広がった', sub: '大きな球の頂からあふれる森の光を解き放ち、崩しきれ',
+    make(x) { const b = mk(x, 56, 'ss'); box(b, 0, 1, 0, 55, 'co');
+      for (const [ck, cr, R] of [[11, 12, 11], [29, 17, 16], [46, 11, 10]]) for (let r = 2; r <= cr + R; r++) for (let k = ck - R; k <= ck + R; k++) { const d = Math.hypot(k - ck, r - cr); if (d > R + .3 || k < 0 || k > 55) continue; put(b, r, k, (d > R - 1.3 || (k + r) % 5 === 0 || (k - r + 60) % 5 === 0) ? 'ss' : (r < cr ? 'gn' : 'gl')); }
+      for (const q of [...b.cells.values()]) if (q.r >= 31 && Math.hypot(q.k - 29, q.r - 17) <= 16.3) put(b, q.r, q.k, 'pk'); return fin(b); },
+  },
   cloud: {
-    shell: 14, name: 'グーグルのデータセンター', kind: '中ボス', core: 'sc', gim: 'fan', place: 'アメリカ', year: '',
+    shell: 14, name: 'グーグルのデータセンター', kind: '中ボス', core: 'sc', gim: 'fan', place: 'アメリカのどこか（場所は出さない）', year: '24時間 止まらない',
     fact: '検索と動画とクラウドを支える巨大な計算機の倉庫。冷却に大量の水を使う', say: '「川の水、借りっぱなしだろ」', after: '冷却塔に、ツバメが巣をかけた', sub: '冷却ファンの風が群れを押し返す — 先にファンを壊せ',
     make(x) { const b = mk(x, 46, 'sv');
       for (let r = 0; r < 16; r++) for (let k = 0; k < 46; k++) put(b, r, k, r % 4 === 2 ? 'bl' : 'sv');
       for (const k0 of [7, 21, 35]) box(b, 4, 8, k0, k0 + 3, 'sc');
       box(b, 16, 16, 0, 45, 'co'); for (const k0 of [4, 14, 26, 36]) box(b, 17, 18, k0, k0 + 5, 'fan'); b.roof = 17; return fin(b); },
+  },
+  nvidia: {
+    shell: 22, name: 'エヌビディア本社', kind: '中ボス', core: 'ai', place: 'アメリカ・サンタクララ', year: '2022年（新しい棟）',
+    fact: 'AI の計算に欠かせない半導体の会社。三角形を敷き詰めた本社に、世界のお金が集まる', say: '「AI の王様？ 群れの知恵は、こっちが何千万年も先だ」', after: '三角の天窓から、木が伸びた', sub: '屋根の緑の三角を壊せ',
+    make(x) { const b = mk(x, 52, 'nv'), cx = 26;
+      for (let r = 0; r <= 12; r++) for (let k = 0; k <= 51; k++) put(b, r, k, (r % 4 === 2 && k % 2) ? 'gl' : 'nv');
+      for (let r = 13; r <= 20; r++) { const hw = Math.round(25 - (r - 13) * 2.4); for (let k = cx - hw; k <= cx + hw - 1; k++) put(b, r, k, Math.abs(((k + 100) % 8) - 4) < (r - 12) * .5 ? 'gl' : 'nv'); }
+      trap(b, 21, 25, cx, 6, 1, 'ai'); return fin(b); },
+  },
+  apple: {
+    shell: 32, coreHp: 100, name: 'アップル・パーク', kind: '象徴', core: 'kc', out: '宇宙船の灯が消えた', place: 'アメリカ・クパチーノ', year: '2017年',
+    fact: '一周およそ1.6kmの、輪の形の本社。「宇宙船」と呼ばれる', say: '「宇宙船なら、宇宙へ帰れ」', after: '輪の中庭が、本物の森になった', sub: '宇宙船の頂の灯を消し、崩しきれ',
+    make(x) { const b = mk(x, 56, 'wt'), cx = 28;
+      for (let r = 0; r <= 18; r++) { const hw = Math.round(27 - 9 * ((r - 9) / 9) ** 2); for (let k = cx - hw; k <= cx + hw - 1; k++) put(b, r, k, r % 4 === 0 ? 'wt' : (r === 9 || r === 10) ? 'gn' : 'gl'); }
+      trap(b, 19, 20, cx, 16, 12, 'pv'); trap(b, 21, 25, cx, 7, 2, 'kc'); return fin(b); },
+  },
+  luxor: {
+    shell: 20, name: 'ルクソール', kind: '中ボス', core: 'bm', gim: 'pillar', place: 'ラスベガス・ストリップ', year: '1993年／107m',
+    fact: 'ピラミッド形のホテル。頂から夜空へ強い光の柱を放つ。虫が集まり、それを食べにコウモリも来る', say: '「虫を集めてくれて、ありがとう。でも壊す」', after: 'ピラミッドは、ただの砂の山になった', sub: '頂から光の柱が立ち、柱の中の鳥は焼かれる — 柱が消えた隙に頂を壊せ',
+    make(x) { const b = mk(x, 53, 'lx'), cx = 26;
+      for (let r = 0; r <= 33; r++) { const hw = Math.round(26 * (1 - r / 34)); for (let k = cx - hw; k <= cx + hw; k++) put(b, r, k, r >= 27 ? 'bm' : ((k - cx + r) % 6 === 0 || (cx - k + r) % 6 === 0) ? 'mt' : 'lx'); }
+      return fin(b); },
+  },
+  strat: {
+    shell: 18, name: 'ザ・ストラット', kind: '中ボス', core: 'rc', place: 'ラスベガス', year: '1996年／350m',
+    fact: '頂に絶叫マシンを載せた展望塔。アメリカ西部でいちばん高い塔', say: '「宙づりで叫ぶのが遊び？ こっちは毎日飛んでる」', after: '塔の頂で、鳥たちが静かに眠った', sub: '頂の絶叫マシンを壊せ',
+    make(x) { const b = mk(x, 21, 'co'), cx = 10;
+      for (let r = 0; r <= 8; r++) for (const s of [-1, 1]) { const k = cx + s * (6 - Math.floor(r * .6)); box(b, r, r, Math.min(k, k - s), Math.max(k, k - s), 'co'); }
+      box(b, 0, 52, cx - 1, cx + 1, 'co'); trap(b, 53, 55, cx, 4, 7, 'wt'); box(b, 56, 58, cx - 7, cx + 7, 'gl'); trap(b, 59, 59, cx, 7, 5, 'wt');
+      box(b, 60, 63, cx - 1, cx + 1, 'sl'); box(b, 60, 60, cx - 9, cx + 9, 'rc'); box(b, 61, 63, cx - 9, cx - 8, 'rc'); box(b, 61, 63, cx + 8, cx + 9, 'rc'); box(b, 63, 64, cx - 3, cx + 3, 'rc'); return fin(b); },
+  },
+  sphere: {
+    shell: 20, coreHp: 70, name: 'スフィア', kind: '象徴', core: 'ey', gim: 'eye', out: '目玉の光が消えた', place: 'ラスベガス', year: '2023年／112m',
+    fact: '外側が全部 LED の球形の劇場。巨大な目玉や顔の映像で、街を見下ろす', say: '「見つめるのは、鳥の仕事だ」', after: '光の球が消え、砂漠の夜空に星が戻った', sub: '目玉に見つめられた鳥は固まる。目が開く前にタップで離れろ — 瞳を壊し、崩しきれ',
+    make(x) { const b = mk(x, 52, 'sp'), cx = 26, cy = 27, R = 25;
+      box(b, 0, 2, 16, 35, 'co');
+      for (let r = 3; r <= cy + R; r++) for (let k = 0; k <= 51; k++) { if (Math.hypot(k - cx + .5, r - cy) <= R) put(b, r, k, Math.hypot(k - cx + .5, r - cy - 18) < 4.4 ? 'ey' : 'sp'); }
+      b.eye = [cx - .5, cy + 18]; return fin(b); }, // 2D では球の中心は四方を囲まれるので、瞳は上のほうに置く（空の鳥を見上げる目）
   },
 };
 
@@ -327,12 +522,19 @@ const BIRD = {
   falcon: { name: 'ハヤブサ', note: '威力 ×2', col: '#4A4E58', s: 8.5, hp: 0, am: 2, wn: .6 },
   raven: { name: 'ワタリガラス', note: '威力 ×1.5', col: '#1D1A24', s: 9, hp: 0, am: 1.5, wn: .9 },
   pigeon: { name: 'ドバト', note: '合流の数 ×1.3', col: '#5C6672', s: 6.5, hp: 0, am: 1, wn: 1.3 },
+  jackdaw: { name: 'ニシコクマルガラス', note: '威力 ×1.2・合流 ×1.2', col: '#26272E', s: 7, hp: 0, am: 1.2, wn: 1.2 },
+  gull: { name: 'カモメ', note: '体力 +1', col: '#7E8690', s: 9, hp: 1, am: 1, wn: .9 },
+  parakeet: { name: 'オキナインコ', note: '合流の数 ×1.5', col: '#3F7A3C', s: 6.5, hp: 0, am: 1, wn: 1.5 },
+  amcrow: { name: 'アメリカガラス', note: '体力 +1', col: '#0B0C10', s: 8, hp: 1, am: 1, wn: 1 },
+  pelican: { name: 'カッショクペリカン', note: '威力 ×1.8', col: '#5A5048', s: 11, hp: 0, am: 1.8, wn: .6 },
+  grackle: { name: 'オナガクロムクドリモドキ', note: '合流の数 ×1.4', col: '#141430', s: 7.5, hp: 0, am: 1, wn: 1.4 },
 };
 
 // その国のあいさつ（到着のカードと、国境を越えた時に出す）
 const HELLO = {
   日本: ['ようこそ', '日本語'], 台湾: ['歡迎（ホアンイン）', '台湾華語'], タイ: ['サワッディー', 'タイ語'], ベトナム: ['シンチャオ', 'ベトナム語'],
   マレーシア: ['スラマッ・ダタン', 'マレー語'], シンガポール: ['ウェルカム', '英語'], アラブ首長国連邦: ['マルハバ', 'アラビア語'], イギリス: ['ウェルカム', '英語'], アメリカ: ['ウェルカム', '英語'],
+  ドイツ: ['ヴィルコメン', 'ドイツ語'], フランス: ['ビアンヴニュ', 'フランス語'], モナコ: ['ビアンヴニュ', 'フランス語'], スペイン: ['ビエンベニード', 'スペイン語'],
 };
 
 // ---------- 都市 ----------
@@ -386,12 +588,68 @@ const STAGES = [
     lm: [[800, 'skidubai'], [5300, 'motf'], [5800, 'emirates'], [6550, 'dubaimall']], end: 'ドバイは、自然に還った。',
   },
   {
+    id: 'berlin', city: 'ベルリン〜フランクフルト', en: 'BERLIN → FRANKFURT', country: 'ドイツ', lat: 52.52, lon: 13.4, via: [[50.11, 8.68]], tz: 'Europe/Berlin', weather: 'くもり', hp: 1.1, bird: 'jackdaw',
+    sky: [[[140, 150, 164], [184, 190, 198], [214, 214, 210]], [[48, 52, 74], [140, 112, 120], [222, 160, 118]]], ground: ['#50555A', '#2C3034'],
+    zones: [{ x: 0, n: 'ミッテ', g: [['gable', .4], ['stone', .4], ['tower', .2]], sil: [20, 30] }, { x: 1500, n: 'ポツダム広場', g: [['glass', .6], ['stone', .4]], sil: [36, 50] },
+      { x: 2200, n: 'グリューンハイデ（松林）', g: [['ware', .5], ['gable', .5]], sil: [8, 14] }, { x: 3600, n: 'フランクフルトの銀行街', g: [['sky', .5], ['glass', .3], ['stone', .2]], sil: [60, 80] },
+      { x: 5300, n: 'メッセ', g: [['glass', .5], ['tower', .3], ['gable', .2]], sil: [40, 60] }, { x: 6300, n: 'マイン河岸', g: [['gable', .5], ['stone', .3], ['glass', .2]], sil: [30, 60] }],
+    bosses: [{ x: 2700, id: 'tesla' }, { x: 4500, id: 'dbank' }], final: 'ecb',
+    lm: [[600, 'brandenburg'], [1100, 'fernsehturm'], [1700, 'sonycenter'], [3900, 'commerzbank'], [5500, 'messeturm']], end: 'フランクフルトは、自然に還った。',
+  },
+  {
+    id: 'paris', city: 'パリ〜モナコ', en: 'PARIS → MONACO', country: 'フランス・モナコ', lat: 48.86, lon: 2.35, via: [[43.74, 7.42]], tz: 'Europe/Paris', weather: '晴れ', hp: 1.1, bird: 'gull',
+    sky: [[[136, 164, 196], [190, 204, 218], [228, 222, 212]], [[50, 48, 82], [168, 116, 128], [246, 170, 120]]], ground: ['#55585C', '#2E3134'],
+    zones: [{ x: 0, n: 'オペラ', c: 'フランス', g: [['haussmann', .85], ['stone', .15]], sil: [20, 30] }, { x: 1000, n: 'マレ', c: 'フランス', g: [['haussmann', .7], ['brick', .3]], sil: [20, 30] },
+      { x: 1700, n: 'モンパルナス', c: 'フランス', g: [['haussmann', .6], ['tower', .4]], sil: [24, 40] }, { x: 2300, n: 'ラ・デファンス', c: 'フランス', g: [['sky', .5], ['glass', .5]], sil: [50, 70] },
+      { x: 3300, n: 'シャン・ド・マルス', c: 'フランス', g: [['haussmann', .8], ['stone', .2]], sil: [20, 30] }, { x: 4000, n: 'ブローニュの森', c: 'フランス', g: [['house', .6], ['riviera', .4]], sil: [6, 12] },
+      { x: 5300, n: 'ニース', c: 'フランス', g: [['riviera', .8], ['haussmann', .2]], sil: [14, 24] }, { x: 6300, n: 'モンテカルロ', c: 'モナコ', g: [['riviera', .5], ['glass', .3], ['haussmann', .2]], sil: [30, 50] }],
+    bosses: [{ x: 2700, id: 'arche' }, { x: 4600, id: 'flv' }], final: 'montecarlo',
+    lm: [[500, 'lafayette'], [1100, 'louvre'], [1500, 'pompidou'], [1950, 'montparnasse'], [3500, 'eiffel']], end: 'モナコは、自然に還った。',
+  },
+  {
+    id: 'barcelona', city: 'バルセロナ〜マドリード', en: 'BARCELONA → MADRID', country: 'スペイン', lat: 41.39, lon: 2.17, via: [[40.42, -3.7]], tz: 'Europe/Madrid', weather: '快晴', hp: 1.1, bird: 'parakeet',
+    sky: [[[118, 166, 214], [180, 208, 228], [236, 228, 206]], [[48, 46, 84], [178, 112, 112], [252, 168, 96]]], ground: ['#6E6658', '#3A3630'],
+    zones: [{ x: 0, n: 'ランブラス通り', g: [['riviera', .6], ['haussmann', .4]], sil: [16, 24] }, { x: 1000, n: 'アシャンプラ', g: [['haussmann', .6], ['riviera', .4]], sil: [20, 30] },
+      { x: 1900, n: 'グローリエス', g: [['glass', .6], ['tower', .4]], sil: [30, 50] }, { x: 3000, n: 'ラ・マンチャ（風車の丘）', g: [['windmill', .5], ['riviera', .5]], sil: [6, 10] },
+      { x: 4200, n: 'カステリャーナ通り', g: [['sky', .5], ['glass', .5]], sil: [50, 70] }, { x: 5500, n: 'グラン・ビア', g: [['haussmann', .6], ['stone', .4]], sil: [24, 36] },
+      { x: 6500, n: 'チャマルティン', g: [['glass', .5], ['riviera', .5]], sil: [30, 50] }],
+    bosses: [{ x: 2400, id: 'glories' }, { x: 4800, id: 'kio' }], final: 'bernabeu',
+    lm: [[500, 'boqueria'], [1100, 'casamila'], [4300, 'cuatrotorres'], [5800, 'metropolis'], [6300, 'palacioreal']], end: 'マドリードは、自然に還った。',
+  },
+  {
     id: 'london', city: 'ロンドン', en: 'LONDON', country: 'イギリス', lat: 51.51, lon: -.13, tz: 'Europe/London', weather: '雨', hp: 1.1, bird: 'raven', rain: 1,
     sky: [[[128, 138, 150], [170, 176, 182], [198, 200, 202]], [[50, 56, 70], [118, 112, 122], [190, 150, 128]]], ground: ['#4E5459', '#2A2E33'],
     zones: [{ x: 0, n: 'セント・ジョンズ・ウッド', g: [['terrace', .8], ['brick', .2]], sil: [10, 18] }, { x: 2900, n: 'シティ', g: [['glass', .45], ['stone', .55]], sil: [36, 56] },
       { x: 5600, n: 'テムズ河岸', g: [['ware', .5], ['brick', .3], ['pylon', .2]], sil: [12, 26] }],
     bosses: [{ x: 2300, id: 'abbey' }, { x: 4900, id: 'walkie' }], final: 'battersea',
     lm: [[3000, 'bttower'], [3300, 'boe'], [3800, 'gherkin'], [4400, 'shard'], [6200, 'londoneye']], end: 'ロンドンは、自然に還った。',
+  },
+  {
+    id: 'seattle', city: 'シアトル', en: 'SEATTLE', country: 'アメリカ', lat: 47.61, lon: -122.33, tz: 'America/Los_Angeles', weather: '小雨', hp: 1.15, bird: 'amcrow', rain: 1,
+    sky: [[[124, 138, 152], [168, 178, 188], [200, 204, 206]], [[44, 50, 70], [112, 108, 124], [180, 146, 130]]], ground: ['#4C5357', '#292E32'],
+    zones: [{ x: 0, n: 'パイク・プレイス', g: [['brick', .6], ['house', .4]], sil: [16, 26] }, { x: 1300, n: 'ダウンタウン', g: [['sky', .5], ['glass', .5]], sil: [50, 70] },
+      { x: 2300, n: 'レドモンド', g: [['glass', .5], ['house', .5]], sil: [12, 20] }, { x: 3800, n: 'エバレット', g: [['ware', .7], ['house', .3]], sil: [8, 16] },
+      { x: 5600, n: 'サウス・レイク・ユニオン', g: [['glass', .6], ['brick', .2], ['sky', .2]], sil: [40, 60] }],
+    bosses: [{ x: 2800, id: 'msft' }, { x: 4500, id: 'boeing' }], final: 'spheres',
+    lm: [[850, 'pikeplace'], [1500, 'columbia'], [1950, 'library'], [5900, 'spaceneedle']], end: 'シアトルは、自然に還った。',
+  },
+  {
+    id: 'sf', city: 'サンフランシスコ〜シリコンバレー', en: 'SAN FRANCISCO → SILICON VALLEY', country: 'アメリカ', lat: 37.77, lon: -122.42, via: [[37.33, -122.01]], tz: 'America/Los_Angeles', weather: '霧のち晴れ', hp: 1.15, bird: 'pelican',
+    sky: [[[150, 176, 200], [200, 212, 220], [232, 228, 218]], [[46, 50, 84], [160, 114, 130], [246, 166, 112]]], ground: ['#56595B', '#2F3234'],
+    zones: [{ x: 0, n: 'ゴールデン・ゲート', fog: 1, g: [['victorian', .7], ['house', .3]], sil: [14, 24] }, { x: 1300, n: 'ソーマ', fog: 1, g: [['sky', .4], ['glass', .3], ['victorian', .3]], sil: [40, 70] },
+      { x: 2500, n: 'メンロパーク', g: [['glass', .4], ['house', .6]], sil: [10, 18] }, { x: 3200, n: 'マウンテンビュー', g: [['glass', .4], ['ware', .3], ['house', .3]], sil: [10, 18] },
+      { x: 4700, n: 'サンタクララ', g: [['glass', .5], ['ware', .5]], sil: [14, 24] }, { x: 6300, n: 'クパチーノ', g: [['house', .6], ['glass', .4]], sil: [10, 18] }],
+    bosses: [{ x: 3800, id: 'cloud' }, { x: 5300, id: 'nvidia' }], final: 'apple',
+    lm: [[450, 'goldengate'], [1000, 'paintedladies'], [1500, 'transamerica'], [2000, 'salesforce'], [2700, 'meta'], [3350, 'googleplex']], end: 'シリコンバレーは、自然に還った。',
+  },
+  {
+    id: 'vegas', city: 'ラスベガス', en: 'LAS VEGAS', country: 'アメリカ', lat: 36.17, lon: -115.14, tz: 'America/Los_Angeles', weather: '快晴・夜', hp: 1.2, bird: 'grackle',
+    sky: [[[54, 50, 96], [132, 92, 140], [236, 150, 112]], [[14, 16, 40], [38, 34, 78], [96, 62, 112]]], ground: ['#6A5E50', '#3A3430'],
+    zones: [{ x: 0, n: 'ストリップ南', g: [['casino', .7], ['sand', .3]], sil: [16, 30] }, { x: 1500, n: 'ルクソール前', g: [['casino', .6], ['mirror', .4]], sil: [30, 50] },
+      { x: 3200, n: 'センター・ストリップ', g: [['casino', .5], ['mirror', .3], ['sky', .2]], sil: [40, 60] }, { x: 4600, n: 'ストラット', g: [['casino', .6], ['ware', .4]], sil: [20, 40] },
+      { x: 6000, n: 'ベネチアン', g: [['casino', .5], ['mirror', .5]], sil: [40, 60] }],
+    bosses: [{ x: 2500, id: 'luxor' }, { x: 5100, id: 'strat' }], final: 'sphere',
+    lm: [[500, 'welcome'], [1100, 'nyny'], [3500, 'parislv'], [3950, 'bellagio'], [4400, 'caesars']], end: 'ラスベガスは、自然に還った。',
   },
   {
     id: 'newyork', city: 'ニューヨーク', en: 'NEW YORK', country: 'アメリカ', lat: 40.71, lon: -74.01, tz: 'America/New_York', weather: '晴れ', hp: 1.3, bird: 'pigeon',
@@ -402,9 +660,5 @@ const STAGES = [
     lm: [[2000, 'msg'], [2450, 'esb'], [3700, 'chrysler'], [6400, 'nyse'], [6800, 'bull']], end: 'ニューヨークは、自然に還った。',
   },
 ];
-// 地図に出すだけの次の候補（第2弾。まだ遊べない）
-const TEASERS = [
-  { city: 'バルセロナ〜マドリード', en: 'BARCELONA → MADRID', country: 'スペイン', lat: 41.39, lon: 2.17 }, { city: 'パリ〜モナコ', en: 'PARIS → MONACO', country: 'フランス・モナコ', lat: 48.86, lon: 2.35 },
-  { city: 'ベルリン〜フランクフルト', en: 'BERLIN → FRANKFURT', country: 'ドイツ', lat: 52.52, lon: 13.4 }, { city: 'シアトル', en: 'SEATTLE', country: 'アメリカ', lat: 47.61, lon: -122.33 },
-  { city: 'シリコンバレー〜サンフランシスコ', en: 'SILICON VALLEY → SF', country: 'アメリカ', lat: 37.39, lon: -122.08 }, { city: 'ラスベガス', en: 'LAS VEGAS', country: 'アメリカ', lat: 36.17, lon: -115.14 },
-];
+// 地図に出すだけの次の候補（第2弾で全部遊べるようになった。案が増えたらここに足す）
+const TEASERS = [];

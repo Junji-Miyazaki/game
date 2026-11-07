@@ -179,6 +179,9 @@ function coreLeft(B) { let n = 0; for (const q of B.cells.values()) if (q.m === 
 // map：都庁のプロジェクションマッピング。glare と同じく、光る前にタップで散らせば避けられる
 // slow：国会議事堂の牛歩戦術。4.5 秒ごとに、群れが遅くなる時間と戻る時間が入れ替わる
 // sway：台北101 の制振ダンパー。金の球が揺れたあと、近くの鳥をはじき飛ばす（傷は負わない）
+// gust：ルイ・ヴィトン財団のガラスの帆。予告のあと 1.4 秒、横風が群れを押し戻す
+// pillar：ルクソールの光の柱。予告の点線のあと、頂の真上の柱に入った鳥が焼かれる
+// eye：スフィアの目玉。開いている間、瞳の近くの鳥はその場で固まる（傷は負わない）
 function gimmick(B, dt, lcx) {
   const G = S.gim; if (!S.siege || B.dead || !B.gim) return;
   if (B.gim === 'fan') {
@@ -221,6 +224,23 @@ function gimmick(B, dt, lcx) {
     } else if ((G.cd -= dt) <= 0) {
       const live = S.birds.filter(b => b.st !== 2); if (live.length) { const p = live[Math.floor(Math.random() * live.length)]; G.aim = { x: p.x, y: p.y, t: 1.4 }; sfx('aim'); }
     }
+  } else if (B.gim === 'gust') {
+    if (G.gust > 0) { G.gust -= dt; for (const bd of S.birds) if (bd.st !== 2) { bd.vx -= 700 * dt; if (bd.st === 1 && Math.random() < dt * 3) bd.st = 0; } if (G.gust <= 0) G.cd = 6; }
+    else if (G.warn > 0) { G.warn -= dt; if (G.warn <= 0) { G.gust = 1.4; sfx('gust'); } }
+    else if ((G.cd -= dt) <= 0) { G.warn = 1; sfx('aim'); }
+  } else if (B.gim === 'pillar') {
+    const p = coreCenter(B); if (!p) return; G.px = p[0]; G.py = p[1];
+    if (G.pon > 0) { G.pon -= dt; if ((G.ct -= dt) <= 0) { G.ct = .35; for (const bd of S.birds) if (bd.st !== 2 && Math.abs(bd.x - p[0]) < 24 && bd.y < p[1] + 10) hurtBird(bd, (bd.x - p[0]) * 4, -40); } if (G.pon <= 0) G.cd = 3.6; }
+    else if (G.warn > 0) { G.warn -= dt; if (G.warn <= 0) { G.pon = 1.8; G.ct = 0; sfx('burn'); } }
+    else if ((G.cd -= dt) <= 0) { G.warn = 1.1; sfx('aim'); }
+  } else if (B.gim === 'eye') {
+    G.eo = G.open > 0 ? 1 : G.warn > 0 ? 1 - G.warn / .8 : Math.max(0, (G.eo || 0) - dt * 4);
+    if (G.open > 0) {
+      G.open -= dt; const p = coreCenter(B);
+      if (p) for (const bd of S.birds) if (bd.st !== 2 && Math.hypot(bd.x - p[0], bd.y - p[1]) < 160) { bd.st = 0; bd.vx = 0; bd.vy = 0; bd.stun = .15; }
+      if (G.open <= 0) G.cd = 3.8;
+    } else if (G.warn > 0) { G.warn -= dt; if (G.warn <= 0) { G.open = 2; sfx('glare'); } }
+    else if ((G.cd -= dt) <= 0) { G.warn = .8; sfx('aim'); }
   }
 }
 
@@ -394,6 +414,7 @@ function sfx(k, n) {
     else if (k === 'glare') { tone(3200, .35, .06, 'sine', 1200); nz(.3, 'highpass', 4000, .7, .08); }
     else if (k === 'burn') nz(.5, 'bandpass', 2400, 1.5, .2, 600);
     else if (k === 'sway') { tone(70, .7, .22, 'sine', 45); nz(.5, 'lowpass', 400, .7, .2, 80); }
+    else if (k === 'gust') nz(1.4, 'bandpass', 260, .7, .24, 900);
   } catch (e) { }
 }
 function toggleMute() { muted = !muted; if (MG) MG.gain.value = muted ? 0 : .7; lsSet(MUTE_KEY, muted ? '1' : '0'); }
@@ -528,6 +549,7 @@ function drawWorld(t) {
       if (hot && q.m === b.core) cc = lerp3(col, [255, 255, 255], .15 + .35 * pulse);
       if (hot && b.gim === 'map' && q.m !== b.core && !(G.flash > 0)) cc = lerp3(cc, MAPC[Math.floor((q.r + t * 14) / 4) % 4], .22 + (G.warn > 0 ? .45 : 0));
       if (glow && (b.gim === 'map' ? q.m !== b.core : (b.shine || ['gd', 'gc']).includes(q.m))) cc = lerp3(cc, [255, 250, 220], glow * .8);
+      if (b.gim === 'eye' && q.m !== b.core) cc = sphereCol(b, q, t, hot).map(v => v * (.6 + .4 * f));
       if (mo) { const h = hash(q.r, q.k + b.x); if (h < mo * .9) cc = lerp3(cc, moss, .5 + .3 * h); }
       if (q.r > top) top = q.r; c.fillStyle = 'rgb(' + cc.map(Math.round).join(',') + ')'; c.fillRect(b.x + q.k * CS - cam + (sw && q.m === b.core ? sw : 0), GY - (q.r + 1) * CS, CS - 1, CS - 1);
     }
@@ -547,12 +569,27 @@ function drawWorld(t) {
   // 反射光：狙いの輪 → 光の柱
   if (G.aim) { const a = 1 - G.aim.t / 1.4; c.strokeStyle = 'rgba(255,226,150,' + (.4 + .5 * a) + ')'; c.lineWidth = 1.6; c.setLineDash([5, 4]); c.beginPath(); c.arc(G.aim.x - cam, G.aim.y, 46 * (1.6 - .6 * a), 0, 7); c.stroke(); c.setLineDash([]); }
   if (G.burn) { const B = S.boss, a = G.burn.t / .45, sx = B.x + B.w / 2 - cam, sy = GY - 26 * CS; c.strokeStyle = 'rgba(255,240,190,' + a + ')'; c.lineWidth = 6 * a + 2; c.beginPath(); c.moveTo(sx, sy); c.lineTo(G.burn.x - cam, G.burn.y); c.stroke(); c.fillStyle = 'rgba(255,236,170,' + .6 * a + ')'; c.beginPath(); c.arc(G.burn.x - cam, G.burn.y, 46, 0, 7); c.fill(); }
+  // ルクソールの光の柱：予告の点線 → 柱
+  if (S.siege && S.boss.gim === 'pillar' && G.px != null && !S.boss.dead) {
+    const x = G.px - cam;
+    if (G.pon > 0) { const a = Math.min(1, G.pon / .3); c.fillStyle = 'rgba(255,246,210,' + (.3 * a) + ')'; c.fillRect(x - 24, 0, 48, G.py); c.fillStyle = 'rgba(255,252,236,' + (.75 * a) + ')'; c.fillRect(x - 6, 0, 12, G.py); }
+    else if (G.warn > 0) { c.strokeStyle = 'rgba(255,240,200,' + (.3 + .4 * Math.sin(t * 20) ** 2) + ')'; c.lineWidth = 1.5; c.setLineDash([6, 5]); c.beginPath(); c.moveTo(x, G.py); c.lineTo(x, 0); c.stroke(); c.setLineDash([]); }
+  }
+  // ルイ・ヴィトン財団の横風
+  if (S.siege && S.boss.gim === 'gust' && (G.gust > 0 || G.warn > 0)) {
+    const g = G.gust > 0; c.strokeStyle = 'rgba(236,244,250,' + (g ? .5 : .15) + ')'; c.lineWidth = 1.2; c.beginPath();
+    for (let i = 0; i < 26; i++) { const y = 110 + (i * 61) % 380, x = W + 60 - ((i * 137 + t * (g ? 900 : 260)) % (W + 120)); c.moveTo(x, y); c.lineTo(x + 30 + (i % 3) * 14, y); } c.stroke();
+  }
   for (const q of S.inc) { const sp = BIRD[S.st.bird]; bird(q.x - cam, q.y, sp.s * .93, Math.sin(t * 16 + q.ph) * .65, 0, Math.atan2(q.vy, Math.abs(q.vx) + 1) * .5 * Math.sign(q.vx || 1), sp.col); }
   for (const b of S.birds) { const s = b.sp.s; bird(b.x - cam, b.y, b.st === 0 && b.depth != null ? s * (1 + .28 * b.depth) : s, b.st === 2 ? .1 : b.st === 1 ? 0 : Math.sin(t * 14 + b.ph) * .6, b.st === 1 ? 1 : b.stun > 0 ? .4 : 0, b.st === 2 ? b.rot : b.st === 1 ? Math.atan2(b.vy, b.vx) + Math.PI / 2 : (b.stun > 0 ? -.6 : Math.atan2(b.vy, Math.max(60, Math.abs(b.vx))) * .6 * Math.sign(b.vx || 1)), b.st === 2 ? '#555A62' : b.sp.col); }
   if (S.gt > 0) { const u = 2.5 - S.gt; c.strokeStyle = 'rgba(242,184,75,' + Math.min(.8, S.gt * .4) + ')'; c.lineWidth = 1.5; c.beginPath(); c.arc(S.gx - cam, S.gy, 8 + u * 8, 0, 7); c.stroke(); c.fillStyle = UI.acc; c.beginPath(); c.arc(S.gx - cam, S.gy, 2.5, 0, 7); c.fill(); }
   c.lineWidth = 1; for (const p of S.pops) { c.strokeStyle = 'rgba(20,22,26,' + (1 - p.t / .4) + ')'; c.beginPath(); c.arc(p.x - cam, p.y, 3 + p.t * 20, 0, 7); c.stroke(); }
   for (const q of S.txt) { c.globalAlpha = Math.max(0, 1 - q.t / 1.1); txt(q.s, q.x - cam, q.y, 13, '#15181D', 700, 'center'); } c.globalAlpha = 1;
   if (S.st.dust && rc < 1) { c.fillStyle = 'rgba(220,186,128,' + (.14 * (1 - rc)) + ')'; c.fillRect(0, 0, W, PY + 24); c.fillStyle = 'rgba(240,214,166,' + (.45 * (1 - rc)) + ')'; for (let i = 0; i < 40; i++) { const x = ((i * 97 - t * (60 + (i % 5) * 30)) % (W + 40) + W + 40) % (W + 40) - 20; c.fillRect(x, 120 + (i * 53) % 380, 2, 1); } }
+  if ((S.st.fog || S.st.zones[z].fog) && rc < 1) { // サンフランシスコの霧
+    c.fillStyle = 'rgba(232,236,240,' + (.3 * (1 - rc)) + ')'; c.fillRect(0, 0, W, PY + 24);
+    for (let i = 0; i < 6; i++) { const x = ((i * 173 - t * 14) % (W + 260) + W + 260) % (W + 260) - 130, y = 200 + (i * 71) % 240; c.fillStyle = 'rgba(240,242,246,' + (.22 * (1 - rc)) + ')'; c.beginPath(); c.ellipse(x, y, 130, 26, 0, 0, 7); c.fill(); }
+  }
   if (S.drops.length && rc < 1) { c.strokeStyle = 'rgba(220,228,238,' + (.35 * (1 - rc)) + ')'; c.lineWidth = 1; c.beginPath(); for (const d of S.drops) { c.moveTo(d.x, d.y); c.lineTo(d.x + 3, d.y - 12); } c.stroke(); }
   if (G.flash > 0 && S.boss.gim === 'glare') { c.fillStyle = 'rgba(255,250,225,' + (G.flash / .45) * .5 + ')'; c.fillRect(0, 0, W, PY + 24); }
   c.restore();
@@ -643,6 +680,13 @@ function draw(t) {
 
 // ---------- 名所の札・建物のカード・到着のカード ----------
 const MAPC = [[255, 90, 160], [90, 200, 255], [255, 220, 90], [140, 255, 160]]; // 都庁の映像の色
+// スフィアの LED：ふだんは色の帯が流れ、包囲中は目玉が開く（S.gim.eo＝開き具合 0〜1）
+function sphereCol(b, q, t, hot) {
+  const e = hot ? S.gim.eo || 0 : 0, dx = q.k - b.eye[0], dy = q.r - b.eye[1], d = Math.hypot(dx, dy);
+  if (e > 0 && Math.abs(dx) < 21 && Math.abs(dy) <= 11 * e * (1 - (dx / 21) ** 2)) return d < 10 ? lerp3([40, 90, 200], [120, 200, 255], d / 10) : [236, 236, 230];
+  if (hot && !e && Math.abs(dy) < .6 && Math.abs(dx) < 20) return [250, 230, 200]; // 閉じた目の線
+  return lerp3(MAPC[Math.floor((q.r + q.k * .3 + t * 8) / 5) % 4].map(v => v * .55), [36, 40, 58], .35);
+}
 function wrapL(s, maxW, size, weight) { c.font = F(size, weight || 500); const out = []; let cur = ''; for (const ch of s) { if (cur && c.measureText(cur + ch).width > maxW) { out.push(cur); cur = ''; } cur += ch; } if (cur) out.push(cur); return out; }
 // 名所の札：建物の頂の上に名前を出す（画面の上の HUD には重ねない）
 function drawLabels(L) {
@@ -726,11 +770,11 @@ function drawFly(t) {
 // ---------- パスポート（還した都市のスタンプと、見た建物のカード） ----------
 const P = { sel: -1 }, R_PASS = { x: 12, y: 17, w: 36, h: 36 }, R_BACK = { x: 110, y: 584, w: 140, h: 40 };
 const STAMP = ['#E0604A', '#F2B84B', '#68D680', '#5AB0E8', '#B98CE6', '#E88AB4', '#6FD0C0'];
-function slotR(i) { return { x: 16 + (i % 2) * 172, y: 130 + Math.floor(i / 2) * 110, w: 156, h: 100 }; }
+function slotR(i) { return { x: 14 + (i % 3) * 112, y: 128 + Math.floor(i / 3) * 90, w: 108, h: 84 }; } // 3列（13都市）
 function stamp(x, y, r, i, ST, rot) {
   const col = STAMP[i % STAMP.length]; c.save(); c.translate(x, y); c.rotate(rot); c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, r, 0, 7); c.stroke(); c.lineWidth = 1; c.beginPath(); c.arc(0, 0, r - 5, 0, 7); c.stroke();
   bird(0, -6, r * .32, .55, 0, 0, col); const en = ST.en.split(' → ').pop(); let fs = Math.min(10, r * .3); c.font = F(fs, 700); while (c.measureText(en).width > r * 1.5 && fs > 6) { fs -= .5; c.font = F(fs, 700); }
-  txt(en, 0, r * .3, fs, col, 700, 'center'); txt(SV.date[ST.id] || '', 0, r * .3 + 9, 7, col, 600, 'center'); c.restore();
+  txt(en, 0, r * .3, fs, col, 700, 'center'); txt(SV.date[ST.id] || '', 0, r * .3 + r * .3, Math.min(7, r * .26), col, 600, 'center'); c.restore();
 }
 function drawPass(t) {
   const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0E1424'); bg.addColorStop(1, '#141A2C'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
@@ -740,9 +784,9 @@ function drawPass(t) {
   STAGES.forEach((ST, i) => {
     const R = slotR(i), done = SV.clear[ST.id]; rr(R.x, R.y, R.w, R.h, 14); c.fillStyle = 'rgba(255,255,255,' + (done ? .06 : .03) + ')'; c.fill();
     if (!done) { c.setLineDash([4, 4]); c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 1; c.stroke(); c.setLineDash([]); }
-    let nm = ST.city; c.font = F(10, 600); while (c.measureText(nm).width > R.w - 64 && nm.length > 2) nm = nm.slice(0, -1); if (nm !== ST.city) nm += '…'; txt(nm, R.x + 10, R.y + 17, 10, done ? UI.ink : UI.sub, 600);
-    const got = Object.keys(SV.lm[ST.id] || {}).length; txt('名所 ' + got + '/' + (ST.lm || []).length, R.x + R.w - 10, R.y + 17, 9, UI.sub, 500, 'right');
-    if (done) stamp(R.x + R.w / 2, R.y + 60, 32, i, ST, (hash(i, 3) - .5) * .5); else txt('未踏', R.x + R.w / 2, R.y + 64, 12, UI.dim, 600, 'center');
+    let nm = ST.city; c.font = F(9.5, 600); while (c.measureText(nm).width > R.w - 14 && nm.length > 2) nm = nm.slice(0, -1); if (nm !== ST.city) nm += '…'; txt(nm, R.x + 7, R.y + 15, 9.5, done ? UI.ink : UI.sub, 600);
+    const got = Object.keys(SV.lm[ST.id] || {}).length; txt('名所 ' + got + '/' + (ST.lm || []).length, R.x + R.w / 2, R.y + R.h - 7, 8.5, UI.sub, 500, 'center');
+    if (done) stamp(R.x + R.w / 2, R.y + 44, 23, i, ST, (hash(i, 3) - .5) * .5); else txt('未踏', R.x + R.w / 2, R.y + 48, 11, UI.dim, 600, 'center');
   });
   pillAt('地図へ戻る', R_BACK.x, R_BACK.y, R_BACK.w, false); drawToggles();
 }
