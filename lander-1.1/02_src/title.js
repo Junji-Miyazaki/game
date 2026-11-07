@@ -17,7 +17,7 @@ import { HtCard } from './howto.js';
 import { starsSummary } from './stars.js';
 import { patchesSummary, patchCount, PATCH_COUNT } from './patches.js';
 import { SolarMap } from './solarmap.js';
-import { xpSummary, xpMarkSeen } from './expdata.js';
+import { xpSummary, xpMarkSeen, xpWorldBackfill } from './expdata.js';
 function stageBodyName(n) { try { const i = stageInfo(n); return i && i.body ? i.body.name : ''; } catch (_) { return ''; } }
 
 // ---- 音楽/ミュート共通ヘルパー（game.js からも使う）----
@@ -529,7 +529,7 @@ export class TitleScene extends Scene {
     this.t = 0;
     this.showRank = false;
     this.rank = [];
-    this.tabs = createRankTabs();
+    this.tabs = createRankTabs({ cats: true });
     this.name = '';
     this.pendingStart = false;
     this.toastT = 0;
@@ -562,11 +562,12 @@ export class TitleScene extends Scene {
   }
 
   enter() {
-    this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
+    this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs({ cats: true }); this.name = getPlayerName(this.engine.storage);
     try { const ap = getActiveProfile(this.engine.storage); if (ap) this.name = ap.name; } catch (_) { /* ignore */ }
     this.cp = loadCheckpoint(this.engine.storage);
     this.top1 = loadTop1(this.engine.storage);      // 即表示（オフラインでも）
     this._refreshTop1();
+    try { xpWorldBackfill(this.engine.storage); } catch (_) { /* 送れなくても続ける */ }   // EXPEDITION の未送信の自己ベストを1件
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
     if (this._openMapOnEnter) { this._openMapOnEnter = false; this._openMap(); }
@@ -840,7 +841,7 @@ export class TitleScene extends Scene {
       if (this._hit(this.rankBtn, data)) {
         musicOf(this.engine).sfx.uiTap();
         this.showRank = !this.showRank;
-        if (this.showRank) this.tabs = createRankTabs();
+        if (this.showRank) this.tabs = createRankTabs({ cats: true });
         return;
       }
       if (this._hit(this.mapBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openMap(); return; }
@@ -851,7 +852,7 @@ export class TitleScene extends Scene {
       if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
       if (this.top1 && this._hit(this.worldBox, data) && !this.launch) {   // プレート: WORLD タブでランキングを開く（ゲームは開始しない）
         musicOf(this.engine).sfx.uiTap();
-        this.showRank = true; this.tabs = createRankTabs(); this.tabs.mode = 'world';
+        this.showRank = true; this.tabs = createRankTabs({ cats: true }); this.tabs.mode = 'world';
         if (relayEnabled()) loadWorld(this.tabs, this.engine.storage);
         return;
       }

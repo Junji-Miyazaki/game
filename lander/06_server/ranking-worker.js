@@ -23,7 +23,9 @@
 //   GET  /ranking?board= → { board, top: [{name,score,stage,date}, ...] }（上位20、名前ごとに1行。board 省略=v1.0、未知は 400）
 //   GET  /name?n=  → { taken, hasPin }（空は 400）
 //   POST /pin/set {name,key,pin} / /pin/clear {name,key} / /pin/login {name,pin,newKey}、POST /admin/pin-reset {name} / /admin/pin-set {name,pin}（README 参照）
-//   POST /submit   ← { name, score, stage, key, board? }  → { ok: true } / 403 name-taken（キー不一致）
+//   POST /submit   ← { name, score, stage, key, board? }  → { ok: true } / 403 name-taken（キー不一致）。board v1.1 は今週・到達のボードも更新
+//   POST /xp       ← { name, key, mission, time }  → { ok:true, best } / 400 invalid / 403 name-taken / 429 rate（EXPEDITION 最速。XP_IDS・XP_MIN_T〜XP_MAX_T 秒）
+//   GET  /ranking?board=v1.1-week → { board, week, resetAt, top, last? } / v1.1-reach → { board, top }（到達ステージ順）/ xp-<id> → { board, mission, top }（タイム順）
 //   POST /delete   ← { name, key }  → { ok: true }（台帳と top.json から削除。月ログは残す）
 //   POST /title    ← { name, key, title, board? }  → { ok:true, title } / 400 invalid / 403 forbidden / 404 unknown / 409 not-champion
 //                     二つ名（最大16文字）。現 WORLD 1位の名前の持ち主だけが設定/変更/消去できる（空文字で消去）。
@@ -56,10 +58,19 @@ const PIN_IP_TTL_MS = 24 * 3600_000;
 const PIN_IP_MAX = 30, PIN_IP_WIN_MS = 10 * 60_000;   // 同一IPの PIN ログイン試行上限（ベストエフォート）
 const ADMIN_DELAY_MS = 400;         // 管理キー誤りの応答遅延
 const KEY_RE = /^[0-9a-f]{32,128}$/i;   // クライアント生成の名前キー（hex）
+// ---- 追加ランキング（v1.1 のみ）: 今週の得点 / 最高到達ステージ / EXPEDITION 最速タイム ----
+// どれも名前ごとのベスト1行。ファイルは top と同じリポジトリ。二つ名は保存せず、返す時に台帳から付ける
+const XB_WEEK = 'v1.1-week', XB_REACH = 'v1.1-reach';
+const XP_IDS = ['ryugu', 'phobos', 'enceladus', '67p'];   // クライアント expedition/index.js の id と揃える
+const XP_MIN_T = 5, XP_MAX_T = 1800;   // 受け付けるクリアタイム（秒）。下限は「これより速いのはありえない」目安［要確認：ミッションごとの実測は未］
+const XP_RL_MS = 5_000;                // EXPEDITION 送信の同一IP間隔（スコア送信とは別枠）
+const XB_KEEP = 100;
+const JST_MS = 9 * 3600_000, WEEK_MS = 7 * 24 * 3600_000;
 
 const rl = new Map();               // ip -> 最終送信時刻（isolate単位のベストエフォート）
 const cached = new Map();           // board -> { at, body }
 const pinRl = new Map();            // ip -> { n, t }
+const xpRl = new Map();             // ip -> 最終 EXPEDITION 送信時刻
 let namesCache = null;              // { at, map: Map(normName -> {name, first}) }
 const monthIdx = new Map();         // 'YYYY-MM' -> 現在の連番（isolate内ヒント。正はGitHub上のサイズ）
 
@@ -165,11 +176,76 @@ async function appendLog(env, entry, board = DEF_BOARD) {
     const path = monthPath(env, month, n, board);
     const text = cur.size ? (await ghRead(env, path, true)).text : '';
     // sha は直前に読んだ値を使う（内容再取得との間に更新されたら 409 → 再試行）
-    if (await ghPut(env, path, text + line, cur.sha, entry.kind === 'title' ? `title: ${entry.name}` : entry.kind === 'pin' ? `pin: ${entry.name} ${entry.action}` : `score: ${entry.name} ${entry.score} (st.${entry.stage})`)) return;
+    if (await ghPut(env, path, text + line, cur.sha, entry.kind === 'title' ? `title: ${entry.name}` : entry.kind === 'pin' ? `pin: ${entry.name} ${entry.action}` : entry.kind === 'xp' ? `xp: ${entry.name} ${entry.mission} ${entry.time}s` : `score: ${entry.name} ${entry.score} (st.${entry.stage})`)) return;
     await backoff(attempt);
   }
   throw new Error('github log conflict');
 }
+
+// ---- 追加ランキングの保存 ----
+// 週の始まり = 日本時間の月曜 0:00。weekId = その月曜の日付 'YYYY-MM-DD'
+const weekStart = (now) => { const j = new Date(now + JST_MS); const dow = (j.getUTCDay() + 6) % 7; return Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() - dow) - JST_MS; };
+const weekIdOf = (start) => new Date(start + JST_MS).toISOString().slice(0, 10);
+const weekPath = (id) => `week/v1.1/${id}.json`;
+const reachPath = () => 'reach-v1.1.json';
+const xpPath = (id) => `xp/${id}.json`;
+const parseRows = (text) => { try { const a = JSON.parse(text); return Array.isArray(a) ? a.filter((o) => o && typeof o.name === 'string') : []; } catch { return []; } };
+const cmpReach = (a, b) => (b.stage - a.stage) || (b.score - a.score) || String(a.date).localeCompare(String(b.date));
+const cmpTime = (a, b) => (a.time - b.time) || String(a.date).localeCompare(String(b.date));
+// 名前ごとのベストを1行に。better(新, 旧) が真の時だけ書く（それ以外は GitHub に書かない）。-> 書いたら true
+async function updateBest(env, path, entry, better, sort, message) {
+  const k = normName(entry.name);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await ghRead(env, path, true);
+    const rows = parseRows(cur.text);
+    const i = rows.findIndex((r) => normName(r.name) === k);
+    if (i >= 0 && !better(entry, rows[i])) return false;
+    const next = rows.slice();
+    if (i >= 0) next[i] = { ...entry, name: rows[i].name }; else next.push(entry);
+    next.sort(sort);
+    if (await ghPut(env, path, JSON.stringify(next.slice(0, XB_KEEP)) + '\n', cur.sha, message)) return true;
+    await backoff(attempt);
+  }
+  throw new Error('github board conflict');
+}
+// 名前を追加ランキング（今週・到達・EXPEDITION）から消す
+async function removeFromExtras(env, key) {
+  const paths = [weekPath(weekIdOf(weekStart(Date.now()))), reachPath(), ...XP_IDS.map(xpPath)];
+  for (const path of paths) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const cur = await ghRead(env, path, true);
+      if (!cur.sha) break;
+      const rows = parseRows(cur.text), rest = rows.filter((r) => normName(r.name) !== key);
+      if (rest.length === rows.length) break;
+      if (await ghPut(env, path, JSON.stringify(rest) + '\n', cur.sha, 'board: remove')) break;
+      if (attempt === 3) throw new Error('github board conflict');
+      await backoff(attempt);
+    }
+  }
+}
+// GET /ranking の追加ボード。-> 応答本文オブジェクト / null（該当なし）
+async function extraBoard(env, board) {
+  const names = await loadNames(env);
+  const titled = (rows) => rows.slice(0, TOP_SERVE).map((r) => { const e = names.get(normName(r.name)); return e && e.title ? { ...r, title: e.title } : r; });
+  if (board === XB_WEEK) {
+    const start = weekStart(Date.now()), id = weekIdOf(start);
+    const rows = parseRows((await ghRead(env, weekPath(id), true)).text).filter((r) => Number.isFinite(r.score) && Number.isFinite(r.stage)).sort(cmp);
+    const prev = parseRows((await ghRead(env, weekPath(weekIdOf(start - WEEK_MS)), true)).text).filter((r) => Number.isFinite(r.score)).sort(cmp)[0];
+    return { board, week: id, resetAt: start + WEEK_MS, top: titled(rows), ...(prev ? { last: { name: prev.name, score: prev.score } } : {}) };
+  }
+  if (board === XB_REACH) {
+    const rows = parseRows((await ghRead(env, reachPath(), true)).text).filter((r) => Number.isFinite(r.stage) && Number.isFinite(r.score)).sort(cmpReach);
+    return { board, top: titled(rows) };
+  }
+  const m = /^xp-(.+)$/.exec(board);
+  if (m && XP_IDS.includes(m[1])) {
+    const rows = parseRows((await ghRead(env, xpPath(m[1]), true)).text).filter((r) => Number.isFinite(r.time)).sort(cmpTime);
+    return { board, mission: m[1], top: titled(rows) };
+  }
+  return null;
+}
+const extraCacheKey = (board) => board === XB_WEEK ? board + '|' + weekIdOf(weekStart(Date.now())) : board;
+const isExtraBoard = (b) => b === XB_WEEK || b === XB_REACH || (typeof b === 'string' && /^xp-/.test(b) && XP_IDS.includes(b.slice(3)));
 
 // 名前の正規化（クライアント net.js の normName と同一。別デプロイなので複製。変更時は両方を揃える）
 // 全角/半角・大文字小文字は別名として扱う（前後の空白だけ除く）
@@ -345,6 +421,7 @@ async function removeName(env, key) {
     await backoff(attempt);
   }
   await rewriteTops(env, (rows) => { const rest = rows.filter((r) => normName(r.name) !== key); return rest.length === rows.length ? null : rest; }, 'top: remove');
+  await removeFromExtras(env, key);
 }
 // 二つ名を names.json と全ボードの top.json に反映（title '' で消去）。-> 'ok' | 'unknown'
 async function applyTitle(env, key, title) {
@@ -422,6 +499,12 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
     const url = new URL(req.url);
     try {
+      if (req.method === 'GET' && url.pathname === '/ranking' && isExtraBoard(url.searchParams.get('board'))) {
+        const b = url.searchParams.get('board'), ck = extraCacheKey(b);
+        let c = cached.get(ck);
+        if (!c || Date.now() - c.at > CACHE_MS) { c = { at: Date.now(), body: JSON.stringify(await extraBoard(env, b)) }; cached.set(ck, c); }
+        return new Response(c.body, { headers: { 'Content-Type': 'application/json; charset=utf-8', ...h } });
+      }
       if (req.method === 'GET' && url.pathname === '/ranking') {
         const board = boardOf(url.searchParams.get('board'));
         if (!board) return json({ error: 'invalid' }, 400, h);
@@ -454,8 +537,31 @@ export default {
         if (claim.status === 'taken') { namesCache = null; return json({ error: 'name-taken' }, 403, h); }
         await appendLog(env, entry, board);
         await updateTop(env, entry, claim.title, board);
+        if (board === 'v1.1') {   // 追加ランキング。失敗しても本体の送信は成功として返す（次の送信で追いつく）
+          const { name, score, stage, date } = entry;
+          if (score > 0) { try { await updateBest(env, weekPath(weekIdOf(weekStart(Date.now()))), { name, score, stage, date }, (a, b) => cmp(a, b) < 0, cmp, `week: ${name} ${score}`); } catch { /* ignore */ } }
+          try { await updateBest(env, reachPath(), { name, stage, score, date }, (a, b) => cmpReach(a, b) < 0, cmpReach, `reach: ${name} st.${stage}`); } catch { /* ignore */ }
+        }
         cached.clear(); namesCache = null;
         return json({ ok: true }, 200, h);
+      }
+      // EXPEDITION のクリアタイム（MISSION モードの成功のみ、クライアントが送る）。名前の持ち主確認はスコア送信と同じ
+      if (req.method === 'POST' && url.pathname === '/xp') {
+        if (!allowedOrigins(env).includes(origin)) return json({ error: 'origin' }, 403, h);
+        const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
+        if (Date.now() - (xpRl.get(ip) || 0) < XP_RL_MS) return json({ error: 'rate' }, 429, h);
+        const body = await req.json().catch(() => null);
+        if (!isObj(body) || typeof body.key !== 'string' || !KEY_RE.test(body.key) || !XP_IDS.includes(body.mission)) return json({ error: 'invalid' }, 400, h);
+        const t = Number(body.time);
+        if (!Number.isFinite(t) || t < XP_MIN_T || t > XP_MAX_T) return json({ error: 'invalid' }, 400, h);
+        xpRl.set(ip, Date.now());
+        const entry = { name: cleanName(body.name), time: Math.round(t * 10) / 10, date: new Date().toISOString() };
+        const claim = await claimName(env, entry, await sha256hex(body.key));
+        if (claim.status === 'taken') { namesCache = null; return json({ error: 'name-taken' }, 403, h); }
+        try { await appendLog(env, { kind: 'xp', mission: body.mission, ...entry }, 'v1.1'); } catch { /* 監査ログの失敗は本処理に影響させない */ }
+        const best = await updateBest(env, xpPath(body.mission), entry, (a, b) => a.time < b.time, cmpTime, `xp: ${entry.name} ${body.mission} ${entry.time}s`);
+        cached.clear(); namesCache = null;
+        return json({ ok: true, best }, 200, h);
       }
       if (req.method === 'POST' && url.pathname === '/delete') {
         if (!allowedOrigins(env).includes(origin)) return json({ error: 'origin' }, 403, h);

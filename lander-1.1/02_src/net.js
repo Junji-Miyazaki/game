@@ -52,6 +52,30 @@ export async function fetchWorldTop(timeoutMs = NET_TIMEOUT_MS) {
   }
 }
 
+// 追加ランキング（v1.1-week / v1.1-reach / xp-<id>）。-> 応答本文 { board, top, ... } | { old:true }（旧中継: 400）| null（オフ/失敗）
+export async function fetchBoard(board, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return null;
+  try {
+    return await request(RELAY_URL + '/ranking?board=' + encodeURIComponent(board), { method: 'GET' }, timeoutMs, async (res) => {
+      if (res && res.status === 400) return { old: true };
+      if (!res || !res.ok) return null;
+      const j = await res.json();
+      return (j && j.board === board && Array.isArray(j.top)) ? j : null;
+    });
+  } catch (_) { return null; }
+}
+// EXPEDITION のクリアタイム。entry = { name, key, mission, time(秒) } -> { ok, status?, best?, error? }
+export async function submitXpTime(entry, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    const body = JSON.stringify({ name: entry.name, key: entry.key, mission: entry.mission, time: entry.time });
+    return await request(RELAY_URL + '/xp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs, async (res) => {
+      let j = null; try { j = await res.json(); } catch (_) { /* 本文なし */ }
+      return { ok: !!(res && res.ok), status: res && res.status, ...(j && typeof j.best === 'boolean' ? { best: j.best } : {}) };
+    });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
 // 名前の正規化。ワーカー(06_server/ranking-worker.js)の normName と同一にすること。
 // 全角/半角・大文字小文字は別名。前後の空白だけ除く。
 export function normName(s) { return String(s).trim(); }

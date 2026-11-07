@@ -10,7 +10,7 @@ import { i18nLang } from './core/i18n.js';
 import { Music } from './music.js';
 import { getActiveProfile } from './ranking.js';
 import { expMission } from './expedition/index.js';
-import { xpStore, xpDrawBody, xpBodyColor, xpMarkPlayed } from './expdata.js';
+import { xpStore, xpDrawBody, xpBodyColor, xpMarkPlayed, xpWorldSend } from './expdata.js';
 
 const XP_mus = (engine) => (engine && engine.music) || Music;
 
@@ -35,6 +35,9 @@ export class ExpeditionScene extends Scene {
     // 一度でも PRACTICE / MISSION を始めたら「遊んだ」（ツアーでの再案内と終了画面の入口が止まる）
     const sh = this.lab.shell, begin = sh.begin;
     sh.begin = (l, mode, o) => { if (mode === 'practice' || mode === 'mission') xpMarkPlayed(st, pilot, this.id); return begin(l, mode, o); };
+    // MISSION の成功で自己ベストが出たら世界ランキングへ（練習は送らない）
+    const complete = sh.complete;
+    sh.complete = (f, got) => { const r = complete(f, got); if (r && !r.practice && r.newBestTime) { try { xpWorldSend(st, this.id); } catch (_) { /* 送れなくても遊びは続ける */ } } return r; };
     this.lab.start();
     if (this.detour) sh.startDetour(this.lab);
     try { const mu = XP_mus(eng); if (mu.stopJingle) mu.stopJingle(0.3); mu.playBody(this.meta.music); } catch (_) { /* 音なし */ }

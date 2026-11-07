@@ -1011,6 +1011,30 @@ async function fetchWorldTop(timeoutMs = NET_TIMEOUT_MS) {
   }
 }
 
+// 追加ランキング（v1.1-week / v1.1-reach / xp-<id>）。-> 応答本文 { board, top, ... } | { old:true }（旧中継: 400）| null（オフ/失敗）
+async function fetchBoard(board, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return null;
+  try {
+    return await request(RELAY_URL + '/ranking?board=' + encodeURIComponent(board), { method: 'GET' }, timeoutMs, async (res) => {
+      if (res && res.status === 400) return { old: true };
+      if (!res || !res.ok) return null;
+      const j = await res.json();
+      return (j && j.board === board && Array.isArray(j.top)) ? j : null;
+    });
+  } catch (_) { return null; }
+}
+// EXPEDITION のクリアタイム。entry = { name, key, mission, time(秒) } -> { ok, status?, best?, error? }
+async function submitXpTime(entry, timeoutMs = NET_TIMEOUT_MS) {
+  if (!RELAY_URL) return { ok: false, error: 'disabled' };
+  try {
+    const body = JSON.stringify({ name: entry.name, key: entry.key, mission: entry.mission, time: entry.time });
+    return await request(RELAY_URL + '/xp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs, async (res) => {
+      let j = null; try { j = await res.json(); } catch (_) { /* 本文なし */ }
+      return { ok: !!(res && res.ok), status: res && res.status, ...(j && typeof j.best === 'boolean' ? { best: j.best } : {}) };
+    });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
 // 名前の正規化。ワーカー(06_server/ranking-worker.js)の normName と同一にすること。
 // 全角/半角・大文字小文字は別名。前後の空白だけ除く。
 function normName(s) { return String(s).trim(); }
@@ -1304,6 +1328,20 @@ const WorldNet = {
     if (st !== 'supported') return { ok: false, error: 'offline' };   // 対応が確認できない間は送らない（旧中継だと別の版のボードに入ってしまう）
     return submitScore(e);
   },
+  // 追加ランキングの取得（今週・到達・EXPEDITION）。旧中継（400）は updating 扱い
+  fetchBoard: async (board) => {
+    WorldNet.updating = false;
+    const st = await relayBoardState();
+    if (st !== 'supported') { WorldNet.updating = st === 'unsupported'; return null; }
+    const r = await fetchBoard(board);
+    if (r && r.old) { WorldNet.updating = true; return null; }
+    return r;
+  },
+  submitXp: async (e) => {
+    const st = await relayBoardState();
+    if (st !== 'supported') return { ok: false, error: st === 'unsupported' ? 'updating' : 'offline' };
+    return submitXpTime(e);
+  },
   setTitle: async (name, key, title) => {
     const st = await relayBoardState();
     if (st === 'unsupported') return { ok: false, error: 'updating' };
@@ -1486,7 +1524,8 @@ function qualifies(list, score) {
 }
 
 // ランキング行の描画（タイトル/ゲームオーバー共通）。P2a: ヘアライン区切り + 控えめな強調。highlight = 強調する行index
-function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
+// fmt(e) -> { main, sub }（右側の大きい数字と小さい注記）。省略時は 得点 / ST.ステージ
+function drawRankingRows(engine, ctx, list, x, y, w, highlight, fmt) {
   const p = P();
   const rowH = 30;
   if (!list.length) { txt(ctx, 'NO RECORDS YET', x + w / 2, y + 12, 10, p.dim, 'center', { sp: 3, w: 500 }); return; }
@@ -1502,13 +1541,61 @@ function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
     const nm = ellipsize(ctx, e.name, 13, 400, 1, 140);
     txt(ctx, nm, x + 38, ry + (tl ? 1 : 4), 13, c, 'left', { w: 400, sp: 1 });
     if (tl) txt(ctx, ellipsize(ctx, tl, 7, 400, 0.5, 140), x + 38, ry + 16, 7, hl ? p.warn : p.dim, 'left', { w: 400, sp: 0.5 });
-    txt(ctx, String(e.score), x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
-    txt(ctx, 'ST.' + e.stage, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
+    const f = fmt ? fmt(e) : { main: String(e.score), sub: 'ST.' + e.stage };
+    txt(ctx, f.main, x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
+    if (f.sub) txt(ctx, f.sub, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
   }
 }
 
 // ---- LOCAL / WORLD タブ（RELAY_URL 設定時のみ表示）----
-function createRankTabs() { return { mode: 'local', world: null, status: 'idle', token: 0 }; }
+// opts.cats: WORLD の下に種類の切り替え（ALL / WEEK / STAGE / EXPEDITION）を出す（タイトルの一覧だけ。ゲームオーバーは出さない）
+function createRankTabs(opts) { return { mode: 'local', world: null, status: 'idle', token: 0, cats: !!(opts && opts.cats), cat: 'all', xpi: 0, extra: {} }; }
+
+// ---- WORLD の種類（追加ランキング）----
+// XB_XP はクライアントの expedition/index.js（EXP_MISSIONS の id・name）と中継の XP_IDS に揃える（p27 のテストで照合）
+const XB_XP = [{ id: 'ryugu', name: 'RYUGU' }, { id: 'phobos', name: 'PHOBOS' }, { id: 'enceladus', name: 'ENCELADUS' }, { id: '67p', name: '67P' }];
+const RANK_CATS = ['all', 'week', 'reach', 'xp'];
+function rankCatBoard(tabs) {
+  if (tabs.cat === 'week') return 'v1.1-week';
+  if (tabs.cat === 'reach') return 'v1.1-reach';
+  if (tabs.cat === 'xp') return 'xp-' + XB_XP[tabs.xpi % XB_XP.length].id;
+  return null;
+}
+function rankCatRects(x, y, w) {
+  const gap = 6, h = 16, bw = Math.floor((w - gap * 3) / 4), yy = y + 22;
+  const out = {};
+  RANK_CATS.forEach((k, i) => { out[k] = { x: x + i * (bw + gap), y: yy, w: bw, h }; });
+  return out;
+}
+function rankCatLabel(tabs, k) {
+  if (k === 'all') return 'ALL';
+  if (k === 'week') return 'WEEK';
+  if (k === 'reach') return 'STAGE';
+  return XB_XP[tabs.xpi % XB_XP.length].name + ' \u203a';
+}
+// 追加ランキングの読み込み。tabs.extra[board] = { status: 'loading'|'ok'|'offline'|'updating', rows, meta }
+const xbValid = {
+  week: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
+  reach: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
+  xp: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.time) && e.time > 0,
+};
+function loadCat(tabs) {
+  const board = rankCatBoard(tabs); if (!board) return null;
+  const cat = tabs.cat, slot = { status: 'loading', rows: [], meta: null };
+  tabs.extra[board] = slot;
+  return WorldNet.fetchBoard(board).then((j) => {
+    if (tabs.extra[board] !== slot) return;
+    if (j) { slot.rows = j.top.filter(xbValid[cat]).slice(0, RANK_MAX); slot.meta = j; slot.status = 'ok'; }
+    else slot.status = WorldNet.updating ? 'updating' : 'offline';
+  }, () => { if (tabs.extra[board] === slot) slot.status = 'offline'; });
+}
+// 秒 -> '00:42.4'
+function fmtClear(t) { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(1).padStart(4, '0'); }
+// 週のリセットまで（ms）-> '2D 05H' / '05H 12M'
+function fmtLeft(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  return d > 0 ? d + 'D ' + String(h).padStart(2, '0') + 'H' : String(h).padStart(2, '0') + 'H ' + String(mm).padStart(2, '0') + 'M';
+}
 
 function rankTabRects(x, y, w) {
   const bw = Math.floor((w - 8) / 2), h = 18;
@@ -1524,8 +1611,20 @@ function rankTabsTap(tabs, x, y, px, py, w, storage) {
   if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
   if (inRect(r.world, px, py)) {
     tabs.mode = 'world';
-    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
+    if (tabs.cats && tabs.cat !== 'all') { const b = rankCatBoard(tabs), s = tabs.extra[b]; if (!s || s.status === 'offline' || s.status === 'updating') loadCat(tabs); }
+    else if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
     return true;
+  }
+  if (tabs.cats && tabs.mode === 'world') {
+    const c = rankCatRects(x, y, w);
+    for (const k of RANK_CATS) {
+      if (!inRect(c[k], px, py)) continue;
+      if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XP.length;   // もう一度押すと次のミッション
+      tabs.cat = k;
+      if (k === 'all') { if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage); }
+      else { const s = tabs.extra[rankCatBoard(tabs)]; if (!s || s.status !== 'ok' && s.status !== 'loading') loadCat(tabs); }
+      return true;
+    }
   }
   return false;
 }
@@ -1551,10 +1650,46 @@ function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) {
     txt(ctx, k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 5, 9, on ? p.hi : p.dim, 'center', { sp: 3, w: 500 });
   }
   if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
+  else if (tabs.cats) drawWorldCats(engine, ctx, tabs, x, y, w);
   else if (tabs.status === 'loading' || tabs.status === 'idle') txt(ctx, 'LOADING\u2026', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
   else if (tabs.status === 'updating') txt(ctx, 'WORLD: UPDATING', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
   else if (tabs.status === 'offline') txt(ctx, 'OFFLINE', x + w / 2, y + 40, 11, p.bad, 'center', { sp: 3 });
   else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
+}
+
+// WORLD（種類の切り替えつき）。行は y+46 から。下に1行の説明（今週はリセットまでの時間と先週の1位）
+function drawWorldCats(engine, ctx, tabs, x, y, w) {
+  const p = P(), c = rankCatRects(x, y, w);
+  for (const k of RANK_CATS) {
+    const on = tabs.cat === k, b = c[k];
+    pill(ctx, b.x, b.y, b.w, b.h, on ? rgba(p.mid, 0.12) : null, rgba(on ? p.mid : p.fg, on ? 0.55 : 0.14));
+    txt(ctx, ellipsize(ctx, rankCatLabel(tabs, k), 8, 500, 1.5, b.w - 6), b.x + b.w / 2, b.y + 4, 8, on ? p.hi : p.dim, 'center', { sp: 1.5, w: 500 });
+  }
+  const ry = y + 46, my = ry + RANK_MAX * 30 + 4;
+  const msg = (s, col) => txt(ctx, s, x + w / 2, ry + 16, 11, col, 'center', { sp: 3 });
+  if (tabs.cat === 'all') {
+    if (tabs.status === 'loading' || tabs.status === 'idle') msg('LOADING\u2026', p.mid);
+    else if (tabs.status === 'updating') msg('WORLD: UPDATING', p.mid);
+    else if (tabs.status === 'offline') msg('OFFLINE', p.bad);
+    else drawRankingRows(engine, ctx, tabs.world || [], x, ry, w, -1);
+    txt(ctx, 'ALL-TIME BEST SCORE', x + w / 2, my, 8, p.dim, 'center', { sp: 2, w: 500 });
+    return;
+  }
+  const s = tabs.extra[rankCatBoard(tabs)];
+  if (!s || s.status === 'loading') msg('LOADING\u2026', p.mid);
+  else if (s.status === 'updating') msg('WORLD: UPDATING', p.mid);
+  else if (s.status === 'offline') msg('OFFLINE', p.bad);
+  else if (tabs.cat === 'reach') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: 'ST.' + e.stage, sub: String(e.score) }));
+  else if (tabs.cat === 'xp') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: fmtClear(e.time), sub: '' }));
+  else drawRankingRows(engine, ctx, s.rows, x, ry, w, -1);
+  let note = '';
+  if (tabs.cat === 'week') {
+    const m = s && s.meta;
+    note = 'THIS WEEK' + (m && Number.isFinite(m.resetAt) ? '  \u00b7  RESETS IN ' + fmtLeft(m.resetAt - Date.now()) : '');
+    if (m && m.last && typeof m.last.name === 'string') txt(ctx, 'LAST WEEK #1  ' + ellipsize(ctx, m.last.name, 8, 500, 1.5, 120) + '  ' + m.last.score, x + w / 2, my + 13, 8, p.warn, 'center', { sp: 1.5, w: 500 });
+  } else if (tabs.cat === 'reach') note = 'DEEPEST STAGE REACHED';
+  else note = 'FASTEST MISSION CLEAR  \u00b7  TAP AGAIN: NEXT';
+  txt(ctx, note, x + w / 2, my, 8, p.dim, 'center', { sp: 2, w: 500 });
 }
 
 // ---- プレイヤー名（プレイ前にタイトルで入力。保存キー 'lastName'）----
@@ -8135,10 +8270,11 @@ return { EXP_MISSIONS, EXP_IDS, expMission, expForBody };
 // EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
 // 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
 //   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ played('1' = 一度でも始めた) / best / besttime / skipBrief（shell が使う）
+//       / wsent（世界ランキングへ送り終えたタイム。これより速い besttime があれば送る）
 // 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
 // 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
-const { EXP_MISSIONS } = EXP_index;
+const { EXP_MISSIONS, EXP_IDS } = EXP_index;
 
 const XP_STARS_PER = 3;
 const XP_STARS_MAX = EXP_MISSIONS.length * XP_STARS_PER;   // 12（ツアー 48 と合わせて 60）
@@ -8236,6 +8372,45 @@ function xpDrawBody(c, id, x, y, r, t, o) {
   c.restore();
   XP_path(c, id, x, y, r, t); c.strokeStyle = rgba('#9fe6dc', 0.55); c.lineWidth = Math.max(0.7, r * 0.02); c.stroke();
   c.restore();
+}
+
+// ---- 世界ランキング（EXPEDITION 最速タイム）----
+// MISSION の自己ベスト（besttime）を、まだ送っていなければ中継へ送る。練習は besttime に残らないので送られない。
+// 名前の端末キーが無い・デバッグ中・中継オフなら送らない。429（同じ回線からの連続送信）は約6秒後に1回だけ再送
+const XP_T_MIN = 5, XP_T_MAX = 1800;   // 中継の受付範囲（ranking-worker.js の XP_MIN_T / XP_MAX_T）
+const XP_num = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : null; };
+function xpBestTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'besttime')); }
+function xpSentTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'wsent')); }
+// 送るべきタイム（無ければ null）
+function xpPendingTime(st, pilot, id) {
+  const b = xpBestTime(st, pilot, id), s = xpSentTime(st, pilot, id);
+  if (b == null || b < XP_T_MIN || b > XP_T_MAX) return null;
+  return s == null || b < s ? b : null;
+}
+const XP_inflight = new Set();
+let XP_retryMs = 6000;
+function __xpRetryMs(v) { XP_retryMs = v; }   // テスト用
+function xpWorldSend(st, id) {
+  try { if (isDebug() || !relayEnabled()) return null; } catch (_) { return null; }
+  let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
+  if (!prof || !prof.key || !prof.name) return null;
+  const t = xpPendingTime(st, prof.name, id);
+  const tag = prof.name + '|' + id;
+  if (t == null || XP_inflight.has(tag)) return null;
+  XP_inflight.add(tag);
+  const e = { name: prof.name, key: prof.key, mission: id, time: t };
+  const send = () => Promise.resolve(WorldNet.submitXp(e));
+  return send()
+    .then((r) => (r && r.ok === false && r.status === 429 ? new Promise((res) => setTimeout(res, XP_retryMs)).then(send) : r))
+    .then((r) => { if (r && r.ok) XP_set(st, prof.name, id, 'wsent', String(t)); return r; }, () => null)
+    .finally(() => { XP_inflight.delete(tag); });
+}
+// タイトルに戻った時など: まだ送っていない自己ベストを1件だけ送る（以前の記録の取りこぼしもここで拾う）
+function xpWorldBackfill(st) {
+  let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
+  if (!prof || !prof.key) return null;
+  const id = EXP_IDS.find((x) => xpPendingTime(st, prof.name, x) != null);
+  return id ? xpWorldSend(st, id) : null;
 }
 
 
@@ -9224,6 +9399,9 @@ class ExpeditionScene extends Scene {
     // 一度でも PRACTICE / MISSION を始めたら「遊んだ」（ツアーでの再案内と終了画面の入口が止まる）
     const sh = this.lab.shell, begin = sh.begin;
     sh.begin = (l, mode, o) => { if (mode === 'practice' || mode === 'mission') xpMarkPlayed(st, pilot, this.id); return begin(l, mode, o); };
+    // MISSION の成功で自己ベストが出たら世界ランキングへ（練習は送らない）
+    const complete = sh.complete;
+    sh.complete = (f, got) => { const r = complete(f, got); if (r && !r.practice && r.newBestTime) { try { xpWorldSend(st, this.id); } catch (_) { /* 送れなくても遊びは続ける */ } } return r; };
     this.lab.start();
     if (this.detour) sh.startDetour(this.lab);
     try { const mu = XP_mus(eng); if (mu.stopJingle) mu.stopJingle(0.3); mu.playBody(this.meta.music); } catch (_) { /* 音なし */ }
@@ -9824,7 +10002,7 @@ class TitleScene extends Scene {
     this.t = 0;
     this.showRank = false;
     this.rank = [];
-    this.tabs = createRankTabs();
+    this.tabs = createRankTabs({ cats: true });
     this.name = '';
     this.pendingStart = false;
     this.toastT = 0;
@@ -9857,11 +10035,12 @@ class TitleScene extends Scene {
   }
 
   enter() {
-    this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs(); this.name = getPlayerName(this.engine.storage);
+    this.rank = loadRanking(this.engine.storage); this.tabs = createRankTabs({ cats: true }); this.name = getPlayerName(this.engine.storage);
     try { const ap = getActiveProfile(this.engine.storage); if (ap) this.name = ap.name; } catch (_) { /* ignore */ }
     this.cp = loadCheckpoint(this.engine.storage);
     this.top1 = loadTop1(this.engine.storage);      // 即表示（オフラインでも）
     this._refreshTop1();
+    try { xpWorldBackfill(this.engine.storage); } catch (_) { /* 送れなくても続ける */ }   // EXPEDITION の未送信の自己ベストを1件
     // 既に音声がアンロック済み（ゲームから戻った場合）ならすぐタイトル曲
     if (this.engine.audio && this.engine.audio.ctx) this._ensureMusic();
     if (this._openMapOnEnter) { this._openMapOnEnter = false; this._openMap(); }
@@ -10135,7 +10314,7 @@ class TitleScene extends Scene {
       if (this._hit(this.rankBtn, data)) {
         musicOf(this.engine).sfx.uiTap();
         this.showRank = !this.showRank;
-        if (this.showRank) this.tabs = createRankTabs();
+        if (this.showRank) this.tabs = createRankTabs({ cats: true });
         return;
       }
       if (this._hit(this.mapBtn, data)) { musicOf(this.engine).sfx.uiTap(); this._openMap(); return; }
@@ -10146,7 +10325,7 @@ class TitleScene extends Scene {
       if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
       if (this.top1 && this._hit(this.worldBox, data) && !this.launch) {   // プレート: WORLD タブでランキングを開く（ゲームは開始しない）
         musicOf(this.engine).sfx.uiTap();
-        this.showRank = true; this.tabs = createRankTabs(); this.tabs.mode = 'world';
+        this.showRank = true; this.tabs = createRankTabs({ cats: true }); this.tabs.mode = 'world';
         if (relayEnabled()) loadWorld(this.tabs, this.engine.storage);
         return;
       }

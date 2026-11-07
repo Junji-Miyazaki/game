@@ -1,7 +1,7 @@
 // ローカルランキング（端末ごとの localStorage 保存）。純関数中心でヘッドレステスト可能。
 // Entry = { name, score, stage, date(ISO) }。上位10件を score降順 → stage降順 → 日付が早い順 で保持する。
 import { P } from './core/palette.js';
-import { relayEnabled, fetchWorldTop, submitScore, makeNameKey, relayBoardState, setPin, clearPin, loginWithPin } from './net.js';
+import { relayEnabled, fetchWorldTop, submitScore, makeNameKey, relayBoardState, setPin, clearPin, loginWithPin, fetchBoard, submitXpTime } from './net.js';
 import * as NetNS from './net.js';
 import { txt, rgba, hair, pill, ellipsize } from './art.js';
 import { stageInfo, STAGES_PER_BODY, bodyGravity } from './bodies.js';
@@ -34,6 +34,20 @@ export const WorldNet = {
     if (st === 'unsupported') return { ok: false, error: 'updating' };
     if (st !== 'supported') return { ok: false, error: 'offline' };   // 対応が確認できない間は送らない（旧中継だと別の版のボードに入ってしまう）
     return submitScore(e);
+  },
+  // 追加ランキングの取得（今週・到達・EXPEDITION）。旧中継（400）は updating 扱い
+  fetchBoard: async (board) => {
+    WorldNet.updating = false;
+    const st = await relayBoardState();
+    if (st !== 'supported') { WorldNet.updating = st === 'unsupported'; return null; }
+    const r = await fetchBoard(board);
+    if (r && r.old) { WorldNet.updating = true; return null; }
+    return r;
+  },
+  submitXp: async (e) => {
+    const st = await relayBoardState();
+    if (st !== 'supported') return { ok: false, error: st === 'unsupported' ? 'updating' : 'offline' };
+    return submitXpTime(e);
   },
   setTitle: async (name, key, title) => {
     const st = await relayBoardState();
@@ -217,7 +231,8 @@ export function qualifies(list, score) {
 }
 
 // ランキング行の描画（タイトル/ゲームオーバー共通）。P2a: ヘアライン区切り + 控えめな強調。highlight = 強調する行index
-export function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
+// fmt(e) -> { main, sub }（右側の大きい数字と小さい注記）。省略時は 得点 / ST.ステージ
+export function drawRankingRows(engine, ctx, list, x, y, w, highlight, fmt) {
   const p = P();
   const rowH = 30;
   if (!list.length) { txt(ctx, 'NO RECORDS YET', x + w / 2, y + 12, 10, p.dim, 'center', { sp: 3, w: 500 }); return; }
@@ -233,13 +248,61 @@ export function drawRankingRows(engine, ctx, list, x, y, w, highlight) {
     const nm = ellipsize(ctx, e.name, 13, 400, 1, 140);
     txt(ctx, nm, x + 38, ry + (tl ? 1 : 4), 13, c, 'left', { w: 400, sp: 1 });
     if (tl) txt(ctx, ellipsize(ctx, tl, 7, 400, 0.5, 140), x + 38, ry + 16, 7, hl ? p.warn : p.dim, 'left', { w: 400, sp: 0.5 });
-    txt(ctx, String(e.score), x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
-    txt(ctx, 'ST.' + e.stage, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
+    const f = fmt ? fmt(e) : { main: String(e.score), sub: 'ST.' + e.stage };
+    txt(ctx, f.main, x + w - 54, ry + 3, 15, c, 'right', { w: 300 });
+    if (f.sub) txt(ctx, f.sub, x + w - 10, ry + 7, 9, hl ? p.warn : p.dim, 'right', { w: 500, sp: 1.5 });
   }
 }
 
 // ---- LOCAL / WORLD タブ（RELAY_URL 設定時のみ表示）----
-export function createRankTabs() { return { mode: 'local', world: null, status: 'idle', token: 0 }; }
+// opts.cats: WORLD の下に種類の切り替え（ALL / WEEK / STAGE / EXPEDITION）を出す（タイトルの一覧だけ。ゲームオーバーは出さない）
+export function createRankTabs(opts) { return { mode: 'local', world: null, status: 'idle', token: 0, cats: !!(opts && opts.cats), cat: 'all', xpi: 0, extra: {} }; }
+
+// ---- WORLD の種類（追加ランキング）----
+// XB_XP はクライアントの expedition/index.js（EXP_MISSIONS の id・name）と中継の XP_IDS に揃える（p27 のテストで照合）
+export const XB_XP = [{ id: 'ryugu', name: 'RYUGU' }, { id: 'phobos', name: 'PHOBOS' }, { id: 'enceladus', name: 'ENCELADUS' }, { id: '67p', name: '67P' }];
+export const RANK_CATS = ['all', 'week', 'reach', 'xp'];
+export function rankCatBoard(tabs) {
+  if (tabs.cat === 'week') return 'v1.1-week';
+  if (tabs.cat === 'reach') return 'v1.1-reach';
+  if (tabs.cat === 'xp') return 'xp-' + XB_XP[tabs.xpi % XB_XP.length].id;
+  return null;
+}
+export function rankCatRects(x, y, w) {
+  const gap = 6, h = 16, bw = Math.floor((w - gap * 3) / 4), yy = y + 22;
+  const out = {};
+  RANK_CATS.forEach((k, i) => { out[k] = { x: x + i * (bw + gap), y: yy, w: bw, h }; });
+  return out;
+}
+export function rankCatLabel(tabs, k) {
+  if (k === 'all') return 'ALL';
+  if (k === 'week') return 'WEEK';
+  if (k === 'reach') return 'STAGE';
+  return XB_XP[tabs.xpi % XB_XP.length].name + ' \u203a';
+}
+// 追加ランキングの読み込み。tabs.extra[board] = { status: 'loading'|'ok'|'offline'|'updating', rows, meta }
+const xbValid = {
+  week: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
+  reach: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
+  xp: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.time) && e.time > 0,
+};
+export function loadCat(tabs) {
+  const board = rankCatBoard(tabs); if (!board) return null;
+  const cat = tabs.cat, slot = { status: 'loading', rows: [], meta: null };
+  tabs.extra[board] = slot;
+  return WorldNet.fetchBoard(board).then((j) => {
+    if (tabs.extra[board] !== slot) return;
+    if (j) { slot.rows = j.top.filter(xbValid[cat]).slice(0, RANK_MAX); slot.meta = j; slot.status = 'ok'; }
+    else slot.status = WorldNet.updating ? 'updating' : 'offline';
+  }, () => { if (tabs.extra[board] === slot) slot.status = 'offline'; });
+}
+// 秒 -> '00:42.4'
+export function fmtClear(t) { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(1).padStart(4, '0'); }
+// 週のリセットまで（ms）-> '2D 05H' / '05H 12M'
+export function fmtLeft(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  return d > 0 ? d + 'D ' + String(h).padStart(2, '0') + 'H' : String(h).padStart(2, '0') + 'H ' + String(mm).padStart(2, '0') + 'M';
+}
 
 export function rankTabRects(x, y, w) {
   const bw = Math.floor((w - 8) / 2), h = 18;
@@ -255,8 +318,20 @@ export function rankTabsTap(tabs, x, y, px, py, w, storage) {
   if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
   if (inRect(r.world, px, py)) {
     tabs.mode = 'world';
-    if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
+    if (tabs.cats && tabs.cat !== 'all') { const b = rankCatBoard(tabs), s = tabs.extra[b]; if (!s || s.status === 'offline' || s.status === 'updating') loadCat(tabs); }
+    else if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
     return true;
+  }
+  if (tabs.cats && tabs.mode === 'world') {
+    const c = rankCatRects(x, y, w);
+    for (const k of RANK_CATS) {
+      if (!inRect(c[k], px, py)) continue;
+      if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XP.length;   // もう一度押すと次のミッション
+      tabs.cat = k;
+      if (k === 'all') { if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage); }
+      else { const s = tabs.extra[rankCatBoard(tabs)]; if (!s || s.status !== 'ok' && s.status !== 'loading') loadCat(tabs); }
+      return true;
+    }
   }
   return false;
 }
@@ -282,10 +357,46 @@ export function drawRankPanel(engine, ctx, tabs, localList, x, y, w, highlight) 
     txt(ctx, k.toUpperCase(), r[k].x + r[k].w / 2, r[k].y + 5, 9, on ? p.hi : p.dim, 'center', { sp: 3, w: 500 });
   }
   if (tabs.mode === 'local') drawRankingRows(engine, ctx, localList, x, y + 24, w, highlight);
+  else if (tabs.cats) drawWorldCats(engine, ctx, tabs, x, y, w);
   else if (tabs.status === 'loading' || tabs.status === 'idle') txt(ctx, 'LOADING\u2026', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
   else if (tabs.status === 'updating') txt(ctx, 'WORLD: UPDATING', x + w / 2, y + 40, 11, p.mid, 'center', { sp: 3 });
   else if (tabs.status === 'offline') txt(ctx, 'OFFLINE', x + w / 2, y + 40, 11, p.bad, 'center', { sp: 3 });
   else drawRankingRows(engine, ctx, tabs.world || [], x, y + 24, w, -1);
+}
+
+// WORLD（種類の切り替えつき）。行は y+46 から。下に1行の説明（今週はリセットまでの時間と先週の1位）
+function drawWorldCats(engine, ctx, tabs, x, y, w) {
+  const p = P(), c = rankCatRects(x, y, w);
+  for (const k of RANK_CATS) {
+    const on = tabs.cat === k, b = c[k];
+    pill(ctx, b.x, b.y, b.w, b.h, on ? rgba(p.mid, 0.12) : null, rgba(on ? p.mid : p.fg, on ? 0.55 : 0.14));
+    txt(ctx, ellipsize(ctx, rankCatLabel(tabs, k), 8, 500, 1.5, b.w - 6), b.x + b.w / 2, b.y + 4, 8, on ? p.hi : p.dim, 'center', { sp: 1.5, w: 500 });
+  }
+  const ry = y + 46, my = ry + RANK_MAX * 30 + 4;
+  const msg = (s, col) => txt(ctx, s, x + w / 2, ry + 16, 11, col, 'center', { sp: 3 });
+  if (tabs.cat === 'all') {
+    if (tabs.status === 'loading' || tabs.status === 'idle') msg('LOADING\u2026', p.mid);
+    else if (tabs.status === 'updating') msg('WORLD: UPDATING', p.mid);
+    else if (tabs.status === 'offline') msg('OFFLINE', p.bad);
+    else drawRankingRows(engine, ctx, tabs.world || [], x, ry, w, -1);
+    txt(ctx, 'ALL-TIME BEST SCORE', x + w / 2, my, 8, p.dim, 'center', { sp: 2, w: 500 });
+    return;
+  }
+  const s = tabs.extra[rankCatBoard(tabs)];
+  if (!s || s.status === 'loading') msg('LOADING\u2026', p.mid);
+  else if (s.status === 'updating') msg('WORLD: UPDATING', p.mid);
+  else if (s.status === 'offline') msg('OFFLINE', p.bad);
+  else if (tabs.cat === 'reach') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: 'ST.' + e.stage, sub: String(e.score) }));
+  else if (tabs.cat === 'xp') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: fmtClear(e.time), sub: '' }));
+  else drawRankingRows(engine, ctx, s.rows, x, ry, w, -1);
+  let note = '';
+  if (tabs.cat === 'week') {
+    const m = s && s.meta;
+    note = 'THIS WEEK' + (m && Number.isFinite(m.resetAt) ? '  \u00b7  RESETS IN ' + fmtLeft(m.resetAt - Date.now()) : '');
+    if (m && m.last && typeof m.last.name === 'string') txt(ctx, 'LAST WEEK #1  ' + ellipsize(ctx, m.last.name, 8, 500, 1.5, 120) + '  ' + m.last.score, x + w / 2, my + 13, 8, p.warn, 'center', { sp: 1.5, w: 500 });
+  } else if (tabs.cat === 'reach') note = 'DEEPEST STAGE REACHED';
+  else note = 'FASTEST MISSION CLEAR  \u00b7  TAP AGAIN: NEXT';
+  txt(ctx, note, x + w / 2, my, 8, p.dim, 'center', { sp: 2, w: 500 });
 }
 
 // ---- プレイヤー名（プレイ前にタイトルで入力。保存キー 'lastName'）----

@@ -1,11 +1,15 @@
 // EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
 // 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
 //   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ played('1' = 一度でも始めた) / best / besttime / skipBrief（shell が使う）
+//       / wsent（世界ランキングへ送り終えたタイム。これより速い besttime があれば送る）
 // 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
 // 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
-import { EXP_MISSIONS } from './expedition/index.js';
+import { EXP_MISSIONS, EXP_IDS } from './expedition/index.js';
 import { rgba } from './art.js';
+import { getActiveProfile, WorldNet } from './ranking.js';
+import { relayEnabled } from './net.js';
+import { isDebug } from './debug.js';
 
 export const XP_STARS_PER = 3;
 export const XP_STARS_MAX = EXP_MISSIONS.length * XP_STARS_PER;   // 12（ツアー 48 と合わせて 60）
@@ -103,4 +107,43 @@ export function xpDrawBody(c, id, x, y, r, t, o) {
   c.restore();
   XP_path(c, id, x, y, r, t); c.strokeStyle = rgba('#9fe6dc', 0.55); c.lineWidth = Math.max(0.7, r * 0.02); c.stroke();
   c.restore();
+}
+
+// ---- 世界ランキング（EXPEDITION 最速タイム）----
+// MISSION の自己ベスト（besttime）を、まだ送っていなければ中継へ送る。練習は besttime に残らないので送られない。
+// 名前の端末キーが無い・デバッグ中・中継オフなら送らない。429（同じ回線からの連続送信）は約6秒後に1回だけ再送
+export const XP_T_MIN = 5, XP_T_MAX = 1800;   // 中継の受付範囲（ranking-worker.js の XP_MIN_T / XP_MAX_T）
+const XP_num = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : null; };
+export function xpBestTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'besttime')); }
+export function xpSentTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'wsent')); }
+// 送るべきタイム（無ければ null）
+export function xpPendingTime(st, pilot, id) {
+  const b = xpBestTime(st, pilot, id), s = xpSentTime(st, pilot, id);
+  if (b == null || b < XP_T_MIN || b > XP_T_MAX) return null;
+  return s == null || b < s ? b : null;
+}
+const XP_inflight = new Set();
+let XP_retryMs = 6000;
+export function __xpRetryMs(v) { XP_retryMs = v; }   // テスト用
+export function xpWorldSend(st, id) {
+  try { if (isDebug() || !relayEnabled()) return null; } catch (_) { return null; }
+  let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
+  if (!prof || !prof.key || !prof.name) return null;
+  const t = xpPendingTime(st, prof.name, id);
+  const tag = prof.name + '|' + id;
+  if (t == null || XP_inflight.has(tag)) return null;
+  XP_inflight.add(tag);
+  const e = { name: prof.name, key: prof.key, mission: id, time: t };
+  const send = () => Promise.resolve(WorldNet.submitXp(e));
+  return send()
+    .then((r) => (r && r.ok === false && r.status === 429 ? new Promise((res) => setTimeout(res, XP_retryMs)).then(send) : r))
+    .then((r) => { if (r && r.ok) XP_set(st, prof.name, id, 'wsent', String(t)); return r; }, () => null)
+    .finally(() => { XP_inflight.delete(tag); });
+}
+// タイトルに戻った時など: まだ送っていない自己ベストを1件だけ送る（以前の記録の取りこぼしもここで拾う）
+export function xpWorldBackfill(st) {
+  let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
+  if (!prof || !prof.key) return null;
+  const id = EXP_IDS.find((x) => xpPendingTime(st, prof.name, x) != null);
+  return id ? xpWorldSend(st, id) : null;
 }
