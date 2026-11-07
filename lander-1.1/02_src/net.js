@@ -64,11 +64,11 @@ export async function fetchBoard(board, timeoutMs = NET_TIMEOUT_MS) {
     });
   } catch (_) { return null; }
 }
-// EXPEDITION のクリアタイム。entry = { name, key, mission, time(秒) } -> { ok, status?, best?, error? }
+// EXPEDITION のクリアタイムと得点。entry = { name, key, mission, time(秒), score?(そのミッションの自己最高点) } -> { ok, status?, best?, error? }
 export async function submitXpTime(entry, timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return { ok: false, error: 'disabled' };
   try {
-    const body = JSON.stringify({ name: entry.name, key: entry.key, mission: entry.mission, time: entry.time });
+    const body = JSON.stringify({ name: entry.name, key: entry.key, mission: entry.mission, time: entry.time, ...(Number.isInteger(entry.score) ? { score: entry.score } : {}) });
     return await request(RELAY_URL + '/xp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs, async (res) => {
       let j = null; try { j = await res.json(); } catch (_) { /* 本文なし */ }
       return { ok: !!(res && res.ok), status: res && res.status, ...(j && typeof j.best === 'boolean' ? { best: j.best } : {}) };

@@ -158,6 +158,29 @@ const weekOf = (now) => { const j = new Date(now + 9 * 3600e3); const dow = (j.g
   ok((await (await get('/ranking?board=v9')).status) === 400, 'unknown board still 400');
 }
 
+// ===== 7b. EXPEDITION 合計（各ミッションの最高点の和）=====
+{
+  const xs = (name, mission, time, score) => post('/xp', { name, key: K(name), mission, time, score });
+  let r = await xs('Tot', 'ryugu', 40, 2500); let j = await r.json();
+  ok(r.status === 200 && j.bestScore === true, 'total: first score accepted');
+  await xs('Tot', 'phobos', 50, 3000);
+  let t = rows('xp/total.json').find((x) => x.name === 'Tot');
+  ok(t.total === 5500 && t.n === 2 && t.scores.ryugu === 2500 && t.scores.phobos === 3000, 'total = sum of mission bests: ' + JSON.stringify(t));
+  r = await xs('Tot', 'ryugu', 35, 2000); j = await r.json();
+  ok(j.bestScore === false && rows('xp/total.json').find((x) => x.name === 'Tot').total === 5500, 'lower score does not lower the total');
+  ok(rows('xp/ryugu.json').find((x) => x.name === 'Tot').time === 35, 'faster time still recorded in the same request');
+  r = await xs('Tot', 'ryugu', 60, 2900); ok(rows('xp/total.json').find((x) => x.name === 'Tot').total === 5900, 'higher score raises the total even with a slower time');
+  await xs('Two', 'enceladus', 45, 3500); await xs('Two', '67p', 70, 3000);
+  const b = await board('xp-total');
+  ok(b.board === 'xp-total' && b.missions === 4 && b.top.map((x) => x.name + x.total).join() === 'Two6500,Tot5900', 'GET xp-total sorted by total: ' + JSON.stringify(b.top));
+  ok(b.top.every((x) => !('scores' in x) && Number.isFinite(x.n)), 'GET xp-total: per-mission scores not exposed, n given');
+  ok((await xs('Tot', 'ryugu', 40, 9999)).status === 400, 'score above cap -> 400');
+  ok((await xs('Tot', 'ryugu', 40, 12.5)).status === 400, 'non-integer score -> 400');
+  ok((await xs('Tot', 'ryugu', 40, -1)).status === 400, 'negative score -> 400');
+  r = await post('/xp', { name: 'NoSc', key: K('NoSc'), mission: 'ryugu', time: 41 }); ok(r.status === 200 && !rows('xp/total.json').some((x) => x.name === 'NoSc'), 'no score: time only, total untouched');
+  r = await post('/delete', { name: 'Tot', key: K('Tot') }); ok(r.status === 200 && !rows('xp/total.json').some((x) => x.name === 'Tot'), 'delete removes from total');
+}
+
 // ===== 8. 管理者の埋め込み（到達 = v1.1 の top、今週 = 今週の月ログ）=====
 {
   files.clear(); bust();

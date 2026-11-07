@@ -20,6 +20,7 @@ export class ExpeditionScene extends Scene {
   constructor(engine, id, onExit, opts) {
     super(engine);
     this.id = id; this.meta = expMission(id); this.onExit = onExit || null; this.detour = !!(opts && opts.detour);
+    this.onWin = (opts && typeof opts.onWin === 'function') ? opts.onWin : null; this._won = false;   // 寄り道の成功（1回だけ）
     this.isRoot = true;   // エンジンの BACK ボタンは出さない（メニューに MAP を出す）
     this.lab = null; this._left = false;
   }
@@ -35,9 +36,14 @@ export class ExpeditionScene extends Scene {
     // 一度でも PRACTICE / MISSION を始めたら「遊んだ」（ツアーでの再案内と終了画面の入口が止まる）
     const sh = this.lab.shell, begin = sh.begin;
     sh.begin = (l, mode, o) => { if (mode === 'practice' || mode === 'mission') xpMarkPlayed(st, pilot, this.id); return begin(l, mode, o); };
-    // MISSION の成功で自己ベストが出たら世界ランキングへ（練習は送らない）
+    // MISSION の成功で自己ベスト（タイムか得点）が出たら世界ランキングへ（練習は送らない）
     const complete = sh.complete;
-    sh.complete = (f, got) => { const r = complete(f, got); if (r && !r.practice && r.newBestTime) { try { xpWorldSend(st, this.id); } catch (_) { /* 送れなくても遊びは続ける */ } } return r; };
+    sh.complete = (f, got) => {
+      const r = complete(f, got);
+      if (r && !r.practice && (r.newBestTime || r.newBest)) { try { xpWorldSend(st, this.id); } catch (_) { /* 送れなくても遊びは続ける */ } }
+      if (r && !r.practice && this.detour && this.onWin && !this._won) { this._won = true; try { this.onWin(); } catch (_) { /* ignore */ } }
+      return r;
+    };
     this.lab.start();
     if (this.detour) sh.startDetour(this.lab);
     try { const mu = XP_mus(eng); if (mu.stopJingle) mu.stopJingle(0.3); mu.playBody(this.meta.music); } catch (_) { /* 音なし */ }

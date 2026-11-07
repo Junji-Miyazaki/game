@@ -48,10 +48,11 @@
 | GET | `/ranking?board=` | `{ board, top: [...] }` 上位20（board 省略=v1.0、許可外は 400） |
 | GET | `/name?n=<名前>` | `{ taken, hasPin }`。空は 400。短時間キャッシュ、submit/delete で無効化 |
 | POST | `/submit` | `{ name, score, stage, key, board? }`。新規名は登録。キー一致なら受理。キー不一致は **403 `name-taken`**。キー未設定の旧名（例: 既存の「みや」）は最初のキー付き送信で確保。`key` は hex 32〜128 文字（無ければ 400） |
-| POST | `/xp` | `{ name, key, mission, time }`。EXPEDITION の MISSION クリアタイム（秒）。`mission` は `ryugu`/`phobos`/`enceladus`/`67p`、`time` は 5〜1800 秒（0.1 秒に丸める）。名前の持ち主確認は `/submit` と同じ（不一致 403 `name-taken`、新しい名前は登録）。名前ごとに最速だけ残す。同一IPは5秒に1回（`/submit` とは別枠、429 `rate`）。`{ ok:true, best }`（best = 記録を更新したか）。月ログ `log/v1.1/` に `{kind:"xp", mission, name, time, date}` |
+| POST | `/xp` | `{ name, key, mission, time, score? }`。`score` はそのミッションの自己最高点（整数 0〜5000）で、EXPEDITION 合計（`xp/total.json`、名前ごとに各ミッションの最高点を持ち、その和で並べる）を更新。応答に `bestScore`（合計が上がったか）。EXPEDITION の MISSION クリアタイム（秒）。`mission` は `ryugu`/`phobos`/`enceladus`/`67p`、`time` は 5〜1800 秒（0.1 秒に丸める）。名前の持ち主確認は `/submit` と同じ（不一致 403 `name-taken`、新しい名前は登録）。名前ごとに最速だけ残す。同一IPは5秒に1回（`/submit` とは別枠、429 `rate`）。`{ ok:true, best }`（best = 記録を更新したか）。月ログ `log/v1.1/` に `{kind:"xp", mission, name, time, date}` |
 | GET | `/ranking?board=v1.1-week` | 今週（日本時間の月曜 0:00 始まり）の得点。`/submit`（board v1.1、0 点は除く）のたびに名前ごとのベストを `week/v1.1/<月曜の日付>.json` に記録。`{ board, week, resetAt(ms), top, last? }`（last = 先週の1位 {name, score}） |
 | GET | `/ranking?board=v1.1-reach` | 最高到達ステージ。`/submit`（board v1.1）のたびに `reach-v1.1.json` へ。並びは stage → score → 早い日時。`{ board, top }` |
 | GET | `/ranking?board=xp-<mission>` | EXPEDITION 最速（`xp/<mission>.json`）。`{ board, mission, top }`（time 昇順） |
+| GET | `/ranking?board=xp-total` | EXPEDITION 合計。`{ board, missions:4, top:[{ name, total, n(記録のあるミッション数), date }] }`（ミッションごとの内訳は返さない） |
 | POST | `/delete` | `{ name, key }`。キー一致で `names.json` と `top.json` から削除し `{ ok: true }`。不一致/旧名は 403、未登録は 404 |
 | POST | `/title` | `{ name, key, title, board? }`。**その板の現 WORLD 1位の名前の持ち主だけ**が二つ名を設定/変更/消去（`title: ""` で消去）。成功 `200 { ok:true, title }`（サニタイズ後の値）。`400 invalid`（名前/キー形式/`title` が文字列でない）、`403 forbidden`（キー不一致・旧名でキー未設定）、`404 unknown`（未登録の名前）、`409 not-champion`（1位ではない）。Origin 検査あり |
 | POST | `/pin/set` | `{ name, key, pin }`。登録済みキーの端末が PIN を設定/変更（`/^\d{4,6}$/` 以外は 400）。`{ ok:true }` / 403 `forbidden` / 404 `unknown` / 503 `pin-disabled` |

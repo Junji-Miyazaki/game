@@ -1,7 +1,7 @@
 // EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
 // 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
 //   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ played('1' = 一度でも始めた) / best / besttime / skipBrief（shell が使う）
-//       / wsent（世界ランキングへ送り終えたタイム。これより速い besttime があれば送る）
+//       / wsent・wsentS（世界ランキングへ送り終えたタイムと得点。これより良い besttime / best.score があれば送る）
 // 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
 // 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
@@ -116,11 +116,23 @@ export const XP_T_MIN = 5, XP_T_MAX = 1800;   // 中継の受付範囲（ranking
 const XP_num = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : null; };
 export function xpBestTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'besttime')); }
 export function xpSentTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'wsent')); }
+export const XP_SCORE_MAX = 5000;   // 中継の XP_MAX_SCORE
+export function xpBestScore(st, pilot, id) { try { const b = JSON.parse(XP_get(st, pilot, id, 'best')); const n = Math.round(Number(b && b.score)); return Number.isFinite(n) && n > 0 && n <= XP_SCORE_MAX ? n : null; } catch (_) { return null; } }
+export function xpSentScore(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'wsentS')); }
 // 送るべきタイム（無ければ null）
 export function xpPendingTime(st, pilot, id) {
   const b = xpBestTime(st, pilot, id), s = xpSentTime(st, pilot, id);
   if (b == null || b < XP_T_MIN || b > XP_T_MAX) return null;
   return s == null || b < s ? b : null;
+}
+// 送るもの（タイムか得点のどちらかが未送信なら両方の自己ベストを1回で送る）。-> { time, score|null } | null
+export function xpPending(st, pilot, id) {
+  const t = xpBestTime(st, pilot, id);
+  if (t == null || t < XP_T_MIN || t > XP_T_MAX) return null;
+  const sc = xpBestScore(st, pilot, id), ss = xpSentScore(st, pilot, id);
+  const scoreNew = sc != null && (ss == null || sc > ss);
+  if (xpPendingTime(st, pilot, id) == null && !scoreNew) return null;
+  return { time: t, score: sc };
 }
 const XP_inflight = new Set();
 let XP_retryMs = 6000;
@@ -129,21 +141,21 @@ export function xpWorldSend(st, id) {
   try { if (isDebug() || !relayEnabled()) return null; } catch (_) { return null; }
   let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
   if (!prof || !prof.key || !prof.name) return null;
-  const t = xpPendingTime(st, prof.name, id);
+  const pd = xpPending(st, prof.name, id);
   const tag = prof.name + '|' + id;
-  if (t == null || XP_inflight.has(tag)) return null;
+  if (pd == null || XP_inflight.has(tag)) return null;
   XP_inflight.add(tag);
-  const e = { name: prof.name, key: prof.key, mission: id, time: t };
+  const e = { name: prof.name, key: prof.key, mission: id, time: pd.time, ...(pd.score != null ? { score: pd.score } : {}) };
   const send = () => Promise.resolve(WorldNet.submitXp(e));
   return send()
     .then((r) => (r && r.ok === false && r.status === 429 ? new Promise((res) => setTimeout(res, XP_retryMs)).then(send) : r))
-    .then((r) => { if (r && r.ok) XP_set(st, prof.name, id, 'wsent', String(t)); return r; }, () => null)
+    .then((r) => { if (r && r.ok) { XP_set(st, prof.name, id, 'wsent', String(pd.time)); if (pd.score != null) XP_set(st, prof.name, id, 'wsentS', String(pd.score)); } return r; }, () => null)
     .finally(() => { XP_inflight.delete(tag); });
 }
 // タイトルに戻った時など: まだ送っていない自己ベストを1件だけ送る（以前の記録の取りこぼしもここで拾う）
 export function xpWorldBackfill(st) {
   let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
   if (!prof || !prof.key) return null;
-  const id = EXP_IDS.find((x) => xpPendingTime(st, prof.name, x) != null);
+  const id = EXP_IDS.find((x) => xpPending(st, prof.name, x) != null);
   return id ? xpWorldSend(st, id) : null;
 }

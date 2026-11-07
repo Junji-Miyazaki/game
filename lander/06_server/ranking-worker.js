@@ -24,8 +24,8 @@
 //   GET  /name?n=  → { taken, hasPin }（空は 400）
 //   POST /pin/set {name,key,pin} / /pin/clear {name,key} / /pin/login {name,pin,newKey}、POST /admin/pin-reset {name} / /admin/pin-set {name,pin}（README 参照）
 //   POST /submit   ← { name, score, stage, key, board? }  → { ok: true } / 403 name-taken（キー不一致）。board v1.1 は今週・到達のボードも更新
-//   POST /xp       ← { name, key, mission, time }  → { ok:true, best } / 400 invalid / 403 name-taken / 429 rate（EXPEDITION 最速。XP_IDS・XP_MIN_T〜XP_MAX_T 秒）
-//   GET  /ranking?board=v1.1-week → { board, week, resetAt, top, last? } / v1.1-reach → { board, top }（到達ステージ順）/ xp-<id> → { board, mission, top }（タイム順）
+//   POST /xp       ← { name, key, mission, time, score? }  → { ok:true, best, bestScore }（score はそのミッションの自己最高点 0〜XP_MAX_SCORE。合計 xp-total 用） / 400 invalid / 403 name-taken / 429 rate（EXPEDITION 最速。XP_IDS・XP_MIN_T〜XP_MAX_T 秒）
+//   GET  /ranking?board=v1.1-week → { board, week, resetAt, top, last? } / v1.1-reach → { board, top }（到達ステージ順）/ xp-<id> → { board, mission, top }（タイム順）/ xp-total → { board, missions, top:[{name,total,n,date}] }
 //   POST /delete   ← { name, key }  → { ok: true }（台帳と top.json から削除。月ログは残す）
 //   POST /title    ← { name, key, title, board? }  → { ok:true, title } / 400 invalid / 403 forbidden / 404 unknown / 409 not-champion
 //                     二つ名（最大16文字）。現 WORLD 1位の名前の持ち主だけが設定/変更/消去できる（空文字で消去）。
@@ -64,6 +64,8 @@ const XB_WEEK = 'v1.1-week', XB_REACH = 'v1.1-reach';
 const XP_IDS = ['ryugu', 'phobos', 'enceladus', '67p'];   // クライアント expedition/index.js の id と揃える
 const XP_MIN_T = 5, XP_MAX_T = 1800;   // 受け付けるクリアタイム（秒）。下限は「これより速いのはありえない」目安［要確認：ミッションごとの実測は未］
 const XP_RL_MS = 5_000;                // EXPEDITION 送信の同一IP間隔（スコア送信とは別枠）
+const XP_MAX_SCORE = 5000;             // 1ミッションの得点の上限（式の上限は約 3800: (1000+燃料%×10+300) + 時間ボーナス最大 1500）
+const XB_XP_TOTAL = 'xp-total';        // EXPEDITION 合計 = 各ミッションの最高点の和
 const XB_KEEP = 100;
 const JST_MS = 9 * 3600_000, WEEK_MS = 7 * 24 * 3600_000;
 
@@ -189,6 +191,28 @@ const weekIdOf = (start) => new Date(start + JST_MS).toISOString().slice(0, 10);
 const weekPath = (id) => `week/v1.1/${id}.json`;
 const reachPath = () => 'reach-v1.1.json';
 const xpPath = (id) => `xp/${id}.json`;
+const xpTotalPath = () => 'xp/total.json';
+const cmpTotal = (a, b) => (b.total - a.total) || (b.n - a.n) || String(a.date).localeCompare(String(b.date));
+// 合計の1行を更新（そのミッションの最高点が上がった時だけ書く）。-> 書いたら true
+async function updateXpTotal(env, name, mission, score, date) {
+  const k = normName(name);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await ghRead(env, xpTotalPath(), true);
+    const rows = parseRows(cur.text);
+    const i = rows.findIndex((r) => normName(r.name) === k);
+    const old = i >= 0 ? rows[i] : null;
+    const scores = { ...((old && isObj(old.scores)) ? old.scores : {}) };
+    if (Number.isFinite(scores[mission]) && scores[mission] >= score) return false;
+    scores[mission] = score;
+    const ids = XP_IDS.filter((x) => Number.isFinite(scores[x]));
+    const row = { name: old ? old.name : name, scores, total: ids.reduce((t, x) => t + scores[x], 0), n: ids.length, date };
+    const next = rows.slice(); if (i >= 0) next[i] = row; else next.push(row);
+    next.sort(cmpTotal);
+    if (await ghPut(env, xpTotalPath(), JSON.stringify(next.slice(0, XB_KEEP)) + '\n', cur.sha, `xp total: ${row.name} ${row.total}`)) return true;
+    await backoff(attempt);
+  }
+  throw new Error('github board conflict');
+}
 const parseRows = (text) => { try { const a = JSON.parse(text); return Array.isArray(a) ? a.filter((o) => o && typeof o.name === 'string') : []; } catch { return []; } };
 const cmpReach = (a, b) => (b.stage - a.stage) || (b.score - a.score) || String(a.date).localeCompare(String(b.date));
 const cmpTime = (a, b) => (a.time - b.time) || String(a.date).localeCompare(String(b.date));
@@ -228,7 +252,7 @@ async function mergeBest(env, path, entries, better, sort, message) {
 }
 // 名前を追加ランキング（今週・到達・EXPEDITION）から消す
 async function removeFromExtras(env, key) {
-  const paths = [weekPath(weekIdOf(weekStart(Date.now()))), reachPath(), ...XP_IDS.map(xpPath)];
+  const paths = [weekPath(weekIdOf(weekStart(Date.now()))), reachPath(), ...XP_IDS.map(xpPath), xpTotalPath()];
   for (const path of paths) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const cur = await ghRead(env, path, true);
@@ -255,6 +279,10 @@ async function extraBoard(env, board) {
     const rows = parseRows((await ghRead(env, reachPath(), true)).text).filter((r) => Number.isFinite(r.stage) && Number.isFinite(r.score)).sort(cmpReach);
     return { board, top: titled(rows) };
   }
+  if (board === XB_XP_TOTAL) {
+    const rows = parseRows((await ghRead(env, xpTotalPath(), true)).text).filter((r) => Number.isFinite(r.total) && Number.isFinite(r.n)).sort(cmpTotal);
+    return { board, missions: XP_IDS.length, top: titled(rows).map(({ scores: _s, ...r }) => r) };
+  }
   const m = /^xp-(.+)$/.exec(board);
   if (m && XP_IDS.includes(m[1])) {
     const rows = parseRows((await ghRead(env, xpPath(m[1]), true)).text).filter((r) => Number.isFinite(r.time)).sort(cmpTime);
@@ -263,7 +291,7 @@ async function extraBoard(env, board) {
   return null;
 }
 const extraCacheKey = (board) => board === XB_WEEK ? board + '|' + weekIdOf(weekStart(Date.now())) : board;
-const isExtraBoard = (b) => b === XB_WEEK || b === XB_REACH || (typeof b === 'string' && /^xp-/.test(b) && XP_IDS.includes(b.slice(3)));
+const isExtraBoard = (b) => b === XB_WEEK || b === XB_REACH || b === XB_XP_TOTAL || (typeof b === 'string' && /^xp-/.test(b) && XP_IDS.includes(b.slice(3)));
 
 // 名前の正規化（クライアント net.js の normName と同一。別デプロイなので複製。変更時は両方を揃える）
 // 全角/半角・大文字小文字は別名として扱う（前後の空白だけ除く）
@@ -572,14 +600,18 @@ export default {
         if (!isObj(body) || typeof body.key !== 'string' || !KEY_RE.test(body.key) || !XP_IDS.includes(body.mission)) return json({ error: 'invalid' }, 400, h);
         const t = Number(body.time);
         if (!Number.isFinite(t) || t < XP_MIN_T || t > XP_MAX_T) return json({ error: 'invalid' }, 400, h);
+        // score（任意）: そのミッションの自己最高点。合計ランキング用
+        const sc = body.score === undefined ? null : Number(body.score);
+        if (sc !== null && !(Number.isInteger(sc) && sc >= 0 && sc <= XP_MAX_SCORE)) return json({ error: 'invalid' }, 400, h);
         xpRl.set(ip, Date.now());
         const entry = { name: cleanName(body.name), time: Math.round(t * 10) / 10, date: new Date().toISOString() };
         const claim = await claimName(env, entry, await sha256hex(body.key));
         if (claim.status === 'taken') { namesCache = null; return json({ error: 'name-taken' }, 403, h); }
-        try { await appendLog(env, { kind: 'xp', mission: body.mission, ...entry }, 'v1.1'); } catch { /* 監査ログの失敗は本処理に影響させない */ }
+        try { await appendLog(env, { kind: 'xp', mission: body.mission, ...entry, ...(sc !== null ? { score: sc } : {}) }, 'v1.1'); } catch { /* 監査ログの失敗は本処理に影響させない */ }
         const best = await updateBest(env, xpPath(body.mission), entry, (a, b) => a.time < b.time, cmpTime, `xp: ${entry.name} ${body.mission} ${entry.time}s`);
+        const bestScore = sc !== null && sc > 0 ? await updateXpTotal(env, entry.name, body.mission, sc, entry.date) : false;
         cached.clear(); namesCache = null;
-        return json({ ok: true, best }, 200, h);
+        return json({ ok: true, best, bestScore }, 200, h);
       }
       if (req.method === 'POST' && url.pathname === '/delete') {
         if (!allowedOrigins(env).includes(origin)) return json({ error: 'origin' }, 403, h);

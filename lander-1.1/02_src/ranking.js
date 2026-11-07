@@ -262,10 +262,11 @@ export function createRankTabs(opts) { return { mode: 'local', world: null, stat
 // XB_XP はクライアントの expedition/index.js（EXP_MISSIONS の id・name）と中継の XP_IDS に揃える（p27 のテストで照合）
 export const XB_XP = [{ id: 'ryugu', name: 'RYUGU' }, { id: 'phobos', name: 'PHOBOS' }, { id: 'enceladus', name: 'ENCELADUS' }, { id: '67p', name: '67P' }];
 export const RANK_CATS = ['all', 'week', 'reach', 'xp'];
+const XB_XN = XB_XP.length + 1;   // ミッション 4 つ + TOTAL（各ミッションの最高点の合計）
 export function rankCatBoard(tabs) {
   if (tabs.cat === 'week') return 'v1.1-week';
   if (tabs.cat === 'reach') return 'v1.1-reach';
-  if (tabs.cat === 'xp') return 'xp-' + XB_XP[tabs.xpi % XB_XP.length].id;
+  if (tabs.cat === 'xp') return tabs.xpi % XB_XN === XB_XP.length ? 'xp-total' : 'xp-' + XB_XP[tabs.xpi % XB_XN].id;
   return null;
 }
 export function rankCatRects(x, y, w) {
@@ -278,13 +279,14 @@ export function rankCatLabel(tabs, k) {
   if (k === 'all') return 'ALL';
   if (k === 'week') return 'WEEK';
   if (k === 'reach') return 'STAGE';
-  return XB_XP[tabs.xpi % XB_XP.length].name + ' \u203a';
+  const i = tabs.xpi % XB_XN;
+  return (i === XB_XP.length ? 'TOTAL' : XB_XP[i].name) + ' \u203a';
 }
 // 追加ランキングの読み込み。tabs.extra[board] = { status: 'loading'|'ok'|'offline'|'updating', rows, meta }
 const xbValid = {
   week: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
   reach: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
-  xp: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.time) && e.time > 0,
+  xp: (e) => !!e && typeof e.name === 'string' && ((Number.isFinite(e.time) && e.time > 0) || (Number.isFinite(e.total) && Number.isFinite(e.n))),
 };
 export function loadCat(tabs) {
   const board = rankCatBoard(tabs); if (!board) return null;
@@ -326,7 +328,7 @@ export function rankTabsTap(tabs, x, y, px, py, w, storage) {
     const c = rankCatRects(x, y, w);
     for (const k of RANK_CATS) {
       if (!inRect(c[k], px, py)) continue;
-      if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XP.length;   // もう一度押すと次のミッション
+      if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XN;   // もう一度押すと次のミッション（最後は TOTAL）
       tabs.cat = k;
       if (k === 'all') { if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage); }
       else { const s = tabs.extra[rankCatBoard(tabs)]; if (!s || s.status !== 'ok' && s.status !== 'loading') loadCat(tabs); }
@@ -387,6 +389,7 @@ function drawWorldCats(engine, ctx, tabs, x, y, w) {
   else if (s.status === 'updating') msg('WORLD: UPDATING', p.mid);
   else if (s.status === 'offline') msg('OFFLINE', p.bad);
   else if (tabs.cat === 'reach') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: 'ST.' + e.stage, sub: String(e.score) }));
+  else if (tabs.cat === 'xp' && rankCatBoard(tabs) === 'xp-total') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: String(e.total), sub: e.n + '/' + XB_XP.length }));
   else if (tabs.cat === 'xp') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: fmtClear(e.time), sub: '' }));
   else drawRankingRows(engine, ctx, s.rows, x, ry, w, -1);
   let note = '';
@@ -395,7 +398,7 @@ function drawWorldCats(engine, ctx, tabs, x, y, w) {
     note = 'THIS WEEK' + (m && Number.isFinite(m.resetAt) ? '  \u00b7  RESETS IN ' + fmtLeft(m.resetAt - Date.now()) : '');
     if (m && m.last && typeof m.last.name === 'string') txt(ctx, 'LAST WEEK #1  ' + ellipsize(ctx, m.last.name, 8, 500, 1.5, 120) + '  ' + m.last.score, x + w / 2, my + 13, 8, p.warn, 'center', { sp: 1.5, w: 500 });
   } else if (tabs.cat === 'reach') note = 'DEEPEST STAGE REACHED';
-  else note = 'FASTEST MISSION CLEAR  \u00b7  TAP AGAIN: NEXT';
+  else note = rankCatBoard(tabs) === 'xp-total' ? 'BEST SCORE OF EACH MISSION, ADDED  \u00b7  TAP AGAIN: NEXT' : 'FASTEST MISSION CLEAR  \u00b7  TAP AGAIN: NEXT';
   txt(ctx, note, x + w / 2, my, 8, p.dim, 'center', { sp: 2, w: 500 });
 }
 

@@ -90,6 +90,7 @@ const PAD_Y_RANGE = 60;   // パッド面Y = PAD_Y_MIN .. PAD_Y_MIN+60 (=515)。
 
 // ---- Continues / bonus / landing sequence ----
 const CONTINUES_MAX     = 3;
+const GIFT_S            = 3.2;   // 寄り道成功の「+1 CONTINUE」表示の秒数
 const WORLD_RETRY_MS    = 21000;   // 中継の同一 IP 送信間隔（20 秒）より少し長く待って送り直す
 const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
 const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
@@ -416,6 +417,7 @@ export class Game extends Scene {
     this.totalScore = 0;
     this.stage      = 1;
     this.continues  = CONTINUES_MAX;
+    this._giftFor   = null; this._giftT = 0;   // 寄り道成功の CONTINUE +1（ランごと）
     this.bonus      = null;          // 進行中のボーナス {type, afterStage}。type は CALM / ROVER / CROSSWIND / STORM
     this.bonusCount = 0;             // これまでに発生したボーナスの機会数（★★ を ROVER / CROSSWIND で交互にする）
     this.bonusOffers = [];           // 選択画面の3枚（type の配列）
@@ -677,6 +679,13 @@ export class Game extends Scene {
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
     this._suspended = true;
     this.engine.toDetour(id, this);
+  }
+  // 寄り道の MISSION に成功（main.js の onWin）。このランの CONTINUE +1。得点には足さない。戻った画面で知らせる
+  _detourWin(id) {
+    if (this._giftFor === id) return;   // 同じ寄り道で二重に付けない
+    this._giftFor = id;
+    this.continues = (this.continues || 0) + 1;
+    this._giftT = GIFT_S;
   }
   _resumeFromDetour() {
     this._suspended = false; this._resumeT = 0.5; this._inputLock = Math.max(this._inputLock || 0, 0.3);
@@ -1239,6 +1248,7 @@ export class Game extends Scene {
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
     if (this._resumeT > 0) this._resumeT = Math.max(0, this._resumeT - dt);
+    if (this._giftT > 0 && !this._suspended) this._giftT = Math.max(0, this._giftT - dt);
     if (this._podShow) { this._podShowTick(dt); return; }   // MISSION ACCEPTED 表示中: 全て凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
@@ -2221,6 +2231,7 @@ export class Game extends Scene {
     }
 
     if (championEntryOpen(this._champ)) veil(ctx, 0.5);
+    if (this._giftT > 0 && !this._suspended) this._drawGift(ctx);
     if (this._resumeT > 0) veil(ctx, this._resumeT / 0.5);   // 寄り道から戻った直後のフェード
 
     // デバッグ: DBGボタン
@@ -2467,6 +2478,16 @@ export class Game extends Scene {
   }
   // 終了画面の探査の入口（画面下の操作ボタンの帯）
   _xpEntryRect() { return { x: 40, y: 572, w: 280, h: 48 }; }
+  // 寄り道成功の知らせ（画面上部の帯）
+  _drawGift(ctx) {
+    const p = P(), ja = i18nLang() === 'ja', a = Math.min(1, this._giftT / 0.6, (GIFT_S - this._giftT) / 0.25 + 0.2);
+    const x = W / 2 - 130, y = 64, w = 260, h = 46;
+    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    rr(ctx, x, y, w, h, 12); ctx.fillStyle = 'rgba(4,6,12,0.88)'; ctx.fill(); ctx.strokeStyle = rgba(p.mid, 0.8); ctx.lineWidth = 1.4; ctx.stroke();
+    txt(ctx, ja ? '探査成功のごほうび' : 'EXPEDITION CLEAR', W / 2, y + 8, ja ? 10 : 8, p.dim, 'center', { w: 600, sp: ja ? 0 : 2 });
+    txt(ctx, '+1 CONTINUE', W / 2, y + 22, 14, p.mid, 'center', { w: 800, sp: 2 });
+    ctx.restore();
+  }
   _drawXpEntry(ctx) {
     const m = expMission(this._xpEntry); if (!m) return;
     const r = this._xpEntryRect(), p = P(), ja = i18nLang() === 'ja', hot = 0.5 + 0.5 * Math.sin((this._clock || 0) * 4.5);

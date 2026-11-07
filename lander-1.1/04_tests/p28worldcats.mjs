@@ -71,6 +71,19 @@ XD.__xpRetryMs(5);
   store.set('besttime', '3'); store.set('wsent', ''); ok(XD.xpPendingTime(st, 'AAA', 'ryugu') === null, 'below the relay minimum → not sent');
 }
 
+// ===== 2b. 得点も一緒に送る =====
+{
+  const s = prof('SCR'), st = makeEngine(s).storage, store = XD.xpStore(st, 'SCR', 'ryugu');
+  store.set('besttime', '40'); store.set('best', JSON.stringify({ score: 2600, stars: [true, true, false] }));
+  let pd = XD.xpPending(st, 'SCR', 'ryugu'); ok(pd && pd.time === 40 && pd.score === 2600, 'pending carries time and score');
+  sent.length = 0; await XD.xpWorldSend(st, 'ryugu');
+  ok(sent.length === 1 && sent[0].time === 40 && sent[0].score === 2600 && store.get('wsentS') === '2600', 'sends score with time, remembers it');
+  ok(XD.xpPending(st, 'SCR', 'ryugu') === null, 'nothing pending after send');
+  store.set('best', JSON.stringify({ score: 2900, stars: [true, true, true] }));
+  pd = XD.xpPending(st, 'SCR', 'ryugu'); ok(pd && pd.time === 40 && pd.score === 2900, 'better score alone → pending (time resent as is)');
+  store.set('best', JSON.stringify({ score: 99999, stars: [true, true, true] })); ok(XD.xpBestScore(st, 'SCR', 'ryugu') === null, 'score above the relay cap ignored');
+}
+
 // ===== 3. xpWorldSend =====
 {
   sent.length = 0;
@@ -123,8 +136,43 @@ XD.__xpRetryMs(5);
   sh.sess.mode = 'mission'; sh.sess.lives = 3; const f = sh.complete({ t: 44.4, base: 100, fuel: 1 }, [true, true, false]); await flush(); await sleep(10);
   ok(f && f.newBestTime && sent.length === 1 && sent[0].mission === 'ryugu' && sent[0].time === 44.4 && sent[0].name === 'CCC', 'mission clear with a new best → sent');
   sh.complete({ t: 50, base: 100, fuel: 1 }, [true, true, false]); await flush(); await sleep(10);
-  ok(sent.length === 1, 'slower clear → not sent');
+  ok(sent.length === 1, 'slower clear with a lower score → not sent');
+  sh.complete({ t: 60, base: 2300, fuel: 1 }, [true, true, true]); await flush(); await sleep(10);
+  ok(sent.length === 2 && sent[1].time === 44.4 && sent[1].score > 1000, 'slower clear with a higher score → sent (best time, best score)');
   sc.exit();
+}
+
+// ===== 5b. 寄り道で成功 → onWin（1回だけ）。練習・ツアー外では呼ばない =====
+{
+  let wins = 0;
+  const e = makeEngine(prof('DTR'));
+  const sc = new ExpeditionScene(e, 'phobos', noop, { detour: true, onWin: () => { wins++; } }); sc.enter();
+  const sh = sc.lab.shell;
+  sh.sess.mode = 'practice'; sh.complete({ t: 41, base: 100, fuel: 1 }, [true, false, false]); ok(wins === 0, 'practice → no reward');
+  sh.sess.mode = 'mission'; sh.sess.lives = 3; sh.complete({ t: 41, base: 100, fuel: 1 }, [true, false, false]); ok(wins === 1, 'detour mission clear → onWin');
+  sh.complete({ t: 40, base: 100, fuel: 1 }, [true, false, false]); ok(wins === 1, 'only once per detour');
+  sc.exit();
+  let w2 = 0; const sc2 = new ExpeditionScene(makeEngine(prof('DTR')), 'phobos', noop, { onWin: () => { w2++; } }); sc2.enter();
+  sc2.lab.shell.sess.mode = 'mission'; sc2.lab.shell.complete({ t: 41, base: 100, fuel: 1 }, [true, false, false]); ok(w2 === 0, 'from the map (not a detour) → no reward'); sc2.exit();
+}
+
+// ===== 5c. ゲーム側: 寄り道の成功で CONTINUE +1（ランごと・同じ寄り道で1回）と帯の表示 =====
+{
+  const { Game } = await import('../02_src/game.js');
+  const e = makeEngine(prof('GFT')); e.pods = true;
+  let detourId = null; e.toDetour = (id) => { detourId = id; };
+  const g = new Game(e); g.enter();
+  const c0 = g.continues;
+  g._suspended = true; g._detourWin('ryugu'); g._detourWin('ryugu');
+  ok(g.continues === c0 + 1, 'detour win → +1 continue, only once: ' + c0 + ' -> ' + g.continues);
+  ok(g.totalScore === 0, 'score unchanged');
+  g.enter();   // 寄り道から戻る（_suspended → 再開だけ）
+  ok(g.continues === c0 + 1 && g._giftT > 0, 'kept after returning, banner pending');
+  const cx = makeCtx(); g.render(cx); ok(cx.rec.texts.includes('+1 CONTINUE'), 'banner drawn after return');
+  for (let i = 0; i < 300; i++) g.update(1 / 60);
+  ok(g._giftT === 0, 'banner fades out');
+  const cy = makeCtx(); g.render(cy); ok(!cy.rec.texts.includes('+1 CONTINUE'), 'banner gone');
+  g.exit(); g.enter(); ok(g.continues === c0 && g._giftFor === null, 'new run resets');
 }
 
 // ===== 6. タイトルの WORLD: 種類の切り替え =====
@@ -144,11 +192,13 @@ XD.__xpRetryMs(5);
   ok(tap(cr.xp) && tabs.cat === 'xp' && tabs.xpi === 0 && fetched.at(-1) === 'xp-ryugu', 'EXPEDITION chip loads xp-ryugu');
   ok(tap(cr.xp) && tabs.xpi === 1 && fetched.at(-1) === 'xp-phobos', 'tap again → next mission');
   tap(cr.xp); tap(cr.xp); ok(fetched.at(-1) === 'xp-67p', '… up to 67P');
+  tap(cr.xp); ok(tabs.xpi === 4 && fetched.at(-1) === 'xp-total' && R.rankCatLabel(tabs, 'xp') === 'TOTAL \u203a', 'after 67P → TOTAL');
   tap(cr.xp); ok(tabs.xpi === 0 && R.rankCatBoard(tabs) === 'xp-ryugu', 'wraps to RYUGU');
   const nf = fetched.length; tap(cr.week); ok(fetched.length === nf, 'already loaded board is not refetched');
   // 描画
   boardResp = (b) => b === 'v1.1-week' ? { board: b, week: '2026-11-09', resetAt: Date.now() + (2 * 24 + 5) * 3600e3 + 60e3, last: { name: 'OLD1', score: 4321 }, top: [{ name: 'WK', score: 1500, stage: 4, title: 'ACE' }] }
     : b === 'v1.1-reach' ? { board: b, top: [{ name: 'DEEP', score: 300, stage: 12 }] }
+    : b === 'xp-total' ? { board: b, missions: 4, top: [{ name: 'SUM', total: 11234, n: 3 }, { name: 'BADT', total: 'x', n: 1 }] }
     : { board: b, top: [{ name: 'FAST', time: 42.4 }, { name: 'BAD', time: 'x' }] };
   for (const k of Object.keys(tabs.extra)) delete tabs.extra[k];
   const draw = async (cat) => { tabs.cat = cat; if (cat !== 'all') await R.loadCat(tabs); const c = makeCtx(); R.drawRankPanel(null, c, tabs, [], X, Y, Wd, -1); return c.rec.texts; };
@@ -157,6 +207,8 @@ XD.__xpRetryMs(5);
   ok(['ALL', 'WEEK', 'STAGE'].every((l) => tx.includes(l)) && tx.some((t) => /^RYUGU/.test(t)), 'chip labels drawn');
   tx = await draw('reach'); ok(tx.includes('ST.12') && tx.includes('300') && tx.includes('DEEPEST STAGE REACHED'), 'STAGE: stage as the main number');
   tabs.xpi = 0; tx = await draw('xp'); ok(tx.includes('FAST') && tx.includes('00:42.4') && !tx.includes('BAD'), 'EXPEDITION: time as mm:ss.s, invalid rows dropped');
+  tabs.xpi = 4; tx = await draw('xp'); ok(tx.includes('SUM') && tx.includes('11234') && tx.includes('3/4') && !tx.includes('BADT') && tx.some((t) => /BEST SCORE OF EACH MISSION/.test(t)), 'TOTAL: total, missions counted, note');
+  tabs.xpi = 0;
   tx = await draw('all'); ok(tx.includes('ALL-TIME BEST SCORE'), 'ALL drawn with note');
   // 旧中継・オフライン
   boardResp = () => null; R.WorldNet.updating = true; tabs.xpi = 1; tx = await draw('xp'); ok(tx.includes('WORLD: UPDATING'), 'old relay → UPDATING');

@@ -1023,11 +1023,11 @@ async function fetchBoard(board, timeoutMs = NET_TIMEOUT_MS) {
     });
   } catch (_) { return null; }
 }
-// EXPEDITION のクリアタイム。entry = { name, key, mission, time(秒) } -> { ok, status?, best?, error? }
+// EXPEDITION のクリアタイムと得点。entry = { name, key, mission, time(秒), score?(そのミッションの自己最高点) } -> { ok, status?, best?, error? }
 async function submitXpTime(entry, timeoutMs = NET_TIMEOUT_MS) {
   if (!RELAY_URL) return { ok: false, error: 'disabled' };
   try {
-    const body = JSON.stringify({ name: entry.name, key: entry.key, mission: entry.mission, time: entry.time });
+    const body = JSON.stringify({ name: entry.name, key: entry.key, mission: entry.mission, time: entry.time, ...(Number.isInteger(entry.score) ? { score: entry.score } : {}) });
     return await request(RELAY_URL + '/xp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, timeoutMs, async (res) => {
       let j = null; try { j = await res.json(); } catch (_) { /* 本文なし */ }
       return { ok: !!(res && res.ok), status: res && res.status, ...(j && typeof j.best === 'boolean' ? { best: j.best } : {}) };
@@ -1567,10 +1567,11 @@ function createRankTabs(opts) { return { mode: 'local', world: null, status: 'id
 // XB_XP はクライアントの expedition/index.js（EXP_MISSIONS の id・name）と中継の XP_IDS に揃える（p27 のテストで照合）
 const XB_XP = [{ id: 'ryugu', name: 'RYUGU' }, { id: 'phobos', name: 'PHOBOS' }, { id: 'enceladus', name: 'ENCELADUS' }, { id: '67p', name: '67P' }];
 const RANK_CATS = ['all', 'week', 'reach', 'xp'];
+const XB_XN = XB_XP.length + 1;   // ミッション 4 つ + TOTAL（各ミッションの最高点の合計）
 function rankCatBoard(tabs) {
   if (tabs.cat === 'week') return 'v1.1-week';
   if (tabs.cat === 'reach') return 'v1.1-reach';
-  if (tabs.cat === 'xp') return 'xp-' + XB_XP[tabs.xpi % XB_XP.length].id;
+  if (tabs.cat === 'xp') return tabs.xpi % XB_XN === XB_XP.length ? 'xp-total' : 'xp-' + XB_XP[tabs.xpi % XB_XN].id;
   return null;
 }
 function rankCatRects(x, y, w) {
@@ -1583,13 +1584,14 @@ function rankCatLabel(tabs, k) {
   if (k === 'all') return 'ALL';
   if (k === 'week') return 'WEEK';
   if (k === 'reach') return 'STAGE';
-  return XB_XP[tabs.xpi % XB_XP.length].name + ' \u203a';
+  const i = tabs.xpi % XB_XN;
+  return (i === XB_XP.length ? 'TOTAL' : XB_XP[i].name) + ' \u203a';
 }
 // 追加ランキングの読み込み。tabs.extra[board] = { status: 'loading'|'ok'|'offline'|'updating', rows, meta }
 const xbValid = {
   week: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
   reach: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.score) && Number.isFinite(e.stage),
-  xp: (e) => !!e && typeof e.name === 'string' && Number.isFinite(e.time) && e.time > 0,
+  xp: (e) => !!e && typeof e.name === 'string' && ((Number.isFinite(e.time) && e.time > 0) || (Number.isFinite(e.total) && Number.isFinite(e.n))),
 };
 function loadCat(tabs) {
   const board = rankCatBoard(tabs); if (!board) return null;
@@ -1631,7 +1633,7 @@ function rankTabsTap(tabs, x, y, px, py, w, storage) {
     const c = rankCatRects(x, y, w);
     for (const k of RANK_CATS) {
       if (!inRect(c[k], px, py)) continue;
-      if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XP.length;   // もう一度押すと次のミッション
+      if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XN;   // もう一度押すと次のミッション（最後は TOTAL）
       tabs.cat = k;
       if (k === 'all') { if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage); }
       else { const s = tabs.extra[rankCatBoard(tabs)]; if (!s || s.status !== 'ok' && s.status !== 'loading') loadCat(tabs); }
@@ -1692,6 +1694,7 @@ function drawWorldCats(engine, ctx, tabs, x, y, w) {
   else if (s.status === 'updating') msg('WORLD: UPDATING', p.mid);
   else if (s.status === 'offline') msg('OFFLINE', p.bad);
   else if (tabs.cat === 'reach') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: 'ST.' + e.stage, sub: String(e.score) }));
+  else if (tabs.cat === 'xp' && rankCatBoard(tabs) === 'xp-total') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: String(e.total), sub: e.n + '/' + XB_XP.length }));
   else if (tabs.cat === 'xp') drawRankingRows(engine, ctx, s.rows, x, ry, w, -1, (e) => ({ main: fmtClear(e.time), sub: '' }));
   else drawRankingRows(engine, ctx, s.rows, x, ry, w, -1);
   let note = '';
@@ -1700,7 +1703,7 @@ function drawWorldCats(engine, ctx, tabs, x, y, w) {
     note = 'THIS WEEK' + (m && Number.isFinite(m.resetAt) ? '  \u00b7  RESETS IN ' + fmtLeft(m.resetAt - Date.now()) : '');
     if (m && m.last && typeof m.last.name === 'string') txt(ctx, 'LAST WEEK #1  ' + ellipsize(ctx, m.last.name, 8, 500, 1.5, 120) + '  ' + m.last.score, x + w / 2, my + 13, 8, p.warn, 'center', { sp: 1.5, w: 500 });
   } else if (tabs.cat === 'reach') note = 'DEEPEST STAGE REACHED';
-  else note = 'FASTEST MISSION CLEAR  \u00b7  TAP AGAIN: NEXT';
+  else note = rankCatBoard(tabs) === 'xp-total' ? 'BEST SCORE OF EACH MISSION, ADDED  \u00b7  TAP AGAIN: NEXT' : 'FASTEST MISSION CLEAR  \u00b7  TAP AGAIN: NEXT';
   txt(ctx, note, x + w / 2, my, 8, p.dim, 'center', { sp: 2, w: 500 });
 }
 
@@ -8282,7 +8285,7 @@ return { EXP_MISSIONS, EXP_IDS, expMission, expForBody };
 // EXPEDITION（本編 v1.1）のパイロットごとの保存と、探査天体の絵。
 // 保存キー（接頭辞 lander11. は Storage が付ける）: 'xp.<パイロット名を encodeURIComponent>.<id>.<k>'
 //   k = unlocked('1') / seen('1' = マップで正体を見せた) / podMiss（POD を逃した回数）/ played('1' = 一度でも始めた) / best / besttime / skipBrief（shell が使う）
-//       / wsent（世界ランキングへ送り終えたタイム。これより速い besttime があれば送る）
+//       / wsent・wsentS（世界ランキングへ送り終えたタイムと得点。これより良い besttime / best.score があれば送る）
 // 試作ページの記録（'lander11.exp.<shellId>.*'）とは別。試作で遊んだ記録は本編に出ない。
 // 全解放の隠しスイッチ: URL に ?expedition=all（保存はしない。友人の試遊用）。
 // バンドルは1つのスコープなので、トップレベルの名前はすべて xp / XP_ で始める。
@@ -8393,11 +8396,23 @@ const XP_T_MIN = 5, XP_T_MAX = 1800;   // 中継の受付範囲（ranking-worker
 const XP_num = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : null; };
 function xpBestTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'besttime')); }
 function xpSentTime(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'wsent')); }
+const XP_SCORE_MAX = 5000;   // 中継の XP_MAX_SCORE
+function xpBestScore(st, pilot, id) { try { const b = JSON.parse(XP_get(st, pilot, id, 'best')); const n = Math.round(Number(b && b.score)); return Number.isFinite(n) && n > 0 && n <= XP_SCORE_MAX ? n : null; } catch (_) { return null; } }
+function xpSentScore(st, pilot, id) { return XP_num(XP_get(st, pilot, id, 'wsentS')); }
 // 送るべきタイム（無ければ null）
 function xpPendingTime(st, pilot, id) {
   const b = xpBestTime(st, pilot, id), s = xpSentTime(st, pilot, id);
   if (b == null || b < XP_T_MIN || b > XP_T_MAX) return null;
   return s == null || b < s ? b : null;
+}
+// 送るもの（タイムか得点のどちらかが未送信なら両方の自己ベストを1回で送る）。-> { time, score|null } | null
+function xpPending(st, pilot, id) {
+  const t = xpBestTime(st, pilot, id);
+  if (t == null || t < XP_T_MIN || t > XP_T_MAX) return null;
+  const sc = xpBestScore(st, pilot, id), ss = xpSentScore(st, pilot, id);
+  const scoreNew = sc != null && (ss == null || sc > ss);
+  if (xpPendingTime(st, pilot, id) == null && !scoreNew) return null;
+  return { time: t, score: sc };
 }
 const XP_inflight = new Set();
 let XP_retryMs = 6000;
@@ -8406,22 +8421,22 @@ function xpWorldSend(st, id) {
   try { if (isDebug() || !relayEnabled()) return null; } catch (_) { return null; }
   let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
   if (!prof || !prof.key || !prof.name) return null;
-  const t = xpPendingTime(st, prof.name, id);
+  const pd = xpPending(st, prof.name, id);
   const tag = prof.name + '|' + id;
-  if (t == null || XP_inflight.has(tag)) return null;
+  if (pd == null || XP_inflight.has(tag)) return null;
   XP_inflight.add(tag);
-  const e = { name: prof.name, key: prof.key, mission: id, time: t };
+  const e = { name: prof.name, key: prof.key, mission: id, time: pd.time, ...(pd.score != null ? { score: pd.score } : {}) };
   const send = () => Promise.resolve(WorldNet.submitXp(e));
   return send()
     .then((r) => (r && r.ok === false && r.status === 429 ? new Promise((res) => setTimeout(res, XP_retryMs)).then(send) : r))
-    .then((r) => { if (r && r.ok) XP_set(st, prof.name, id, 'wsent', String(t)); return r; }, () => null)
+    .then((r) => { if (r && r.ok) { XP_set(st, prof.name, id, 'wsent', String(pd.time)); if (pd.score != null) XP_set(st, prof.name, id, 'wsentS', String(pd.score)); } return r; }, () => null)
     .finally(() => { XP_inflight.delete(tag); });
 }
 // タイトルに戻った時など: まだ送っていない自己ベストを1件だけ送る（以前の記録の取りこぼしもここで拾う）
 function xpWorldBackfill(st) {
   let prof = null; try { prof = getActiveProfile(st); } catch (_) { prof = null; }
   if (!prof || !prof.key) return null;
-  const id = EXP_IDS.find((x) => xpPendingTime(st, prof.name, x) != null);
+  const id = EXP_IDS.find((x) => xpPending(st, prof.name, x) != null);
   return id ? xpWorldSend(st, id) : null;
 }
 
@@ -9396,6 +9411,7 @@ class ExpeditionScene extends Scene {
   constructor(engine, id, onExit, opts) {
     super(engine);
     this.id = id; this.meta = expMission(id); this.onExit = onExit || null; this.detour = !!(opts && opts.detour);
+    this.onWin = (opts && typeof opts.onWin === 'function') ? opts.onWin : null; this._won = false;   // 寄り道の成功（1回だけ）
     this.isRoot = true;   // エンジンの BACK ボタンは出さない（メニューに MAP を出す）
     this.lab = null; this._left = false;
   }
@@ -9411,9 +9427,14 @@ class ExpeditionScene extends Scene {
     // 一度でも PRACTICE / MISSION を始めたら「遊んだ」（ツアーでの再案内と終了画面の入口が止まる）
     const sh = this.lab.shell, begin = sh.begin;
     sh.begin = (l, mode, o) => { if (mode === 'practice' || mode === 'mission') xpMarkPlayed(st, pilot, this.id); return begin(l, mode, o); };
-    // MISSION の成功で自己ベストが出たら世界ランキングへ（練習は送らない）
+    // MISSION の成功で自己ベスト（タイムか得点）が出たら世界ランキングへ（練習は送らない）
     const complete = sh.complete;
-    sh.complete = (f, got) => { const r = complete(f, got); if (r && !r.practice && r.newBestTime) { try { xpWorldSend(st, this.id); } catch (_) { /* 送れなくても遊びは続ける */ } } return r; };
+    sh.complete = (f, got) => {
+      const r = complete(f, got);
+      if (r && !r.practice && (r.newBestTime || r.newBest)) { try { xpWorldSend(st, this.id); } catch (_) { /* 送れなくても遊びは続ける */ } }
+      if (r && !r.practice && this.detour && this.onWin && !this._won) { this._won = true; try { this.onWin(); } catch (_) { /* ignore */ } }
+      return r;
+    };
     this.lab.start();
     if (this.detour) sh.startDetour(this.lab);
     try { const mu = XP_mus(eng); if (mu.stopJingle) mu.stopJingle(0.3); mu.playBody(this.meta.music); } catch (_) { /* 音なし */ }
@@ -10783,6 +10804,7 @@ const PAD_Y_RANGE = 60;   // パッド面Y = PAD_Y_MIN .. PAD_Y_MIN+60 (=515)。
 
 // ---- Continues / bonus / landing sequence ----
 const CONTINUES_MAX     = 3;
+const GIFT_S            = 3.2;   // 寄り道成功の「+1 CONTINUE」表示の秒数
 const WORLD_RETRY_MS    = 21000;   // 中継の同一 IP 送信間隔（20 秒）より少し長く待って送り直す
 const BOUNCE_RESOLVE_S  = 1.5;   // バウンス状態がこの累積秒数を超えたら決着 (B1')
 const BOUNCE_RESOLVE_DEG = 33;   // 決着時の成功傾き上限
@@ -11109,6 +11131,7 @@ class Game extends Scene {
     this.totalScore = 0;
     this.stage      = 1;
     this.continues  = CONTINUES_MAX;
+    this._giftFor   = null; this._giftT = 0;   // 寄り道成功の CONTINUE +1（ランごと）
     this.bonus      = null;          // 進行中のボーナス {type, afterStage}。type は CALM / ROVER / CROSSWIND / STORM
     this.bonusCount = 0;             // これまでに発生したボーナスの機会数（★★ を ROVER / CROSSWIND で交互にする）
     this.bonusOffers = [];           // 選択画面の3枚（type の配列）
@@ -11370,6 +11393,13 @@ class Game extends Scene {
     if (this._keys) { this._keys.left = false; this._keys.right = false; this._keys.up = false; }
     this._suspended = true;
     this.engine.toDetour(id, this);
+  }
+  // 寄り道の MISSION に成功（main.js の onWin）。このランの CONTINUE +1。得点には足さない。戻った画面で知らせる
+  _detourWin(id) {
+    if (this._giftFor === id) return;   // 同じ寄り道で二重に付けない
+    this._giftFor = id;
+    this.continues = (this.continues || 0) + 1;
+    this._giftT = GIFT_S;
   }
   _resumeFromDetour() {
     this._suspended = false; this._resumeT = 0.5; this._inputLock = Math.max(this._inputLock || 0, 0.3);
@@ -11932,6 +11962,7 @@ class Game extends Scene {
     if (this.state === 'debug') return;   // デバッグパネル表示中は一時停止
     if (this._ht) return;                 // HOW TO PLAY 表示中: 物理・タイマー凍結
     if (this._resumeT > 0) this._resumeT = Math.max(0, this._resumeT - dt);
+    if (this._giftT > 0 && !this._suspended) this._giftT = Math.max(0, this._giftT - dt);
     if (this._podShow) { this._podShowTick(dt); return; }   // MISSION ACCEPTED 表示中: 全て凍結
     if (this.state === 'tip') {   // 初回ヒント: 物理・タイマー凍結。時間経過で自動的に閉じる
       if (this._inputLock > 0) this._inputLock = Math.max(0, this._inputLock - dt);
@@ -12914,6 +12945,7 @@ class Game extends Scene {
     }
 
     if (championEntryOpen(this._champ)) veil(ctx, 0.5);
+    if (this._giftT > 0 && !this._suspended) this._drawGift(ctx);
     if (this._resumeT > 0) veil(ctx, this._resumeT / 0.5);   // 寄り道から戻った直後のフェード
 
     // デバッグ: DBGボタン
@@ -13160,6 +13192,16 @@ class Game extends Scene {
   }
   // 終了画面の探査の入口（画面下の操作ボタンの帯）
   _xpEntryRect() { return { x: 40, y: 572, w: 280, h: 48 }; }
+  // 寄り道成功の知らせ（画面上部の帯）
+  _drawGift(ctx) {
+    const p = P(), ja = i18nLang() === 'ja', a = Math.min(1, this._giftT / 0.6, (GIFT_S - this._giftT) / 0.25 + 0.2);
+    const x = W / 2 - 130, y = 64, w = 260, h = 46;
+    ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    rr(ctx, x, y, w, h, 12); ctx.fillStyle = 'rgba(4,6,12,0.88)'; ctx.fill(); ctx.strokeStyle = rgba(p.mid, 0.8); ctx.lineWidth = 1.4; ctx.stroke();
+    txt(ctx, ja ? '探査成功のごほうび' : 'EXPEDITION CLEAR', W / 2, y + 8, ja ? 10 : 8, p.dim, 'center', { w: 600, sp: ja ? 0 : 2 });
+    txt(ctx, '+1 CONTINUE', W / 2, y + 22, 14, p.mid, 'center', { w: 800, sp: 2 });
+    ctx.restore();
+  }
   _drawXpEntry(ctx) {
     const m = expMission(this._xpEntry); if (!m) return;
     const r = this._xpEntryRect(), p = P(), ja = i18nLang() === 'ja', hot = 0.5 + 0.5 * Math.sin((this._clock || 0) * 4.5);
@@ -13193,7 +13235,8 @@ window.addEventListener('load', () => {
   const toMap = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true, openMap: true }));
   engine.toExpedition = (id) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, toMap), 0.5));
   // 寄り道（beta.9）: ツアーの Game を止めたまま探査へ。終わったら同じ Game に戻る（Game.enter が再開だけをする）
-  engine.toDetour = (id, game) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, () => engine.changeScene(game), { detour: true }), 0.5));
+  // 寄り道で MISSION に成功したら、そのランの CONTINUE +1（得点には足さない）
+  engine.toDetour = (id, game) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, () => engine.changeScene(game), { detour: true, onWin: () => game._detourWin(id) }), 0.5));
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。

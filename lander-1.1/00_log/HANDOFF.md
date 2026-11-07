@@ -62,6 +62,7 @@
 ## 4e. 2026-11-07 世界ランキング 3 種類（版は上げず）
 - タイトルの WORLD に ALL / WEEK（今週・月曜 0:00 JST リセット）/ STAGE（最高到達）/ EXPEDITION 4 ミッションの最速タイム。ゲームオーバー画面は ALL のみ。
 - Worker: `/submit` が今週・到達も更新、`POST /xp`、`GET /ranking?board=v1.1-week|v1.1-reach|xp-<id>`。**再デプロイはユーザー待ち**（それまで新しい種類は UPDATING）。
+- EXPEDITION 合計（ミッション切り替えの最後の TOTAL、`xp-total`）。寄り道の MISSION 成功でそのランの CONTINUE +1（得点には足さない。EXPEDITION の得点はツアーに足さない方針は維持）。
 - 既存の記録から埋める: 管理画面の FILL WEEK / STAGE（Worker `POST /admin/backfill`）。**再デプロイと実行はユーザー待ち**。
 - 見送り: 週替わりのお題（今週のチャレンジ）。今週のボードに毎週 10 人ほど載るようになったら検討（通常ステージの地形を週ごとに固定する作り直しが要る）。
 

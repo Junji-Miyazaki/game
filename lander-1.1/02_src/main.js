@@ -23,7 +23,8 @@ window.addEventListener('load', () => {
   const toMap = () => engine.changeScene(new TitleScene(engine, startGame, { launch: true, openMap: true }));
   engine.toExpedition = (id) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, toMap), 0.5));
   // 寄り道（beta.9）: ツアーの Game を止めたまま探査へ。終わったら同じ Game に戻る（Game.enter が再開だけをする）
-  engine.toDetour = (id, game) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, () => engine.changeScene(game), { detour: true }), 0.5));
+  // 寄り道で MISSION に成功したら、そのランの CONTINUE +1（得点には足さない）
+  engine.toDetour = (id, game) => engine.changeScene(fadeInScene(new ExpeditionScene(engine, id, () => engine.changeScene(game), { detour: true, onWin: () => game._detourWin(id) }), 0.5));
 
   // 起動時だけ「TAP TO BEGIN」を挟む（最初のタップで音声を有効化→タイトルは表示と同時に曲が鳴る）。
   // ゲームからタイトルへ戻るときは音声が有効なので直接タイトルへ。
