@@ -37,10 +37,10 @@ function smart() {
 }
 for (const si of list) for (let run = 0; run < RUNS; run++) {
   SV = SV0(); if (MODE === 'smart') { SV.kinds = Object.keys(KIND); SV.team = process.env.TEAM ? process.env.TEAM.split(',') : teamFor(STAGES[si]); } // TEAM=owl,starling,crow で組を固定して比べる
-  startStage(si); let ev = [], ps = 0, n = 0, lo = 0;
+  startStage(si); draw(0); S.arr.t = 9; draw(0); tap(180, 300); if (S.brief) throw new Error('brief did not close'); let ev = [], ps = 0, n = 0, lo = 0; // 作戦のカードを描いてタップで閉じる
   if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] }; // 天気は回す時刻で変わるので、ふだんは中立で比べる（WX=1 で現地の季節の空を使う） if (process.env.NOCD) for (const k in S.kinds) S.kinds[k].cd = 0; // 切り分け用
   while (S.mode === 'play' && S.t < 420) {
-    step(1 / 60); n++;
+    step(1 / 60); n++; if (S.card) { if (S.card.t === 0) draw(0); tap(180, 300); } // 建物のカードはタップまで止まる
     if (MODE === 'smart') smart(); else if (MODE === 'naive' && S.pts >= S.cost.b1) buy('b1');
     if (S.siege && !ps) { ps = S.t; ev.push(S.boss.name + ' ' + S.t.toFixed(0) + 's(' + aliveN() + '羽)'); }
     if (S.lightOut && !lo) { lo = S.t; ev.push('核 ' + (S.t - ps).toFixed(1) + 's'); }
@@ -65,6 +65,8 @@ SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bo
 // 言葉の書架
 SV.epi = { intro: 1, osaka: 1, end: 1 }; scene = 'pass'; P.sel = -1; draw(0); passTap(R_WORDS.x + 5, R_WORDS.y + 5); console.log('words scene', scene, wordCount() + '/' + Object.keys(WORDS).length); draw(0); wordsTap(wbRow(1).x + 5, wbRow(1).y + 5); draw(0); console.log('shelf', WB.sel); wordsTap(R_WBACK.x + 5, R_WBACK.y + 5);
 // 還った時の結果画面とごほうび
-SV = SV0(); startStage(5); S.win = 1; S.mode = 'win'; finish(); for (let i = 0; i < 480; i++) { step(1 / 60); draw(i / 60); } console.log('reward', JSON.stringify(S.reward), 'area', S.area, 'kinds', SV.kinds.join(','));
+SV = SV0(); startStage(5); S.brief = 0; S.win = 1; S.mode = 'win'; finish(); for (let i = 0; i < 480; i++) { step(1 / 60); draw(i / 60); } console.log('reward', JSON.stringify(S.reward), 'area', S.area, 'kinds', SV.kinds.join(','));
+console.log('words page', S.wordsGot.length, 'tap→', (tap(180, resY() + 20), S.rp)); for (let i = 0; i < 60; i++) { step(1 / 60); draw(i / 60); } tap(R_WGO.x + 5, R_WGO.y + 5); console.log('after words → scene', scene, 'sel', CITIES[M.sel].id);
+scene = 'map'; mapTap(R_WORDSM.x + 5, R_WORDSM.y + 5); draw(0); console.log('map → words', scene); wordsTap(R_WBACK.x + 5, R_WBACK.y + 5); console.log('back →', scene);
 mapEnter(0); for (let i = 0; i < 120; i++) { stepMap(1 / 60); draw(i / 60); } console.log('map after ok');
 `);

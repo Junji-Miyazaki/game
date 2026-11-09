@@ -21,9 +21,9 @@ const EPI = {
   end: { o: 'Die Vögelein schweigen im Walde. / Warte nur, balde / Ruhest du auch.', ja: '小鳥たちは森で黙る。待つがいい、やがて、おまえも安らぐ。', en: 'The little birds are silent in the wood. Only wait — soon you too will rest.', by: 'Goethe — „Ein Gleiches“ (Wandrers Nachtlied II)', mode: 'rest' },
 };
 // 題辞を描く。at＝出してからの秒、cy＝縦の中心。文字は1字ずつ描き、選ばれた数字が鳥についばまれて落ちる
-function epiDraw(E, at, cy, a) {
+function epiDraw(E, at, cy, a, fw) { // fw＝映画の窓 {wy,wh}。あれば和訳は窓の下の字幕に出す
   const big = E.cjk ? '600 18px ' + SERIF : '600 italic 15px Georgia,"Times New Roman",serif', L = E.o.split(' / ').flatMap(p => wrapF(p, big, W - 64)), lh = E.cjk ? 26 : 22;
-  const sub = [...wrapF(E.ja, '500 11px ' + SERIF, W - 44).map(l => [l, '500 11px ' + SERIF]), ...(E.en ? wrapF(E.en, LATIN, W - 70).map(l => [l, LATIN]) : [])];
+  const sub = [...(fw ? [] : wrapF(E.ja, '500 11px ' + SERIF, W - 44).map(l => [l, '500 11px ' + SERIF])), ...(E.en ? wrapF(E.en, LATIN, W - 70).map(l => [l, LATIN]) : [])];
   const hh = L.length * lh + 14 + sub.length * 15 + 26; let y = cy - hh / 2 + lh - 4; c.globalAlpha = a; c.textAlign = 'left'; c.font = big;
   const chars = []; for (const l of L) { let x = W / 2 - c.measureText(l).width / 2; for (const ch of l) { const w = c.measureText(ch).width; chars.push({ ch, x, y, w }); x += w; } y += lh; }
   const n = chars.length, s0 = Math.floor(hash(n, 3) * Math.max(1, n - 4)), picks = E.mode === 'rest' ? [] : [s0, s0 + 1, s0 + 2].filter(i => i < n && chars[i].ch.trim()), T0 = 2.4;
@@ -31,6 +31,7 @@ function epiDraw(E, at, cy, a) {
   chars.forEach((q, i) => { const u = i === nudge ? Math.min(1, Math.max(0, (at - tN) / .15)) : 0; c.save(); c.translate(q.x + q.w / 2 + u * 1.5, q.y + u * 2.5); c.rotate(u * .12); c.fillStyle = '#ECE7DC'; c.fillText(q.ch, -q.w / 2, 0); c.restore(); });
   c.globalAlpha = a; c.textAlign = 'left'; c.textAlign = 'center'; y += 10; for (const [l, f] of sub) { c.font = f; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(l, W / 2, y); y += 15; }
   c.font = '500 9.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText(E.by, W / 2, y + 10);
+  if (fw) { subtitle(E.ja, a, fw.wy, fw.wh); c.globalAlpha = a; }
   // 鳥：右から来て、選んだ字を順にとまってつつき、飛び去る（rest は最後の字にとまったまま）
   const tgt = E.mode === 'rest' ? [chars[n - 1]] : picks.map(i => chars[i]); if (!tgt.length) { c.globalAlpha = 1; return; }
   let bx, by, ang = Math.sin(at * 16) * .7, fold = 0; const first = tgt[0], last = tgt[tgt.length - 1], tEnd = T0 + .45 + tgt.length * .38;
@@ -40,22 +41,25 @@ function epiDraw(E, at, cy, a) {
   else { const u = at - tEnd; bx = last.x + last.w / 2 - u * 260; by = last.y - 18 - u * 200; }
   c.globalAlpha = a; birdS(bx, by, 8, ang, fold, at < T0 + .45 ? -1.2 : 0, '#D8D4CA', 'starling'); c.globalAlpha = 1; // 黒い画面でも見えるよう、字幕と同じ淡い色の鳥
 }
+// v3 その4：字幕カードは英語（またはフランス語）を大きく、もう1言語を小さく。日本語は映画の字幕のように窓の下に小さく出す（ユーザー指示）
+// 日本語字幕は句点を付けず、区切りは全角の空き。事実：小惑星の衝突は約6600万年前、生き残った恐竜は鳥の仲間の一部、ホモ・サピエンスは約30万年前
 const FILM_INTRO = [
   { k: 'leader', d: 1.2 }, // タップのあと、黒から 1.2 秒でカードがフェードインする
   { k: 'epi', d: 6.2, e: 'intro', snd: 'none' }, // カフカ
-  { k: 'card', d: 4.4, snd: 'rumble', ja: '6600万年前、空から星が落ちた。', en: '66 million years ago, a star fell from the sky.', fr: "Il y a 66 millions d'années, une étoile est tombée du ciel." },
-  { k: 'card', d: 4.2, snd: 'wing', ja: '生き残った恐竜は、羽を持っていた。', en: 'The dinosaurs that survived had feathers.', fr: 'Les dinosaures qui ont survécu avaient des plumes.' },
-  { k: 'card', d: 3.8, snd: 'none', ja: '人がこの星に現れて、30万年。', en: 'Humans appeared 300,000 years ago.', fr: 'Les humains sont apparus il y a 300 000 ans.' },
+  { k: 'card', d: 4.2, snd: 'rumble', en: 'Sixty-six million years ago, a star fell from the sky.', fr: 'Il y a soixante-six millions d’années, une étoile tomba du ciel.', ja: '6600万年前　空から星が落ちた' },
+  { k: 'card', d: 3.8, snd: 'wing', en: 'A few, with wings, lived on.', fr: 'Quelques-uns, ailés, survécurent.', ja: '翼をもつ　わずかな者が生きのびた' },
+  { k: 'card', d: 3.8, snd: 'none', en: 'Then, three hundred thousand years ago — us.', fr: 'Puis, il y a trois cent mille ans : nous.', ja: 'そして30万年前　わたしたちが現れた' },
   // ゴダール風の「ずれ」：この1枚だけフランス語を大きく出す
-  { k: 'card', d: 4.6, snd: 'hum', towers: 1, frBig: 1, ja: 'ガラスと光の塔が空を埋めて、まだ100年。', en: 'Towers of glass and light have filled the sky for barely a century.', fr: 'Les tours de verre et de lumière remplissent le ciel depuis à peine un siècle.' },
-  { k: 'peck', d: 7, snd: 'flock', ja: '鳥たちは、取り戻しにいく。', en: 'The birds are coming to take it back.', fr: 'Les oiseaux viennent le reprendre.' },
+  { k: 'card', d: 4.4, snd: 'hum', towers: 1, frBig: 1, en: 'In one century, we covered the sky with glass and light.', fr: 'En un siècle, nous avons couvert le ciel de verre et de lumière.', ja: 'この百年で　わたしたちは空をガラスと光で覆った' },
+  { k: 'card', d: 3.4, snd: 'none', en: 'The birds remember the sky.', fr: 'Les oiseaux se souviennent du ciel.', ja: '鳥たちは　空を覚えている' },
+  { k: 'peck', d: 6.6, snd: 'flock', en: 'They are coming to take it back.', fr: 'Ils viennent le reprendre.', ja: 'そして　取り戻しにくる' },
   { k: 'title', d: 1.9, snd: 'none' },
   { k: 'iris', d: 1.5 },
 ];
 const FILM_END = [
   { k: 'credits', d: 17, snd: 'chirp' },
-  { k: 'card', d: 4.6, snd: 'none', ja: '鳥たちは、勝ったとは思っていない。', en: 'The birds do not think they have won.', fr: 'Les oiseaux ne pensent pas avoir gagné.' },
-  { k: 'card', d: 5.2, snd: 'none', ja: 'ただ、夜が暗くなり、空が静かになった。', en: 'Only, the nights grew dark, and the sky grew quiet.', fr: 'Seulement, les nuits sont devenues sombres, et le ciel silencieux.' },
+  { k: 'card', d: 4.4, snd: 'none', en: 'The birds do not think they have won.', fr: 'Les oiseaux ne pensent pas avoir gagné.', ja: '鳥たちは　勝ったとは思っていない' },
+  { k: 'card', d: 5, snd: 'none', en: 'Only, the nights grew dark, and the sky grew quiet.', fr: 'Seulement, les nuits sont devenues noires, et le ciel silencieux.', ja: 'ただ　夜が暗くなり　空が静かになった' },
   { k: 'epi', d: 6.5, e: 'end', snd: 'none' }, // ゲーテ。鳥は降りてとまるだけ
   { k: 'count', d: 5.6, snd: 'quiet' }, // 4′33″ のリミックス：4.33 秒を数えるだけ。映写機も止まり、遠くの鳥だけが聞こえる
   { k: 'fin', d: 3.8, snd: 'fin' },
@@ -85,7 +89,7 @@ function stepFilm(dt) {
 }
 function cardEnter() {
   const K = FILM.list[FILM.i]; if (K.k === 'iris') { mapEnter(); scene = 'film'; }
-  if (K.k === 'peck') { FILM.blocks = textBlocks(K.ja); FILM.flock = []; }
+  if (K.k === 'peck') { FILM.blocks = textBlocks(K.en); FILM.flock = []; }
   if (K.k === 'epi') { SV.epi = SV.epi || {}; if (!SV.epi[K.e]) { SV.epi[K.e] = 1; save(); } }
   if (!AC || muted) return;
   try {
@@ -125,18 +129,22 @@ function filmFrame(t, body, bg) {
 const LATIN = '600 italic 11px Georgia,"Times New Roman",serif';
 // 字幕用の折り返し：日本語は文字ごと、英語・フランス語は単語ごと
 function wrapF(s, font, maxW) {
-  c.font = font; const out = []; let cur = ''; const parts = /\s/.test(s) ? s.split(' ').map((w, i) => (i ? ' ' : '') + w) : [...s];
+  c.font = font; const out = []; let cur = ''; const parts = / /.test(s) ? s.split(' ').map((w, i) => (i ? ' ' : '') + w) : [...s];
   for (const p of parts) { if (cur && c.measureText(cur + p).width > maxW) { out.push(cur); cur = p.trimStart(); } else cur += p; } if (cur) out.push(cur); return out;
 }
 function lines(arr, font, x, y, lh, col) { c.font = font; c.fillStyle = col; c.textAlign = 'center'; for (const l of arr) { c.fillText(l, x, y); y += lh; } return y; }
-// 字幕カード：大きい1言語＋小さい2言語
+// 字幕カード：英語（frBig ならフランス語）を大きく、もう1言語を小さく。日本語は窓の下の字幕
+const BIGL = '600 italic 17px Georgia,"Times New Roman",serif', SUBJ = '500 12.5px ' + SERIF;
 function drawCardText(K, a, wy, wh) {
-  const JA = '600 17px ' + SERIF, FRB = '600 italic 16px Georgia,"Times New Roman",serif';
-  const big = K.frBig ? wrapF(K.fr, FRB, W - 56) : wrapF(K.ja, JA, W - 56), s1 = wrapF(K.en, LATIN, W - 70), s2 = K.frBig ? wrapF(K.ja, '500 11px ' + SERIF, W - 70) : wrapF(K.fr, LATIN, W - 70);
-  const hh = big.length * 24 + 16 + (s1.length + s2.length) * 15 + 6; let y = wy + wh / 2 - hh / 2 + 16; c.globalAlpha = a;
-  y = lines(big, K.frBig ? FRB : JA, W / 2, y, 24, '#ECE7DC'); y += 14;
-  y = lines(s1, LATIN, W / 2, y, 15, 'rgba(236,231,220,.72)'); y += 4; lines(s2, K.frBig ? '500 11px ' + SERIF : LATIN, W / 2, y, 15, 'rgba(236,231,220,.72)');
-  c.globalAlpha = 1;
+  const big = wrapF(K.frBig ? K.fr : K.en, BIGL, W - 60), s1 = wrapF(K.frBig ? K.en : K.fr, LATIN, W - 70);
+  const hh = big.length * 24 + 12 + s1.length * 15; let y = wy + wh / 2 - hh / 2 + 4; c.globalAlpha = a;
+  y = lines(big, BIGL, W / 2, y, 24, '#ECE7DC'); y += 10; lines(s1, LATIN, W / 2, y, 15, 'rgba(236,231,220,.62)');
+  subtitle(K.ja, a, wy, wh); c.globalAlpha = 1;
+}
+// 日本語の字幕：窓の下の端に、白く小さく（影を付けて塔の上でも読める）
+function subtitle(s, a, wy, wh) {
+  if (!s) return; s = s.replace(/。$/, '').replace(/[、。]/g, '　'); const L = wrapF(s, SUBJ, W - 50); /* 字幕は句読点を付けず、空きで区切る */ let y = wy + wh - 14 - (L.length - 1) * 17; c.save(); c.globalAlpha = a; c.shadowColor = 'rgba(0,0,0,.95)'; c.shadowBlur = 4;
+  for (const l of L) { lines([l], SUBJ, W / 2, y, 17, '#F6F2E8'); y += 17; } c.restore();
 }
 const fade = (t, d) => Math.max(0, Math.min(1, t / .6, (d - t) / .5));
 function drawFilm(t) {
@@ -152,7 +160,7 @@ function drawFilm(t) {
     else if (K.k === 'card') { if (K.towers) drawTowers(t, fade(ft, K.d), wy, wh); drawCardText(K, fade(ft, K.d), wy, wh); }
     else if (K.k === 'peck') drawPeck(t, K, ft, wy, wh);
     else if (K.k === 'credits') drawCredits(t, K, ft, wy, wh);
-    else if (K.k === 'epi') epiDraw(EPI[K.e], ft, wy + wh / 2, fade(ft, K.d));
+    else if (K.k === 'epi') epiDraw(EPI[K.e], ft, wy + wh / 2 - 12, fade(ft, K.d), { wy, wh });
     else if (K.k === 'count') { const r = Math.max(0, 4.33 - Math.max(0, ft - .6)); c.globalAlpha = Math.min(1, ft / .4, (K.d - ft) / .4); c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.font = '500 44px Georgia,"Times New Roman",serif'; c.fillText(r.toFixed(2), W / 2, wy + wh / 2 + 15); c.globalAlpha = 1; }
     else if (K.k === 'fin') { const a = fade(ft, K.d); c.globalAlpha = a; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.font = '600 italic 46px Georgia,"Times New Roman",serif'; c.fillText('FIN', W / 2, wy + wh / 2 + 10); c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.6)'; c.fillText('BIRDS RECLAIM', W / 2, wy + wh / 2 + 40); c.globalAlpha = 1; }
   });
@@ -182,7 +190,7 @@ function textBlocks(s) {
   if (typeof document === 'undefined' || typeof document.createElement !== 'function') return [];
   try {
     const o = document.createElement('canvas'), q = o.getContext('2d'), sc = 2; o.width = W * sc; o.height = 40 * sc; q.scale(sc, sc);
-    q.font = '600 17px ' + SERIF; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillStyle = '#fff'; q.fillText(s, W / 2, 20);
+    q.font = BIGL; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillStyle = '#fff'; q.fillText(s, W / 2, 20);
     const d = q.getImageData(0, 0, o.width, o.height).data, out = [], st = 2;
     for (let y = 0; y < 40; y += st) for (let x = 0; x < W; x += st) if (d[((y * sc) * o.width + x * sc) * 4 + 3] > 110) out.push({ x, y: y - 20, f: 0, vx: 0, vy: 0, dy: 0 });
     return out;
@@ -200,8 +208,9 @@ function stepPeck(dt) {
 function drawPeck(t, K, ft, wy, wh) {
   const a = fade(ft, K.d), cy = wy + wh / 2 - 14; c.globalAlpha = a;
   if (FILM.blocks && FILM.blocks.length) { c.fillStyle = '#ECE7DC'; for (const k of FILM.blocks) if (k.dy < 200) c.fillRect(k.x, cy + k.y + k.dy, 2, 2); }
-  else lines([K.ja], '600 17px ' + SERIF, W / 2, cy + 6, 24, 'rgba(236,231,220,' + Math.max(0, 1 - Math.max(0, ft - 2.6) / 1.2) + ')');
-  lines(wrapF(K.en, LATIN, W - 70), LATIN, W / 2, cy + 40, 15, 'rgba(236,231,220,.72)'); lines(wrapF(K.fr, LATIN, W - 70), LATIN, W / 2, cy + 58, 15, 'rgba(236,231,220,.72)');
+  else lines([K.en], BIGL, W / 2, cy + 6, 24, 'rgba(236,231,220,' + Math.max(0, 1 - Math.max(0, ft - 2.6) / 1.2) + ')');
+  lines(wrapF(K.fr, LATIN, W - 70), LATIN, W / 2, cy + 40, 15, 'rgba(236,231,220,.62)');
+  subtitle(K.ja, a, wy, wh); // 字幕は映画の外のものなので、鳥はつつかない
   c.globalAlpha = 1; for (const b of FILM.flock || []) birdS(b.x, cy + b.y, b.s, Math.sin(t * 14 + b.ph) * .7, 0, Math.PI / 2, '#0C0C0C', 'starling');
   if (ft > 2.6 && ft < 2.7 && AC && !muted && !FILM.cried) { FILM.cried = 1; try { cry(12, 2.2); } catch (e) { } }
 }

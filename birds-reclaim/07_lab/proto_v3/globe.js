@@ -66,13 +66,17 @@ for (let i = 0; i < 170; i++) M.stars.push({ x: Math.random() * W, y: Math.rando
 // 地図に並ぶ都市：遊べる都市のあとに準備中の都市
 function mapCities() { return STAGES.map((s, i) => ({ ...s, si: i })).concat(TEASERS.map(s => ({ ...s, si: -1 }))); }
 let CITIES = null;
+// 次に選ぶ都市：from の次から順に、まだ還していない都市。すべて還したら from の次
+function nextCity(from) { const n = STAGES.length; for (let d = 1; d <= n; d++) { const i = (from + d + n) % n; if (unlocked(i) && !SV.clear[STAGES[i].id]) return i; } return (from + 1 + n) % n; }
 function mapEnter(justCleared) {
-  if (!DOTS) buildDots(); CITIES = mapCities(); scene = 'map';
-  let sel = STAGES.findIndex((s, i) => unlocked(i) && !SV.clear[s.id]); if (sel < 0) sel = 0;
-  M.nexted = 0; if (justCleared != null) { M.fresh = justCleared; M.freshT = 0; sel = justCleared; } else M.fresh = -1;
-  mapSelect(sel);
+  if (!DOTS) buildDots(); CITIES = mapCities(); scene = 'map'; M.nexted = 0;
+  if (justCleared != null) { // 還した都市の緑が広がるのを見せる間も、出発は次の都市（前は還した都市が選ばれたままで、すぐ出発すると同じ都市に戻っていた）
+    const C = CITIES[justCleared]; M.fresh = justCleared; M.freshT = 0; M.lon0 = C.lon; M.lat0 = Math.max(-30, Math.min(48, C.lat * .8));
+    M.sel = nextCity(justCleared); wxFetch(STAGES[M.sel]); M.tLon = null; return;
+  }
+  M.fresh = -1; const li = STAGES.findIndex(s => s.id === SV.last); mapSelect(nextCity(li >= 0 ? li : -1));
 }
-function mapSelect(i) { M.sel = i; const C = CITIES[i]; if (C.si >= 0) wxFetch(STAGES[C.si]); M.tLon = C.lon; M.tLat = Math.max(-30, Math.min(48, C.lat * .8)); }
+function mapSelect(i) { M.sel = i; M.nexted = 1; const C = CITIES[i]; if (C.si >= 0) wxFetch(STAGES[C.si]); M.tLon = C.lon; M.tLat = Math.max(-30, Math.min(48, C.lat * .8)); }
 // 画面の座標へ。z>0 なら手前（見える）
 function proj(v) {
   const l0 = M.lon0 * RAD, p0 = M.lat0 * RAD, c0 = Math.cos(l0), s0 = Math.sin(l0);
@@ -83,7 +87,8 @@ function proj(v) {
 function stepMap(dt) {
   M.t += dt; M.freshT += dt;
   // 還した都市の緑が広がったら、次の都市へ地球儀を回す
-  if (M.fresh >= 0 && !M.nexted && M.freshT > 3.6) { M.nexted = 1; const nx = STAGES.findIndex((s, i) => unlocked(i) && !SV.clear[s.id]); if (nx >= 0) mapSelect(nx); }
+  if (M.fresh >= 0 && !M.nexted && M.freshT > 3.2) { M.nexted = 1; mapSelect(M.sel); }
+  if (M.fresh >= 0 && !M.nexted) return; // 緑が広がる間は地球儀を止めておく
   if (M.down) return;
   if (M.tLon != null) {
     let d = ((M.tLon - M.lon0 + 540) % 360) - 180; M.lon0 += d * Math.min(1, dt * 2.6); M.lat0 += (M.tLat - M.lat0) * Math.min(1, dt * 2.6);
@@ -160,6 +165,8 @@ function drawMap(t) {
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_PASS.x + 18, R_PASS.y + 18, 18, 0, 7); c.fill(); icon('book', R_PASS.x + 18, R_PASS.y + 18, UI.ink);
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_FILM.x + 18, R_FILM.y + 18, 18, 0, 7); c.fill(); icon('film', R_FILM.x + 18, R_FILM.y + 18, UI.ink);
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_BOOK.x + 18, R_BOOK.y + 18, 18, 0, 7); c.fill(); birdS(R_BOOK.x + 18, R_BOOK.y + 19, 8, .5, 0, 0, UI.ink, 'swallow'); if (SV.fe) { c.fillStyle = UI.acc; c.beginPath(); c.arc(R_BOOK.x + 31, R_BOOK.y + 6, 7, 0, 7); c.fill(); txt(String(SV.fe), R_BOOK.x + 31, R_BOOK.y + 9.5, 9, '#17191E', 700, 'center'); }
+  { const R = R_WORDSM, cx = R.x + 18, cy = R.y + 18; c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(cx, cy, 18, 0, 7); c.fill(); c.fillStyle = '#F4ECD8'; c.fillRect(cx - 6, cy - 8, 12, 16); c.fillStyle = 'rgba(80,70,50,.6)'; for (let r = 0; r < 4; r++) c.fillRect(cx - 4, cy - 5 + r * 3.4, 8 - (r === 3 ? 3 : 0), .9);
+    const n = typeof wordCount === 'function' ? wordCount() : 0; if (n) { c.fillStyle = '#F2D27A'; c.beginPath(); c.arc(R.x + 31, R.y + 6, 7.5, 0, 7); c.fill(); txt(String(n), R.x + 31, R.y + 9.5, 8.5, '#1A160C', 700, 'center'); } }
 }
 const R_GO = { x: 96, y: 576, w: 168, h: 40 }, R_PREV = { x: 30, y: 576, w: 48, h: 40 }, R_NEXT = { x: 282, y: 576, w: 48, h: 40 };
 function drawCityCard(t) {
@@ -190,7 +197,7 @@ function drawCityCard(t) {
 }
 // 都市を順に送る矢印（ヨーロッパや東南アジアは印が近いので）
 function chipR(j) { return { x: 92 + j * 80, y: 412 + 140, w: 76, h: 24 }; }
-const R_FILM = { x: 56, y: 17, w: 36, h: 36 }, R_BOOK = { x: 100, y: 17, w: 36, h: 36 }; // 冒頭の映画をもう一度／鳥の図鑑
+const R_FILM = { x: 56, y: 17, w: 36, h: 36 }, R_BOOK = { x: 100, y: 17, w: 36, h: 36 }; const R_WORDSM = { x: 144, y: 17, w: 36, h: 36 }; // 言葉の書架（v3 その4：地図からも開ける） // 冒頭の映画をもう一度／鳥の図鑑
 function drawArrows() { for (const [R, d] of [[R_PREV, -1], [R_NEXT, 1]]) { const cx = R.x + R.w / 2, cy = R.y + R.h / 2; c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(cx, cy, 18, 0, 7); c.fill(); c.strokeStyle = UI.ink; c.lineWidth = 2; c.lineCap = 'round'; c.beginPath(); c.moveTo(cx - 3 * d, cy - 6); c.lineTo(cx + 3 * d, cy); c.lineTo(cx - 3 * d, cy + 6); c.stroke(); } }
 function mapTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
@@ -198,6 +205,7 @@ function mapTap(x, y) {
   if (inR(x, y, R_PASS)) { scene = 'pass'; P.sel = -1; sfx('buy'); return; }
   if (inR(x, y, R_FILM)) { filmStart('intro'); return; }
   if (inR(x, y, R_BOOK)) { scene = 'book'; sfx('buy'); return; }
+  if (inR(x, y, R_WORDSM)) { scene = 'words'; WB.sel = null; WB.from = 'map'; sfx('buy'); return; }
   if (C.si >= 0) for (let j = 0; j < 3; j++) if (inR(x, y, chipR(j))) { // 仲間の中で、ほかの枠にいない次の種類に替える
     const L = SV.kinds, cur = L.indexOf(SV.team[j]); for (let d = 1; d < L.length; d++) { const k = L[(cur + d) % L.length]; if (!SV.team.includes(k)) { SV.team[j] = k; save(); sfx('buy'); break; } } return; }
   if (inR(x, y, R_PREV) || inR(x, y, R_NEXT)) { const n = CITIES.length; mapSelect((M.sel + (inR(x, y, R_NEXT) ? 1 : -1) + n) % n); sfx('buy'); return; }

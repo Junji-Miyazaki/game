@@ -46,6 +46,10 @@ DROP.tsutenkaku = ['saikaku', 'epi_osaka']; // 通天閣
 for (const st of STAGES) if (EPI[st.id]) (DROP[st.final] = DROP[st.final] || []).push('epi_' + st.id);
 const CITY_OF = {}; // 建物 → 都市
 for (const s of STAGES) { for (const b of s.bosses) CITY_OF[b.id] = s.id; CITY_OF[s.final] = s.id; for (const [, id] of s.lm || []) CITY_OF[id] = s.id; }
+// まだ掘り出していない言葉のヒント：どの建物の瓦礫から出るか
+function wordFrom(id) { const out = [], city = WORDS[id] && WORDS[id].city; for (const b in DROP) if (DROP[b].includes(id) && (!CITY_OF[b] || CITY_OF[b] === city || city === '*')) { const nm = (typeof BOSS !== 'undefined' && BOSS[b] && BOSS[b].name) || (typeof LM !== 'undefined' && LM[b] && LM[b].name); if (nm && !out.includes(nm)) out.push(nm); } return out.slice(0, 2); } // その都市の建物を2つまで
+const fitW = (s, w) => { if (c.measureText(s).width <= w) return s; while (s.length > 4 && c.measureText(s + '…').width > w) s = s.slice(0, -1); return s + '…'; }; // 幅に収める（今の字体で測る）
+const shelfOf = city => Object.keys(WORDS).filter(k => WORDS[k].city === city);
 function wordsSeen() { if (!SV.words) SV.words = {}; for (const k in SV.epi || {}) SV.words['epi_' + k] = 1; return SV.words; } // 前の保存（SV.epi）も数える
 function wordCount() { const w = wordsSeen(); return Object.keys(WORDS).filter(id => w[id]).length; }
 // 建物を崩した時：確率で欠片を出す。まだ持っていない言葉を優先する
@@ -56,6 +60,8 @@ function wordDrop(b, kind, id) {
   S.frags.push({ id: w, x: b.x + b.w / 2 + (Math.random() - .5) * b.w * .4, y: GY - Math.min(top, 40) * CS * .5 - 20, t: 0, ph: Math.random() * 6 });
 }
 function stepFrags(dt) {
+  // v3 その4：還したあと（結果を出す時）は、舞っている欠片をその場で書架に入れる。知らせは出さず、結果のあとの「言葉」の頁で見せる
+  if (S.mode !== 'play') { for (const f of S.frags) { const seen = wordsSeen(), isNew = !seen[f.id]; seen[f.id] = 1; S.wordsGot.push(f.id); if (isNew) S.wordsNew.push(f.id); } if (S.frags.length) save(); S.frags.length = 0; S.wtoast = null; return; }
   for (let i = S.frags.length - 1; i >= 0; i--) {
     const f = S.frags[i]; f.t += dt; f.y -= (40 + f.t * 30) * dt; f.x += Math.sin(f.t * 2.4 + f.ph) * 22 * dt + SPEED * dt * (S.siege ? 0 : 1);
     if (f.t > 2.5) {
@@ -71,7 +77,7 @@ function drawFrags(t, cam) { // 淡く光る紙片
 }
 // 言葉を拾った時の知らせ。新しい言葉ははっきり、すでに持っている言葉は控えめに
 function drawWToast() {
-  const T = S.wtoast; if (!T) return; const E = WORDS[T.id], a = Math.max(0, Math.min(1, T.t / .25, (3.6 - T.t) / .5)); c.globalAlpha = a;
+  const T = S.wtoast; if (!T || S.mode !== 'play') return; const E = WORDS[T.id], a = Math.max(0, Math.min(1, T.t / .25, (3.6 - T.t) / .5)); c.globalAlpha = a;
   const y = 116, h = T.isNew ? 70 : 34; rr(26, y, W - 52, h, 14); c.fillStyle = 'rgba(28,24,16,.92)'; c.fill(); c.strokeStyle = 'rgba(244,236,216,' + (T.isNew ? .55 : .2) + ')'; c.lineWidth = 1; c.stroke();
   c.textAlign = 'center';
   if (T.isNew) { c.font = '600 12px ' + SERIF; c.fillStyle = '#F2D27A'; c.fillText('新たな言葉をコレクションしました', W / 2, y + 20); }
@@ -95,12 +101,14 @@ function drawWords(t) {
     const Z = WORDS.zhuangzi; if (Z) { c.font = '600 13px ' + SERIF; c.fillStyle = '#ECE7DC'; c.fillText(Z.o, W / 2, 112); let zy = 128; for (const l of wrapF(Z.ja, '500 10px ' + SERIF, W - 60)) { c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.6)'; c.fillText(l, W / 2, zy); zy += 13; } c.font = '500 8.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.4)'; c.fillText(Z.by, W / 2, zy + 3); }
     SHELVES().forEach(([id, nm], i) => { const R = wbRow(i), L = Object.keys(WORDS).filter(k => WORDS[k].city === id), got = L.filter(k => seen[k]).length;
       c.fillStyle = 'rgba(236,231,220,' + (got ? .07 : .03) + ')'; c.fillRect(R.x, R.y, R.w, R.h); c.textAlign = 'left'; c.font = '500 11.5px ' + SERIF; c.fillStyle = got ? '#ECE7DC' : 'rgba(236,231,220,.35)'; c.fillText(nm, R.x + 12, R.y + 17);
-      c.textAlign = 'right'; c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.55)'; c.fillText(got + ' / ' + L.length, R.x + R.w - 12, R.y + 17); });
+      // アルバムの枠：持っている言葉は紙片、まだの言葉は「？」
+      c.textAlign = 'center'; L.forEach((k, j) => { const sx = R.x + R.w - 14 - (L.length - 1 - j) * 15; if (seen[k]) { c.fillStyle = '#F4ECD8'; c.fillRect(sx - 4.5, R.y + 6, 9, 13); c.fillStyle = 'rgba(80,70,50,.55)'; for (let r = 0; r < 3; r++) c.fillRect(sx - 3, R.y + 9 + r * 3.2, 6, .9); } else { c.strokeStyle = 'rgba(236,231,220,.28)'; c.lineWidth = 1; c.strokeRect(sx - 4.5, R.y + 6.5, 9, 12); c.font = '600 9px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.45)'; c.fillText('？', sx, R.y + 16.5); } }); });
   } else {
     const [, nm] = SHELVES().find(([id]) => id === WB.sel) || ['', '']; c.font = '600 13px ' + SERIF; c.fillStyle = '#F2D27A'; c.fillText(nm, W / 2, 108);
     let y = 138; for (const k of Object.keys(WORDS).filter(k => WORDS[k].city === WB.sel)) {
       const E = WORDS[k]; c.fillStyle = 'rgba(236,231,220,.08)'; c.fillRect(28, y - 14, W - 56, 1); c.textAlign = 'center';
-      if (!seen[k]) { c.font = '500 11px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.25)'; c.fillText('— まだ掘り出していない言葉 —', W / 2, y + 12); y += 40; continue; }
+      if (!seen[k]) { c.strokeStyle = 'rgba(236,231,220,.22)'; c.setLineDash && c.setLineDash([3, 3]); c.strokeRect(40, y - 4, W - 80, 40); c.setLineDash && c.setLineDash([]);
+        c.font = '600 16px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText('？', W / 2, y + 13); const fr = wordFrom(k); c.font = '500 9.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.42)'; c.fillText(fitW(fr.length ? 'まだ眠っている言葉 — ' + fr.join('、') + 'の瓦礫に' : 'まだ眠っている言葉', W - 90), W / 2, y + 29); y += 54; continue; }
       const big = E.cjk ? '600 13px ' + SERIF : '600 italic 12px Georgia,"Times New Roman",serif';
       for (const l of E.o.split(' / ').flatMap(p => wrapF(p, big, W - 60))) { c.font = big; c.fillStyle = '#ECE7DC'; c.fillText(l, W / 2, y + 4); y += 16; }
       for (const l of wrapF(E.ja, '500 10px ' + SERIF, W - 60)) { c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.72)'; c.fillText(l, W / 2, y + 4); y += 13; }
@@ -112,6 +120,34 @@ function drawWords(t) {
 }
 function wordsTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
-  if (inR(x, y, R_WBACK)) { if (WB.sel != null) WB.sel = null; else scene = 'pass'; sfx('buy'); return; }
+  if (inR(x, y, R_WBACK)) { if (WB.sel != null) WB.sel = null; else scene = WB.from || 'pass'; sfx('buy'); return; }
   if (WB.sel == null) SHELVES().forEach(([id], i) => { if (inR(x, y, wbRow(i))) { WB.sel = id; sfx('buy'); } });
+}
+
+// ---------- 還した後の「言葉」の頁（v3 その4、ユーザー指示：結果と重ねず、言葉の発掘を強調。まだの言葉は「？」） ----------
+// 結果の頁で「つづける」を押すと出る。その都市の棚を開いて、今回掘り出した言葉を光らせ、新しい言葉に「新」を付ける
+const R_WGO = { x: W / 2 - 94, y: 574, w: 188, h: 44 };
+function drawCityWords(t) {
+  const a = Math.min(1, (S.endT - S.rp0) / .4); c.globalAlpha = a;
+  const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, 'rgba(14,14,12,.97)'); bg.addColorStop(1, 'rgba(22,21,15,.98)'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  const seen = wordsSeen(), L = shelfOf(S.st.id), got = new Set(S.wordsGot), nw = new Set(S.wordsNew), have = L.filter(k => seen[k]).length;
+  c.textAlign = 'center'; c.font = '600 17px ' + SERIF; c.fillStyle = '#F2D27A'; c.fillText('瓦礫から掘り出した言葉', W / 2, 74);
+  c.font = '500 11px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(S.st.city + 'の棚　' + have + ' / ' + L.length + (nw.size ? '　·　新しい言葉 ' + nw.size : ''), W / 2, 96);
+  // 項目の高さを測って、入りきらなければ和訳を省く（新しい言葉は省かない）
+  const big = E => E.cjk ? '600 14px ' + SERIF : '600 italic 13px Georgia,"Times New Roman",serif';
+  const meas = (k, full) => { const E = WORDS[k]; if (!seen[k]) return { k, h: 54 }; const o = E.o.split(' / ').flatMap(p => wrapF(p, big(E), W - 84)).slice(0, 3), j = full ? wrapF(E.ja, '500 10.5px ' + SERIF, W - 84).slice(0, 2) : []; return { k, o, j, h: o.length * 18 + j.length * 14 + 30 + (got.has(k) ? 16 : 0) }; };
+  let items = L.map(k => meas(k, true)); if (items.reduce((s, q) => s + q.h + 10, 0) > 440) items = L.map(k => meas(k, nw.has(k)));
+  let y = 122;
+  for (const q of items) { const E = WORDS[q.k];
+    if (!seen[q.k]) { c.strokeStyle = 'rgba(236,231,220,.24)'; c.setLineDash && c.setLineDash([3, 3]); c.lineWidth = 1; c.strokeRect(30, y, W - 60, q.h - 6); c.setLineDash && c.setLineDash([]);
+      c.font = '600 18px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText('？', W / 2, y + 22); const fr = wordFrom(q.k); c.font = '500 9.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.45)'; c.fillText(fitW(fr.length ? 'まだ眠っている — ' + fr.join('、') + 'の瓦礫に' : 'まだ眠っている', W - 76), W / 2, y + 39); y += q.h + 10; continue; }
+    const isN = nw.has(q.k), isG = got.has(q.k), glow = isN ? .5 + .5 * Math.sin(t * 3) : 0;
+    c.fillStyle = isN ? 'rgba(242,210,122,' + (.1 + .06 * glow) + ')' : 'rgba(236,231,220,.05)'; c.fillRect(30, y, W - 60, q.h - 4);
+    if (isN) { c.strokeStyle = 'rgba(242,210,122,.55)'; c.lineWidth = 1; c.strokeRect(30.5, y + .5, W - 61, q.h - 5); rr(38, y + 6, 24, 16, 8); c.fillStyle = '#F2D27A'; c.fill(); c.font = '700 10px ' + SERIF; c.fillStyle = '#1A160C'; c.fillText('新', 50, y + 18); }
+    else if (isG) { c.font = '500 9px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.45)'; c.textAlign = 'left'; c.fillText('また出てきた', 38, y + 17); c.textAlign = 'center'; }
+    let yy = y + 22 + (isN || isG ? 16 : 0); // 「新」「また出てきた」は上の1行に for (const l of q.o) { c.font = big(E); c.fillStyle = '#ECE7DC'; c.fillText(l, W / 2, yy); yy += 18; }
+    for (const l of q.j) { c.font = '500 10.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(l, W / 2, yy); yy += 14; }
+    c.font = '500 8.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.45)'; c.fillText(E.by, W / 2, yy + 2); y += q.h + 10; }
+  c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText('書架 ' + wordCount() + ' / ' + Object.keys(WORDS).length + '　·　地図の紙片のボタンからいつでも読める', W / 2, 556);
+  c.textAlign = 'left'; if (S.endT - S.rp0 > .6) pillAt('地球へ戻る', R_WGO.x, R_WGO.y, R_WGO.w, true); c.globalAlpha = 1;
 }
