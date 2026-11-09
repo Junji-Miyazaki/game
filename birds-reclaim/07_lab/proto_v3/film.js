@@ -47,10 +47,10 @@ const FILM_INTRO = [
   { k: 'leader', d: 1.2 }, // タップのあと、黒から 1.2 秒でカードがフェードインする
   { k: 'epi', d: 6.2, e: 'intro', snd: 'none' }, // カフカ
   { k: 'card', d: 4.2, snd: 'rumble', en: 'Sixty-six million years ago, a star fell from the sky.', fr: 'Il y a soixante-six millions d’années, une étoile tomba du ciel.', ja: '6600万年前　空から星が落ちた' },
-  { k: 'card', d: 3.8, snd: 'wing', en: 'A few, with wings, lived on.', fr: 'Quelques-uns, ailés, survécurent.', ja: '翼をもつ　わずかな者が生きのびた' },
+  { k: 'card', d: 3.8, snd: 'wing', en: 'Of the dinosaurs, only a few with wings lived on.', fr: 'Des dinosaures, seuls quelques-uns, ailés, survécurent.', ja: '恐竜のうち　翼をもつわずかな者だけが生きのびた' },
   { k: 'card', d: 3.8, snd: 'none', en: 'Then, three hundred thousand years ago — us.', fr: 'Puis, il y a trois cent mille ans : nous.', ja: 'そして30万年前　わたしたちが現れた' },
   // ゴダール風の「ずれ」：この1枚だけフランス語を大きく出す
-  { k: 'card', d: 4.4, snd: 'hum', towers: 1, frBig: 1, en: 'In one century, we covered the sky with glass and light.', fr: 'En un siècle, nous avons couvert le ciel de verre et de lumière.', ja: 'この百年で　わたしたちは空をガラスと光で覆った' },
+  { k: 'card', d: 4.4, snd: 'hum', towers: 1, frBig: 1, en: 'In little more than a century, we covered the sky with glass and light.', fr: 'En un peu plus d’un siècle, nous avons couvert le ciel de verre et de lumière.', ja: '百年あまりで　わたしたちは空をガラスと光で覆った' },
   { k: 'card', d: 3.4, snd: 'none', en: 'The birds remember the sky.', fr: 'Les oiseaux se souviennent du ciel.', ja: '鳥たちは　空を覚えている' },
   { k: 'peck', d: 6.6, snd: 'flock', en: 'They are coming to take it back.', fr: 'Ils viennent le reprendre.', ja: 'そして　取り戻しにくる' },
   { k: 'title', d: 1.9, snd: 'none' },
