@@ -383,3 +383,17 @@
     - 大阪の章の芭蕉
     - シアトルの赤いカーテンとソロー
     - 終わりのゲーテと 4.33 のカウントダウン
+
+## 2026-11-09 題辞の原典照合（v3 公開のあと。直すのは次回、とユーザー指示）
+- v3 を公開した（push ab54415..df91e54）。
+- 照らし合わせた原典と結果
+  | 題辞 | 原典 | 結果 | 次回の直し |
+  |---|---|---|---|
+  | カフカ | de.wikisource『Betrachtungen über Sünde, Leid, Hoffnung und den wahren Weg』16 | 一致：Ein Käfig ging einen Vogel suchen. | なし |
+  | 杜甫 | zh.wikisource「春望」 | 一致：國破山河在，城春草木深（「春」を「荒」とする本もある、と注） | 区切りを全角空白から「，」にしてもよい（好み） |
+  | ソロー | en.wikisource「Walking」 | 一致：in Wildness is the preservation of the World | なし |
+  | ボードレール | fr.wikisource『Les Fleurs du mal』(1861)「L’Albatros」 | 文字は一致。アポストロフィだけ違う：原典は l’empêchent（’）、今は '。この版では Poëte の綴り | ’ に直す |
+  | ゲーテ | Project Gutenberg『A Book of German Lyrics』の「Ein Gleiches」 | 「Vögelein」は一致（博物館の資料には Vöglein の形もある）。今は2行を1文にまとめ「ruhest」を小文字にしているが、原典は行頭で「Ruhest」 | 「Warte nur, balde / Ruhest du auch.」に直す。題も「Ein Gleiches（Wandrers Nachtlied）」が正確 |
+  | ディキンソン | Project Gutenberg『Poems by Emily Dickinson, Series Two』(1891) | **違う**。1891 年の版は Hope is the thing with feathers（引用符なし、行末は「,」）。今の “Hope” と引用符・ダッシュの形は 1955 年のジョンソン版で、こちらはまだ著作権が残る可能性がある | 1891 年の公有の形に直す（早めがよい） |
+  | 芭蕉 | tabi-mag ほか | 「行く春や鳥啼魚の目は泪」は広く流布する形で一致。紀要の翻刻には「行春や」「目ハ泪」の形もある | なしでよい（流布形） |
+- 和訳・英訳はゲームで付けたもの。原典照合の対象外。
