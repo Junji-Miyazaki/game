@@ -118,12 +118,11 @@ function drawFilm(t) {
   if (!FILM.wait) { c.font = F(11, 600); c.fillStyle = 'rgba(255,255,255,.4)'; c.textAlign = 'right'; c.fillText('スキップ  ›', W - 24, R_SKIP.y + 23); c.textAlign = 'left'; }
   drawToggles();
 }
-// 始まり：黒い窓に「タップでスタート」。下に「次から表示しない」のチェック。タップのあとは黒から静かに始める
+// 始まり：黒い窓に「Tap to start」だけ（日本語は付けない。ユーザー指示）。下に「次から表示しない」のチェック。タップのあとは黒から静かに始める
 const R_NOSHOW = { x: 96, y: 486, w: 168, h: 34 };
 function drawLeader(t, ft, wy, wh) {
   if (!FILM.wait) return; const cx = W / 2, cy = wy + wh / 2, a = .75 + .25 * Math.sin(t * 2.4);
-  c.textAlign = 'center'; c.globalAlpha = a; c.fillStyle = '#ECE7DC'; c.font = '600 15px ' + SERIF; c.fillText('タップでスタート', cx, cy - 2);
-  c.font = LATIN; c.fillStyle = 'rgba(236,231,220,.6)'; c.fillText('Tap to start', cx, cy + 18); c.globalAlpha = 1;
+  c.textAlign = 'center'; c.globalAlpha = a; c.fillStyle = '#ECE7DC'; c.font = '600 italic 17px Georgia,"Times New Roman",serif'; c.fillText('Tap to start', cx, cy + 6); c.globalAlpha = 1;
 }
 function drawNoShow() { // 窓の外（黒い所）に描く
   const R = R_NOSHOW, on = !!SV.skipIntro; c.strokeStyle = 'rgba(236,231,220,.55)'; c.lineWidth = 1.2; c.strokeRect(R.x + 6, R.y + 10, 13, 13);
