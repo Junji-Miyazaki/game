@@ -29,6 +29,8 @@ function teamFor(ST) { // 効く鳥1種（象徴を優先）＋ 都市の札で�
   if (!T.includes('starling')) T.push('starling'); // 道中で群れを育てる数の鳥は必ず連れていく
   for (const k of OWN().filter(k => !T.includes(k)).sort((a, b) => sc(b) - sc(a))) if (T.length < NSL()) T.push(k); return T.filter(k => OWN().includes(k)).slice(0, NSL()); }
 const OWN = () => SV.kinds, NSL = () => slotsNow();
+// 羽の使い方（route）：連れていく鳥の、段のいちばん低い所から上げる（攻撃力2：攻撃速度1）
+function autoGrow() { for (let g = 0; g < 60; g++) { const opts = []; for (const k of SV.team) { const L = kindLv(k); opts.push([k, 'p', L.p], [k, 's', L.s * 2 + 1]); } opts.sort((a, b) => a[2] - b[2]); if (!opts.some(([k, f]) => growBuy(k, f))) break; } }
 const cnt = k => S.birds.filter(b => b.st !== 2 && b.sp.key === k).length;
 function smart() {
   const T = S.team, slot = k => T.indexOf(k), B = S.boss; let want = null;
@@ -43,11 +45,11 @@ if (MODE === 'route' || MODE === 'routen') { const out = [];
     for (let si = 0; si < STAGES.length; si++) { let res = 'x', tries = 0;
       for (; tries < 3; tries++) { if (MODE === 'route') SV.team = teamFor(STAGES[si]); fixTeam(); startStage(si); S.brief = 0;
         if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] };
-        while (S.mode === 'play' && S.t < 420) { step(1 / 60); if (S.card) S.card = null; if (MODE === 'route') smart(); else if (S.pts >= S.cost.b1) buy('b1'); }
+        let gT = 0; while (S.mode === 'play' && S.t < 420) { step(1 / 60); if (S.card) S.card = null; if (MODE === 'route') { smart(); if ((gT += 1 / 60) > 10) { gT = 0; autoGrow(); } } else if (S.pts >= S.cost.b1) buy('b1'); }
         if (S.mode === 'win') { res = String(tries + 1); break; } }
-      if (MODE === 'route') for (const k of SV.team) for (const f of ['p', 's', 'p']) { const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }; while (L[f] < 3 && SV.fe >= L[f] + 1) { SV.fe -= L[f] + 1; L[f]++; } }
+      if (MODE === 'route') autoGrow();
       row.push(STAGES[si].id + ':' + res + '[' + SV.team.join(',') + ']'); }
-    console.log(MODE, 'rep' + rep, row.join(' ')); console.log('  仲間', SV.kinds.join(','), '枠', slotsNow()); }
+    console.log(MODE, 'rep' + rep, row.join(' ')); console.log('  仲間', SV.kinds.join(','), '枠', slotsNow(), '入った時の段', JSON.stringify(SV.gift || {}), '育てた段', JSON.stringify(SV.lv)); }
   process.exit(0); }
 for (const si of list) for (let run = 0; run < RUNS; run++) {
   SV = SV0(); SV.allSlots = 1; if (MODE !== 'smart') { SV.kinds = ['starling', 'crow', 'swallow']; SV.team = SV.kinds.slice(); } // 連打の比較は、その5の前と同じ3種で
@@ -64,6 +66,7 @@ for (const si of list) for (let run = 0; run < RUNS; run++) {
   }
   if (lo) ev.push('崩しきり ' + (S.t - lo).toFixed(1) + 's');
   for (let i = 0; i < 300; i++) { step(1 / 60); draw(i / 60); }
+  if (process.env.BLD) console.log('  建物', S.blds.filter(b => !b.boss && !b.lm).length, '倒れた', S.blds.filter(b => b.gone && !b.lm).length, '名所', S.lmDown);
   if (process.env.WORDS) console.log('  言葉', S.wordsGot.join(','), '新しい', S.wordsNew.length);
   console.log(MODE, S.st.id, run, S.mode.toUpperCase(), '[' + S.team.join(',') + ']', 't=' + S.t.toFixed(0) + 's', '得点=' + S.score, '最大' + S.peak + '羽', '名所' + S.lmDown + '/' + S.lmN, '|', ev.join(' '));
   SV = SV0();
@@ -76,7 +79,7 @@ scene = 'pass'; P.sel = -1; draw(0); P.sel = 0; draw(0); P.sel = 3; draw(0); con
 // 冒頭と終わりの映画（描画のエラーだけ見る）
 for (const kind of ['intro', 'end']) { filmStart(kind); if (FILM.wait) filmTap(10, 300); let i = 0; for (; i < 6000 && scene === 'film'; i++) { stepFilm(1 / 30); draw(i / 30); } console.log('film', kind, 'ok', (i / 30).toFixed(1) + 's', '→', scene); }
 // 鳥の図鑑
-SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(bkBtn(0, 0).x + 5, bkBtn(0, 0).y + 5); bookTap(bkBtn(1, 1).x + 5, bkBtn(1, 1).y + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'fe', SV.fe); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec fe', SV.fe);
+SV = SV0(); SV.ap = 6; SV.sp = 0; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(bkBtn(0, 0).x + 5, bkBtn(0, 0).y + 5); bookTap(bkBtn(1, 1).x + 5, bkBtn(1, 1).y + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'ap', SV.ap, 'sp', SV.sp); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec ap', SV.ap, 'sp', SV.sp);
 // 言葉の書架
 SV.epi = { intro: 1, osaka: 1, end: 1 }; scene = 'pass'; P.sel = -1; draw(0); passTap(R_WORDS.x + 5, R_WORDS.y + 5); console.log('words scene', scene, wordCount() + '/' + Object.keys(WORDS).length); draw(0); wordsTap(wbRow(1).x + 5, wbRow(1).y + 5); draw(0); console.log('shelf', WB.sel); wordsTap(R_WBACK.x + 5, R_WBACK.y + 5);
 // 還った時の結果画面とごほうび

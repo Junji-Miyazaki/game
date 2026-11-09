@@ -18,18 +18,31 @@ let S = null, ff = 1, scene = 'map';
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { } }
-const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, epi: {}, intro: 0, skipIntro: 0, ended: 0, fe: 0, lv: {}, tip: 0, v: 5 });
+const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, epi: {}, intro: 0, skipIntro: 0, ended: 0, ap: 0, sp: 0, lv: {}, tip: 0, v: 7 });
 // clear=還した都市 best=最高得点 seen=見た建物のカード lm=還した名所 date=スタンプの日付 last=最後に還した都市（渡りの出発地）
-function loadSave() { try { const o = JSON.parse(lsGet(SAVE_KEY) || '{}'), v = Object.assign(SV0(), o); if (!o.v || o.v < 5) migrate5(v); return v; } catch (e) { return SV0(); } }
+function loadSave() { try { const o = JSON.parse(lsGet(SAVE_KEY) || '{}'), v = Object.assign(SV0(), o); if (!o.v || o.v < 5) migrate5(v); if (v.v < 6) migrate6(v); if (v.v < 7) migrate7(v); return v; } catch (e) { return SV0(); } }
 // その5の前の保存：仲間は「還した都市でもらえる鳥」から数え直す（育てた段は残す）
+// その6の前の保存：羽は大きな羽の数だったので羽に直し（×10）、段 0〜3 は 0〜9 に（×3）。使った羽も新しい値段で数え直す
+function migrate6(v) { v.v = 6; v.fe = (v.fe || 0) * 10; v.spent = 0; v.gift = {}; for (const k in v.lv || {}) for (const f of ['p', 's']) { const n = Math.min(LV_MAX, (v.lv[k][f] || 0) * 3); v.lv[k][f] = n; for (let l = 0; l < n; l++) v.spent += lvCost(l); } }
+// その7の前の保存：羽を攻撃力ポイントと攻撃速度ポイントに半分ずつ分ける（使った分も段の側から数え直す）
+function migrate7(v) { v.v = 7; const h = Math.floor((v.fe || 0) / 2); v.ap = (v.ap || 0) + h; v.sp = (v.sp || 0) + (v.fe || 0) - h; delete v.fe; v.spentP = 0; v.spentS = 0; for (const k in v.lv || {}) { for (let l = 0; l < (v.lv[k].p || 0); l++) v.spentP += lvCost(l); for (let l = 0; l < (v.lv[k].s || 0); l++) v.spentS += lvCost(l); } }
 function migrate5(v) { v.v = 5; v.spent = 0; for (const k in v.lv || {}) for (const f of ['p', 's']) for (let l = 1; l <= (v.lv[k][f] || 0); l++) v.spent += l; const K = [...KIND_START]; for (const id in v.clear) for (const k of UNLOCK[id] || []) if (!K.includes(k)) K.push(k); v.kinds = K; }
+// ---------- 攻撃力ポイントと攻撃速度ポイント（v3 その7、ユーザー案：羽のアイテムを挟まず、直感的に） ----------
+// 建物が倒れるたびに、攻撃力ポイントか攻撃速度ポイントが 1（どちらかは半々、色で見分ける）。名所は両方 +2、中ボスは両方 +4
+// 還したごほうびは、はじめて両方 +20、2回目から両方 +8。ためたポイントは、それぞれ好きな鳥の攻撃力・攻撃速度に振り分ける
+// 攻撃力と攻撃速度は別々に 0〜10 段。1段ごとに攻撃力 +6%、攻撃速度 +4.5%。次の段の値段は 6, 8, 10 … 24（1つを10段にすると 150）
+const LV_MAX = 10, lvCost = lv => 6 + 2 * lv, PMUL = p => 1 + .06 * p, SMUL = q => 1 + .045 * q;
+const PT = { p: { w: 'ap', nm: '攻撃力', ab: '攻', col: '#F08A5D' }, s: { w: 'sp', nm: '攻撃速度', ab: '速', col: '#6FB8F2' } }; // ポイントの財布と色
+const kindLv = k => (SV.lv || {})[k] || { p: 0, s: 0 };
+function applyLv(k) { if (typeof S === 'undefined' || !S || !S.kinds || !S.kinds[k]) return; const L = kindLv(k), K = KIND[k]; Object.assign(S.kinds[k], { am: K.am * PMUL(L.p), spd: K.spd * SMUL(L.s), lvP: L.p, lvS: L.s }); } // 遊んでいる最中でも、群れの中のその鳥にすぐ効く
+function growBuy(k, f) { SV.lv = SV.lv || {}; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, w = PT[f].w; if (L[f] >= LV_MAX) return false; const c0 = lvCost(L[f]); if ((SV[w] || 0) < c0) return false; SV[w] -= c0; SV[f === 'p' ? 'spentP' : 'spentS'] = (SV[f === 'p' ? 'spentP' : 'spentS'] || 0) + c0; L[f]++; save(); applyLv(k); return true; }
+const canGrow = team => team.some(k => { const L = kindLv(k); return (L.p < LV_MAX && (SV.ap || 0) >= lvCost(L.p)) || (L.s < LV_MAX && (SV.sp || 0) >= lvCost(L.s)); });
+function pointGet(f, n, wx, wy) { const w = PT[f].w; SV[w] = (SV[w] || 0) + n; S.got[f] += n; save(); if (wx != null) for (let i = 0; i < Math.min(n, 4); i++) S.fth.push({ f, x: wx + (Math.random() - .5) * 30, y: wy + (Math.random() - .5) * 20, t: -i * .08, ph: Math.random() * 6 }); }
 const clearedCount = () => Object.keys(SV.clear).filter(id => STAGES.some(s => s.id === id)).length;
 const slotsNow = () => SV.allSlots ? 3 : slotsFor(clearedCount()); // allSlots は自動プレイ（6種で比べる）用
 // 連れていく鳥を整える：持っている鳥だけ、重ならず、枠の数だけ（空いた枠は持っている鳥で埋める）
 function fixTeam() { const n = slotsNow(), T = []; for (const k of SV.team || []) if (SV.kinds.includes(k) && !T.includes(k) && T.length < n) T.push(k); for (const k of SV.kinds) if (T.length < n && !T.includes(k)) T.push(k); SV.team = T; }
-// 新しく仲間になった鳥は、持っている鳥の段の真ん中まで育った状態で来る（羽は使わない。育てた鳥に埋もれないように）
-function joinKind(k) { if (SV.kinds.includes(k)) return false; const L = SV.kinds.map(q => (SV.lv || {})[q] || { p: 0, s: 0 }), med = f => { const a = L.map(x => x[f]).sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : 0; };
-  SV.kinds.push(k); SV.lv = SV.lv || {}; const m = { p: med('p'), s: med('s') }; if (m.p || m.s) { SV.lv[k] = m; SV.gift = SV.gift || {}; SV.gift[k] = { ...m }; } return true; }
+function joinKind(k) { if (SV.kinds.includes(k)) return false; SV.kinds.push(k); return true; } // その6：新しい鳥は段0で来る（羽は遊びながら拾えるので、すぐ育てられる）
 let SV = loadSave();
 function save() { lsSet(SAVE_KEY, JSON.stringify(SV)); }
 function clearedN() { return STAGES.filter(s => SV.clear[s.id]).length; }
@@ -53,7 +66,7 @@ function startStage(i) {
     ft: 0, gt: 0, rot: 0, sc: 1, fx: null, fy: null, siege: 0, win: 0, over: 0, bonus: 0, newBest: 0, killed: [], gim: { cd: 4, ct: 0 },
     card: null, arr: { t: 0 }, brief: 1, toast: null, frags: [], wordsGot: [], wordsNew: [], wtoast: null, lmN: 0, lmDown: 0, slow: 0, rainOn: 0,
   };
-  S.kinds = {}; for (const k in KIND) { const L = (SV.lv || {})[k] || { p: 0, s: 0 }; S.kinds[k] = Object.assign({}, KIND[k], { am: KIND[k].am * (1 + .2 * L.p), spd: KIND[k].spd * (1 + .15 * L.s), lvP: L.p, lvS: L.s }); }
+  S.kinds = {}; for (const k in KIND) { S.kinds[k] = Object.assign({}, KIND[k]); applyLv(k); } S.fth = []; S.got = { p: 0, s: 0 }; S.grow = 0;
   S.cdn = { b1: 0, b2: 0, b3: 0 };
   KEYS.forEach((k, j) => { if (S.team[j]) S.cost[k] = KIND[S.team[j]].cost; });
   S.wx = wxFor(ST); S.wfx = wxFx(S.wx); wxFetch(ST);
@@ -96,7 +109,7 @@ function finish() {
     S.reward = { verse: VERSE[id] || '', kinds: [], first: !SV.clear[id], slot: 0 };
     if (S.reward.first) { const n0 = slotsNow(); SV.clear[id] = 1; for (const k of UNLOCK[id] || []) if (joinKind(k)) S.reward.kinds.push(k); SV.verse[id] = 1;
       const n1 = slotsNow(); if (n1 > n0) { S.reward.slot = n1; for (const k of [...S.reward.kinds].reverse()) if (!SV.team.includes(k) && SV.team.length < n1) SV.team.push(k); } fixTeam(); } // 枠が増えたら、新しい鳥をそのまま連れていく
-    S.reward.fe = S.reward.first ? 3 : 1; SV.fe = (SV.fe || 0) + S.reward.fe; // 羽：鳥を育てる（図鑑で使う）
+    S.reward.pt = S.reward.first ? 20 : 8; SV.ap = (SV.ap || 0) + S.reward.pt; SV.sp = (SV.sp || 0) + S.reward.pt; // 還したごほうび：両方のポイント
     SV.clear[id] = 1; SV.last = id; if (!SV.date[id]) SV.date[id] = dstr();
   }
   save();
@@ -136,6 +149,7 @@ function sprout(x, w, big) { S.flora.push({ x, w, t: 0, big: big || 0, seed: Mat
 // 名所が倒れたら「◯◯、還る」と出して点を入れ、パスポートに記録する
 function checkGone(b) {
   if (b.gone || b.boss || b.cells.size > b.n0 * .25) return; b.gone = 1; sprout(b.x, b.w, b.real ? 1 : 0);
+  if (S.mode === 'play') { if (b.lm) { pointGet('p', 2, b.x + b.w / 2, GY - 40); pointGet('s', 2, b.x + b.w / 2, GY - 40); } else pointGet(Math.random() < .5 ? 'p' : 's', 1, b.x + b.w / 2, GY - 40); } // ポイントを拾う
   if (b.lm && S.mode === 'play') { wordDrop(b, 'lm', b.lmId); S.lmDown++; S.score += 40; S.pts += 20; S.toast = { s: b.lm + '、還る', t: 0 }; sfx('caw'); const id = S.st.id; (SV.lm[id] = SV.lm[id] || {})[b.lm] = 1; save(); }
 }
 function coreCenter(B) { let n = 0, sx = 0, sy = 0; for (const q of B.cells.values()) if (q.m === B.core) { n++; sx += B.x + (q.k + .5) * CS; sy += GY - (q.r + .5) * CS; } return n ? [sx / n, sy / n] : null; }
@@ -286,8 +300,10 @@ function gimmick(B, dt, lcx) {
 
 // ---------- 1コマ進める ----------
 function step(dt) {
+  if (S.grow) return; // 鳥を育てるカードの間は止める
   if (S.card) { S.card.t += dt; return; } // v3 その4：建物のカードはタップまで時間を止める（読む前に消えないように）
   S.arr.t += dt; if (S.brief) return; // 章のカードと作戦のカードの間は止めておき、タップで出発
+  for (let i = S.fth.length - 1; i >= 0; i--) { S.fth[i].t += dt; if (S.fth[i].t > 1) S.fth.splice(i, 1); }
   if (S.toast) { S.toast.t += dt; if (S.toast.t > 2.4) S.toast = null; }
   const play = S.mode === 'play', ST = S.st;
   if (play) S.t += dt;
@@ -364,6 +380,7 @@ function step(dt) {
   for (let i = S.txt.length - 1; i >= 0; i--) { const q = S.txt[i]; q.t += dt; q.y -= dt * 30; if (q.t > 1.1) S.txt.splice(i, 1); }
   for (const f of S.flora) f.t += dt; if (S.bb) S.bb.t += dt;
   if (play && !S.siege && (S.callT = (S.callT ?? 3) - dt) <= 0) { S.callT = 10 + Math.random() * 7; sfx('call'); } // 土地の鳥の鳴き声
+  if (play && SV.tip && !SV.tip2 && !S.banner && !S.card && canGrow(S.team)) { SV.tip2 = 1; save(); banner('ポイントがたまった', '右下の「育てる」で、時間を止めて鳥の攻撃力や攻撃速度を上げられる'); }
   if (play && !SV.tip && S.t > 7 && !S.banner && !S.card) { SV.tip = 1; save(); banner('下のボタンで鳥を呼ぶ', '鳥ごとに得意な建物がある。ボスの前のカードで、効く鳥を確かめよう'); }
   stepFrags(dt);
   stepSky(dt); // 雨・雪・稲光・竜巻は、いまの本物の空（sky.js）で決める
@@ -373,7 +390,7 @@ function step(dt) {
     if (!aliveN() && !S.inc.length) { S.mode = 'over'; S.over = 1; S.endT = 0; finish(); sfx('over'); return; }
     if (!coreLeft(B) && !B.dead) {
       if (!B.final) {
-        B.dead = 1; S.killed.push(B.name); S.score += 250; S.pts += 60; S.shake = 10; sfx('boss'); S.atk += GROW.atk; S.armor += GROW.armor; for (const bd of S.birds) if (bd.st !== 2) bd.hp += GROW.armor; // 群れの勢い
+        B.dead = 1; S.killed.push(B.name); S.score += 250; S.pts += 60; if (!B.final) { pointGet('p', 4, B.x + B.w / 2, GY - 120); pointGet('s', 4, B.x + B.w / 2, GY - 120); } S.shake = 10; sfx('boss'); S.atk += GROW.atk; S.armor += GROW.armor; for (const bd of S.birds) if (bd.st !== 2) bd.hp += GROW.armor; // 群れの勢い
         wordDrop(B, 'boss', B.id); // 崩れた建物から言葉の欠片
         if (B.id === 'abbey') { S.bb = { x: B.x + B.w / 2, y: GY - 100, t: 0 }; sfx('blackbird'); } // クロウタドリ（ある歌への目くばせ。歌詞も曲も使わない）
         const rest = [...B.cells.values()]; if (rest.length) detach(B, rest, (Math.random() - .5) * 1.2); S.bi++; banner(B.name + ' 崩壊', (BOSS[B.id].after || '跡地に草木が戻る') + '　+250 点  +60 ポイント');
@@ -503,6 +520,7 @@ const R_AGAIN = { x: 40, w: 132, h: 44 }, R_TOMAP = { x: 188, w: 132, h: 44 };
 function resY() { return 132 + 334; }
 function tap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
+  if (S.grow) { growTap(x, y, S.team); return; }
   if (S.card && S.mode === 'play') { S.card = null; return; }
   if (S.arr && S.arr.t < chapDur()) { S.arr.t = chapDur(); return; } // 章のカードを閉じる
   if (S.brief) { if (S.arr.t > chapDur() + .3) { S.brief = 0; sfx('caw'); } return; } // 作戦のカード：タップで出発
@@ -513,6 +531,7 @@ function tap(x, y) {
     if (y > ry - 10 && y < ry + 54) { if (x < W / 2) startStage(S.si); else mapEnter(); } return;
   }
   if (inR(x, y, R_MAP)) { mapEnter(); return; }
+  if (S.mode === 'play' && inR(x, y, R_GROWP)) { S.grow = 1; sfx('buy'); return; }
   if (inR(x, y, R_SPD)) { ff = ff === 1 ? 2 : 1; return; }
   if (y >= PY) { KEYS.forEach((k, i) => { if (S.team[i] && inR(x, y, btnRect(i))) buy(k); }); return; }
   S.gx = S.x + x; S.gy = Math.max(90, Math.min(GY - 6, y)); S.gt = 2.5;
@@ -702,7 +721,7 @@ function drawWorld(t) {
   }
   if (S.bb) { const u = S.bb.t; if (u > 7) S.bb = null; else { const x = S.bb.x - cam + u * 40, y = S.bb.y - u * 55 - Math.sin(u * 3) * 8; birdS(x, y, 8, Math.sin(t * 13) * .7, 0, -.2, '#08080A', 'starling'); c.fillStyle = '#E8A93A'; c.beginPath(); c.arc(x, y - 4, 1.4, 0, 7); c.fill(); } }
   for (const q of S.inc) { const sp = BIRD[S.st.bird]; birdS(q.x - cam, q.y, sp.s * .93, Math.sin(t * 16 + q.ph) * .65, 0, Math.atan2(q.vy, Math.abs(q.vx) + 1) * .5 * Math.sign(q.vx || 1), sp.col, sp.shape); }
-  for (const b of S.birds) { if (b.st === 2) continue; const P = b.sp.lvP || 0, Q = b.sp.lvS || 0; if (!P && !Q) continue; const x = b.x - cam;
+  for (const b of S.birds) { if (b.st === 2) continue; const P = (b.sp.lvP || 0) * .3, Q = (b.sp.lvS || 0) * .3; if (!P && !Q) continue; const x = b.x - cam;
     if (Q && b.st === 1) { c.strokeStyle = 'rgba(255,255,255,' + (.18 + .12 * Q) + ')'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, b.y); c.lineTo(x - b.vx * .05 * Q, b.y - b.vy * .05 * Q); c.stroke(); }
     if (P) { c.fillStyle = KUI[b.sp.key] || '#fff'; c.globalAlpha = .12 + .1 * P; c.beginPath(); c.arc(x, b.y, b.sp.s * (.75 + .1 * P), 0, 7); c.fill(); c.globalAlpha = 1; } } // 育てた鳥の光（威力）と軌跡（速さ）
   for (const b of S.birds) { const s = b.sp.s; birdS(b.x - cam, b.y, b.st === 0 && b.depth != null ? s * (1 + .28 * b.depth) : s, b.st === 2 ? .1 : b.st === 1 ? 0 : Math.sin(t * 14 + b.ph) * .6, b.st === 1 ? 1 : b.stun > 0 ? .4 : 0, b.st === 2 ? b.rot : b.st === 1 ? Math.atan2(b.vy, b.vx) + Math.PI / 2 : (b.stun > 0 ? -.6 : Math.atan2(b.vy, Math.max(60, Math.abs(b.vx))) * .6 * Math.sign(b.vx || 1)), b.st === 2 ? '#555A62' : b.sp.col, b.sp.shape); }
@@ -759,7 +778,7 @@ function drawPanel(t) {
   rr(W / 2 - 18, PY + 6, 36, 3, 1.5); c.fillStyle = 'rgba(255,255,255,.10)'; c.fill();
   const play = S.mode === 'play';
   icon('coin', 22, PY + 22, UI.acc); txt(String(Math.floor(S.pts)), 32, PY + 27, 15, UI.ink, 700); txt('ポイント', 32 + (c.measureText(String(Math.floor(S.pts))).width) + 6, PY + 27, 10, UI.sub, 500);
-  txt('ボタンで鳥を呼ぶ　·　呼ぶほど高くなる', W - 16, PY + 27, 10, UI.sub, 500, 'right');
+  drawGrowPill(t, R_GROWP, S.team);
   KEYS.forEach((k, i) => {
     if (!S.team[i]) return; const r = btnRect(i), kk = S.team[i], u = S.kinds[kk], cw = S.cdn[k] > 0, ok = play && S.pts >= S.cost[k] && !cw, fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
     rr(x, r.y, r.w, r.h, 14); c.fillStyle = ok ? UI.btnOn : UI.btn; c.fill();
@@ -767,7 +786,7 @@ function drawPanel(t) {
     if (ok) { rr(x + .75, r.y + .75, r.w - 1.5, r.h - 1.5, 13.5); c.lineWidth = 1.5; c.strokeStyle = 'rgba(242,184,75,' + (.55 + .35 * Math.sin(t * 4)) + ')'; c.stroke(); }
     c.fillStyle = ok ? UI.accD : 'rgba(255,255,255,.05)'; c.beginPath(); c.arc(x + 21, r.y + 21, 13, 0, 7); c.fill();
     birdS(x + 21, r.y + 22, 9, .5, 0, 0, ok ? KUI[kk] : UI.dim, u.shape);
-    txt(u.name, x + 39, r.y + 21, 12.5, ok ? UI.ink : UI.sub, 700); txt('×' + u.n + '　威力 ' + Math.round(S.atk * u.am * (u.wall || 1)), x + 39, r.y + 35, 9.5, ok ? KUI[kk] : UI.dim, 700);
+    txt(u.name, x + 39, r.y + 21, 12.5, ok ? UI.ink : UI.sub, 700); txt('×' + u.n + '　攻撃力 ' + (S.atk * u.am * (u.wall || 1)).toFixed(1), x + 39, r.y + 35, 9.5, ok ? KUI[kk] : UI.dim, 700);
     c.font = F(9.5, 500); let ro = u.role; while (c.measureText(ro).width > r.w - 16 && ro.length > 2) ro = ro.slice(0, -1); txt(ro, x + 9, r.y + 47, 9.5, ok ? '#C9CED6' : UI.dim, 500);
     icon('coin', x + 15, r.y + 54, ok ? UI.acc : UI.dim); txt(String(S.cost[k]), x + 23, r.y + 58, 12, ok ? UI.acc : UI.dim, 700);
     if (cw) { const f = S.cdn[k] / u.cd; rr(x, r.y, r.w, r.h, 14); c.fillStyle = 'rgba(8,9,12,.55)'; c.fill(); c.fillStyle = 'rgba(242,184,75,.7)'; c.fillRect(x + 14, r.y + r.h - 3, (r.w - 28) * (1 - f), 2); txt(S.cdn[k].toFixed(1) + '秒', x + r.w - 10, r.y + 58, 10, UI.acc, 700, 'right'); }
@@ -806,7 +825,7 @@ function drawReclaimResult(t, y0) {
   const R = S.reward; if (!R || S.endT < 5.6) return; c.globalAlpha = Math.min(1, (S.endT - 5.6) / .5);
   let y = ys + 46; for (const l of wrapL('「' + R.verse + '」', W - 96, 12, 600)) { txt(l, W / 2, y, 12, '#DDE8C8', 600, 'center'); y += 17; }
   if ((R.kinds || []).length) { rr(36, y - 2, W - 72, 26, 13); c.fillStyle = 'rgba(242,184,75,.14)'; c.fill(); let x = 54; R.kinds.forEach(k => { birdS(x, y + 11, 7, .5, 0, 0, KUI[k], KIND[k].shape); x += 16; }); txt('新しい仲間：' + R.kinds.map(k => KIND[k].name).join('・'), x, y + 15, 11, UI.acc, 700); y += 30; }
-  txt((R.slot ? '枠が増えた（' + R.slot + '種まで連れていける）　' : '') + '羽 +' + R.fe + '（図鑑で育てる）', W / 2, y + 12, 10, R.slot ? '#BFF0C8' : UI.sub, 600, 'center');
+  txt((R.slot ? '枠が増えた（' + R.slot + '種まで連れていける）　' : '') + '攻撃力・攻撃速度ポイント 各 +' + R.pt + '（道中 +' + S.got.p + '・+' + S.got.s + '）', W / 2, y + 12, 10, R.slot ? '#BFF0C8' : UI.sub, 600, 'center');
   c.globalAlpha = 1;
 }
 function draw(t) {
@@ -817,7 +836,7 @@ function draw(t) {
   if (scene === 'film') { drawFilm(t); return; }
   if (scene === 'book') { drawBook(t); return; }
   if (scene === 'words') { drawWords(t); return; }
-  drawWorld(t); drawHUD(t); drawBanner(); drawToast(); drawWToast(); drawArrival(t); drawCard(t); if (S.mode !== 'play') drawResult(t); drawPanel(t); if (S.rp && typeof drawCityWords === 'function') drawCityWords(t);
+  drawWorld(t); drawHUD(t); drawBanner(); drawToast(); drawWToast(); drawArrival(t); drawCard(t); if (S.mode !== 'play') drawResult(t); drawPanel(t); drawFth(t); if (S.grow) drawGrow(t, S.team, S.atk); if (S.rp && typeof drawCityWords === 'function') drawCityWords(t);
 }
 
 // ---------- 名所の札・建物のカード・到着のカード ----------
@@ -1010,7 +1029,7 @@ const bkBtn = (i, j) => ({ x: W - 62, y: BK.y0 + i * BK.h + 2 + j * 18, w: 42, h
 const R_RESPEC = { x: 24, y: 584, w: 110, h: 40 }, R_BKBACK = { x: 196, y: 584, w: 140, h: 40 };
 function drawBook(t) {
   const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0E1424'); bg.addColorStop(1, '#141A2C'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
-  spaced('鳥の図鑑', W / 2, 74, 20, UI.ink, 4); txt('羽 ' + (SV.fe || 0) + ' 枚　·　都市を還すともらえる（はじめて 3 枚、2 回目から 1 枚）', W / 2, 98, 9.5, UI.sub, 500, 'center');
+  spaced('鳥の図鑑', W / 2, 74, 20, UI.ink, 4); txt('攻撃力ポイント ' + (SV.ap || 0) + '　攻撃速度ポイント ' + (SV.sp || 0) + '　·　建物を倒すとたまる', W / 2, 98, 9.5, UI.sub, 500, 'center');
   BOOK_ORDER().forEach((k, i) => {
     const K = KIND[k], R = bkRow(i), got = SV.kinds.includes(k), L = (SV.lv || {})[k] || { p: 0, s: 0 };
     rr(R.x, R.y, R.w, R.h, 10); c.fillStyle = 'rgba(255,255,255,' + (got ? .06 : .03) + ')'; c.fill();
@@ -1018,11 +1037,11 @@ function drawBook(t) {
     if (!got) { const at = STAGES.find(st => (UNLOCK[st.id] || []).includes(k)); txt('？？？', R.x + 38, R.y + 15, 11.5, UI.dim, 700); txt(at ? at.city + 'を還すと仲間になる' : '都市を還すと仲間になる', R.x + 38, R.y + 30, 9, UI.dim, 500); return; }
     txt(K.name, R.x + 38, R.y + 15, 11.5, UI.ink, 700); c.font = F(11.5, 700); txt(K.role, R.x + 38 + c.measureText(K.name).width + 6, R.y + 15, 8.5, UI.sub, 500);
     txt('○' + (K.like.map(tg => TAGN[tg]).join('・') || '—') + ' ×' + (K.hate.map(tg => TAGN[tg]).join('・') || '—') + '　×' + K.n + ' 待ち' + K.cd + '秒 値段' + K.cost, R.x + 38, R.y + 30, 8.5, '#C9CED6', 500);
-    [['威力', 'p'], ['速さ', 's']].forEach(([nm, f], j) => {
-      const B = bkBtn(i, j), lv = L[f], cost = lv + 1, can = lv < 3 && (SV.fe || 0) >= cost;
-      for (let d = 0; d < 3; d++) { c.fillStyle = d < lv ? UI.acc : 'rgba(255,255,255,.15)'; c.beginPath(); c.arc(B.x - 24 + d * 7, B.y + 8, 2.4, 0, 7); c.fill(); }
-      txt(nm, B.x - 32, B.y + 11, 8.5, UI.sub, 600, 'right');
-      rr(B.x, B.y, B.w, B.h, 8); c.fillStyle = can ? UI.acc : 'rgba(255,255,255,.07)'; c.fill(); txt(lv >= 3 ? '最大' : '+ ' + cost, B.x + B.w / 2, B.y + 11.5, 9, can ? '#17191E' : UI.dim, 700, 'center');
+    [['攻撃力', 'p'], ['攻撃速度', 's']].forEach(([nm, f], j) => {
+      const B = bkBtn(i, j), lv = L[f], cost = lvCost(lv), can = lv < LV_MAX && (SV[PT[f].w] || 0) >= cost;
+      lvBar(B.x - 46, B.y + 6, 40, lv);
+      txt(nm, B.x - 50, B.y + 11, 8.5, UI.sub, 600, 'right');
+      rr(B.x, B.y, B.w, B.h, 8); c.fillStyle = can ? UI.acc : 'rgba(255,255,255,.07)'; c.fill(); txt(lv >= LV_MAX ? '最大' : '+ ' + cost, B.x + B.w / 2, B.y + 11.5, 9, can ? '#17191E' : UI.dim, 700, 'center');
     });
   });
   pillAt('振り直し', R_RESPEC.x, R_RESPEC.y, R_RESPEC.w, false); pillAt('地図へ戻る', R_BKBACK.x, R_BKBACK.y, R_BKBACK.w, true); drawToggles();
@@ -1030,7 +1049,44 @@ function drawBook(t) {
 function bookTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
   if (inR(x, y, R_BKBACK)) { scene = 'map'; sfx('buy'); return; }
-  if (inR(x, y, R_RESPEC)) { SV.fe = (SV.fe || 0) + (SV.spent || 0); SV.spent = 0; SV.lv = JSON.parse(JSON.stringify(SV.gift || {})); save(); sfx('buy'); return; } // 振り直し：使った羽だけ戻す（仲間になった時の段は残す）
-  BOOK_ORDER().forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, cost = L[f] + 1; if (L[f] < 3 && (SV.fe || 0) >= cost) { SV.fe -= cost; SV.spent = (SV.spent || 0) + cost; L[f]++; save(); sfx('buy'); } else sfx('deny'); }); });
+  if (inR(x, y, R_RESPEC)) { SV.ap = (SV.ap || 0) + (SV.spentP || 0); SV.sp = (SV.sp || 0) + (SV.spentS || 0); SV.spentP = SV.spentS = 0; SV.lv = {}; save(); sfx('buy'); return; } // 振り直し：使った羽だけ戻す（仲間になった時の段は残す）
+  BOOK_ORDER().forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; if (growBuy(k, f)) sfx('buy'); else sfx('deny'); }); });
 }
 // 言葉の書架は words.js
+
+// ---------- 鳥を育てるカード（v3 その6、ユーザー案：遊んでいる最中にも、時間を止めて育てられる） ----------
+// 入口：遊んでいる時は下の札の右上の「育てる」、地図では都市カードの「育てる」。呼ぶボタンとは分ける
+const R_GROWP = { x: W - 146, y: PY + 12, w: 134, h: 22 };
+function lvBar(x, y, w, lv) { const g = w / LV_MAX; for (let d = 0; d < LV_MAX; d++) { c.fillStyle = d < lv ? UI.acc : 'rgba(255,255,255,.14)'; c.fillRect(x + d * g, y, g - 1.2, 5); } }
+function ptIcon(f, x, y, r) { c.fillStyle = PT[f].col; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); txt(PT[f].ab, x, y + r * .42, r * 1.15, '#14161B', 700, 'center'); } // 攻＝赤み、速＝青み
+function feIcon(x, y, s, col) { c.save(); c.translate(x, y); c.rotate(-.5); c.fillStyle = col; c.beginPath(); c.ellipse(0, 0, s * .32, s, 0, 0, 7); c.fill(); c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = .8; c.beginPath(); c.moveTo(0, -s); c.lineTo(0, s * 1.2); c.stroke(); c.restore(); }
+function drawGrowPill(t, R, team) {
+  const can = canGrow(team); rr(R.x, R.y, R.w, R.h, 11); c.fillStyle = can ? 'rgba(242,184,75,' + (.22 + .12 * Math.sin(t * 4)) + ')' : 'rgba(255,255,255,.07)'; c.fill();
+  ptIcon('p', R.x + 11, R.y + 11, 7); txt(String(SV.ap || 0), R.x + 21, R.y + 15.5, 10.5, UI.ink, 700); ptIcon('s', R.x + 50, R.y + 11, 7); txt(String(SV.sp || 0), R.x + 60, R.y + 15.5, 10.5, UI.ink, 700); txt('育てる', R.x + R.w - 8, R.y + 15.5, 10.5, can ? UI.acc : UI.sub, 700, 'right');
+}
+const growRow = i => ({ x: 20, y: 150 + i * 112, w: W - 40, h: 104 });
+const growBtn = (i, j) => ({ x: W - 96, y: 150 + i * 112 + 34 + j * 34, w: 70, h: 28 });
+const R_GROWX = { x: 110, y: 506, w: 140, h: 40 };
+function drawGrow(t, team, atk) {
+  c.fillStyle = 'rgba(6,8,12,.88)'; c.fillRect(0, 0, W, H);
+  txt('鳥を育てる', W / 2, 98, 17, UI.ink, 700, 'center'); ptIcon('p', W / 2 - 96, 119, 7); txt('攻撃力 ' + (SV.ap || 0), W / 2 - 86, 123, 11.5, PT.p.col, 700); ptIcon('s', W / 2 + 4, 119, 7); txt('攻撃速度 ' + (SV.sp || 0), W / 2 + 14, 123, 11.5, PT.s.col, 700);
+  txt('時間は止まっている　·　ポイントを好きな鳥に振り分ける', W / 2, 140, 9, UI.sub, 500, 'center');
+  team.forEach((k, i) => { const R = growRow(i), K = KIND[k], L = kindLv(k), u = { am: K.am * PMUL(L.p), spd: K.spd * SMUL(L.s) }, a1 = K.am * PMUL(L.p + 1), s1 = K.spd * SMUL(L.s + 1);
+    rr(R.x, R.y, R.w, R.h, 14); c.fillStyle = 'rgba(255,255,255,.06)'; c.fill(); birdS(R.x + 26, R.y + 26, 12, .5 + .15 * Math.sin(t * 3 + i), 0, 0, KUI[k], K.shape);
+    txt(K.name, R.x + 50, R.y + 22, 13, UI.ink, 700); c.font = F(13, 700); txt(K.role, R.x + 50 + c.measureText(K.name).width + 8, R.y + 22, 9.5, UI.sub, 500);
+    const wl = K.wall || 1, rows = [['攻撃力', 'p', L.p, (atk * u.am * wl).toFixed(1) + (L.p < LV_MAX ? ' → ' + (atk * a1 * wl).toFixed(1) : '')], ['攻撃速度', 's', L.s, '×' + u.spd.toFixed(2) + (L.s < LV_MAX ? ' → ' + s1.toFixed(2) : '')]];
+    rows.forEach(([nm, f, lv, pv], j) => { const B = growBtn(i, j), y = B.y + 18, cost = lvCost(lv), can = lv < LV_MAX && (SV[PT[f].w] || 0) >= cost;
+      txt(nm, R.x + 14, y, 10.5, PT[f].col, 700); lvBar(R.x + 74, y - 7, 70, lv); txt(pv, R.x + 150, y, 10, '#C9CED6', 600);
+      rr(B.x, B.y, B.w, B.h, 12); c.fillStyle = can ? '#E9EDF3' : 'rgba(255,255,255,.07)'; c.fill(); if (lv >= LV_MAX) txt('最大', B.x + B.w / 2, B.y + 18, 11, UI.dim, 700, 'center'); else { ptIcon(f, B.x + 14, B.y + 14, 7); txt('+1 ' + cost, B.x + 25, B.y + 18, 11, can ? '#17191E' : UI.dim, 700); } }); });
+  pillAt('とじる', R_GROWX.x, R_GROWX.y, R_GROWX.w, true);
+}
+function growTap(x, y, team) {
+  let hit = 0; team.forEach((k, i) => [['p', 0], ['s', 1]].forEach(([f, j]) => { if (inR(x, y, growBtn(i, j))) { hit = 1; if (growBuy(k, f)) sfx('buy'); else sfx('deny'); } }));
+  if (!hit && inR(x, y, R_GROWX)) { if (scene === 'map') M.grow = 0; else S.grow = 0; sfx('buy'); }
+}
+// 拾ったポイントが、下の「育てる」へ飛んでいく
+function drawFth(t) {
+  if (!S.fth || !S.fth.length) return; const cam = S.x, ty = R_GROWP.y + 11;
+  for (const f of S.fth) { if (f.t < 0) continue; const tx = R_GROWP.x + (f.f === 'p' ? 11 : 50), u = Math.min(1, f.t), e = u * u * (3 - 2 * u), x0 = f.x - cam, x = x0 + (tx - x0) * e + Math.sin(f.t * 9 + f.ph) * 10 * (1 - u), y = f.y + (ty - f.y) * e - Math.sin(u * Math.PI) * 60;
+    c.globalAlpha = 1 - Math.max(0, u - .85) / .15; ptIcon(f.f, x, y, 5); } c.globalAlpha = 1;
+}

@@ -516,17 +516,17 @@ const BOSS = {
 const BIRD = {
   base: { name: 'ムクドリ', col: '#15181D', s: 7, hp: 0, am: 1 },
   crow: { name: 'ハシブトガラス', note: '体力 +1', col: '#07080A', s: 8, hp: 1, am: 1, wn: 1 },
-  kite: { name: 'トビ', note: '威力 ×1.3', col: '#3A2E26', s: 9.5, hp: 0, am: 1.3, wn: .8 },
+  kite: { name: 'トビ', note: '攻撃力 ×1.3', col: '#3A2E26', s: 9.5, hp: 0, am: 1.3, wn: .8 },
   myna: { name: 'インドハッカ', note: '体力 +1', col: '#2A2420', s: 7, hp: 1, am: 1, wn: 1.1 },
   hcrow: { name: 'イエガラス', note: '合流の数 ×1.3', col: '#1A1A1E', s: 8, hp: 0, am: 1, wn: 1.3 },
-  falcon: { name: 'ハヤブサ', note: '威力 ×2', col: '#4A4E58', s: 8.5, hp: 0, am: 2, wn: .6 },
-  raven: { name: 'ワタリガラス', note: '威力 ×1.5', col: '#1D1A24', s: 9, hp: 0, am: 1.5, wn: .9 },
+  falcon: { name: 'ハヤブサ', note: '攻撃力 ×2', col: '#4A4E58', s: 8.5, hp: 0, am: 2, wn: .6 },
+  raven: { name: 'ワタリガラス', note: '攻撃力 ×1.5', col: '#1D1A24', s: 9, hp: 0, am: 1.5, wn: .9 },
   pigeon: { name: 'ドバト', note: '合流の数 ×1.3', col: '#5C6672', s: 6.5, hp: 0, am: 1, wn: 1.3 },
-  jackdaw: { name: 'ニシコクマルガラス', note: '威力 ×1.2・合流 ×1.2', col: '#26272E', s: 7, hp: 0, am: 1.2, wn: 1.2 },
+  jackdaw: { name: 'ニシコクマルガラス', note: '攻撃力 ×1.2・合流 ×1.2', col: '#26272E', s: 7, hp: 0, am: 1.2, wn: 1.2 },
   gull: { name: 'カモメ', note: '体力 +1', col: '#7E8690', s: 9, hp: 1, am: 1, wn: .9 },
   parakeet: { name: 'オキナインコ', note: '合流の数 ×1.5', col: '#3F7A3C', s: 6.5, hp: 0, am: 1, wn: 1.5 },
   amcrow: { name: 'アメリカガラス', note: '体力 +1', col: '#0B0C10', s: 8, hp: 1, am: 1, wn: 1 },
-  pelican: { name: 'カッショクペリカン', note: '威力 ×1.8', col: '#5A5048', s: 11, hp: 0, am: 1.8, wn: .6 },
+  pelican: { name: 'カッショクペリカン', note: '攻撃力 ×1.8', col: '#5A5048', s: 11, hp: 0, am: 1.8, wn: .6 },
   grackle: { name: 'オナガクロムクドリモドキ', note: '合流の数 ×1.4', col: '#141430', s: 7.5, hp: 0, am: 1, wn: 1.4 },
 };
 
