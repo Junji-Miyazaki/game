@@ -6,7 +6,7 @@
 // 地図・渡り・パスポートの描画も呼んでエラーが出ないかを見る
 const fs = require('fs'), path = require('path');
 const MODE = process.argv[2] || 'smart', RUNS = Number(process.argv[3] || 4), WHICH = process.argv[4] || 'all';
-const src = ['stages.js', 'sky.js', 'globe.js', 'game.js', 'film.js'] /* ページ（v3.html）と同じ順 */.map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
+const src = ['stages.js', 'sky.js', 'globe.js', 'game.js', 'film.js', 'words.js'] /* ページ（v3.html）と同じ順 */.map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
 const noop = () => {}, grad = { addColorStop: noop };
 const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => grad : k === 'measureText' ? () => ({ width: 10 }) : noop), set: (t, k, v) => { t[k] = v; return true; } });
 const els = {};
@@ -49,6 +49,7 @@ for (const si of list) for (let run = 0; run < RUNS; run++) {
   }
   if (lo) ev.push('崩しきり ' + (S.t - lo).toFixed(1) + 's');
   for (let i = 0; i < 300; i++) { step(1 / 60); draw(i / 60); }
+  if (process.env.WORDS) console.log('  言葉', S.wordsGot.join(','), '新しい', S.wordsNew.length);
   console.log(MODE, S.st.id, run, S.mode.toUpperCase(), '[' + S.team.join(',') + ']', 't=' + S.t.toFixed(0) + 's', '得点=' + S.score, '最大' + S.peak + '羽', '名所' + S.lmDown + '/' + S.lmN, '|', ev.join(' '));
   SV = SV0();
 }
@@ -62,7 +63,7 @@ for (const kind of ['intro', 'end']) { filmStart(kind); if (FILM.wait) filmTap(1
 // 鳥の図鑑
 SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(W - 70 + 5, BK.y0 + 8 + 5); bookTap(W - 70 + 5, BK.y0 + BK.h + 8 + 26 + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'fe', SV.fe); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec fe', SV.fe);
 // 言葉の書架
-SV.epi = { intro: 1, osaka: 1, end: 1 }; scene = 'pass'; P.sel = -1; draw(0); passTap(R_WORDS.x + 5, R_WORDS.y + 5); console.log('words scene', scene); draw(0);
+SV.epi = { intro: 1, osaka: 1, end: 1 }; scene = 'pass'; P.sel = -1; draw(0); passTap(R_WORDS.x + 5, R_WORDS.y + 5); console.log('words scene', scene, wordCount() + '/' + Object.keys(WORDS).length); draw(0); wordsTap(wbRow(1).x + 5, wbRow(1).y + 5); draw(0); console.log('shelf', WB.sel); wordsTap(R_WBACK.x + 5, R_WBACK.y + 5);
 // 還った時の結果画面とごほうび
 SV = SV0(); startStage(5); S.win = 1; S.mode = 'win'; finish(); for (let i = 0; i < 480; i++) { step(1 / 60); draw(i / 60); } console.log('reward', JSON.stringify(S.reward), 'area', S.area, 'kinds', SV.kinds.join(','));
 mapEnter(0); for (let i = 0; i < 120; i++) { stepMap(1 / 60); draw(i / 60); } console.log('map after ok');

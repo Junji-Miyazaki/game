@@ -41,7 +41,7 @@ function startStage(i) {
     pts: 60, score: 0, armor: BASE_ARMOR, atk: BASE_ATK, team: SV.team.slice(0, 3), lv: { b1: 0, b2: 0, b3: 0 }, cost: {}, flash: { b1: 0, b2: 0, b3: 0 }, reward: null,
     cid: 0, zone: 0, sb: -1, bi: 0, shake: 0, banner: null, lost: 0, lostT: 0, peak: 0, endT: 0, lightOut: 0, dark: 0, reclaim: 0,
     ft: 0, gt: 0, rot: 0, sc: 1, fx: null, fy: null, siege: 0, win: 0, over: 0, bonus: 0, newBest: 0, killed: [], gim: { cd: 4, ct: 0 },
-    card: null, arr: { t: 0 }, toast: null, lmN: 0, lmDown: 0, slow: 0, rainOn: 0,
+    card: null, arr: { t: 0 }, toast: null, frags: [], wordsGot: [], wordsNew: [], wtoast: null, lmN: 0, lmDown: 0, slow: 0, rainOn: 0,
   };
   S.kinds = {}; for (const k in KIND) { const L = (SV.lv || {})[k] || { p: 0, s: 0 }; S.kinds[k] = Object.assign({}, KIND[k], { am: KIND[k].am * (1 + .2 * L.p), spd: KIND[k].spd * (1 + .15 * L.s), lvP: L.p, lvS: L.s }); }
   S.cdn = { b1: 0, b2: 0, b3: 0 };
@@ -50,7 +50,7 @@ function startStage(i) {
   if (typeof EPI !== 'undefined' && EPI[ST.id]) { SV.epi = SV.epi || {}; SV.epi[ST.id] = 1; } // 章の題辞に出会った S.flakes = []; S.evt = Math.random() < .65 ? { at: 1200 + Math.random() * 3500, sand: SAND.includes(ST.id) } : null; // いまの空と、通り過ぎる竜巻（見た目だけ）
   const fl = flockOf(i); for (const sp of fl) addBird(60 + Math.random() * 80, GY - 280 + Math.random() * 120, 0, 0, sp); S.peak = fl.length;
   const mids = ST.bosses.map(b => makeBoss(b.id, b.x)); S.L = makeBoss(ST.final, END); S.L.final = 1;
-  const lms = (ST.lm || []).map(([x, id]) => { const D = LM[id], b = D.make(x); b.lm = D.name; b.real = D.real; return b; }); S.lmN = lms.length;
+  const lms = (ST.lm || []).map(([x, id]) => { const D = LM[id], b = D.make(x); b.lm = D.name; b.lmId = id; b.real = D.real; return b; }); S.lmN = lms.length;
   // ボス（島のボスは海の分も）と名所の場所には、道中の建物を置かない
   const occ = mids.map(B => B.island ? [B.x - 170, B.x + B.w + 170] : [B.x - 90, B.x + B.w + 70]).concat(lms.map(b => [b.x - 40, b.x + b.w + 30]));
   let x = 420;
@@ -124,7 +124,7 @@ function sprout(x, w, big) { S.flora.push({ x, w, t: 0, big: big || 0, seed: Mat
 // 名所が倒れたら「◯◯、還る」と出して点を入れ、パスポートに記録する
 function checkGone(b) {
   if (b.gone || b.boss || b.cells.size > b.n0 * .25) return; b.gone = 1; sprout(b.x, b.w, b.real ? 1 : 0);
-  if (b.lm && S.mode === 'play') { S.lmDown++; S.score += 40; S.pts += 20; S.toast = { s: b.lm + '、還る', t: 0 }; sfx('caw'); const id = S.st.id; (SV.lm[id] = SV.lm[id] || {})[b.lm] = 1; save(); }
+  if (b.lm && S.mode === 'play') { wordDrop(b, 'lm', b.lmId); S.lmDown++; S.score += 40; S.pts += 20; S.toast = { s: b.lm + '、還る', t: 0 }; sfx('caw'); const id = S.st.id; (SV.lm[id] = SV.lm[id] || {})[b.lm] = 1; save(); }
 }
 function coreCenter(B) { let n = 0, sx = 0, sy = 0; for (const q of B.cells.values()) if (q.m === B.core) { n++; sx += B.x + (q.k + .5) * CS; sy += GY - (q.r + .5) * CS; } return n ? [sx / n, sy / n] : null; }
 const sp = b => (b.sp.spd || 1) * (S.wfx ? S.wfx.spd : 1); // 鳥の速さ：種類 × 羽の段 × 天気
@@ -347,6 +347,7 @@ function step(dt) {
   for (const f of S.flora) f.t += dt; if (S.bb) S.bb.t += dt;
   if (play && !S.siege && (S.callT = (S.callT ?? 3) - dt) <= 0) { S.callT = 10 + Math.random() * 7; sfx('call'); } // 土地の鳥の鳴き声
   if (play && !SV.tip && S.t > 7 && !S.banner && !S.card) { SV.tip = 1; save(); banner('下のボタンで鳥を呼ぶ', '鳥ごとに得意な建物がある。ボスの前のカードで、効く鳥を確かめよう'); }
+  stepFrags(dt);
   stepSky(dt); // 雨・雪・稲光・竜巻は、いまの本物の空（sky.js）で決める
   for (let i = S.drops.length - 1; i >= 0; i--) { const d = S.drops[i]; d.y += d.v * dt; d.x -= d.v * .18 * dt; if (d.y > GY) S.drops.splice(i, 1); }
   S.lamp = coreLeft(L);
@@ -355,6 +356,7 @@ function step(dt) {
     if (!coreLeft(B) && !B.dead) {
       if (!B.final) {
         B.dead = 1; S.killed.push(B.name); S.score += 250; S.pts += 60; S.shake = 10; sfx('boss'); S.atk += GROW.atk; S.armor += GROW.armor; for (const bd of S.birds) if (bd.st !== 2) bd.hp += GROW.armor; // 群れの勢い
+        wordDrop(B, 'boss', B.id); // 崩れた建物から言葉の欠片
         if (B.id === 'abbey') { S.bb = { x: B.x + B.w / 2, y: GY - 100, t: 0 }; sfx('blackbird'); } // クロウタドリ（ある歌への目くばせ。歌詞も曲も使わない）
         const rest = [...B.cells.values()]; if (rest.length) detach(B, rest, (Math.random() - .5) * 1.2); S.bi++; banner(B.name + ' 崩壊', (BOSS[B.id].after || '跡地に草木が戻る') + '　+250 点  +60 ポイント');
         sprout(B.x - 10, B.w + 20, 1);
@@ -364,7 +366,7 @@ function step(dt) {
       }
     }
     if (S.lightOut && demolished()) {
-      L.dead = 1; S.killed.push(L.name); S.score += 500; S.shake = 14;
+      L.dead = 1; S.killed.push(L.name); S.score += 500; S.shake = 14; wordDrop(L, 'final', L.id);
       const rest = [...L.cells.values()]; if (rest.length) detach(L, rest, (Math.random() - .5) * 1.4);
       S.win = 1; S.mode = 'win'; S.endT = 0; S.bonus = aliveN() * 10; S.score += S.bonus; finish(); sfx('boss'); sfx('win');
       // 見えている範囲いっぱいに草木を生やす
@@ -499,7 +501,7 @@ cv.addEventListener('pointerdown', e => {
   if (scene === 'pass') { passTap(x, y); return; }
   if (scene === 'film') { filmTap(x, y); return; }
   if (scene === 'book') { bookTap(x, y); return; }
-  if (scene === 'words') { if (inR(x, y, R_SND)) toggleMute(); else if (inR(x, y, R_WBACK)) { scene = 'pass'; sfx('buy'); } return; }
+  if (scene === 'words') { wordsTap(x, y); return; }
   tap(x, y);
 });
 cv.addEventListener('pointermove', e => {
@@ -647,6 +649,7 @@ function drawWorld(t) {
   drawGround(t, cam);
   for (const p of S.parts) { c.fillStyle = p.col; c.fillRect(p.x - cam, p.y, p.s, p.s); }
   for (const f of S.flora) drawFlora(f, cam, t);
+  drawFrags(t, cam);
   if (rc < 1) drawLabels(labels);
   if (G.wave) { const u = G.wave.t / .6; c.strokeStyle = 'rgba(255,214,90,' + (1 - u) * .8 + ')'; c.lineWidth = 3; c.beginPath(); c.arc(G.wave.x - cam, G.wave.y, 20 + u * 150, 0, 7); c.stroke(); }
   if (S.slow) txt('牛歩戦術中', S.boss.x + S.boss.w / 2 - cam, Math.max(150, S.ringY - 70), 13, 'rgba(242,184,75,' + (.6 + .4 * Math.sin(t * 5)) + ')', 700, 'center');
@@ -748,7 +751,7 @@ function drawResult(t) {
   if (win) { spaced('RECLAIMED', W / 2, y0 + 50, 26, UI.green, 5); txt(S.st.end, W / 2, y0 + 74, 12, UI.sub, 500, 'center'); txt(BOSS[S.st.final].after || '', W / 2, y0 + 92, 11, UI.green, 500, 'center'); }
   else { txt('群れが尽きた', W / 2, y0 + 48, 22, UI.ink, 700, 'center'); txt(S.lightOut ? S.L.out + 'が、' + S.L.name + 'は残った' : S.st.city + '・' + S.st.zones[Math.max(0, S.zone)].n + 'で力尽きた', W / 2, y0 + 73, 12, UI.sub, 500, 'center'); }
   if (win) { drawReclaimResult(t, y0); if (S.endT > endWait()) pillAt('地球へ戻る', W / 2 - 94, resY(), 188, true); c.globalAlpha = 1; return; }
-  const rows = [['時間', fmtT(S.t)], ['崩した象徴', S.killed.length ? S.killed.length + ' / ' + S.bossList.length : 'なし'], ['還した名所', S.lmDown + ' / ' + S.lmN], ['失った鳥', S.lost + ' 羽'], ['最大の群れ', S.peak + ' 羽']];
+  const rows = [['時間', fmtT(S.t)], ['崩した象徴', S.killed.length ? S.killed.length + ' / ' + S.bossList.length : 'なし'], ['還した名所', S.lmDown + ' / ' + S.lmN], ['拾った言葉', S.wordsGot.length + (S.wordsNew.length ? '（新しい言葉 ' + S.wordsNew.length + '）' : '')], ['最大の群れ', S.peak + ' 羽']];
   rows.forEach(([k, v], i) => { const y = y0 + 114 + i * 25; c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(48, y - 17, W - 96, 1); txt(k, 48, y, 12, UI.sub, 500); txt(v, W - 48, y, 12, UI.ink, 600, 'right'); });
   txt('得点', 48, y0 + 262, 12, UI.sub, 500); txt(S.score.toLocaleString(), W - 48, y0 + 266, 28, UI.ink, 700, 'right');
   if (S.newBest) { rr(W / 2 - 62, y0 + 280, 124, 22, 11); c.fillStyle = UI.accD; c.fill(); txt('最高得点を更新', W / 2, y0 + 295, 11, UI.acc, 700, 'center'); }
@@ -758,7 +761,7 @@ function drawResult(t) {
 }
 // v3：還った時の結果。得点は少し見せたあと崩れ落ち、「還った土地」「戻った鳥」に置き換わる。下にごほうび
 function drawReclaimResult(t, y0) {
-  const rows = [['時間', fmtT(S.t)], ['崩した象徴', S.killed.length + ' / ' + S.bossList.length], ['還した名所', S.lmDown + ' / ' + S.lmN], ['失った鳥', S.lost + ' 羽']];
+  const rows = [['時間', fmtT(S.t)], ['崩した象徴', S.killed.length + ' / ' + S.bossList.length], ['還した名所', S.lmDown + ' / ' + S.lmN], ['拾った言葉', S.wordsGot.length + (S.wordsNew.length ? '（新しい言葉 ' + S.wordsNew.length + '）' : '')]];
   rows.forEach(([k, v], i) => { const y = y0 + 116 + i * 23; c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(48, y - 16, W - 96, 1); txt(k, 48, y, 12, UI.sub, 500); txt(v, W - 48, y, 12, UI.ink, 600, 'right'); });
   const u = Math.max(0, Math.min(1, (S.endT - 4.4) / 1)), ys = y0 + 222;
   if (u < 1) { // 得点の数字が1つずつ崩れ落ちる
@@ -781,7 +784,7 @@ function draw(t) {
   if (scene === 'film') { drawFilm(t); return; }
   if (scene === 'book') { drawBook(t); return; }
   if (scene === 'words') { drawWords(t); return; }
-  drawWorld(t); drawHUD(t); drawBanner(); drawToast(); drawArrival(t); drawCard(t); if (S.mode !== 'play') drawResult(t); drawPanel(t);
+  drawWorld(t); drawHUD(t); drawBanner(); drawToast(); drawWToast(); drawArrival(t); drawCard(t); if (S.mode !== 'play') drawResult(t); drawPanel(t);
 }
 
 // ---------- 名所の札・建物のカード・到着のカード ----------
@@ -916,7 +919,7 @@ function drawPass(t) {
     if (done) stamp(R.x + R.w / 2, R.y + 44, 23, i, ST, (hash(i, 3) - .5) * .5); else txt('未踏', R.x + R.w / 2, R.y + 48, 11, UI.dim, 600, 'center');
   });
   pillAt('地図へ戻る', R_BACK.x, R_BACK.y, R_BACK.w, false);
-  rr(R_WORDS.x, R_WORDS.y, R_WORDS.w, R_WORDS.h, 13); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); txt('言葉の書架  ' + Object.keys(SV.epi || {}).length + '/' + Object.keys(EPI).length, R_WORDS.x + R_WORDS.w / 2, R_WORDS.y + 17, 10.5, '#DDE8C8', 600, 'center');
+  rr(R_WORDS.x, R_WORDS.y, R_WORDS.w, R_WORDS.h, 13); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); txt('言葉の書架  ' + wordCount() + '/' + Object.keys(WORDS).length, R_WORDS.x + R_WORDS.w / 2, R_WORDS.y + 17, 10.5, '#DDE8C8', 600, 'center');
   drawToggles();
 }
 function drawPassPage(t) {
@@ -937,7 +940,7 @@ function drawPassPage(t) {
 function passTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
   if (inR(x, y, R_BACK)) { if (P.sel >= 0) P.sel = -1; else scene = 'map'; sfx('buy'); return; }
-  if (P.sel < 0 && inR(x, y, R_WORDS)) { scene = 'words'; sfx('buy'); return; }
+  if (P.sel < 0 && inR(x, y, R_WORDS)) { scene = 'words'; WB.sel = null; sfx('buy'); return; }
   if (P.sel < 0) STAGES.forEach((s, i) => { if (inR(x, y, slotR(i))) { P.sel = i; sfx('buy'); } });
 }
 
@@ -983,22 +986,4 @@ function bookTap(x, y) {
   if (inR(x, y, R_RESPEC)) { let back = 0; for (const k in SV.lv) for (const f of ['p', 's']) for (let l = 1; l <= SV.lv[k][f]; l++) back += l; SV.lv = {}; SV.fe = (SV.fe || 0) + back; save(); sfx('buy'); return; }
   Object.keys(KIND).forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, cost = L[f] + 1; if (L[f] < 3 && (SV.fe || 0) >= cost) { SV.fe -= cost; L[f]++; save(); sfx('buy'); } else sfx('deny'); }); });
 }
-
-// ---------- v3：言葉の書架（出会った題辞を、原文・和訳・英訳・出典と読み返す） ----------
-// ゲームの中では役に立たない言葉。でも人にとっては残しておくものなので、ここに並べる
-const R_WORDS = { x: 14, y: 20, w: 128, h: 28 }, R_WBACK = { x: 110, y: 596, w: 140, h: 36 };
-function drawWords(t) {
-  const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0E0E0C'); bg.addColorStop(1, '#16150F'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
-  c.textAlign = 'center'; c.fillStyle = '#ECE7DC'; c.font = '600 18px ' + SERIF; c.fillText('言葉の書架', W / 2, 62); c.font = LATIN; c.fillStyle = 'rgba(236,231,220,.55)'; c.fillText('words the birds did not need', W / 2, 80);
-  let y = 112; const keys = ['intro', 'osaka', 'saigon', 'paris', 'seattle', 'newyork', 'end'];
-  for (const k of keys) {
-    const E = EPI[k], seen = (SV.epi || {})[k]; c.fillStyle = 'rgba(236,231,220,.08)'; c.fillRect(28, y - 14, W - 56, 1);
-    if (!seen) { c.font = '500 11px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.25)'; c.fillText('— まだ出会っていない言葉 —', W / 2, y + 12); y += 40; continue; }
-    const big = E.cjk ? '600 13px ' + SERIF : '600 italic 12px Georgia,"Times New Roman",serif';
-    for (const l of E.o.split(' / ').flatMap(p => wrapF(p, big, W - 60))) { c.font = big; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.fillText(l, W / 2, y + 4); y += 16; }
-    for (const l of wrapF(E.ja, '500 10px ' + SERIF, W - 60)) { c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.72)'; c.fillText(l, W / 2, y + 4); y += 13; }
-    if (E.en) for (const l of wrapF(E.en, '500 italic 9.5px Georgia,serif', W - 60)) { c.font = '500 italic 9.5px Georgia,serif'; c.fillStyle = 'rgba(236,231,220,.6)'; c.fillText(l, W / 2, y + 4); y += 12; }
-    c.font = '500 8.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.42)'; c.fillText(E.by, W / 2, y + 5); y += 22;
-  }
-  c.textAlign = 'left'; pillAt('もどる', R_WBACK.x, R_WBACK.y - 4, R_WBACK.w, false); drawToggles();
-}
+// 言葉の書架は words.js
