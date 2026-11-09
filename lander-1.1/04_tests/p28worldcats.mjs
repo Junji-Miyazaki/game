@@ -219,6 +219,39 @@ XD.__xpRetryMs(5);
   ok(!c.rec.texts.includes('WEEK') && c.rec.texts.includes('P'), 'game-over panel: no category chips');
 }
 
+// ===== 6b. 押しやすさ: 隙間・すぐ外も拾う／タイトルの見出し帯は閉じない =====
+{
+  const X = 32, Y = 130, Wd = W - 64;
+  const tabs = R.createRankTabs({ cats: true }); tabs.mode = 'world';
+  const cr = R.rankCatRects(X, Y, Wd), tr = R.rankTabRects(X, Y, Wd);
+  ok(cr.all.h >= 20, 'chips are at least 20px tall');
+  ok(cr.all.y + cr.all.h <= Y + 46, 'chips end before the rows (y+46)');
+  // 隙間（WEEK と STAGE の間）→ どちらかに当たる
+  const gx = (cr.week.x + cr.week.w + cr.reach.x) / 2;
+  ok(R.rankTabsTap(tabs, X, Y, gx - 1, cr.week.y + 10, Wd, null) && tabs.cat === 'week', 'gap left half → WEEK');
+  ok(R.rankTabsTap(tabs, X, Y, gx + 1, cr.week.y + 10, Wd, null) && tabs.cat === 'reach', 'gap right half → STAGE');
+  // 見た目の下（行の手前）・上（タブとの境目）
+  ok(R.rankTabsTap(tabs, X, Y, cr.week.x + 5, Y + 44, Wd, null) && tabs.cat === 'week', 'just below the chip still hits');
+  ok(R.rankTabsTap(tabs, X, Y, cr.reach.x + 5, Y + 20, Wd, null) && tabs.cat === 'reach', 'between tabs and chips → chip');
+  ok(R.rankTabsTap(tabs, X, Y, X - 6, cr.all.y + 5, Wd, null) && tabs.cat === 'all', 'a little left of ALL still hits');
+  ok(R.rankTabsTap(tabs, X, Y, X + Wd + 6, cr.all.y + 5, Wd, null) && tabs.cat === 'xp', 'a little right of the last chip still hits');
+  ok(!R.rankTabsTap(tabs, X, Y, cr.week.x + 5, Y + 47, Wd, null), 'rows area is not a chip');
+  ok(R.rankTabsTap(tabs, X, Y, tr.world.x + 5, Y - 3, Wd, null) && tabs.mode === 'world', 'just above WORLD still hits');
+  ok(R.rankTabsTap(tabs, X, Y, (tr.local.x + tr.local.w + tr.world.x) / 2 - 1, Y + 9, Wd, null) && tabs.mode === 'local', 'gap between tabs → LOCAL side');
+  // 種類なし（ゲームオーバー）: タブの少し下までは拾うが、遠くは拾わない
+  const plain = R.createRankTabs(); const pr = R.rankTabRects(X, 146, Wd);
+  ok(R.rankTabsTap(plain, X, 146, pr.world.x + 5, 146 + pr.world.h + 3, Wd, null) && plain.mode === 'world', 'game-over: just below WORLD hits');
+  ok(!R.rankTabsTap(plain, X, 146, pr.world.x + 5, 146 + pr.world.h + 10, Wd, null), 'game-over: far below is not a tab');
+  // タイトル: 見出し帯の押し損ねでは閉じない／行の上を押すと閉じる
+  const s = prof('TAP');
+  const t = new TitleScene(makeEngine(s), noop, { launch: false }); t.enter(); await flush();
+  t.showRank = true; t.tabs = R.createRankTabs({ cats: true }); t.tabs.mode = 'world';
+  t.onInput('tap', { x: 25, y: 172 }); ok(t.showRank, 'title: miss in the header band keeps the list open');
+  t.onInput('tap', { x: W / 2, y: 100 }); ok(t.showRank, 'title: tap on the TOP 10 heading keeps it open');
+  t.onInput('tap', { x: W / 2, y: 300 }); ok(!t.showRank, 'title: tap on the rows closes');
+  t.exit && t.exit();
+}
+
 // ===== 7. net.fetchBoard: 旧中継（400）を区別 =====
 {
   const real = globalThis.fetch;

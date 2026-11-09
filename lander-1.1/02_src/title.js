@@ -848,6 +848,8 @@ export class TitleScene extends Scene {
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64, this.engine.storage)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
+      // 見出し〜種類ボタンの帯（パネル上部）は押し損ねても閉じない。閉じるのは一覧の行・下の余白・パネルの外
+      if (this.showRank && data.x >= 20 && data.x <= W - 20 && data.y >= 90 && data.y < 130 + 46) return;
       if (this.showRank) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; return; }
       if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
       if (this.top1 && this._hit(this.worldBox, data) && !this.launch) {   // プレート: WORLD タブでランキングを開く（ゲームは開始しない）

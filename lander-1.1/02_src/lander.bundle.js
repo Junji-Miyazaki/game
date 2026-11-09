@@ -1575,7 +1575,7 @@ function rankCatBoard(tabs) {
   return null;
 }
 function rankCatRects(x, y, w) {
-  const gap = 6, h = 16, bw = Math.floor((w - gap * 3) / 4), yy = y + 22;
+  const gap = 6, h = 20, bw = Math.floor((w - gap * 3) / 4), yy = y + 21;
   const out = {};
   RANK_CATS.forEach((k, i) => { out[k] = { x: x + i * (bw + gap), y: yy, w: bw, h }; });
   return out;
@@ -1616,23 +1616,38 @@ function rankTabRects(x, y, w) {
   return { local: { x, y, w: bw, h }, world: { x: x + bw + 8, y, w: bw, h } };
 }
 
-const inRect = (r, px, py) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+// 当たり判定は見た目より広く取る（指で押しやすく）。横は隣との境目で分け、隙間を作らない
+const RANK_HIT_PAD = 8;
+function hitCol(rects, keys, px, x, w) {
+  if (px < x - RANK_HIT_PAD || px > x + w + RANK_HIT_PAD) return null;
+  for (let i = 0; i < keys.length - 1; i++) { const a = rects[keys[i]], b = rects[keys[i + 1]]; if (px < (a.x + a.w + b.x) / 2) return keys[i]; }
+  return keys[keys.length - 1];
+}
+// タブ（LOCAL / WORLD）の当たり: 見た目の上4px〜種類ボタンとの境目まで。種類ボタンの当たり: そこから一覧の行の手前まで
+function rankTabHit(x, y, w, px, py, cats) {
+  const r = rankTabRects(x, y, w), bottom = cats ? y + 20 : y + r.local.h + 4;
+  if (py < y - 4 || py >= bottom) return null;
+  return hitCol(r, ['local', 'world'], px, x, w);
+}
+function rankCatHit(x, y, w, px, py) {
+  if (py < y + 20 || py >= y + 45) return null;
+  return hitCol(rankCatRects(x, y, w), RANK_CATS, px, x, w);
+}
 
 // タップがタブに当たったか処理する。当たったら true（WORLD 選択時は取得を開始）
 function rankTabsTap(tabs, x, y, px, py, w, storage) {
   if (!relayEnabled()) return false;
-  const r = rankTabRects(x, y, w);
-  if (inRect(r.local, px, py)) { tabs.mode = 'local'; return true; }
-  if (inRect(r.world, px, py)) {
+  const th = rankTabHit(x, y, w, px, py, tabs.cats && tabs.mode === 'world');
+  if (th === 'local') { tabs.mode = 'local'; return true; }
+  if (th === 'world') {
     tabs.mode = 'world';
     if (tabs.cats && tabs.cat !== 'all') { const b = rankCatBoard(tabs), s = tabs.extra[b]; if (!s || s.status === 'offline' || s.status === 'updating') loadCat(tabs); }
     else if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage);
     return true;
   }
   if (tabs.cats && tabs.mode === 'world') {
-    const c = rankCatRects(x, y, w);
-    for (const k of RANK_CATS) {
-      if (!inRect(c[k], px, py)) continue;
+    const k = rankCatHit(x, y, w, px, py);
+    if (k) {
       if (k === 'xp' && tabs.cat === 'xp') tabs.xpi = (tabs.xpi + 1) % XB_XN;   // もう一度押すと次のミッション（最後は TOTAL）
       tabs.cat = k;
       if (k === 'all') { if (tabs.status === 'idle' || tabs.status === 'offline' || tabs.status === 'updating') loadWorld(tabs, storage); }
@@ -1677,7 +1692,7 @@ function drawWorldCats(engine, ctx, tabs, x, y, w) {
   for (const k of RANK_CATS) {
     const on = tabs.cat === k, b = c[k];
     pill(ctx, b.x, b.y, b.w, b.h, on ? rgba(p.mid, 0.12) : null, rgba(on ? p.mid : p.fg, on ? 0.55 : 0.14));
-    txt(ctx, ellipsize(ctx, rankCatLabel(tabs, k), 8, 500, 1.5, b.w - 6), b.x + b.w / 2, b.y + 4, 8, on ? p.hi : p.dim, 'center', { sp: 1.5, w: 500 });
+    txt(ctx, ellipsize(ctx, rankCatLabel(tabs, k), 8, 500, 1.5, b.w - 6), b.x + b.w / 2, b.y + 6, 8, on ? p.hi : p.dim, 'center', { sp: 1.5, w: 500 });
   }
   const ry = y + 46, my = ry + RANK_MAX * 30 + 4;
   const msg = (s, col) => txt(ctx, s, x + w / 2, ry + 16, 11, col, 'center', { sp: 3 });
@@ -10354,6 +10369,8 @@ class TitleScene extends Scene {
       // 開いている一覧の LOCAL / WORLD タブ（RELAY_URL 設定時のみ）
       if (this.showRank && rankTabsTap(this.tabs, 32, 130, data.x, data.y, W - 64, this.engine.storage)) return;
       // 一覧表示中は、それ以外のどこをタップしても「閉じる」だけ（裏の START/CONTINUE に貫通させない）
+      // 見出し〜種類ボタンの帯（パネル上部）は押し損ねても閉じない。閉じるのは一覧の行・下の余白・パネルの外
+      if (this.showRank && data.x >= 20 && data.x <= W - 20 && data.y >= 90 && data.y < 130 + 46) return;
       if (this.showRank) { musicOf(this.engine).sfx.uiTap(); this.showRank = false; return; }
       if (this._hit(this.titleBtn, data) && this._isChampion() && !this.launch) { this._openTitleEntry(); return; }
       if (this.top1 && this._hit(this.worldBox, data) && !this.launch) {   // プレート: WORLD タブでランキングを開く（ゲームは開始しない）
