@@ -11,16 +11,25 @@ const SERIF = '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",Georgia,serif'
 const F = (s, w) => (w || 400) + ' ' + s + 'px ' + FONT;
 const BASE_ATK = 5, BASE_ARMOR = 5; // v3：強化ボタンをやめた。威力と体力は v2 で最初の中ボスまでに強化した分を初めから持つ。中ボスを崩すたびに群れの勢いが上がる（GROW）
 const GROW = { atk: 1.6, armor: 2 };
-const KUI = { starling: '#C9CED6', crow: '#8E96A3', swallow: '#7FB2FF', owl: '#E0A860', falcon: '#B8C4D8', pelican: '#F0E6D2' }; // ボタンでの鳥の色
+const KUI = { starling: '#C9CED6', crow: '#8E96A3', swallow: '#7FB2FF', owl: '#E0A860', falcon: '#B8C4D8', pelican: '#F0E6D2', woodpecker: '#9BD08A', darter: '#A9C2D6', goose: '#DDD6C4', magpie: '#B9D5F2', swift: '#C7B6EA' }; // ボタンでの鳥の色
 const KEYS = ['b1', 'b2', 'b3'];
 const SAVE_KEY = 'birdsreclaim.v3', MUTE_KEY = 'birdsreclaim.v1.mute';
 let S = null, ff = 1, scene = 'map';
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { } }
-const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, epi: {}, intro: 0, skipIntro: 0, ended: 0, fe: 0, lv: {}, tip: 0 });
+const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, epi: {}, intro: 0, skipIntro: 0, ended: 0, fe: 0, lv: {}, tip: 0, v: 5 });
 // clear=還した都市 best=最高得点 seen=見た建物のカード lm=還した名所 date=スタンプの日付 last=最後に還した都市（渡りの出発地）
-function loadSave() { try { const o = JSON.parse(lsGet(SAVE_KEY) || '{}'); return Object.assign(SV0(), o); } catch (e) { return SV0(); } }
+function loadSave() { try { const o = JSON.parse(lsGet(SAVE_KEY) || '{}'), v = Object.assign(SV0(), o); if (!o.v || o.v < 5) migrate5(v); return v; } catch (e) { return SV0(); } }
+// その5の前の保存：仲間は「還した都市でもらえる鳥」から数え直す（育てた段は残す）
+function migrate5(v) { v.v = 5; v.spent = 0; for (const k in v.lv || {}) for (const f of ['p', 's']) for (let l = 1; l <= (v.lv[k][f] || 0); l++) v.spent += l; const K = [...KIND_START]; for (const id in v.clear) for (const k of UNLOCK[id] || []) if (!K.includes(k)) K.push(k); v.kinds = K; }
+const clearedCount = () => Object.keys(SV.clear).filter(id => STAGES.some(s => s.id === id)).length;
+const slotsNow = () => SV.allSlots ? 3 : slotsFor(clearedCount()); // allSlots は自動プレイ（6種で比べる）用
+// 連れていく鳥を整える：持っている鳥だけ、重ならず、枠の数だけ（空いた枠は持っている鳥で埋める）
+function fixTeam() { const n = slotsNow(), T = []; for (const k of SV.team || []) if (SV.kinds.includes(k) && !T.includes(k) && T.length < n) T.push(k); for (const k of SV.kinds) if (T.length < n && !T.includes(k)) T.push(k); SV.team = T; }
+// 新しく仲間になった鳥は、持っている鳥の段の真ん中まで育った状態で来る（羽は使わない。育てた鳥に埋もれないように）
+function joinKind(k) { if (SV.kinds.includes(k)) return false; const L = SV.kinds.map(q => (SV.lv || {})[q] || { p: 0, s: 0 }), med = f => { const a = L.map(x => x[f]).sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : 0; };
+  SV.kinds.push(k); SV.lv = SV.lv || {}; const m = { p: med('p'), s: med('s') }; if (m.p || m.s) { SV.lv[k] = m; SV.gift = SV.gift || {}; SV.gift[k] = { ...m }; } return true; }
 let SV = loadSave();
 function save() { lsSet(SAVE_KEY, JSON.stringify(SV)); }
 function clearedN() { return STAGES.filter(s => SV.clear[s.id]).length; }
@@ -36,16 +45,17 @@ function pickGen(g) { let r = Math.random(); for (const [k, p] of g) { if ((r -=
 function makeBoss(id, x) { const D = BOSS[id], b = D.make(x), sh = D.shell * HPM; for (const q of b.cells.values()) if (q.m !== D.core) { const v = q.m === 'fan' ? sh * .4 : sh; if (q.hp < v) q.hp = q.h0 = v; } else if (D.coreHp) q.hp = q.h0 = D.coreHp * HPM; Object.assign(b, { boss: 1, tags: bossTags(id), id, name: D.name, core: D.core, gim: D.gim, deco: D.deco, sub: D.sub, out: D.out, island: D.island, smoke: D.smoke, shine: D.shine }); return b; }
 function startStage(i) {
   const ST = STAGES[i]; HPM = ST.hp * (1 + .05 * othersCleared(i)); // 還した都市が増えるほど建物も硬くなる（群れも増える）
+  if (SV.kinds.length === 1) HPM *= .8; // その5：ムクドリ1種だけの最初の旅は、建物を少し柔らかくする（1枠で大阪を還せるように）
   S = {
     st: ST, si: i, mode: 'play', x: 0, t: 0, inc: [], birds: [], blds: [], chunks: [], wild: [], parts: [], pops: [], txt: [], flora: [], drops: [],
-    pts: 60, score: 0, armor: BASE_ARMOR, atk: BASE_ATK, team: SV.team.slice(0, 3), lv: { b1: 0, b2: 0, b3: 0 }, cost: {}, flash: { b1: 0, b2: 0, b3: 0 }, reward: null,
+    pts: 60, score: 0, armor: BASE_ARMOR, atk: BASE_ATK, team: (fixTeam(), SV.team.slice()), lv: { b1: 0, b2: 0, b3: 0 }, cost: {}, flash: { b1: 0, b2: 0, b3: 0 }, reward: null,
     cid: 0, zone: 0, sb: -1, bi: 0, shake: 0, banner: null, lost: 0, lostT: 0, peak: 0, endT: 0, lightOut: 0, dark: 0, reclaim: 0,
     ft: 0, gt: 0, rot: 0, sc: 1, fx: null, fy: null, siege: 0, win: 0, over: 0, bonus: 0, newBest: 0, killed: [], gim: { cd: 4, ct: 0 },
     card: null, arr: { t: 0 }, brief: 1, toast: null, frags: [], wordsGot: [], wordsNew: [], wtoast: null, lmN: 0, lmDown: 0, slow: 0, rainOn: 0,
   };
   S.kinds = {}; for (const k in KIND) { const L = (SV.lv || {})[k] || { p: 0, s: 0 }; S.kinds[k] = Object.assign({}, KIND[k], { am: KIND[k].am * (1 + .2 * L.p), spd: KIND[k].spd * (1 + .15 * L.s), lvP: L.p, lvS: L.s }); }
   S.cdn = { b1: 0, b2: 0, b3: 0 };
-  KEYS.forEach((k, j) => { S.cost[k] = KIND[S.team[j]].cost; });
+  KEYS.forEach((k, j) => { if (S.team[j]) S.cost[k] = KIND[S.team[j]].cost; });
   S.wx = wxFor(ST); S.wfx = wxFx(S.wx); wxFetch(ST);
   if (typeof EPI !== 'undefined' && EPI[ST.id]) { SV.epi = SV.epi || {}; SV.epi[ST.id] = 1; } // 章の題辞に出会った S.flakes = []; S.evt = Math.random() < .65 ? { at: 1200 + Math.random() * 3500, sand: SAND.includes(ST.id) } : null; // いまの空と、通り過ぎる竜巻（見た目だけ）
   const fl = flockOf(i); for (const sp of fl) addBird(60 + Math.random() * 80, GY - 280 + Math.random() * 120, 0, 0, sp); S.peak = fl.length;
@@ -67,12 +77,13 @@ function startStage(i) {
 function addBird(x, y, vx, vy, sp) { S.birds.push({ x: S.x + x, y, vx: vx || 0, vy: vy || 0, sp, hp: 2 + S.armor + sp.hp, st: 0, ph: Math.random() * 6, stun: 0, cd: Math.random() * 2 }); }
 function aliveN() { let n = 0; for (const b of S.birds) if (b.st !== 2) n++; return n; }
 function buy(k) {
-  if (S.mode !== 'play') return false;
+  if (S.mode !== 'play' || !S.team[KEYS.indexOf(k)]) return false;
   if (S.pts < S.cost[k] || S.cdn[k] > 0) { S.flash[k] = -.35; sfx('deny'); return false; }
   S.pts -= S.cost[k]; S.lv[k]++;
   // 呼んだ鳥は群れの近くに、画面の外から飛んでくる
   const K = S.kinds[S.team[KEYS.indexOf(k)]], fx = (S.fx ?? S.x + FLX) - S.x, fy = S.fy ?? GY - 210; S.cdn[k] = K.cd;
-  for (let i = 0; i < K.n; i++) addBird(Math.max(-40, fx - 140 - Math.random() * 60), fy - 60 + Math.random() * 120, 260, 0, K);
+  if (K.vee) { S.veeT = null; for (let i = 0; i < K.n; i++) { const r = Math.ceil(i / 2), sd = i % 2 ? -1 : 1; addBird(Math.max(-40, fx - 120 - r * 22), fy + sd * r * 16, 260, 0, K); } } // ガンは V 字で来る
+  else for (let i = 0; i < K.n; i++) addBird(Math.max(-40, fx - 140 - Math.random() * 60), fy - 60 + Math.random() * 120, 260, 0, K);
   S.cost[k] = Math.round(S.cost[k] * 1.4); S.flash[k] = .35; sfx('buy'); sfx('caw');
   return true;
 }
@@ -82,8 +93,9 @@ function finish() {
   const id = S.st.id; if (S.score > (SV.best[id] || 0)) { SV.best[id] = S.score; S.newBest = 1; }
   S.area = 0; for (const b of S.blds) S.area += Math.max(0, b.n0 - b.cells.size); S.area = Math.round(S.area * 25 / 1000) / 10; // 1マス＝5m四方として ha
   if (S.win) {
-    S.reward = { verse: VERSE[id] || '', kind: null, first: !SV.clear[id] };
-    if (S.reward.first) { const nk = KIND_UNLOCK.find(k => !SV.kinds.includes(k)); if (nk) { SV.kinds.push(nk); S.reward.kind = nk; } SV.verse[id] = 1; }
+    S.reward = { verse: VERSE[id] || '', kinds: [], first: !SV.clear[id], slot: 0 };
+    if (S.reward.first) { const n0 = slotsNow(); SV.clear[id] = 1; for (const k of UNLOCK[id] || []) if (joinKind(k)) S.reward.kinds.push(k); SV.verse[id] = 1;
+      const n1 = slotsNow(); if (n1 > n0) { S.reward.slot = n1; for (const k of [...S.reward.kinds].reverse()) if (!SV.team.includes(k) && SV.team.length < n1) SV.team.push(k); } fixTeam(); } // 枠が増えたら、新しい鳥をそのまま連れていく
     S.reward.fe = S.reward.first ? 3 : 1; SV.fe = (SV.fe || 0) + S.reward.fe; // 羽：鳥を育てる（図鑑で使う）
     SV.clear[id] = 1; SV.last = id; if (!SV.date[id]) SV.date[id] = dstr();
   }
@@ -160,8 +172,9 @@ function impact(b, nx, ny, hit) {
   q.hp -= dmg;
   // ペリカン：石を落として、まわりのマスも砕く
   if (sp.stone) { for (let a = -2; a <= 2; a++) for (let e = -2; e <= 2; e++) { if ((!a && !e) || Math.abs(a) + Math.abs(e) > 3) continue; const n = hit.b.cells.get((q.r + a) * 200 + q.k + e); if (n) { n.hp -= dmg * .7; if (n.hp <= 0) kill(hit.b, n); } } for (let i = 0; i < 6; i++) part(nx, ny, (Math.random() - .5) * 140, -Math.random() * 90, 'rgb(150,140,120)', 3); }
-  if (q.hp <= 0) { let left = -q.hp; kill(hit.b, q); for (const [a, e] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1]]) { if (left <= 0) break; const n = hit.b.cells.get((q.r + a) * 200 + q.k + e); if (n) { n.hp -= left * .6; if (n.hp <= 0) { left = -n.hp; kill(hit.b, n); } } } sfx('hit'); return true; }
+  if (q.hp <= 0) { let left = -q.hp; kill(hit.b, q, sp.loot); if (sp.loot) for (let i = 0; i < 3; i++) part(nx, ny, (Math.random() - .5) * 60, -60 - Math.random() * 40, 'rgb(255,214,110)', 2); for (const [a, e] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1]]) { if (left <= 0) break; const n = hit.b.cells.get((q.r + a) * 200 + q.k + e); if (n) { n.hp -= left * .6; if (n.hp <= 0) { left = -n.hp; kill(hit.b, n); } } } sfx('hit'); return true; }
   S.pops.push({ x: nx, y: ny, t: 0 }); sfx('tick');
+  if (sp.cling) { b.pk = (b.pk || 0) + 1; if (b.pk % 3 === 0) hurtBird(b, -60, -40); if (b.st !== 2) { b.st = 0; b.vx = -40 * Math.sign(b.vx || 1); b.vy = 0; b.stun = .08; b.cd = .1; } return false; } // キツツキ：はね返らず、すぐまたつつく
   hurtBird(b, -60, -40);
   if (b.st !== 2) { b.vx = -b.vx * .6 - 60 * Math.sign(b.vx || 1); b.vy = -80 + Math.random() * 60; b.stun = .3; }
   return false;
@@ -187,6 +200,10 @@ function pickTarget(wx, wy, near) {
 }
 function siegeTarget(bd) {
   const B = S.boss, ex = exposed(B); if (!ex.length) return null; let top = 0; for (const q of ex) top = Math.max(top, q.r);
+  const cx = q => B.x + (q.k + .5) * CS, cy = q => GY - (q.r + .5) * CS;
+  if (bd.sp.vee) { if (!S.veeT || S.veeT.b !== B || !B.cells.has(S.veeT.q.r * 200 + S.veeT.q.k)) { const lo = ex.filter(q => q.r <= top * .5); const L = lo.length ? lo : ex; S.veeT = { b: B, q: L[Math.floor(Math.random() * L.length)] }; } return S.veeT; } // ガン：全員で同じ1点
+  if (bd.sp.low) { const lo = ex.filter(q => q.r <= Math.max(1, top * .18)); if (lo.length) { let best = null, bdist = 1e9; for (const q of lo) { const d = Math.hypot(cx(q) - bd.x, cy(q) - bd.y) + Math.random() * 30; if (d < bdist) { bdist = d; best = q; } } return { b: B, q: best }; } } // ヘビウ：足元の段
+  if (bd.sp.cling) { let best = null, bdist = 1e9; for (const q of ex) { const d = Math.hypot(cx(q) - bd.x, cy(q) - bd.y); if (d < bdist) { bdist = d; best = q; } } return { b: B, q: best }; } // キツツキ：いちばん近い所をつつき続ける
   if (bd.sp.seek && !B.dead) { const p = coreCenter(B); if (p) { let best = null, bdist = 1e9; for (const q of ex) { const d = Math.hypot(B.x + (q.k + .5) * CS - p[0], GY - (q.r + .5) * CS - p[1]) + Math.random() * 12; if (d < bdist) { bdist = d; best = q; } } return { b: B, q: best }; } }
   if (Math.random() < (S.lightOut ? .6 : .35)) { const lo = ex.filter(q => q.r <= top * .35); if (lo.length) return { b: B, q: lo[Math.floor(Math.random() * lo.length)] }; }
   let best = null, bdist = 1e9; for (const q of ex) { const d = Math.hypot(B.x + (q.k + .5) * CS - bd.x, GY - (q.r + .5) * CS - bd.y) + Math.random() * 50; if (d < bdist) { bdist = d; best = q; } } return { b: B, q: best };
@@ -232,7 +249,7 @@ function gimmick(B, dt, lcx) {
       G.warn -= dt;
       if (G.warn <= 0) {
         G.cd = 5.5; const p = coreCenter(B);
-        if (p) { G.wave = { x: p[0], y: p[1], t: 0 }; sfx('sway'); for (const bd of S.birds) { if (bd.st === 2) continue; const dx = bd.x - p[0], dy = bd.y - p[1], d = Math.hypot(dx, dy) || 1; if (d < 150) { bd.vx += dx / d * 460; bd.vy += dy / d * 460; bd.st = 0; bd.stun = .5; } } }
+        if (p) { G.wave = { x: p[0], y: p[1], t: 0 }; sfx('sway'); for (const bd of S.birds) { if (bd.st === 2 || bd.sp.cling) continue; const dx = bd.x - p[0], dy = bd.y - p[1], d = Math.hypot(dx, dy) || 1; if (d < 150) { bd.vx += dx / d * 460; bd.vy += dy / d * 460; bd.st = 0; bd.stun = .5; } } }
       }
     } else if ((G.cd -= dt) <= 0) { G.warn = 1.1; sfx('aim'); }
   } else if (B.gim === 'beam') {
@@ -241,7 +258,7 @@ function gimmick(B, dt, lcx) {
       G.aim.t -= dt;
       if (G.aim.t <= 0) {
         const A = G.aim; G.aim = null; G.cd = 4.2; G.burn = { x: A.x, y: A.y, t: .45 }; sfx('burn');
-        for (const bd of S.birds) if (bd.st !== 2 && Math.hypot(bd.x - A.x, bd.y - A.y) < 46) hurtBird(bd, (Math.random() - .5) * 80, 60);
+        for (const bd of S.birds) if (bd.st !== 2 && !bd.sp.dodge && Math.hypot(bd.x - A.x, bd.y - A.y) < 46) for (let h = 0; h < 3 && bd.st !== 2; h++) hurtBird(bd, (Math.random() - .5) * 80, 60); /* その5：鍵の鳥を置いたので強める（アマツバメはかわす） */
         for (let i = 0; i < 14; i++) part(A.x + (Math.random() - .5) * 60, A.y + (Math.random() - .5) * 40, (Math.random() - .5) * 60, -40, 'rgb(255,226,150)', 2);
       }
     } else if ((G.cd -= dt) <= 0) {
@@ -253,7 +270,7 @@ function gimmick(B, dt, lcx) {
     else if ((G.cd -= dt) <= 0) { G.warn = 1; sfx('aim'); }
   } else if (B.gim === 'pillar') {
     const p = coreCenter(B); if (!p) return; G.px = p[0]; G.py = p[1];
-    if (G.pon > 0) { G.pon -= dt; if ((G.ct -= dt) <= 0) { G.ct = .35; for (const bd of S.birds) if (bd.st !== 2 && Math.abs(bd.x - p[0]) < 24 && bd.y < p[1] + 10) hurtBird(bd, (bd.x - p[0]) * 4, -40); } if (G.pon <= 0) G.cd = 3.6; }
+    if (G.pon > 0) { G.pon -= dt; if ((G.ct -= dt) <= 0) { G.ct = .35; for (const bd of S.birds) if (bd.st !== 2 && !bd.sp.low && Math.abs(bd.x - p[0]) < 24 && bd.y < p[1] + 10) { hurtBird(bd, (bd.x - p[0]) * 4, -40); if (bd.st !== 2) hurtBird(bd, (bd.x - p[0]) * 4, -40); } /* その5：2 倍（ヘビウは足元にいるので入らない） */ } if (G.pon <= 0) G.cd = 3.6; }
     else if (G.warn > 0) { G.warn -= dt; if (G.warn <= 0) { G.pon = 1.8; G.ct = 0; sfx('burn'); } }
     else if ((G.cd -= dt) <= 0) { G.warn = 1.1; sfx('aim'); }
   } else if (B.gim === 'eye') {
@@ -461,6 +478,11 @@ function birdCall(k) {
   else if (k === 'gull') { T(1250, .35, .035, 'triangle', 820); T(1200, .3, .03, 'triangle', 800, .4); T(1150, .3, .03, 'triangle', 760, .75); }
   else if (k === 'pigeon') { T(430, .45, .04, 'sine', 380); T(410, .6, .035, 'sine', 360, .55); }
   else if (k === 'pelican') nz(.3, 'lowpass', 300, .7, .05);
+  else if (k === 'woodpecker') for (let i = 0; i < 9; i++) setTimeout(() => AC && !muted && nz(.025, 'bandpass', 1800, 2, .06), i * 45); // ドラミング
+  else if (k === 'goose') { T(330, .22, .04, 'sawtooth', 300); T(360, .22, .035, 'sawtooth', 320, .3); }
+  else if (k === 'magpie') { for (let i = 0; i < 5; i++) T(1500 + i * 40, .06, .03, 'square', 1300, i * .08); }
+  else if (k === 'swift') { T(3200, .35, .025, 'sawtooth', 2600); T(3400, .3, .02, 'sawtooth', 2800, .32); }
+  else if (k === 'darter') nz(.25, 'lowpass', 500, .9, .05);
   else chirp(4, .8);
 }
 // ラスベガス：崩れる音を、ちぐはぐな音のコラージュにする（ベル、拍手、すべり笛）
@@ -476,7 +498,7 @@ function toggleMute() { muted = !muted; if (MG) MG.gain.value = muted ? 0 : .7; 
 // ---------- 操作 ----------
 const R_MAP = { x: 224, y: 17, w: 36, h: 36 }, R_SPD = { x: 268, y: 17, w: 36, h: 36 }, R_SND = { x: 312, y: 17, w: 36, h: 36 };
 const inR = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-function btnRect(i) { return { x: 12 + i * 115, y: PY + 38, w: 106, h: 64 }; }
+function btnRect(i) { const n = S && S.team ? Math.max(1, S.team.length) : 3, w = (W - 24 - (n - 1) * 9) / n; return { x: 12 + i * (w + 9), y: PY + 38, w, h: 64 }; } // 枠の数で幅を割る
 const R_AGAIN = { x: 40, w: 132, h: 44 }, R_TOMAP = { x: 188, w: 132, h: 44 };
 function resY() { return 132 + 334; }
 function tap(x, y) {
@@ -492,7 +514,7 @@ function tap(x, y) {
   }
   if (inR(x, y, R_MAP)) { mapEnter(); return; }
   if (inR(x, y, R_SPD)) { ff = ff === 1 ? 2 : 1; return; }
-  if (y >= PY) { KEYS.forEach((k, i) => { if (inR(x, y, btnRect(i))) buy(k); }); return; }
+  if (y >= PY) { KEYS.forEach((k, i) => { if (S.team[i] && inR(x, y, btnRect(i))) buy(k); }); return; }
   S.gx = S.x + x; S.gy = Math.max(90, Math.min(GY - 6, y)); S.gt = 2.5;
   for (const b of S.birds) if (b.st === 1 && Math.random() < .5) b.st = 0;
 }
@@ -530,6 +552,9 @@ const SHP = { // span=羽の長さ chord=羽の幅 sweep=羽先の後ろへの�
   swallow: { span: 1.28, chord: .2, sweep: .45, tail: 'fork', head: .13, throat: '#D9C6B0' }, owl: { span: 1.05, chord: .5, sweep: 0, tail: 'short', head: .27, eyes: 1 },
   falcon: { span: 1.22, chord: .26, sweep: .32, tail: 'narrow', head: .14 }, pelican: { span: 1.3, chord: .4, sweep: .08, tail: 'short', head: .15, pouch: 1 },
   gull: { span: 1.25, chord: .28, sweep: .2, tail: 'short', head: .15, tips: 1 },
+  woodpecker: { span: .95, chord: .36, sweep: .05, tail: 'narrow', head: .16, beak: 1, cap: '#D2452F' }, darter: { span: 1.15, chord: .3, sweep: .1, tail: 'fan', head: .1, neck: 1, beak: 1 },
+  goose: { span: 1.32, chord: .34, sweep: .05, tail: 'short', head: .13, neck: 1, bill: '#E39A4A' }, magpie: { span: .95, chord: .4, sweep: 0, tail: 'long', head: .15, pied: '#EDEDED' },
+  swift: { span: 1.45, chord: .15, sweep: .75, tail: 'fork', head: .11 },
 };
 function birdS(x, y, s, ang, fold, rot, col, shp) {
   const P = SHP[shp] || SHP.starling; c.save(); c.translate(x, y); c.rotate(rot); c.fillStyle = col;
@@ -539,14 +564,19 @@ function birdS(x, y, s, ang, fold, rot, col, shp) {
     if (P.tips) { c.fillStyle = '#1A1C20'; c.beginPath(); c.arc(d * sp * .95, up * 1.15 + s * P.sweep, s * .1, 0, 7); c.fill(); c.fillStyle = col; }
   }
   c.beginPath(); c.ellipse(0, s * .02, s * (P.eyes ? .2 : .13), s * .36, 0, 0, 7); c.fill(); // 胴
-  c.beginPath(); c.arc(0, -s * .36, s * P.head, 0, 7); c.fill(); // 頭
+  const hy = P.neck ? -.66 : -.36; if (P.neck) c.fillRect(-s * .05, -s * .62, s * .1, s * .32); // 首の長い鳥（ヘビウ、ガン）
+  c.beginPath(); c.arc(0, s * hy, s * P.head, 0, 7); c.fill(); // 頭
+  if (P.pied) { c.fillStyle = P.pied; for (const d of [-1, 1]) { c.beginPath(); c.ellipse(d * s * .32, s * .02, s * .13, s * .07, 0, 0, 7); c.fill(); } c.fillStyle = col; } // カササギの白い肩
   c.beginPath(); // 尾
   if (P.tail === 'fork') { c.moveTo(-s * .06, s * .3); c.lineTo(-s * .2, s * .85); c.lineTo(0, s * .45); c.lineTo(s * .2, s * .85); c.lineTo(s * .06, s * .3); }
   else if (P.tail === 'fan') { c.moveTo(-s * .08, s * .3); c.lineTo(-s * .22, s * .72); c.lineTo(s * .22, s * .72); c.lineTo(s * .08, s * .3); }
+  else if (P.tail === 'long') { c.moveTo(-s * .06, s * .3); c.lineTo(-s * .1, s * 1.15); c.lineTo(s * .1, s * 1.15); c.lineTo(s * .06, s * .3); }
   else if (P.tail === 'narrow') { c.moveTo(-s * .06, s * .3); c.lineTo(-s * .08, s * .7); c.lineTo(s * .08, s * .7); c.lineTo(s * .06, s * .3); }
   else { c.moveTo(-s * .08, s * .3); c.lineTo(-s * .12, s * .55); c.lineTo(s * .12, s * .55); c.lineTo(s * .08, s * .3); }
   c.fill();
-  if (P.beak) { c.beginPath(); c.moveTo(-s * .06, -s * .48); c.lineTo(0, -s * .66); c.lineTo(s * .06, -s * .48); c.fill(); }
+  if (P.beak) { const b0 = hy - .12; c.beginPath(); c.moveTo(-s * .06, s * b0); c.lineTo(0, s * (b0 - .18)); c.lineTo(s * .06, s * b0); c.fill(); }
+  if (P.bill) { c.fillStyle = P.bill; c.beginPath(); c.moveTo(-s * .05, s * (hy - .1)); c.lineTo(0, s * (hy - .3)); c.lineTo(s * .05, s * (hy - .1)); c.fill(); }
+  if (P.cap) { c.fillStyle = P.cap; c.beginPath(); c.arc(0, s * (hy + .02), s * .08, 0, 7); c.fill(); } // キツツキの赤い頭
   if (P.pouch) { c.fillStyle = '#E2B25A'; c.beginPath(); c.moveTo(-s * .05, -s * .45); c.lineTo(0, -s * 1.05); c.lineTo(s * .07, -s * .45); c.fill(); }
   if (P.eyes) { c.fillStyle = '#F2D27A'; c.beginPath(); c.arc(-s * .1, -s * .38, s * .06, 0, 7); c.arc(s * .1, -s * .38, s * .06, 0, 7); c.fill(); }
   if (P.throat) { c.fillStyle = P.throat; c.beginPath(); c.arc(0, -s * .2, s * .07, 0, 7); c.fill(); }
@@ -731,7 +761,7 @@ function drawPanel(t) {
   icon('coin', 22, PY + 22, UI.acc); txt(String(Math.floor(S.pts)), 32, PY + 27, 15, UI.ink, 700); txt('ポイント', 32 + (c.measureText(String(Math.floor(S.pts))).width) + 6, PY + 27, 10, UI.sub, 500);
   txt('ボタンで鳥を呼ぶ　·　呼ぶほど高くなる', W - 16, PY + 27, 10, UI.sub, 500, 'right');
   KEYS.forEach((k, i) => {
-    const r = btnRect(i), kk = S.team[i], u = S.kinds[kk], cw = S.cdn[k] > 0, ok = play && S.pts >= S.cost[k] && !cw, fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
+    if (!S.team[i]) return; const r = btnRect(i), kk = S.team[i], u = S.kinds[kk], cw = S.cdn[k] > 0, ok = play && S.pts >= S.cost[k] && !cw, fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
     rr(x, r.y, r.w, r.h, 14); c.fillStyle = ok ? UI.btnOn : UI.btn; c.fill();
     if (fl > 0) { rr(x, r.y, r.w, r.h, 14); c.fillStyle = 'rgba(242,184,75,' + fl * 1.2 + ')'; c.fill(); }
     if (ok) { rr(x + .75, r.y + .75, r.w - 1.5, r.h - 1.5, 13.5); c.lineWidth = 1.5; c.strokeStyle = 'rgba(242,184,75,' + (.55 + .35 * Math.sin(t * 4)) + ')'; c.stroke(); }
@@ -750,7 +780,7 @@ function pillAt(label, x, y, w, on) { rr(x, y, w, 44, 22); c.fillStyle = on ? UI
 function drawResult(t) {
   const win = S.mode === 'win', a = Math.max(0, Math.min(1, (S.endT - (win ? 3.2 : endWait() - 1)) / .6)); if (!a) return; c.globalAlpha = a;
   c.fillStyle = 'rgba(14,16,20,' + (win ? .2 : .4) + ')'; c.fillRect(0, 0, W, PY);
-  const y0 = 132 + (1 - a) * 14; rr(24, y0, W - 48, 314, 22); c.fillStyle = 'rgba(18,20,25,.92)'; c.fill();
+  const y0 = (win ? 92 : 132) + (1 - a) * 14; rr(24, y0, W - 48, win ? 360 : 314, 22); // 還した時は、ごほうび（新しい鳥・枠）の分だけ上に広げる c.fillStyle = 'rgba(18,20,25,.92)'; c.fill();
   if (win) { spaced('RECLAIMED', W / 2, y0 + 50, 26, UI.green, 5); txt(S.st.end, W / 2, y0 + 74, 12, UI.sub, 500, 'center'); txt(BOSS[S.st.final].after || '', W / 2, y0 + 92, 11, UI.green, 500, 'center'); }
   else { txt('群れが尽きた', W / 2, y0 + 48, 22, UI.ink, 700, 'center'); txt(S.lightOut ? S.L.out + 'が、' + S.L.name + 'は残った' : S.st.city + '・' + S.st.zones[Math.max(0, S.zone)].n + 'で力尽きた', W / 2, y0 + 73, 12, UI.sub, 500, 'center'); }
   if (win) { drawReclaimResult(t, y0); if (S.endT > endWait()) pillAt(S.wordsGot.length ? '掘り出した言葉を見る' : 'つづける', W / 2 - 110, resY(), 220, true); c.globalAlpha = 1; return; }
@@ -775,8 +805,8 @@ function drawReclaimResult(t, y0) {
   if (u > .3) { const b = Math.min(1, (u - .3) / .5); c.globalAlpha = b; txt('還った土地', 48, ys - 6, 12, UI.sub, 500); txt(S.area + ' ha', W - 48, ys - 2, 24, UI.green, 700, 'right'); txt('戻った鳥', 48, ys + 20, 12, UI.sub, 500); txt(aliveN() + ' 羽', W - 48, ys + 22, 14, UI.green, 700, 'right'); c.globalAlpha = 1; }
   const R = S.reward; if (!R || S.endT < 5.6) return; c.globalAlpha = Math.min(1, (S.endT - 5.6) / .5);
   let y = ys + 46; for (const l of wrapL('「' + R.verse + '」', W - 96, 12, 600)) { txt(l, W / 2, y, 12, '#DDE8C8', 600, 'center'); y += 17; }
-  if (R.kind) { const K = KIND[R.kind]; rr(40, y - 2, W - 80, 26, 13); c.fillStyle = 'rgba(242,184,75,.14)'; c.fill(); birdS(58, y + 11, 7, .5, 0, 0, KUI[R.kind], K.shape); txt('新しい仲間：' + K.name + '　○' + K.like.map(t => TAGN[t]).join('') + ' ×' + K.hate.map(t => TAGN[t]).join(''), 74, y + 15, 11, UI.acc, 700); y += 30; }
-  txt('羽 +' + R.fe + '（図鑑で鳥を育てる）', W / 2, y + 12, 10, UI.sub, 600, 'center');
+  if ((R.kinds || []).length) { rr(36, y - 2, W - 72, 26, 13); c.fillStyle = 'rgba(242,184,75,.14)'; c.fill(); let x = 54; R.kinds.forEach(k => { birdS(x, y + 11, 7, .5, 0, 0, KUI[k], KIND[k].shape); x += 16; }); txt('新しい仲間：' + R.kinds.map(k => KIND[k].name).join('・'), x, y + 15, 11, UI.acc, 700); y += 30; }
+  txt((R.slot ? '枠が増えた（' + R.slot + '種まで連れていける）　' : '') + '羽 +' + R.fe + '（図鑑で育てる）', W / 2, y + 12, 10, R.slot ? '#BFF0C8' : UI.sub, 600, 'center');
   c.globalAlpha = 1;
 }
 function draw(t) {
@@ -973,26 +1003,26 @@ if (typeof requestAnimationFrame === 'function') requestAnimationFrame(loop);
 
 // ---------- v3：鳥の図鑑（羽で鳥を育てる。育てた段は次の都市へ持ち越す） ----------
 // 威力と速さを、それぞれ 3 段まで。次の段に要る羽は 1・2・3 枚。振り直しはいつでも無料（試作の間）
-const BK = { y0: 118, h: 70 };
+const BOOK_ORDER = () => [...new Set([...KIND_START, ...STAGES.flatMap(st => UNLOCK[st.id] || []), ...Object.keys(KIND)])]; // 図鑑は仲間になる順
+const BK = { y0: 110, h: 42 }; // その5：11種が1画面に入るように詰めた
 const bkRow = i => ({ x: 16, y: BK.y0 + i * BK.h, w: W - 32, h: BK.h - 6 });
-const bkBtn = (i, j) => ({ x: W - 70, y: BK.y0 + i * BK.h + 8 + j * 26, w: 46, h: 22 });
+const bkBtn = (i, j) => ({ x: W - 62, y: BK.y0 + i * BK.h + 2 + j * 18, w: 42, h: 16 });
 const R_RESPEC = { x: 24, y: 584, w: 110, h: 40 }, R_BKBACK = { x: 196, y: 584, w: 140, h: 40 };
 function drawBook(t) {
   const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0E1424'); bg.addColorStop(1, '#141A2C'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
   spaced('鳥の図鑑', W / 2, 74, 20, UI.ink, 4); txt('羽 ' + (SV.fe || 0) + ' 枚　·　都市を還すともらえる（はじめて 3 枚、2 回目から 1 枚）', W / 2, 98, 9.5, UI.sub, 500, 'center');
-  Object.keys(KIND).forEach((k, i) => {
+  BOOK_ORDER().forEach((k, i) => {
     const K = KIND[k], R = bkRow(i), got = SV.kinds.includes(k), L = (SV.lv || {})[k] || { p: 0, s: 0 };
-    rr(R.x, R.y, R.w, R.h, 14); c.fillStyle = 'rgba(255,255,255,' + (got ? .06 : .03) + ')'; c.fill();
-    birdS(R.x + 26, R.y + 30, 11, .5 + .2 * Math.sin(t * 3 + i), 0, 0, got ? KUI[k] : UI.dim, K.shape);
-    if (!got) { txt('？？？', R.x + 52, R.y + 26, 13, UI.dim, 700); txt('都市を還すと仲間になる', R.x + 52, R.y + 44, 10, UI.dim, 500); return; }
-    txt(K.name, R.x + 52, R.y + 20, 13, UI.ink, 700); txt(K.role, R.x + 52 + c.measureText(K.name).width + 8, R.y + 20, 9.5, UI.sub, 500);
-    txt('○ ' + (K.like.map(tg => TAGN[tg]).join('・') || '—') + '　× ' + K.hate.map(tg => TAGN[tg]).join('・'), R.x + 52, R.y + 37, 10, '#C9CED6', 600);
-    txt('×' + K.n + '　待ち ' + K.cd + '秒　値段 ' + K.cost, R.x + 52, R.y + 53, 9.5, UI.dim, 500);
+    rr(R.x, R.y, R.w, R.h, 10); c.fillStyle = 'rgba(255,255,255,' + (got ? .06 : .03) + ')'; c.fill();
+    birdS(R.x + 18, R.y + 18, 8, .5 + .2 * Math.sin(t * 3 + i), 0, 0, got ? KUI[k] : UI.dim, K.shape);
+    if (!got) { const at = STAGES.find(st => (UNLOCK[st.id] || []).includes(k)); txt('？？？', R.x + 38, R.y + 15, 11.5, UI.dim, 700); txt(at ? at.city + 'を還すと仲間になる' : '都市を還すと仲間になる', R.x + 38, R.y + 30, 9, UI.dim, 500); return; }
+    txt(K.name, R.x + 38, R.y + 15, 11.5, UI.ink, 700); c.font = F(11.5, 700); txt(K.role, R.x + 38 + c.measureText(K.name).width + 6, R.y + 15, 8.5, UI.sub, 500);
+    txt('○' + (K.like.map(tg => TAGN[tg]).join('・') || '—') + ' ×' + (K.hate.map(tg => TAGN[tg]).join('・') || '—') + '　×' + K.n + ' 待ち' + K.cd + '秒 値段' + K.cost, R.x + 38, R.y + 30, 8.5, '#C9CED6', 500);
     [['威力', 'p'], ['速さ', 's']].forEach(([nm, f], j) => {
       const B = bkBtn(i, j), lv = L[f], cost = lv + 1, can = lv < 3 && (SV.fe || 0) >= cost;
-      for (let d = 0; d < 3; d++) { c.fillStyle = d < lv ? UI.acc : 'rgba(255,255,255,.15)'; c.beginPath(); c.arc(B.x - 30 + d * 9, B.y + 11, 3, 0, 7); c.fill(); }
-      txt(nm, B.x - 44, B.y + 15, 9.5, UI.sub, 600, 'right');
-      rr(B.x, B.y, B.w, B.h, 11); c.fillStyle = can ? UI.acc : 'rgba(255,255,255,.07)'; c.fill(); txt(lv >= 3 ? '最大' : '+  ' + cost, B.x + B.w / 2, B.y + 15, 10, can ? '#17191E' : UI.dim, 700, 'center');
+      for (let d = 0; d < 3; d++) { c.fillStyle = d < lv ? UI.acc : 'rgba(255,255,255,.15)'; c.beginPath(); c.arc(B.x - 24 + d * 7, B.y + 8, 2.4, 0, 7); c.fill(); }
+      txt(nm, B.x - 32, B.y + 11, 8.5, UI.sub, 600, 'right');
+      rr(B.x, B.y, B.w, B.h, 8); c.fillStyle = can ? UI.acc : 'rgba(255,255,255,.07)'; c.fill(); txt(lv >= 3 ? '最大' : '+ ' + cost, B.x + B.w / 2, B.y + 11.5, 9, can ? '#17191E' : UI.dim, 700, 'center');
     });
   });
   pillAt('振り直し', R_RESPEC.x, R_RESPEC.y, R_RESPEC.w, false); pillAt('地図へ戻る', R_BKBACK.x, R_BKBACK.y, R_BKBACK.w, true); drawToggles();
@@ -1000,7 +1030,7 @@ function drawBook(t) {
 function bookTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
   if (inR(x, y, R_BKBACK)) { scene = 'map'; sfx('buy'); return; }
-  if (inR(x, y, R_RESPEC)) { let back = 0; for (const k in SV.lv) for (const f of ['p', 's']) for (let l = 1; l <= SV.lv[k][f]; l++) back += l; SV.lv = {}; SV.fe = (SV.fe || 0) + back; save(); sfx('buy'); return; }
-  Object.keys(KIND).forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, cost = L[f] + 1; if (L[f] < 3 && (SV.fe || 0) >= cost) { SV.fe -= cost; L[f]++; save(); sfx('buy'); } else sfx('deny'); }); });
+  if (inR(x, y, R_RESPEC)) { SV.fe = (SV.fe || 0) + (SV.spent || 0); SV.spent = 0; SV.lv = JSON.parse(JSON.stringify(SV.gift || {})); save(); sfx('buy'); return; } // 振り直し：使った羽だけ戻す（仲間になった時の段は残す）
+  BOOK_ORDER().forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, cost = L[f] + 1; if (L[f] < 3 && (SV.fe || 0) >= cost) { SV.fe -= cost; SV.spent = (SV.spent || 0) + cost; L[f]++; save(); sfx('buy'); } else sfx('deny'); }); });
 }
 // 言葉の書架は words.js

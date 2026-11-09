@@ -673,10 +673,18 @@ const KIND = {
   owl: { name: 'フクロウ', role: '光で目がくらまない', n: 3, cost: 30, col: '#6E5438', s: 9.5, hp: 1, am: 1.2, light: 1, shape: 'owl' },
   falcon: { name: 'ハヤブサ', role: '核へ一直線', n: 3, cost: 34, col: '#48505E', s: 9, hp: 0, am: 1.2, core: 4, seek: 1, shape: 'falcon' },
   pelican: { name: 'ペリカン', role: '石で壁ごと砕く', n: 3, cost: 32, col: '#9A9184', s: 12.5, hp: 2, am: 1.3, wall: 2, stone: 1, shape: 'pelican' },
+  // v3 その5：新しい5種（案は Fable）。どれも画面で動きが違う。cling=壁に張り付いて同じ所をつつき、揺れではじかれない low=足元の段だけを突く（光の柱に入らない）
+  // vee=V字で来て、群れの全員が同じ1点を叩く loot=崩したマスの点が 1.5 倍 dodge=止まらず飛ぶので反射光に焼かれない
+  woodpecker: { name: 'キツツキ', role: '張り付いてつつく', n: 2, cost: 34, col: '#33503A', s: 8.5, hp: 2, am: 1, wall: 1.8, cling: 1, shape: 'woodpecker' },
+  darter: { name: 'ヘビウ', role: '足元を崩す', n: 3, cost: 32, col: '#2A2622', s: 9.5, hp: 1, am: 1.2, low: 1, shape: 'darter' },
+  goose: { name: 'ハイイロガン', role: 'V字で一点を叩く', n: 5, cost: 36, col: '#77746C', s: 10, hp: 2, am: 1.6, vee: 1, shape: 'goose' },
+  magpie: { name: 'カササギ', role: '光るものを拾う', n: 5, cost: 24, col: '#101216', s: 8, hp: 1, am: 1, loot: 1.5, shape: 'magpie' },
+  swift: { name: 'アマツバメ', role: '止まらず光線をかわす', n: 6, cost: 28, col: '#1A1A1C', s: 7, hp: 0, am: .6, dodge: 1, shape: 'swift' },
 };
 // cd=呼んだあとボタンが使えない秒数 spd=突っ込む速さと間隔 like/hate=得意・苦手な建物の札（威力 ×1.35／×0.65）
 for (const [k, cd, spd, like, hate] of [['starling', 1.2, 1.1, [], []], ['crow', 2.5, .9, ['hard'], ['wind']], ['swallow', 2.5, 1.4, ['wind'], ['light']],
-  ['owl', 3, .9, ['light'], ['tall']], ['falcon', 3.5, 1.3, ['tall'], ['wide']], ['pelican', 4, .75, ['wide'], ['tall']]]) Object.assign(KIND[k], { key: k, cd, spd, like, hate });
+  ['owl', 3, .9, ['light'], ['tall']], ['falcon', 3.5, 1.3, ['tall'], ['wide']], ['pelican', 4, .75, ['wide'], ['tall']],
+  ['woodpecker', 3.5, .9, ['hard'], ['light']], ['darter', 3.5, 1, ['tall'], ['wide']], ['goose', 4, .8, ['hard'], ['light']], ['magpie', 2.5, 1, ['light'], ['wind']], ['swift', 2, 1.6, ['wide'], ['tall']]]) Object.assign(KIND[k], { key: k, cd, spd, like, hate });
 // 建物の札：光（光る仕掛け）、風（風の仕掛け）、硬い（外壁が厚い）、高い（55 段以上）、広い（48 マス以上で低い）
 const TAGN = { light: '光', wind: '風', hard: '硬い', tall: '高い', wide: '広い' };
 function bossTags(id) {
@@ -685,10 +693,13 @@ function bossTags(id) {
   if (top >= 55) T.push('tall'); else if (w >= 48 && top < 32) T.push('wide'); return (D.tags = T);
 }
 function cityTags(ST) { const s = new Set(); for (const id of [...ST.bosses.map(b => b.id), ST.final]) for (const t of bossTags(id)) s.add(t); return [...s]; }
-const KIND_START = ['starling', 'crow', 'swallow'];   // 最初から連れていける
-const KIND_UNLOCK = ['owl', 'falcon', 'pelican'];     // 都市をはじめて還すたびに、この順で仲間になる
+// v3 その5（ユーザー案）：最初はムクドリ1種・枠1つ。都市を還すと枠が増え（3つまで）、都市ごとに新しい鳥が仲間になる
+// 鍵の鳥はおもに「その仕掛けに会った都市を還すと来る」。答えを持って前の都市に戻ると、まだの言葉を掘り出しやすい
+const KIND_START = ['starling'];
+const UNLOCK = { osaka: ['crow'], tokyo: ['swallow', 'owl'], taipei: ['woodpecker'], saigon: ['darter'], dubai: ['falcon'], berlin: ['goose'], paris: ['magpie'], london: ['swift'], sf: ['pelican'] };
+const slotsFor = n => Math.min(3, 1 + n); // 還した都市の数 → 連れていける種類の数
 // 仕掛けごとに効く鳥（建物のカードに出す）
-const KEYB = { fan: 'swallow', gust: 'swallow', slow: 'swallow', glare: 'owl', map: 'owl', eye: 'owl' };
+const KEYB = { fan: 'swallow', gust: 'swallow', slow: 'swallow', glare: 'owl', map: 'owl', eye: 'owl', sway: 'woodpecker', beam: 'swift', pillar: 'darter' };
 // 道中で合流する土地の鳥の形（呼ぶ鳥と同じ描き分けを使う）
 for (const k in BIRD) BIRD[k].shape = { crow: 'crow', raven: 'crow', hcrow: 'crow', jackdaw: 'crow', amcrow: 'crow', kite: 'falcon', falcon: 'falcon', gull: 'gull', pelican: 'pelican' }[k] || 'starling';
 

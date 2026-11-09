@@ -24,10 +24,11 @@ console.log('map ok', DOTS.length + ' 陸の点');
 const list = WHICH === 'all' ? STAGES.map((_, i) => i) : [Number(WHICH)];
 // smart の3種：象徴（なければ中ボス）の仕掛けに効く鳥1種 → カラス → ムクドリ → ハヤブサ の順に埋める
 function teamFor(ST) { // 効く鳥1種（象徴を優先）＋ 都市の札で得意が多く苦手が少ない鳥。ムクドリかカラスを1種は入れる
-  const T = []; for (const id of [ST.final, ...ST.bosses.map(b => b.id)]) { const k = KEYB[BOSS[id].gim]; if (k && !T.length) T.push(k); }
-  const CT = cityTags(ST), base = { starling: .8, crow: .5, falcon: .3 }, sc = k => (base[k] || 0) + KIND[k].like.filter(t => CT.includes(t)).length - KIND[k].hate.filter(t => CT.includes(t)).length; // 数の役（ムクドリ）は少し高く見る
-  if (!T.some(k => k === 'starling' || k === 'crow')) T.push(sc('crow') >= sc('starling') ? 'crow' : 'starling');
-  for (const k of Object.keys(KIND).filter(k => !T.includes(k)).sort((a, b) => sc(b) - sc(a))) if (T.length < 3) T.push(k); return T; }
+  const T = []; for (const id of [ST.final, ...ST.bosses.map(b => b.id)]) { const k = KEYB[BOSS[id].gim]; if (k && !T.length && OWN().includes(k)) T.push(k); }
+  const CT = cityTags(ST), base = { starling: .8, crow: .5, falcon: .3 }, sc = k => (base[k] || 0) + .5 * (KIND[k].am * (KIND[k].wall || 1) - 1) + KIND[k].like.filter(t => CT.includes(t)).length - KIND[k].hate.filter(t => CT.includes(t)).length; // 壁への強さも見る // 数の役（ムクドリ）は少し高く見る
+  if (!T.includes('starling')) T.push('starling'); // 道中で群れを育てる数の鳥は必ず連れていく
+  for (const k of OWN().filter(k => !T.includes(k)).sort((a, b) => sc(b) - sc(a))) if (T.length < NSL()) T.push(k); return T.filter(k => OWN().includes(k)).slice(0, NSL()); }
+const OWN = () => SV.kinds, NSL = () => slotsNow();
 const cnt = k => S.birds.filter(b => b.st !== 2 && b.sp.key === k).length;
 function smart() {
   const T = S.team, slot = k => T.indexOf(k), B = S.boss; let want = null;
@@ -35,8 +36,22 @@ function smart() {
   else if (aliveN() < 110 || S.pts > 120) want = slot('starling') >= 0 ? 'starling' : 'crow'; // 道中は群れを育て、余りは包囲のためにためる
   if (want && slot(want) >= 0) { const k = KEYS[slot(want)]; if (S.pts >= S.cost[k]) buy(k); }
 }
+// 順路：最初からの旅を通しで遊ぶ（ムクドリ1種・枠1つから。還すと枠と鳥が増える）。都市ごとに3回まで挑む。
+// route=考えて遊ぶ（その時の仲間から組を選び、場面で効く鳥を呼ぶ。羽は連れていく鳥の威力から育てる） routen=1枠目だけを連打
+if (MODE === 'route' || MODE === 'routen') { const out = [];
+  for (let rep = 0; rep < RUNS; rep++) { SV = SV0(); const row = [];
+    for (let si = 0; si < STAGES.length; si++) { let res = 'x', tries = 0;
+      for (; tries < 3; tries++) { if (MODE === 'route') SV.team = teamFor(STAGES[si]); fixTeam(); startStage(si); S.brief = 0;
+        if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] };
+        while (S.mode === 'play' && S.t < 420) { step(1 / 60); if (S.card) S.card = null; if (MODE === 'route') smart(); else if (S.pts >= S.cost.b1) buy('b1'); }
+        if (S.mode === 'win') { res = String(tries + 1); break; } }
+      if (MODE === 'route') for (const k of SV.team) for (const f of ['p', 's', 'p']) { const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }; while (L[f] < 3 && SV.fe >= L[f] + 1) { SV.fe -= L[f] + 1; L[f]++; } }
+      row.push(STAGES[si].id + ':' + res + '[' + SV.team.join(',') + ']'); }
+    console.log(MODE, 'rep' + rep, row.join(' ')); console.log('  仲間', SV.kinds.join(','), '枠', slotsNow()); }
+  process.exit(0); }
 for (const si of list) for (let run = 0; run < RUNS; run++) {
-  SV = SV0(); if (MODE === 'smart') { SV.kinds = Object.keys(KIND); SV.team = process.env.TEAM ? process.env.TEAM.split(',') : teamFor(STAGES[si]); } // TEAM=owl,starling,crow で組を固定して比べる
+  SV = SV0(); SV.allSlots = 1; if (MODE !== 'smart') { SV.kinds = ['starling', 'crow', 'swallow']; SV.team = SV.kinds.slice(); } // 連打の比較は、その5の前と同じ3種で
+  if (MODE === 'smart') { SV.kinds = Object.keys(KIND); SV.team = process.env.TEAM ? process.env.TEAM.split(',') : teamFor(STAGES[si]); } // TEAM=owl,starling,crow で組を固定して比べる
   startStage(si); draw(0); S.arr.t = 9; draw(0); tap(180, 300); if (S.brief) throw new Error('brief did not close'); let ev = [], ps = 0, n = 0, lo = 0; // 作戦のカードを描いてタップで閉じる
   if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] }; // 天気は回す時刻で変わるので、ふだんは中立で比べる（WX=1 で現地の季節の空を使う） if (process.env.NOCD) for (const k in S.kinds) S.kinds[k].cd = 0; // 切り分け用
   while (S.mode === 'play' && S.t < 420) {
@@ -61,7 +76,7 @@ scene = 'pass'; P.sel = -1; draw(0); P.sel = 0; draw(0); P.sel = 3; draw(0); con
 // 冒頭と終わりの映画（描画のエラーだけ見る）
 for (const kind of ['intro', 'end']) { filmStart(kind); if (FILM.wait) filmTap(10, 300); let i = 0; for (; i < 6000 && scene === 'film'; i++) { stepFilm(1 / 30); draw(i / 30); } console.log('film', kind, 'ok', (i / 30).toFixed(1) + 's', '→', scene); }
 // 鳥の図鑑
-SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(W - 70 + 5, BK.y0 + 8 + 5); bookTap(W - 70 + 5, BK.y0 + BK.h + 8 + 26 + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'fe', SV.fe); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec fe', SV.fe);
+SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(bkBtn(0, 0).x + 5, bkBtn(0, 0).y + 5); bookTap(bkBtn(1, 1).x + 5, bkBtn(1, 1).y + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'fe', SV.fe); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec fe', SV.fe);
 // 言葉の書架
 SV.epi = { intro: 1, osaka: 1, end: 1 }; scene = 'pass'; P.sel = -1; draw(0); passTap(R_WORDS.x + 5, R_WORDS.y + 5); console.log('words scene', scene, wordCount() + '/' + Object.keys(WORDS).length); draw(0); wordsTap(wbRow(1).x + 5, wbRow(1).y + 5); draw(0); console.log('shelf', WB.sel); wordsTap(R_WBACK.x + 5, R_WBACK.y + 5);
 // 還った時の結果画面とごほうび
