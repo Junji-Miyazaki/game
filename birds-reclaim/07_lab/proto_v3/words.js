@@ -28,7 +28,9 @@ addWord('cervantes', 'barcelona', '…que aquellos que allí se parecen no son g
 addWord('lorca', 'barcelona', 'Verde que te quiero verde.', '緑よ、おまえが好きだ、緑よ。', 'Green, how I want you green.', 'Federico García Lorca — „Romance sonámbulo“ (1928)', ['glories', 'casamila', 'palacioreal']);
 addWord('hamlet', 'london', 'there’s a special providence in the fall of a sparrow.', '一羽の雀が落ちるのにも、特別な摂理がある。', '', 'Shakespeare — Hamlet, V.ii', ['abbey', 'walkie', 'bttower']);
 addWord('blake', 'london', 'To see a World in a Grain of Sand / And a Heaven in a Wild Flower', '一粒の砂に世界を見る。一輪の野の花に天を見る。', '', 'William Blake — “Auguries of Innocence” (Pickering Manuscript)', ['battersea', 'gherkin', 'shard']);
-// 役者の言葉（シェイクスピアは役者でもあった）
+// 役者の言葉（シェイクスピアは役者でもあった。世阿弥は能役者。ユーザー：無理に入れなくてよいが、この2人ならよい）
+// 世阿弥は法政大学能楽研究所が公開する『風姿花伝』の本文で照合（2026-11-09）
+addWord('zeami', 'osaka', '秘すれば花なり。秘せずば花なるべからず', '（隠しておくから花になる。隠さなければ花にはならない）', 'Hidden, it is the flower; not hidden, it cannot be the flower.', '世阿弥『風姿花伝』第七 別紙口伝', ['tsutenkaku', 'oskcastle', 'umedasky'], 1);
 addWord('stage', 'london', 'All the world’s a stage, / And all the men and women merely players;', 'この世はすべて舞台。男も女も、みなただの役者にすぎない。', '', 'Shakespeare — As You Like It, II.vii', ['londoneye', 'msg', 'sphere']);
 addWord('ozymandias', 'dubai', 'Look on my works ye Mighty, and despair! / … / The lone and level sands stretch far away.', '我が業を見よ、強き者よ、そして絶望せよ。……ひとり平らな砂が、はるかに広がるばかり。', '', 'Percy Bysshe Shelley — “Ozymandias” (The Examiner, 1818)', ['khalifa', 'frame', 'baa']);
 addWord('smith', 'london', 'It is not from the benevolence of the butcher, the brewer, or the baker that we expect our dinner, but from their regard to their own interest.', 'われわれが夕食にありつけるのは、肉屋や酒屋やパン屋の博愛心からではなく、彼ら自身の利益への関心からである。', '', 'Adam Smith — The Wealth of Nations (1776)', ['boe', 'battersea', 'nyse']);
