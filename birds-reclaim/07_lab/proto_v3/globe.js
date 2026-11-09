@@ -72,7 +72,7 @@ function mapEnter(justCleared) {
   M.nexted = 0; if (justCleared != null) { M.fresh = justCleared; M.freshT = 0; sel = justCleared; } else M.fresh = -1;
   mapSelect(sel);
 }
-function mapSelect(i) { M.sel = i; const C = CITIES[i]; M.tLon = C.lon; M.tLat = Math.max(-30, Math.min(48, C.lat * .8)); }
+function mapSelect(i) { M.sel = i; const C = CITIES[i]; if (C.si >= 0) wxFetch(STAGES[C.si]); M.tLon = C.lon; M.tLat = Math.max(-30, Math.min(48, C.lat * .8)); }
 // 画面の座標へ。z>0 なら手前（見える）
 function proj(v) {
   const l0 = M.lon0 * RAD, p0 = M.lat0 * RAD, c0 = Math.cos(l0), s0 = Math.sin(l0);
@@ -159,6 +159,7 @@ function drawMap(t) {
   drawCityCard(t); drawToggles();
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_PASS.x + 18, R_PASS.y + 18, 18, 0, 7); c.fill(); icon('book', R_PASS.x + 18, R_PASS.y + 18, UI.ink);
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_FILM.x + 18, R_FILM.y + 18, 18, 0, 7); c.fill(); icon('film', R_FILM.x + 18, R_FILM.y + 18, UI.ink);
+  c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_BOOK.x + 18, R_BOOK.y + 18, 18, 0, 7); c.fill(); birdS(R_BOOK.x + 18, R_BOOK.y + 19, 8, .5, 0, 0, UI.ink, 'swallow'); if (SV.fe) { c.fillStyle = UI.acc; c.beginPath(); c.arc(R_BOOK.x + 31, R_BOOK.y + 6, 7, 0, 7); c.fill(); txt(String(SV.fe), R_BOOK.x + 31, R_BOOK.y + 9.5, 9, '#17191E', 700, 'center'); }
 }
 const R_GO = { x: 96, y: 576, w: 168, h: 40 }, R_PREV = { x: 30, y: 576, w: 48, h: 40 }, R_NEXT = { x: 282, y: 576, w: 48, h: 40 };
 function drawCityCard(t) {
@@ -169,16 +170,19 @@ function drawCityCard(t) {
   if (C.si >= 0) { const lmN = (C.lm || []).length, got = (C.lm || []).filter(([, id]) => (SV.lm[C.id] || {})[LM[id].name]).length; txt('名所 ' + got + '/' + lmN, W - 34, y0 + 58, 10, UI.sub, 600, 'right'); }
   const chip = { done: ['自然に還った', '#68D680'], open: ['未踏', UI.acc], lock: ['まだ行けない', UI.sub], soon: ['準備中', UI.dim] }[st];
   c.font = F(10, 700); const cw = c.measureText(chip[0]).width + 20; rr(W - 34 - cw, y0 + 20, cw, 22, 11); c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); txt(chip[0], W - 34 - cw / 2, y0 + 35, 10, chip[1], 700, 'center');
+  if (C.si >= 0) { const w = wxFor(STAGES[C.si]); txt('いま  ' + wxLine(w), 34, y0 + 72, 10.5, w.live ? UI.acc : UI.sub, 600); } // 現地のいまの空
+  const CT = C.si >= 0 ? cityTags(STAGES[C.si]) : []; if (CT.length) txt('札 ' + CT.map(t => TAGN[t]).join('・'), W - 34, y0 + 72, 10, '#C9CED6', 600, 'right');
   if (C.si < 0) { txt('この都市はまだ準備中（次の便）。', 34, y0 + 96, 12, '#C9CED6', 500); txt('どんな建物が待っているかは、来てのお楽しみ。', 34, y0 + 118, 12, UI.sub, 500); drawArrows(); return; }
   const list = [...C.bosses.map(b => b.id), C.final];
   list.forEach((id, j) => {
-    const D = BOSS[id], y = y0 + 80 + j * 21, seen = SV.seen[id];
+    const D = BOSS[id], y = y0 + 90 + j * 20, seen = SV.seen[id];
     c.save(); c.translate(42, y - 4); c.rotate(Math.PI / 4); c.fillStyle = D.kind === '象徴' ? UI.red : 'rgba(224,96,74,.6)'; c.fillRect(-3.5, -3.5, 7, 7); c.restore();
     txt(seen ? D.name : '？？？', 56, y, 13, seen ? UI.ink : UI.dim, 700); txt(D.kind, W - 34, y, 10, UI.sub, 500, 'right');
   });
   // v3：連れていく鳥（3種）。枠をタップすると、仲間の中の別の種類に替わる
   txt('連れていく', 34, y0 + 152, 10, UI.sub, 600); if (SV.kinds.length > 3) txt('タップで替える', 34, y0 + 164, 8, UI.dim, 500);
-  for (let j = 0; j < 3; j++) { const R = chipR(j), k = SV.team[j], K = KIND[k]; rr(R.x, R.y, R.w, R.h, 12); c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); birdS(R.x + 13, R.y + 12, 6.5, .5, 0, 0, KUI[k], K.shape); txt(K.name, R.x + 24, R.y + 16, 10, UI.ink, 700); }
+  for (let j = 0; j < 3; j++) { const R = chipR(j), k = SV.team[j], K = KIND[k]; rr(R.x, R.y, R.w, R.h, 12); c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); birdS(R.x + 13, R.y + 12, 6.5, .5, 0, 0, KUI[k], K.shape); txt(K.name, R.x + 24, R.y + 16, 10, UI.ink, 700);
+    const gd = K.like.some(t => CT.includes(t)), bd = K.hate.some(t => CT.includes(t)); if (gd) txt('○', R.x + R.w - (bd ? 16 : 7), R.y + 16, 10, UI.green, 700, 'right'); if (bd) txt('×', R.x + R.w - 6, R.y + 16, 10, UI.red, 700, 'right'); }
   drawArrows();
   if (st === 'lock') { txt('前の都市を自然に還すと行ける', W / 2, R_GO.y + 26, 12, UI.sub, 600, 'center'); return; }
   rr(R_GO.x, R_GO.y, R_GO.w, R_GO.h, 21); c.fillStyle = Math.sin(t * 3) > -.6 ? UI.acc : 'rgba(242,184,75,.75)'; c.fill();
@@ -186,13 +190,14 @@ function drawCityCard(t) {
 }
 // 都市を順に送る矢印（ヨーロッパや東南アジアは印が近いので）
 function chipR(j) { return { x: 92 + j * 80, y: 412 + 140, w: 76, h: 24 }; }
-const R_FILM = { x: 56, y: 17, w: 36, h: 36 }; // 冒頭の映画をもう一度
+const R_FILM = { x: 56, y: 17, w: 36, h: 36 }, R_BOOK = { x: 100, y: 17, w: 36, h: 36 }; // 冒頭の映画をもう一度／鳥の図鑑
 function drawArrows() { for (const [R, d] of [[R_PREV, -1], [R_NEXT, 1]]) { const cx = R.x + R.w / 2, cy = R.y + R.h / 2; c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(cx, cy, 18, 0, 7); c.fill(); c.strokeStyle = UI.ink; c.lineWidth = 2; c.lineCap = 'round'; c.beginPath(); c.moveTo(cx - 3 * d, cy - 6); c.lineTo(cx + 3 * d, cy); c.lineTo(cx - 3 * d, cy + 6); c.stroke(); } }
 function mapTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
   const C = CITIES[M.sel];
   if (inR(x, y, R_PASS)) { scene = 'pass'; P.sel = -1; sfx('buy'); return; }
   if (inR(x, y, R_FILM)) { filmStart('intro'); return; }
+  if (inR(x, y, R_BOOK)) { scene = 'book'; sfx('buy'); return; }
   if (C.si >= 0) for (let j = 0; j < 3; j++) if (inR(x, y, chipR(j))) { // 仲間の中で、ほかの枠にいない次の種類に替える
     const L = SV.kinds, cur = L.indexOf(SV.team[j]); for (let d = 1; d < L.length; d++) { const k = L[(cur + d) % L.length]; if (!SV.team.includes(k)) { SV.team[j] = k; save(); sfx('buy'); break; } } return; }
   if (inR(x, y, R_PREV) || inR(x, y, R_NEXT)) { const n = CITIES.length; mapSelect((M.sel + (inR(x, y, R_NEXT) ? 1 : -1) + n) % n); sfx('buy'); return; }

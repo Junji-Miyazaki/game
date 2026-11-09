@@ -672,8 +672,19 @@ const KIND = {
   swallow: { name: 'ツバメ', role: '風に流されない', n: 5, cost: 26, col: '#1B2440', s: 7.5, hp: 0, am: 1, wind: 1, shape: 'swallow' },
   owl: { name: 'フクロウ', role: '光で目がくらまない', n: 3, cost: 30, col: '#6E5438', s: 9.5, hp: 1, am: 1.2, light: 1, shape: 'owl' },
   falcon: { name: 'ハヤブサ', role: '核へ一直線', n: 3, cost: 34, col: '#48505E', s: 9, hp: 0, am: 1.2, core: 4, seek: 1, shape: 'falcon' },
-  pelican: { name: 'ペリカン', role: '石を落として砕く', n: 2, cost: 36, col: '#9A9184', s: 12.5, hp: 2, am: 1, stone: 1, shape: 'pelican' },
+  pelican: { name: 'ペリカン', role: '石で壁ごと砕く', n: 3, cost: 32, col: '#9A9184', s: 12.5, hp: 2, am: 1.3, wall: 2, stone: 1, shape: 'pelican' },
 };
+// cd=呼んだあとボタンが使えない秒数 spd=突っ込む速さと間隔 like/hate=得意・苦手な建物の札（威力 ×1.35／×0.65）
+for (const [k, cd, spd, like, hate] of [['starling', 1.2, 1.1, [], []], ['crow', 2.5, .9, ['hard'], ['wind']], ['swallow', 2.5, 1.4, ['wind'], ['light']],
+  ['owl', 3, .9, ['light'], ['tall']], ['falcon', 3.5, 1.3, ['tall'], ['wide']], ['pelican', 4, .75, ['wide'], ['tall']]]) Object.assign(KIND[k], { key: k, cd, spd, like, hate });
+// 建物の札：光（光る仕掛け）、風（風の仕掛け）、硬い（外壁が厚い）、高い（55 段以上）、広い（48 マス以上で低い）
+const TAGN = { light: '光', wind: '風', hard: '硬い', tall: '高い', wide: '広い' };
+function bossTags(id) {
+  const D = BOSS[id]; if (D.tags) return D.tags; const b = D.make(0); let top = 0; for (const q of b.cells.values()) top = Math.max(top, q.r); const w = b.w / CS, T = [];
+  if (['glare', 'map', 'eye', 'pillar', 'beam'].includes(D.gim)) T.push('light'); if (['fan', 'gust'].includes(D.gim)) T.push('wind'); if (D.shell >= 28) T.push('hard');
+  if (top >= 55) T.push('tall'); else if (w >= 48 && top < 32) T.push('wide'); return (D.tags = T);
+}
+function cityTags(ST) { const s = new Set(); for (const id of [...ST.bosses.map(b => b.id), ST.final]) for (const t of bossTags(id)) s.add(t); return [...s]; }
 const KIND_START = ['starling', 'crow', 'swallow'];   // 最初から連れていける
 const KIND_UNLOCK = ['owl', 'falcon', 'pelican'];     // 都市をはじめて還すたびに、この順で仲間になる
 // 仕掛けごとに効く鳥（建物のカードに出す）

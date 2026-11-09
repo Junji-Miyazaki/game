@@ -6,7 +6,7 @@
 // 地図・渡り・パスポートの描画も呼んでエラーが出ないかを見る
 const fs = require('fs'), path = require('path');
 const MODE = process.argv[2] || 'smart', RUNS = Number(process.argv[3] || 4), WHICH = process.argv[4] || 'all';
-const src = ['stages.js', 'globe.js', 'game.js', 'film.js'].map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
+const src = ['stages.js', 'sky.js', 'globe.js', 'game.js', 'film.js'] /* ページ（v3.html）と同じ順 */.map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
 const noop = () => {}, grad = { addColorStop: noop };
 const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (k === 'createLinearGradient' || k === 'createRadialGradient') ? () => grad : k === 'measureText' ? () => ({ width: 10 }) : noop), set: (t, k, v) => { t[k] = v; return true; } });
 const els = {};
@@ -23,17 +23,22 @@ console.log('map ok', DOTS.length + ' 陸の点');
   console.log('図面の点検', bad ? bad + ' 件' : 'ok'); }
 const list = WHICH === 'all' ? STAGES.map((_, i) => i) : [Number(WHICH)];
 // smart の3種：象徴（なければ中ボス）の仕掛けに効く鳥1種 → カラス → ムクドリ → ハヤブサ の順に埋める
-function teamFor(ST) { const T = []; for (const id of [ST.final, ...ST.bosses.map(b => b.id)]) { const k = KEYB[BOSS[id].gim]; if (k && !T.length) T.push(k); } for (const k of ['crow', 'starling', 'falcon']) if (T.length < 3 && !T.includes(k)) T.push(k); return T.slice(0, 3); } // 効く鳥は1種だけ（象徴を優先）
-const cnt = k => S.birds.filter(b => b.st !== 2 && b.sp === KIND[k]).length;
+function teamFor(ST) { // 効く鳥1種（象徴を優先）＋ 都市の札で得意が多く苦手が少ない鳥。ムクドリかカラスを1種は入れる
+  const T = []; for (const id of [ST.final, ...ST.bosses.map(b => b.id)]) { const k = KEYB[BOSS[id].gim]; if (k && !T.length) T.push(k); }
+  const CT = cityTags(ST), base = { starling: .8, crow: .5, falcon: .3 }, sc = k => (base[k] || 0) + KIND[k].like.filter(t => CT.includes(t)).length - KIND[k].hate.filter(t => CT.includes(t)).length; // 数の役（ムクドリ）は少し高く見る
+  if (!T.some(k => k === 'starling' || k === 'crow')) T.push(sc('crow') >= sc('starling') ? 'crow' : 'starling');
+  for (const k of Object.keys(KIND).filter(k => !T.includes(k)).sort((a, b) => sc(b) - sc(a))) if (T.length < 3) T.push(k); return T; }
+const cnt = k => S.birds.filter(b => b.st !== 2 && b.sp.key === k).length;
 function smart() {
   const T = S.team, slot = k => T.indexOf(k), B = S.boss; let want = null;
-  if (S.siege) { const key = KEYB[B.gim]; if (key && slot(key) >= 0 && cnt(key) < 30) want = key; else if (slot('falcon') >= 0 && !B.dead && !(B.final && S.lightOut) && cnt('falcon') < 24) want = 'falcon'; else if (slot('crow') >= 0) want = 'crow'; else want = T[0]; }
+  if (S.siege) { const key = KEYB[B.gim]; if (key && slot(key) >= 0 && cnt(key) < 30) want = key; else if (slot('falcon') >= 0 && !B.dead && !(B.final && S.lightOut) && cnt('falcon') < 24) want = 'falcon'; else { const sc = k => likeK(S.kinds[k], B) * (S.kinds[k].wall || 1) * S.kinds[k].am; want = T.filter(k => k !== 'owl' && k !== 'swallow').sort((a, b) => sc(b) - sc(a))[0] || T[0]; } } // 鍵がなければ、この建物にいちばん効く鳥
   else if (aliveN() < 110 || S.pts > 120) want = slot('starling') >= 0 ? 'starling' : 'crow'; // 道中は群れを育て、余りは包囲のためにためる
   if (want && slot(want) >= 0) { const k = KEYS[slot(want)]; if (S.pts >= S.cost[k]) buy(k); }
 }
 for (const si of list) for (let run = 0; run < RUNS; run++) {
-  SV = SV0(); if (MODE === 'smart') { SV.kinds = Object.keys(KIND); SV.team = teamFor(STAGES[si]); }
+  SV = SV0(); if (MODE === 'smart') { SV.kinds = Object.keys(KIND); SV.team = process.env.TEAM ? process.env.TEAM.split(',') : teamFor(STAGES[si]); } // TEAM=owl,starling,crow で組を固定して比べる
   startStage(si); let ev = [], ps = 0, n = 0, lo = 0;
+  if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] }; // 天気は回す時刻で変わるので、ふだんは中立で比べる（WX=1 で現地の季節の空を使う） if (process.env.NOCD) for (const k in S.kinds) S.kinds[k].cd = 0; // 切り分け用
   while (S.mode === 'play' && S.t < 420) {
     step(1 / 60); n++;
     if (MODE === 'smart') smart(); else if (MODE === 'naive' && S.pts >= S.cost.b1) buy('b1');
@@ -54,6 +59,8 @@ for (let i = 0; i < 400 && scene === 'fly'; i++) { stepFly(1 / 60); draw(i / 60)
 scene = 'pass'; P.sel = -1; draw(0); P.sel = 0; draw(0); P.sel = 3; draw(0); console.log('pass ok');
 // 冒頭と終わりの映画（描画のエラーだけ見る）
 for (const kind of ['intro', 'end']) { filmStart(kind); if (FILM.wait) filmTap(10, 300); let i = 0; for (; i < 6000 && scene === 'film'; i++) { stepFilm(1 / 30); draw(i / 30); } console.log('film', kind, 'ok', (i / 30).toFixed(1) + 's', '→', scene); }
+// 鳥の図鑑
+SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(W - 70 + 5, BK.y0 + 8 + 5); bookTap(W - 70 + 5, BK.y0 + BK.h + 8 + 26 + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'fe', SV.fe); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec fe', SV.fe);
 // 還った時の結果画面とごほうび
 SV = SV0(); startStage(5); S.win = 1; S.mode = 'win'; finish(); for (let i = 0; i < 480; i++) { step(1 / 60); draw(i / 60); } console.log('reward', JSON.stringify(S.reward), 'area', S.area, 'kinds', SV.kinds.join(','));
 mapEnter(0); for (let i = 0; i < 120; i++) { stepMap(1 / 60); draw(i / 60); } console.log('map after ok');

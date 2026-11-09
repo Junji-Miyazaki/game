@@ -9,7 +9,7 @@ cv.width = W * DPR; cv.height = H * DPR;
 const FONT = '-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif';
 const SERIF = '"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",Georgia,serif'; // 映画の字幕カード（v3）
 const F = (s, w) => (w || 400) + ' ' + s + 'px ' + FONT;
-const BASE_ATK = 5, BASE_ARMOR = 4; // v3：強化ボタンをやめた。威力と体力は v2 で最初の中ボスまでに強化した分を初めから持つ。中ボスを崩すたびに群れの勢いが上がる（GROW）
+const BASE_ATK = 5, BASE_ARMOR = 5; // v3：強化ボタンをやめた。威力と体力は v2 で最初の中ボスまでに強化した分を初めから持つ。中ボスを崩すたびに群れの勢いが上がる（GROW）
 const GROW = { atk: 1.6, armor: 2 };
 const KUI = { starling: '#C9CED6', crow: '#8E96A3', swallow: '#7FB2FF', owl: '#E0A860', falcon: '#B8C4D8', pelican: '#F0E6D2' }; // ボタンでの鳥の色
 const KEYS = ['b1', 'b2', 'b3'];
@@ -18,7 +18,7 @@ let S = null, ff = 1, scene = 'map';
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { } }
-const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, intro: 0, ended: 0 });
+const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, intro: 0, ended: 0, fe: 0, lv: {}, tip: 0 });
 // clear=還した都市 best=最高得点 seen=見た建物のカード lm=還した名所 date=スタンプの日付 last=最後に還した都市（渡りの出発地）
 function loadSave() { try { const o = JSON.parse(lsGet(SAVE_KEY) || '{}'); return Object.assign(SV0(), o); } catch (e) { return SV0(); } }
 let SV = loadSave();
@@ -33,7 +33,7 @@ function startBirds(i) { return flockOf(i).length; }
 // ---------- 1都市の準備 ----------
 function zoneAt(x) { const Z = S.st.zones; let z = 0; for (let i = 0; i < Z.length; i++) if (x >= Z[i].x) z = i; return z; }
 function pickGen(g) { let r = Math.random(); for (const [k, p] of g) { if ((r -= p) < 0) return GEN[k]; } return GEN[g[g.length - 1][0]]; }
-function makeBoss(id, x) { const D = BOSS[id], b = D.make(x), sh = D.shell * HPM; for (const q of b.cells.values()) if (q.m !== D.core) { const v = q.m === 'fan' ? sh * .4 : sh; if (q.hp < v) q.hp = q.h0 = v; } else if (D.coreHp) q.hp = q.h0 = D.coreHp * HPM; Object.assign(b, { boss: 1, id, name: D.name, core: D.core, gim: D.gim, deco: D.deco, sub: D.sub, out: D.out, island: D.island, smoke: D.smoke, shine: D.shine }); return b; }
+function makeBoss(id, x) { const D = BOSS[id], b = D.make(x), sh = D.shell * HPM; for (const q of b.cells.values()) if (q.m !== D.core) { const v = q.m === 'fan' ? sh * .4 : sh; if (q.hp < v) q.hp = q.h0 = v; } else if (D.coreHp) q.hp = q.h0 = D.coreHp * HPM; Object.assign(b, { boss: 1, tags: bossTags(id), id, name: D.name, core: D.core, gim: D.gim, deco: D.deco, sub: D.sub, out: D.out, island: D.island, smoke: D.smoke, shine: D.shine }); return b; }
 function startStage(i) {
   const ST = STAGES[i]; HPM = ST.hp * (1 + .05 * othersCleared(i)); // 還した都市が増えるほど建物も硬くなる（群れも増える）
   S = {
@@ -43,7 +43,10 @@ function startStage(i) {
     ft: 0, gt: 0, rot: 0, sc: 1, fx: null, fy: null, siege: 0, win: 0, over: 0, bonus: 0, newBest: 0, killed: [], gim: { cd: 4, ct: 0 },
     card: null, arr: { t: 0 }, toast: null, lmN: 0, lmDown: 0, slow: 0, rainOn: 0,
   };
+  S.kinds = {}; for (const k in KIND) { const L = (SV.lv || {})[k] || { p: 0, s: 0 }; S.kinds[k] = Object.assign({}, KIND[k], { am: KIND[k].am * (1 + .2 * L.p), spd: KIND[k].spd * (1 + .15 * L.s), lvP: L.p, lvS: L.s }); }
+  S.cdn = { b1: 0, b2: 0, b3: 0 };
   KEYS.forEach((k, j) => { S.cost[k] = KIND[S.team[j]].cost; });
+  S.wx = wxFor(ST); S.wfx = wxFx(S.wx); wxFetch(ST); S.flakes = []; S.evt = Math.random() < .65 ? { at: 1200 + Math.random() * 3500, sand: SAND.includes(ST.id) } : null; // いまの空と、通り過ぎる竜巻（見た目だけ）
   const fl = flockOf(i); for (const sp of fl) addBird(60 + Math.random() * 80, GY - 280 + Math.random() * 120, 0, 0, sp); S.peak = fl.length;
   const mids = ST.bosses.map(b => makeBoss(b.id, b.x)); S.L = makeBoss(ST.final, END); S.L.final = 1;
   const lms = (ST.lm || []).map(([x, id]) => { const D = LM[id], b = D.make(x); b.lm = D.name; b.real = D.real; return b; }); S.lmN = lms.length;
@@ -64,12 +67,12 @@ function addBird(x, y, vx, vy, sp) { S.birds.push({ x: S.x + x, y, vx: vx || 0, 
 function aliveN() { let n = 0; for (const b of S.birds) if (b.st !== 2) n++; return n; }
 function buy(k) {
   if (S.mode !== 'play') return false;
-  if (S.pts < S.cost[k]) { S.flash[k] = -.35; sfx('deny'); return false; }
+  if (S.pts < S.cost[k] || S.cdn[k] > 0) { S.flash[k] = -.35; sfx('deny'); return false; }
   S.pts -= S.cost[k]; S.lv[k]++;
   // 呼んだ鳥は群れの近くに、画面の外から飛んでくる
-  const K = KIND[S.team[KEYS.indexOf(k)]], fx = (S.fx ?? S.x + FLX) - S.x, fy = S.fy ?? GY - 210;
+  const K = S.kinds[S.team[KEYS.indexOf(k)]], fx = (S.fx ?? S.x + FLX) - S.x, fy = S.fy ?? GY - 210; S.cdn[k] = K.cd;
   for (let i = 0; i < K.n; i++) addBird(Math.max(-40, fx - 140 - Math.random() * 60), fy - 60 + Math.random() * 120, 260, 0, K);
-  S.cost[k] = Math.round(S.cost[k] * 1.25); S.flash[k] = .35; sfx('buy'); sfx('caw');
+  S.cost[k] = Math.round(S.cost[k] * 1.4); S.flash[k] = .35; sfx('buy'); sfx('caw');
   return true;
 }
 function banner(a, b) { S.banner = { a, b, t: 0, d: 2.6 }; }
@@ -80,6 +83,7 @@ function finish() {
   if (S.win) {
     S.reward = { verse: VERSE[id] || '', kind: null, first: !SV.clear[id] };
     if (S.reward.first) { const nk = KIND_UNLOCK.find(k => !SV.kinds.includes(k)); if (nk) { SV.kinds.push(nk); S.reward.kind = nk; } SV.verse[id] = 1; }
+    S.reward.fe = S.reward.first ? 3 : 1; SV.fe = (SV.fe || 0) + S.reward.fe; // 羽：鳥を育てる（図鑑で使う）
     SV.clear[id] = 1; SV.last = id; if (!SV.date[id]) SV.date[id] = dstr();
   }
   save();
@@ -122,6 +126,7 @@ function checkGone(b) {
   if (b.lm && S.mode === 'play') { S.lmDown++; S.score += 40; S.pts += 20; S.toast = { s: b.lm + '、還る', t: 0 }; sfx('caw'); const id = S.st.id; (SV.lm[id] = SV.lm[id] || {})[b.lm] = 1; save(); }
 }
 function coreCenter(B) { let n = 0, sx = 0, sy = 0; for (const q of B.cells.values()) if (q.m === B.core) { n++; sx += B.x + (q.k + .5) * CS; sy += GY - (q.r + .5) * CS; } return n ? [sx / n, sy / n] : null; }
+const sp = b => (b.sp.spd || 1) * (S.wfx ? S.wfx.spd : 1); // 鳥の速さ：種類 × 羽の段 × 天気
 function hurtBird(bd, vx, vy) { bd.hp--; if (bd.hp <= 0) { bd.st = 2; bd.vx = vx; bd.vy = vy; S.lost++; S.lostT = .5; } }
 function stepChunks(dt) {
   for (let i = S.chunks.length - 1; i >= 0; i--) {
@@ -147,8 +152,10 @@ function stepChunks(dt) {
   }
 }
 function exposed(b) { const e = []; for (const q of b.cells.values()) { if (!b.cells.has(q.r * 200 + q.k - 1) || !b.cells.has(q.r * 200 + q.k + 1) || !b.cells.has((q.r + 1) * 200 + q.k)) e.push(q); } return e; }
+// 得意な建物の札なら ×1.35、苦手なら ×0.65（ボスだけ）
+function likeK(sp, B) { if (!B.tags || !sp.like) return 1; let k = 1; for (const t of B.tags) { if (sp.like.includes(t)) k *= 1.35; if (sp.hate.includes(t)) k *= .65; } return k; }
 function impact(b, nx, ny, hit) {
-  const q = hit.q, sp = b.sp, isCore = hit.b.boss && q.m === hit.b.core, dmg = S.atk * sp.am * (isCore ? (sp.core || 1) : (sp.wall || 1));
+  const q = hit.q, sp = b.sp, isCore = hit.b.boss && q.m === hit.b.core, dmg = S.atk * sp.am * (isCore ? (sp.core || 1) : (sp.wall || 1)) * likeK(sp, hit.b);
   q.hp -= dmg;
   // ペリカン：石を落として、まわりのマスも砕く
   if (sp.stone) { for (let a = -2; a <= 2; a++) for (let e = -2; e <= 2; e++) { if ((!a && !e) || Math.abs(a) + Math.abs(e) > 3) continue; const n = hit.b.cells.get((q.r + a) * 200 + q.k + e); if (n) { n.hp -= dmg * .7; if (n.hp <= 0) kill(hit.b, n); } } for (let i = 0; i < 6; i++) part(nx, ny, (Math.random() - .5) * 140, -Math.random() * 90, 'rgb(150,140,120)', 3); }
@@ -213,7 +220,7 @@ function gimmick(B, dt, lcx) {
       G.warn -= dt;
       if (G.warn <= 0) {
         G.flash = .45; G.cd = 6.5; sfx('glare');
-        for (const bd of S.birds) if (bd.st !== 2 && !bd.sp.light && Math.hypot(bd.x - lcx, bd.y - S.ringY) < 230) { bd.stun = .8; bd.st = 0; bd.vy = -40 + Math.random() * 80; bd.vx *= .3; }
+        for (const bd of S.birds) if (bd.st !== 2 && !bd.sp.light && Math.hypot(bd.x - lcx, bd.y - S.ringY) < 230 * S.wfx.light) { bd.stun = .8; bd.st = 0; bd.vy = -40 + Math.random() * 80; bd.vx *= .3; }
       }
     } else if ((G.cd -= dt) <= 0) { G.warn = 1; sfx('aim'); }
   } else if (B.gim === 'slow') {
@@ -252,7 +259,7 @@ function gimmick(B, dt, lcx) {
     G.eo = G.open > 0 ? 1 : G.warn > 0 ? 1 - G.warn / .8 : Math.max(0, (G.eo || 0) - dt * 4);
     if (G.open > 0) {
       G.open -= dt; const p = coreCenter(B);
-      if (p) for (const bd of S.birds) if (bd.st !== 2 && !bd.sp.light && Math.hypot(bd.x - p[0], bd.y - p[1]) < 210) { bd.st = 0; bd.vx = 0; bd.vy = 0; bd.stun = 1; } // 固まった鳥は、目が閉じてもしばらく動けない
+      if (p) for (const bd of S.birds) if (bd.st !== 2 && !bd.sp.light && Math.hypot(bd.x - p[0], bd.y - p[1]) < 210 * S.wfx.light) { bd.st = 0; bd.vx = 0; bd.vy = 0; bd.stun = 1; } // 固まった鳥は、目が閉じてもしばらく動けない
       if (G.open <= 0) G.cd = 2.6;
     } else if (G.warn > 0) { G.warn -= dt; if (G.warn <= 0) { G.open = 3.2; sfx('glare'); } }
     else if ((G.cd -= dt) <= 0) { G.warn = .8; sfx('aim'); }
@@ -268,8 +275,9 @@ function step(dt) {
   const L = S.L, B = S.bossList[Math.min(S.bi, S.bossList.length - 1)], stop = B.x + B.w / 2 - BOSSX;
   if (S.banner) { S.banner.t += dt; if (S.banner.t > S.banner.d) S.banner = null; }
   S.shake = Math.max(0, S.shake - dt * 25); S.lostT = Math.max(0, S.lostT - dt);
+  for (const k of KEYS) S.cdn[k] = Math.max(0, S.cdn[k] - dt);
   for (const k of KEYS) S.flash[k] = S.flash[k] > 0 ? Math.max(0, S.flash[k] - dt) : Math.min(0, S.flash[k] + dt);
-  if (play && !S.win) S.x = Math.min(stop, S.x + dt * SPEED);
+  if (play && !S.win) S.x = Math.min(stop, S.x + dt * SPEED * S.wfx.scroll * (S.evt && S.evt.on && !S.evt.done ? .8 : 1));
   S.siege = play && S.x >= stop - .5 ? 1 : 0; S.boss = B;
   const drift = play && !S.siege ? SPEED : 0;
   if (play) {
@@ -307,7 +315,7 @@ function step(dt) {
     if (b.st === 2) { b.vy += 300 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.rot = (b.rot || 0) + dt * 6; if (b.y > H + 20) S.birds.splice(i, 1); continue; }
     const my = idx++;
     if (b.stun > 0) { b.stun -= dt; b.vy += 200 * dt; }
-    else if (b.st === 1) { const T = b.tg; if (!T.b.cells.has(T.q.r * 200 + T.q.k)) b.st = 0; else { const gx = T.b.x + (T.q.k + .5) * CS, gy = GY - (T.q.r + .5) * CS, dx = gx - b.x, dy = gy - b.y, d = Math.hypot(dx, dy) || 1; b.vx += (dx / d * 400 - b.vx) * dt * 5; b.vy += (dy / d * 400 - b.vy) * dt * 5; } }
+    else if (b.st === 1) { const T = b.tg; if (!T.b.cells.has(T.q.r * 200 + T.q.k)) b.st = 0; else { const gx = T.b.x + (T.q.k + .5) * CS, gy = GY - (T.q.r + .5) * CS, dx = gx - b.x, dy = gy - b.y, d = Math.hypot(dx, dy) || 1, v = 400 * sp(b); b.vx += (dx / d * v - b.vx) * dt * 5; b.vy += (dy / d * v - b.vy) * dt * 5; } }
     else {
       let tx, ty;
       if (S.mode === 'win') {
@@ -320,10 +328,10 @@ function step(dt) {
       } else { const sl = slot(my, N, S.ft); tx = S.fx + sl[0] * S.sc + Math.sin(S.ft * 1.7 + b.ph) * 4; ty = S.fy + sl[1] * S.sc + Math.cos(S.ft * 1.3 + b.ph) * 4; b.depth = null; }
       ty = Math.max(84, ty);
       const k = gather ? 4 : 2.2; b.vx += ((tx - b.x) * k - b.vx) * dt * 3 + drift * dt * 3; b.vy += ((ty - b.y) * k - b.vy) * dt * 3;
-      const slw = S.slow && !b.sp.wind; b.cd -= dt * (slw ? .5 : 1);
+      const slw = S.slow && !b.sp.wind; b.cd -= dt * (slw ? .5 : 1) * sp(b);
       if (b.cd < 0 && play && !S.win) { const T = gather ? pickTarget(S.gx, S.gy, 1) : (S.siege ? siegeTarget(b) : pickTarget(b.x, b.y, 0)); if (T) { b.tg = T; b.st = 1; } b.cd = gather ? .3 + Math.random() * .7 : (S.siege ? .5 + Math.random() * 1.1 : 1.2 + Math.random() * 2.4); }
     }
-    const vm = Math.hypot(b.vx, b.vy), cap = (b.st === 1 ? 440 : 300) * (S.slow && !b.sp.wind ? .45 : 1); if (vm > cap) { b.vx *= cap / vm; b.vy *= cap / vm; }
+    const vm = Math.hypot(b.vx, b.vy), cap = (b.st === 1 ? 440 * sp(b) : 300) * (S.slow && !b.sp.wind ? .45 : 1); if (vm > cap) { b.vx *= cap / vm; b.vy *= cap / vm; }
     const nx = b.x + b.vx * dt, ny = Math.min(GY - 2, b.y + b.vy * dt); const hit = S.mode === 'win' ? null : cellAt(nx, ny);
     if (hit) { if (impact(b, nx, ny, hit)) { b.x = nx; b.y = ny; b.vx *= .9; if (b.st === 1) { b.st = 0; b.stun = .2; b.vy = -90; } } else if (b.st === 1) b.st = 0; }
     else { b.x = nx; b.y = ny; }
@@ -336,7 +344,8 @@ function step(dt) {
   for (let i = S.pops.length - 1; i >= 0; i--) { S.pops[i].t += dt; if (S.pops[i].t > .4) S.pops.splice(i, 1); }
   for (let i = S.txt.length - 1; i >= 0; i--) { const q = S.txt[i]; q.t += dt; q.y -= dt * 30; if (q.t > 1.1) S.txt.splice(i, 1); }
   for (const f of S.flora) f.t += dt;
-  S.rainOn = (ST.rain || ST.zones[S.zone].rain) ? 1 : 0; if (S.rainOn) for (let i = 0; i < 3; i++) S.drops.push({ x: Math.random() * (W + 80), y: -10, v: 380 + Math.random() * 120 });
+  if (play && !SV.tip && S.t > 7 && !S.banner && !S.card) { SV.tip = 1; save(); banner('下のボタンで鳥を呼ぶ', '鳥ごとに得意な建物がある。ボスの前のカードで、効く鳥を確かめよう'); }
+  stepSky(dt); // 雨・雪・稲光・竜巻は、いまの本物の空（sky.js）で決める
   for (let i = S.drops.length - 1; i >= 0; i--) { const d = S.drops[i]; d.y += d.v * dt; d.x -= d.v * .18 * dt; if (d.y > GY) S.drops.splice(i, 1); }
   S.lamp = coreLeft(L);
   if (play && !S.win) {
@@ -461,6 +470,7 @@ cv.addEventListener('pointerdown', e => {
   if (scene === 'fly') { if (inR(x, y, R_SND)) toggleMute(); else startStage(FLY.si); return; }
   if (scene === 'pass') { passTap(x, y); return; }
   if (scene === 'film') { filmTap(x, y); return; }
+  if (scene === 'book') { bookTap(x, y); return; }
   tap(x, y);
 });
 cv.addEventListener('pointermove', e => {
@@ -529,13 +539,13 @@ function icon(k, x, y, col) {
 function drawSky(t, cam, z, pr) {
   // 空：都市ごとの昼の色から、象徴に近づくほど夕暮れへ。還ると澄んだ空へ
   const ST = S.st, rc = S.reclaim, clear = [[118, 176, 214], [176, 214, 226], [214, 236, 222]];
-  const col = i => mix(lerp3(ST.sky[0][i], ST.sky[1][i], pr), clear[i], rc);
+  const col = i => mix(lerp3(skyBase(ST, i), ST.sky[1][i], S.wx && S.wx.phase === '夜' ? 0 : pr * .3), clear[i], rc); // v3：現地の時間帯の空から始まり、象徴に近づくと少し暮れる
   const g = c.createLinearGradient(0, 0, 0, GY); g.addColorStop(0, col(0)); g.addColorStop(.62, col(1)); g.addColorStop(1, col(2));
-  c.fillStyle = g; c.fillRect(-20, -20, W + 40, GY + 20);
-  const sy = 170 + pr * 270 * (1 - rc), rg = c.createRadialGradient(W * .7, sy, 0, W * .7, sy, 190);
-  rg.addColorStop(0, 'rgba(255,244,222,' + (.38 + .2 * pr) + ')'); rg.addColorStop(1, 'rgba(255,244,222,0)'); c.fillStyle = rg; c.fillRect(-20, -20, W + 40, GY + 20);
+  c.fillStyle = g; c.fillRect(-20, -20, W + 40, GY + 20); skyTint(t, cam);
+  if (wxSun()) { const sy = 170 + pr * 270 * (1 - rc), rg = c.createRadialGradient(W * .7, sy, 0, W * .7, sy, 190);
+  rg.addColorStop(0, 'rgba(255,244,222,' + (.38 + .2 * pr) + ')'); rg.addColorStop(1, 'rgba(255,244,222,0)'); c.fillStyle = rg; c.fillRect(-20, -20, W + 40, GY + 20); }
   for (const [n, k, y0, al, s] of [[5, .06, 130, .16, 1.4], [6, .18, 210, .12, 1]]) {
-    c.fillStyle = 'rgba(255,255,255,' + (al + (ST.rain ? .06 : 0)) + ')';
+    c.fillStyle = 'rgba(255,255,255,' + (al * (S.wx && S.wx.phase === '夜' ? .35 : 1) + (S.rainOn ? .06 : 0)) + ')';
     for (let i = 0; i < n; i++) { const x = wrapX(i * 173 + 40, cam, k, W + 300), y = y0 + ((i * 53) % 90); c.beginPath(); c.ellipse(x, y, 70 * s, 9 * s, 0, 0, 7); c.ellipse(x + 30 * s, y - 6 * s, 40 * s, 8 * s, 0, 0, 7); c.fill(); }
   }
   // 遠い丘の稜線（還ると緑）
@@ -545,7 +555,7 @@ function drawSky(t, cam, z, pr) {
   // 中景：区間ごとの街並みのシルエット
   const sil = ST.zones[z].sil; c.fillStyle = mixA(lerp3([84, 92, 106], [70, 60, 78], pr), [84, 128, 98], rc, .32);
   for (let i = 0; i < 14; i++) { const x = wrapX(i * 83, cam, .4, W + 200), bh = (sil[0] + ((i * 37) % sil[1])) * (1 - rc * .7), bw = 26 + (i % 3) * 8; c.fillRect(x, GY - bh, bw, bh); }
-  const hz = lerp3(lerp3(ST.sky[0][2], ST.sky[1][2], pr), clear[2], rc), hg = c.createLinearGradient(0, GY - 90, 0, GY); hg.addColorStop(0, mixA(hz, hz, 0, 0)); hg.addColorStop(1, mixA(hz, hz, 0, .55));
+  const hz = lerp3(lerp3(skyBase(ST, 2), ST.sky[1][2], S.wx && S.wx.phase === '夜' ? 0 : pr * .3), clear[2], rc), hg = c.createLinearGradient(0, GY - 90, 0, GY); hg.addColorStop(0, mixA(hz, hz, 0, 0)); hg.addColorStop(1, mixA(hz, hz, 0, .55));
   c.fillStyle = hg; c.fillRect(-20, GY - 90, W + 40, 90);
   if (S.dark) { c.fillStyle = 'rgba(22,26,40,' + (.5 * S.dark) + ')'; c.fillRect(-20, -20, W + 40, GY + 20); }
 }
@@ -626,15 +636,14 @@ function drawWorld(t) {
     for (let i = 0; i < 26; i++) { const y = 110 + (i * 61) % 380, x = W + 60 - ((i * 137 + t * (g ? 900 : 260)) % (W + 120)); c.moveTo(x, y); c.lineTo(x + 30 + (i % 3) * 14, y); } c.stroke();
   }
   for (const q of S.inc) { const sp = BIRD[S.st.bird]; birdS(q.x - cam, q.y, sp.s * .93, Math.sin(t * 16 + q.ph) * .65, 0, Math.atan2(q.vy, Math.abs(q.vx) + 1) * .5 * Math.sign(q.vx || 1), sp.col, sp.shape); }
+  for (const b of S.birds) { if (b.st === 2) continue; const P = b.sp.lvP || 0, Q = b.sp.lvS || 0; if (!P && !Q) continue; const x = b.x - cam;
+    if (Q && b.st === 1) { c.strokeStyle = 'rgba(255,255,255,' + (.18 + .12 * Q) + ')'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, b.y); c.lineTo(x - b.vx * .05 * Q, b.y - b.vy * .05 * Q); c.stroke(); }
+    if (P) { c.fillStyle = KUI[b.sp.key] || '#fff'; c.globalAlpha = .12 + .1 * P; c.beginPath(); c.arc(x, b.y, b.sp.s * (.75 + .1 * P), 0, 7); c.fill(); c.globalAlpha = 1; } } // 育てた鳥の光（威力）と軌跡（速さ）
   for (const b of S.birds) { const s = b.sp.s; birdS(b.x - cam, b.y, b.st === 0 && b.depth != null ? s * (1 + .28 * b.depth) : s, b.st === 2 ? .1 : b.st === 1 ? 0 : Math.sin(t * 14 + b.ph) * .6, b.st === 1 ? 1 : b.stun > 0 ? .4 : 0, b.st === 2 ? b.rot : b.st === 1 ? Math.atan2(b.vy, b.vx) + Math.PI / 2 : (b.stun > 0 ? -.6 : Math.atan2(b.vy, Math.max(60, Math.abs(b.vx))) * .6 * Math.sign(b.vx || 1)), b.st === 2 ? '#555A62' : b.sp.col, b.sp.shape); }
   if (S.gt > 0) { const u = 2.5 - S.gt; c.strokeStyle = 'rgba(242,184,75,' + Math.min(.8, S.gt * .4) + ')'; c.lineWidth = 1.5; c.beginPath(); c.arc(S.gx - cam, S.gy, 8 + u * 8, 0, 7); c.stroke(); c.fillStyle = UI.acc; c.beginPath(); c.arc(S.gx - cam, S.gy, 2.5, 0, 7); c.fill(); }
   c.lineWidth = 1; for (const p of S.pops) { c.strokeStyle = 'rgba(20,22,26,' + (1 - p.t / .4) + ')'; c.beginPath(); c.arc(p.x - cam, p.y, 3 + p.t * 20, 0, 7); c.stroke(); }
   for (const q of S.txt) { c.globalAlpha = Math.max(0, 1 - q.t / 1.1); txt(q.s, q.x - cam, q.y, 13, '#15181D', 700, 'center'); } c.globalAlpha = 1;
-  if (S.st.dust && rc < 1) { c.fillStyle = 'rgba(220,186,128,' + (.14 * (1 - rc)) + ')'; c.fillRect(0, 0, W, PY + 24); c.fillStyle = 'rgba(240,214,166,' + (.45 * (1 - rc)) + ')'; for (let i = 0; i < 40; i++) { const x = ((i * 97 - t * (60 + (i % 5) * 30)) % (W + 40) + W + 40) % (W + 40) - 20; c.fillRect(x, 120 + (i * 53) % 380, 2, 1); } }
-  if ((S.st.fog || S.st.zones[z].fog) && rc < 1) { // サンフランシスコの霧
-    c.fillStyle = 'rgba(232,236,240,' + (.3 * (1 - rc)) + ')'; c.fillRect(0, 0, W, PY + 24);
-    for (let i = 0; i < 6; i++) { const x = ((i * 173 - t * 14) % (W + 260) + W + 260) % (W + 260) - 130, y = 200 + (i * 71) % 240; c.fillStyle = 'rgba(240,242,246,' + (.22 * (1 - rc)) + ')'; c.beginPath(); c.ellipse(x, y, 130, 26, 0, 0, 7); c.fill(); }
-  }
+  drawSkyFx(t);
   if (S.drops.length && rc < 1) { c.strokeStyle = 'rgba(220,228,238,' + (.35 * (1 - rc)) + ')'; c.lineWidth = 1; c.beginPath(); for (const d of S.drops) { c.moveTo(d.x, d.y); c.lineTo(d.x + 3, d.y - 12); } c.stroke(); }
   if (G.flash > 0 && S.boss.gim === 'glare') { c.fillStyle = 'rgba(255,250,225,' + (G.flash / .45) * .5 + ')'; c.fillRect(0, 0, W, PY + 24); }
   c.restore();
@@ -660,7 +669,7 @@ function drawHUD(t) {
     c.font = F(12, 700); let nm = B.name; while (c.measureText(nm).width > 128 && nm.length > 2) nm = nm.slice(0, -1); if (nm !== B.name) nm += '…';
     txt(nm + (lo ? '　崩しきれ' : ''), 26, 102, 12, UI.ink, 700);
     rr(196, 94, 138, 6, 3); c.fillStyle = 'rgba(255,255,255,.12)'; c.fill(); if (f > 0) { rr(196, 94, Math.max(6, 138 * f), 6, 3); c.fillStyle = UI.red; c.fill(); }
-  } else { const s = ST.city + '・' + ST.zones[z].n; c.font = F(12, 700); const w = c.measureText(s).width + 24; rr(12, 84, w, 24, 12); c.fillStyle = UI.card; c.fill(); txt(s, 24, 101, 12, UI.ink, 700); }
+  } else { const s = ST.city + '・' + ST.zones[z].n + (S.wx ? '　' + wxShort(S.wx) : ''); c.font = F(12, 700); const w = c.measureText(s).width + 24; rr(12, 84, w, 24, 12); c.fillStyle = UI.card; c.fill(); txt(s, 24, 101, 12, UI.ink, 700); }
   drawToggles();
 }
 function drawToggles() {
@@ -686,16 +695,17 @@ function drawPanel(t) {
   icon('coin', 22, PY + 22, UI.acc); txt(String(Math.floor(S.pts)), 32, PY + 27, 15, UI.ink, 700); txt('ポイント', 32 + (c.measureText(String(Math.floor(S.pts))).width) + 6, PY + 27, 10, UI.sub, 500);
   txt('ボタンで鳥を呼ぶ　·　呼ぶほど高くなる', W - 16, PY + 27, 10, UI.sub, 500, 'right');
   KEYS.forEach((k, i) => {
-    const r = btnRect(i), kk = S.team[i], u = KIND[kk], ok = play && S.pts >= S.cost[k], fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
+    const r = btnRect(i), kk = S.team[i], u = S.kinds[kk], cw = S.cdn[k] > 0, ok = play && S.pts >= S.cost[k] && !cw, fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
     rr(x, r.y, r.w, r.h, 14); c.fillStyle = ok ? UI.btnOn : UI.btn; c.fill();
     if (fl > 0) { rr(x, r.y, r.w, r.h, 14); c.fillStyle = 'rgba(242,184,75,' + fl * 1.2 + ')'; c.fill(); }
     if (ok) { rr(x + .75, r.y + .75, r.w - 1.5, r.h - 1.5, 13.5); c.lineWidth = 1.5; c.strokeStyle = 'rgba(242,184,75,' + (.55 + .35 * Math.sin(t * 4)) + ')'; c.stroke(); }
     c.fillStyle = ok ? UI.accD : 'rgba(255,255,255,.05)'; c.beginPath(); c.arc(x + 21, r.y + 21, 13, 0, 7); c.fill();
     birdS(x + 21, r.y + 22, 9, .5, 0, 0, ok ? KUI[kk] : UI.dim, u.shape);
-    txt(u.name, x + 39, r.y + 21, 12.5, ok ? UI.ink : UI.sub, 700); txt('×' + u.n, x + 39, r.y + 35, 10, ok ? KUI[kk] : UI.dim, 700);
+    txt(u.name, x + 39, r.y + 21, 12.5, ok ? UI.ink : UI.sub, 700); txt('×' + u.n + '　威力 ' + Math.round(S.atk * u.am * (u.wall || 1)), x + 39, r.y + 35, 9.5, ok ? KUI[kk] : UI.dim, 700);
     c.font = F(9.5, 500); let ro = u.role; while (c.measureText(ro).width > r.w - 16 && ro.length > 2) ro = ro.slice(0, -1); txt(ro, x + 9, r.y + 47, 9.5, ok ? '#C9CED6' : UI.dim, 500);
     icon('coin', x + 15, r.y + 54, ok ? UI.acc : UI.dim); txt(String(S.cost[k]), x + 23, r.y + 58, 12, ok ? UI.acc : UI.dim, 700);
-    const p = play ? Math.min(1, S.pts / S.cost[k]) : 0; if (p > 0 && !ok) { c.fillStyle = 'rgba(242,184,75,.45)'; c.fillRect(x + 14, r.y + r.h - 3, (r.w - 28) * p, 2); }
+    if (cw) { const f = S.cdn[k] / u.cd; rr(x, r.y, r.w, r.h, 14); c.fillStyle = 'rgba(8,9,12,.55)'; c.fill(); c.fillStyle = 'rgba(242,184,75,.7)'; c.fillRect(x + 14, r.y + r.h - 3, (r.w - 28) * (1 - f), 2); txt(S.cdn[k].toFixed(1) + '秒', x + r.w - 10, r.y + 58, 10, UI.acc, 700, 'right'); }
+    const p = play ? Math.min(1, S.pts / S.cost[k]) : 0; if (p > 0 && !ok && !cw) { c.fillStyle = 'rgba(242,184,75,.45)'; c.fillRect(x + 14, r.y + r.h - 3, (r.w - 28) * p, 2); }
   });
 }
 // 還った時は草木が育つのを見せてから結果を出す
@@ -729,8 +739,8 @@ function drawReclaimResult(t, y0) {
   if (u > .3) { const b = Math.min(1, (u - .3) / .5); c.globalAlpha = b; txt('還った土地', 48, ys - 6, 12, UI.sub, 500); txt(S.area + ' ha', W - 48, ys - 2, 24, UI.green, 700, 'right'); txt('戻った鳥', 48, ys + 20, 12, UI.sub, 500); txt(aliveN() + ' 羽', W - 48, ys + 22, 14, UI.green, 700, 'right'); c.globalAlpha = 1; }
   const R = S.reward; if (!R || S.endT < 5.6) return; c.globalAlpha = Math.min(1, (S.endT - 5.6) / .5);
   let y = ys + 46; for (const l of wrapL('「' + R.verse + '」', W - 96, 12, 600)) { txt(l, W / 2, y, 12, '#DDE8C8', 600, 'center'); y += 17; }
-  if (R.kind) { const K = KIND[R.kind]; rr(40, y - 2, W - 80, 26, 13); c.fillStyle = 'rgba(242,184,75,.14)'; c.fill(); birdS(58, y + 11, 7, .5, 0, 0, KUI[R.kind], K.shape); txt('新しい仲間：' + K.name + '（' + K.role + '）', 74, y + 15, 11, UI.acc, 700); }
-  else if (R.first) txt('鳥の言葉が、パスポートに記された', W / 2, y + 12, 10, UI.sub, 500, 'center');
+  if (R.kind) { const K = KIND[R.kind]; rr(40, y - 2, W - 80, 26, 13); c.fillStyle = 'rgba(242,184,75,.14)'; c.fill(); birdS(58, y + 11, 7, .5, 0, 0, KUI[R.kind], K.shape); txt('新しい仲間：' + K.name + '　○' + K.like.map(t => TAGN[t]).join('') + ' ×' + K.hate.map(t => TAGN[t]).join(''), 74, y + 15, 11, UI.acc, 700); y += 30; }
+  txt('羽 +' + R.fe + '（図鑑で鳥を育てる）', W / 2, y + 12, 10, UI.sub, 600, 'center');
   c.globalAlpha = 1;
 }
 function draw(t) {
@@ -739,6 +749,7 @@ function draw(t) {
   if (scene === 'fly') { drawFly(t); return; }
   if (scene === 'pass') { drawPass(t); return; }
   if (scene === 'film') { drawFilm(t); return; }
+  if (scene === 'book') { drawBook(t); return; }
   drawWorld(t); drawHUD(t); drawBanner(); drawToast(); drawArrival(t); drawCard(t); if (S.mode !== 'play') drawResult(t); drawPanel(t);
 }
 
@@ -762,13 +773,13 @@ function drawLabels(L) {
 }
 function drawToast() {
   const T = S.toast; if (!T) return; const a = Math.max(0, Math.min(1, T.t / .2, (2.4 - T.t) / .4)); c.globalAlpha = a;
-  c.font = F(12, 700); const s = T.s + '　+40', w = c.measureText(s).width + 28, y = 118; rr(W / 2 - w / 2, y, w, 26, 13); c.fillStyle = 'rgba(30,60,36,.85)'; c.fill(); txt(s, W / 2, y + 17, 12, '#BFF0C8', 700, 'center'); c.globalAlpha = 1;
+  c.font = F(12, 700); const s = T.s + (T.plain ? '' : '　+40'), w = c.measureText(s).width + 28, y = 118; rr(W / 2 - w / 2, y, w, 26, 13); c.fillStyle = T.plain ? 'rgba(20,22,28,.8)' : 'rgba(30,60,36,.85)'; c.fill(); txt(s, W / 2, y + 17, 12, T.plain ? '#E6E2D8' : '#BFF0C8', 700, 'center'); c.globalAlpha = 1;
 }
 // 包囲が始まる時の建物のカード：名前、場所と年、説明、鳥の言い分、遊び方
 function drawCard(t) {
   const K = S.card; if (!K) return; const B = K.B, D = BOSS[B.id], a = Math.max(0, Math.min(1, K.t / .25, (5 - K.t) / .3)); c.globalAlpha = a;
   const fact = wrapL(D.fact || '', W - 72, 11), say = wrapL(D.say || '', W - 104, 13, 700), sub = wrapL(D.sub || '', W - 72, 10.5);
-  const y0 = 82, bh = say.length * 18 + 20, h = 100 + fact.length * 15 + bh + 12 + sub.length * 14 + 6 + 26;
+  const y0 = 82, bh = say.length * 18 + 20, h = 100 + fact.length * 15 + bh + 12 + sub.length * 14 + 6 + 26 + 28;
   rr(16, y0, W - 32, h, 18); c.fillStyle = 'rgba(14,16,20,.9)'; c.fill();
   c.font = F(10, 700); const cw = c.measureText(D.kind).width + 18; rr(30, y0 + 14, cw, 18, 9); c.fillStyle = D.kind === '象徴' ? 'rgba(224,96,74,.85)' : 'rgba(224,96,74,.45)'; c.fill(); txt(D.kind, 30 + cw / 2, y0 + 27, 10, UI.ink, 700, 'center');
   txt('タップで閉じる', W - 30, y0 + 27, 9, UI.dim, 500, 'right');
@@ -778,6 +789,8 @@ function drawCard(t) {
   y += 2; rr(28, y - 4, W - 56, bh, 12); c.fillStyle = 'rgba(242,184,75,.12)'; c.fill(); bird(46, y + 9, 6, .5, 0, 0, UI.acc);
   let yy = y + 13; for (const l of say) { txt(l, 62, yy, 13, UI.acc, 700); yy += 18; } txt('— ' + BIRD[S.st.bird].name, W - 40, y + bh - 9, 9, UI.sub, 500, 'right');
   y += bh + 14; for (const l of sub) { txt(l, 30, y, 10.5, UI.ink, 500); y += 14; }
+  { const hp = Math.round(D.shell * HPM), s2 = S.team.map(k => { const u = S.kinds[k], d = S.atk * u.am * (u.wall || 1) * likeK(u, B); return u.name + (d >= hp ? ' 一撃' : ' ' + Math.ceil(hp / d) + '回') + (likeK(u, B) > 1 ? '○' : likeK(u, B) < 1 ? '×' : ''); }).join('・');
+    txt('壁の硬さ ' + hp + (B.tags.length ? '　札：' + B.tags.map(t => TAGN[t]).join('・') : ''), 30, y, 10, UI.sub, 600); y += 14; txt(s2, 30, y, 10, '#C9CED6', 500); y += 12; }
   const kb = KEYB[D.gim] || (D.kind === '象徴' ? 'crow' : 'falcon'), kd = KIND[kb], have = S.team.includes(kb);
   rr(28, y - 2, W - 56, 22, 11); c.fillStyle = have ? 'rgba(104,214,128,.14)' : 'rgba(255,255,255,.06)'; c.fill(); birdS(44, y + 9, 6.5, .5, 0, 0, KUI[kb], kd.shape);
   txt('効く鳥：' + kd.name + '（' + kd.role + '）' + (have ? '' : '　— 連れてきていない'), 58, y + 13, 10, have ? '#BFF0C8' : UI.sub, 600);
@@ -792,13 +805,16 @@ function drawArrival(t) {
   if (A.t < 1.25) { const ca = Math.min(1, (1.25 - A.t) / .3); c.globalAlpha = ca; c.fillStyle = '#0B0B0B'; c.fillRect(0, 0, W, PY + 24); if (typeof filmGrain === 'function') filmGrain(t, 0, PY + 24, .9);
     c.font = '700 11px ' + SERIF; c.fillStyle = '#D8D4CA'; c.textAlign = 'center'; c.fillText('CHAPITRE ' + (S.si + 1), W / 2, 250);
     c.font = '700 24px ' + SERIF; c.fillText(S.st.en.split(' → ').join(' — '), W / 2, 286, W - 40); c.font = '500 13px ' + SERIF; c.fillText(S.st.city, W / 2, 312); c.globalAlpha = 1; return; }
-  const at = A.t - 1.25, d = 3.8; if (at > d) return; const a = Math.max(0, Math.min(1, at / .35, (d - at) / .5)); c.globalAlpha = a;
+  const at = A.t - 1.25, d = 4.6; if (at > d) return; const a = Math.max(0, Math.min(1, at / .35, (d - at) / .5)); c.globalAlpha = a;
   const ST = S.st, c0 = ST.zones[0].c || ST.country, h = HELLO[c0] || ['ようこそ', ''], y0 = 150;
-  rr(36, y0, W - 72, 150, 20); c.fillStyle = 'rgba(14,16,20,.72)'; c.fill();
+  { const nf = Math.min(2, (S.wfx || wxFx(S.wx || wxFor(S.st))).txt.length); rr(36, y0, W - 72, 194 + (nf ? nf * 14 + 8 : 0), 20); c.fillStyle = 'rgba(14,16,20,.74)'; c.fill(); }
   c.font = F(10, 700); const cw = c.measureText(ST.country).width + 18; rr(W / 2 - cw / 2, y0 + 14, cw, 18, 9); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); txt(ST.country, W / 2, y0 + 27, 10, UI.sub, 700, 'center');
   let fs = 22; c.font = F(fs, 700); while (c.measureText(ST.en).width + ST.en.length * 3 > W - 100 && fs > 12) { fs--; c.font = F(fs, 700); } spaced(ST.en, W / 2, y0 + 62, fs, UI.ink, 3);
   txt(h[0], W / 2, y0 + 98, 22, UI.acc, 700, 'center'); if (h[0] !== 'ようこそ') txt(h[1] + 'で「ようこそ」', W / 2, y0 + 116, 10, UI.sub, 500, 'center');
-  const lt = localTime(ST.tz); txt((lt ? '現地 ' + lt + '　·　' : '') + (ST.weather || ''), W / 2, y0 + 138, 11, '#C9CED6', 500, 'center');
+  const w = S.wx || wxFor(ST); c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(56, y0 + 130, W - 112, 1);
+  txt('いま', W / 2, y0 + 148, 9.5, UI.sub, 600, 'center'); let fs2 = 16; c.font = F(fs2, 700); const wl = wxLine(w); while (c.measureText(wl).width > W - 96 && fs2 > 11) { fs2--; c.font = F(fs2, 700); } txt(wl, W / 2, y0 + 170, fs2, UI.ink, 700, 'center');
+  txt(wxSub(w), W / 2, y0 + 186, 9, UI.dim, 500, 'center');
+  const fx = (S.wfx || wxFx(w)).txt; fx.slice(0, 2).forEach((l, i) => txt(l, W / 2, y0 + 210 + i * 14, 10, '#C9CED6', 500, 'center'));
   c.globalAlpha = 1;
 }
 
@@ -811,7 +827,7 @@ function flyEnter(si) {
   const to = STAGES[si], fi = STAGES.findIndex(s => s.id === SV.last), from = fi >= 0 && fi !== si ? STAGES[fi] : null;
   const fl = flockOf(si), sp = []; for (let i = 0; i < fl.length; i += Math.max(1, Math.floor(fl.length / 46))) sp.push(fl[i]);
   FLY = { si, from, to, km: from ? gcKm(endPt(from), [to.lat, to.lon]) : 0, t: 0, d: from ? 5.5 : 3.4, sp, n: fl.length, kinds: [...new Set(fl.map(b => b.name))] };
-  scene = 'fly'; sfx('start');
+  scene = 'fly'; sfx('start'); wxFetch(to);
 }
 function stepFly(dt) { FLY.t += dt; if (FLY.t >= FLY.d) startStage(FLY.si); }
 function drawFly(t) {
@@ -892,3 +908,36 @@ function loop(ms) {
   audioTick(dt); draw(t); requestAnimationFrame(loop);
 }
 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(loop);
+
+// ---------- v3：鳥の図鑑（羽で鳥を育てる。育てた段は次の都市へ持ち越す） ----------
+// 威力と速さを、それぞれ 3 段まで。次の段に要る羽は 1・2・3 枚。振り直しはいつでも無料（試作の間）
+const BK = { y0: 118, h: 70 };
+const bkRow = i => ({ x: 16, y: BK.y0 + i * BK.h, w: W - 32, h: BK.h - 6 });
+const bkBtn = (i, j) => ({ x: W - 70, y: BK.y0 + i * BK.h + 8 + j * 26, w: 46, h: 22 });
+const R_RESPEC = { x: 24, y: 584, w: 110, h: 40 }, R_BKBACK = { x: 196, y: 584, w: 140, h: 40 };
+function drawBook(t) {
+  const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0E1424'); bg.addColorStop(1, '#141A2C'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  spaced('鳥の図鑑', W / 2, 74, 20, UI.ink, 4); txt('羽 ' + (SV.fe || 0) + ' 枚　·　都市を還すともらえる（はじめて 3 枚、2 回目から 1 枚）', W / 2, 98, 9.5, UI.sub, 500, 'center');
+  Object.keys(KIND).forEach((k, i) => {
+    const K = KIND[k], R = bkRow(i), got = SV.kinds.includes(k), L = (SV.lv || {})[k] || { p: 0, s: 0 };
+    rr(R.x, R.y, R.w, R.h, 14); c.fillStyle = 'rgba(255,255,255,' + (got ? .06 : .03) + ')'; c.fill();
+    birdS(R.x + 26, R.y + 30, 11, .5 + .2 * Math.sin(t * 3 + i), 0, 0, got ? KUI[k] : UI.dim, K.shape);
+    if (!got) { txt('？？？', R.x + 52, R.y + 26, 13, UI.dim, 700); txt('都市を還すと仲間になる', R.x + 52, R.y + 44, 10, UI.dim, 500); return; }
+    txt(K.name, R.x + 52, R.y + 20, 13, UI.ink, 700); txt(K.role, R.x + 52 + c.measureText(K.name).width + 8, R.y + 20, 9.5, UI.sub, 500);
+    txt('○ ' + (K.like.map(tg => TAGN[tg]).join('・') || '—') + '　× ' + K.hate.map(tg => TAGN[tg]).join('・'), R.x + 52, R.y + 37, 10, '#C9CED6', 600);
+    txt('×' + K.n + '　待ち ' + K.cd + '秒　値段 ' + K.cost, R.x + 52, R.y + 53, 9.5, UI.dim, 500);
+    [['威力', 'p'], ['速さ', 's']].forEach(([nm, f], j) => {
+      const B = bkBtn(i, j), lv = L[f], cost = lv + 1, can = lv < 3 && (SV.fe || 0) >= cost;
+      for (let d = 0; d < 3; d++) { c.fillStyle = d < lv ? UI.acc : 'rgba(255,255,255,.15)'; c.beginPath(); c.arc(B.x - 30 + d * 9, B.y + 11, 3, 0, 7); c.fill(); }
+      txt(nm, B.x - 44, B.y + 15, 9.5, UI.sub, 600, 'right');
+      rr(B.x, B.y, B.w, B.h, 11); c.fillStyle = can ? UI.acc : 'rgba(255,255,255,.07)'; c.fill(); txt(lv >= 3 ? '最大' : '+  ' + cost, B.x + B.w / 2, B.y + 15, 10, can ? '#17191E' : UI.dim, 700, 'center');
+    });
+  });
+  pillAt('振り直し', R_RESPEC.x, R_RESPEC.y, R_RESPEC.w, false); pillAt('地図へ戻る', R_BKBACK.x, R_BKBACK.y, R_BKBACK.w, true); drawToggles();
+}
+function bookTap(x, y) {
+  if (inR(x, y, R_SND)) { toggleMute(); return; }
+  if (inR(x, y, R_BKBACK)) { scene = 'map'; sfx('buy'); return; }
+  if (inR(x, y, R_RESPEC)) { let back = 0; for (const k in SV.lv) for (const f of ['p', 's']) for (let l = 1; l <= SV.lv[k][f]; l++) back += l; SV.lv = {}; SV.fe = (SV.fe || 0) + back; save(); sfx('buy'); return; }
+  Object.keys(KIND).forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, cost = L[f] + 1; if (L[f] < 3 && (SV.fe || 0) >= cost) { SV.fe -= cost; L[f]++; save(); sfx('buy'); } else sfx('deny'); }); });
+}
