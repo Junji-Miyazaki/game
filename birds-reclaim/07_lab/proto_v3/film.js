@@ -5,8 +5,41 @@
 // 確かめ用：v3.html?intro で冒頭、v3.html?ending で終わりをすぐ流す。
 const FW = { y: 185, h: 270 }; // 縦長の画面の真ん中に開ける、昔の映画の比率（4:3）の窓
 const R_SKIP = { x: 250, y: 584, w: 100, h: 36 };
+// ---------- 題辞（エピグラフ） ----------
+// 人にとって大事な言葉を、きちんと美しく出す。そこへ鳥が1羽来て、まるで気にせず文字をついばんで落とす（自然にとっては無用、というジョーク）。
+// どれも作者の死後 70 年以上たち著作権の切れた原文。和訳・英訳はこのゲームで付けた。原文は入れる前に原典で照らし合わせること［要確認］。
+// mode: 'peck'＝ついばんで落とす 'rest'＝降りてとまるだけ（終わりのゲーテ「おまえも安らぐ」）
+const EPI = {
+  intro: { o: 'Ein Käfig ging einen Vogel suchen.', ja: '檻が、鳥を探しに出かけた。', en: 'A cage went in search of a bird.', by: 'Franz Kafka — Zürauer Aphorismen, 16' },
+  osaka: { o: '行く春や鳥啼魚の目は泪', cjk: 1, ja: 'ゆくはるや　とりなき　うおのめはなみだ', en: 'Spring departs — birds cry, and the eyes of the fish are wet.', by: '松尾芭蕉『おくのほそ道』' },
+  saigon: { o: '國破山河在　城春草木深', cjk: 1, ja: '国破れて山河在り　城春にして草木深し', en: 'The state is broken; mountains and rivers remain. Spring in the city — grass and trees grow deep.', by: '杜甫「春望」' },
+  paris: { o: "Ses ailes de géant l'empêchent de marcher.", ja: '巨人の翼が、彼を歩かせない。', en: "His giant's wings keep him from walking.", by: 'Charles Baudelaire — « L’Albatros »' },
+  seattle: { o: '…in Wildness is the preservation of the World.', ja: '野生のなかにこそ、世界は保たれている。', en: '', by: 'Henry David Thoreau — “Walking”' },
+  newyork: { o: '“Hope” is the thing with feathers', ja: '「希望」とは、羽のあるもの', en: '', by: 'Emily Dickinson' },
+  end: { o: 'Die Vögelein schweigen im Walde. Warte nur, balde ruhest du auch.', ja: '小鳥たちは森で黙る。待つがいい、やがて、おまえも安らぐ。', en: 'The little birds are silent in the wood. Only wait — soon you too will rest.', by: 'Goethe — „Wandrers Nachtlied“', mode: 'rest' },
+};
+// 題辞を描く。at＝出してからの秒、cy＝縦の中心。文字は1字ずつ描き、選ばれた数字が鳥についばまれて落ちる
+function epiDraw(E, at, cy, a) {
+  const big = E.cjk ? '600 18px ' + SERIF : '600 italic 15px Georgia,"Times New Roman",serif', L = wrapF(E.o, big, W - 64), lh = E.cjk ? 26 : 22;
+  const sub = [...wrapF(E.ja, '500 11px ' + SERIF, W - 44).map(l => [l, '500 11px ' + SERIF]), ...(E.en ? wrapF(E.en, LATIN, W - 70).map(l => [l, LATIN]) : [])];
+  const hh = L.length * lh + 14 + sub.length * 15 + 26; let y = cy - hh / 2 + lh - 4; c.globalAlpha = a; c.textAlign = 'left'; c.font = big;
+  const chars = []; for (const l of L) { let x = W / 2 - c.measureText(l).width / 2; for (const ch of l) { const w = c.measureText(ch).width; chars.push({ ch, x, y, w }); x += w; } y += lh; }
+  const n = chars.length, picks = chars.map((q, i) => i).filter(i => chars[i].ch.trim()).sort((p, q) => hash(p, n) - hash(q, n)).slice(0, E.mode === 'rest' ? 0 : 5).sort((p, q) => p - q), T0 = 2.4;
+  chars.forEach((q, i) => { const j = picks.indexOf(i), tk = T0 + .45 + j * .38, d = j >= 0 ? Math.max(0, at - tk) : 0; c.globalAlpha = a * Math.max(0, 1 - d * 1.2); c.fillStyle = '#ECE7DC'; c.fillText(q.ch, q.x + d * 14, q.y + d * d * 160); });
+  c.globalAlpha = a; c.textAlign = 'center'; y += 10; for (const [l, f] of sub) { c.font = f; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(l, W / 2, y); y += 15; }
+  c.font = '500 9.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText(E.by, W / 2, y + 10);
+  // 鳥：右から来て、選んだ字を順にとまってつつき、飛び去る（rest は最後の字にとまったまま）
+  const tgt = E.mode === 'rest' ? [chars[n - 1]] : picks.map(i => chars[i]); if (!tgt.length) { c.globalAlpha = 1; return; }
+  let bx, by, ang = Math.sin(at * 16) * .7, fold = 0; const first = tgt[0], last = tgt[tgt.length - 1], tEnd = T0 + .45 + tgt.length * .38;
+  if (at < T0) { c.globalAlpha = 1; return; }
+  if (at < T0 + .45) { const u = (at - T0) / .45; bx = W + 20 + (first.x + first.w / 2 - W - 20) * u; by = first.y - 70 + 52 * u; }
+  else if (E.mode === 'rest' || at < tEnd) { const j = Math.min(tgt.length - 1, Math.floor((at - T0 - .45) / .38)), q = tgt[j], hop = ((at - T0 - .45) / .38) % 1; bx = q.x + q.w / 2; by = q.y - 18 - (E.mode === 'rest' ? 0 : Math.sin(hop * Math.PI) * 6); ang = E.mode === 'rest' ? .15 : .3; fold = .6; }
+  else { const u = at - tEnd; bx = last.x + last.w / 2 - u * 260; by = last.y - 18 - u * 200; }
+  c.globalAlpha = a; birdS(bx, by, 8, ang, fold, at < T0 + .45 ? -1.2 : 0, '#D8D4CA', 'starling'); c.globalAlpha = 1; // 黒い画面でも見えるよう、字幕と同じ淡い色の鳥
+}
 const FILM_INTRO = [
   { k: 'leader', d: 1.2 }, // タップのあと、黒から 1.2 秒でカードがフェードインする
+  { k: 'epi', d: 6.2, e: 'intro', snd: 'none' }, // カフカ
   { k: 'card', d: 4.4, snd: 'rumble', ja: '6600万年前、空から星が落ちた。', en: '66 million years ago, a star fell from the sky.', fr: "Il y a 66 millions d'années, une étoile est tombée du ciel." },
   { k: 'card', d: 4.2, snd: 'wing', ja: '生き残った恐竜は、羽を持っていた。', en: 'The dinosaurs that survived had feathers.', fr: 'Les dinosaures qui ont survécu avaient des plumes.' },
   { k: 'card', d: 3.8, snd: 'none', ja: '人がこの星に現れて、30万年。', en: 'Humans appeared 300,000 years ago.', fr: 'Les humains sont apparus il y a 300 000 ans.' },
@@ -20,6 +53,8 @@ const FILM_END = [
   { k: 'credits', d: 17, snd: 'chirp' },
   { k: 'card', d: 4.6, snd: 'none', ja: '鳥たちは、勝ったとは思っていない。', en: 'The birds do not think they have won.', fr: 'Les oiseaux ne pensent pas avoir gagné.' },
   { k: 'card', d: 5.2, snd: 'none', ja: 'ただ、夜が暗くなり、空が静かになった。', en: 'Only, the nights grew dark, and the sky grew quiet.', fr: 'Seulement, les nuits sont devenues sombres, et le ciel silencieux.' },
+  { k: 'epi', d: 6.5, e: 'end', snd: 'none' }, // ゲーテ。鳥は降りてとまるだけ
+  { k: 'count', d: 5.6, snd: 'quiet' }, // 4′33″ のリミックス：4.33 秒を数えるだけ。映写機も止まり、遠くの鳥だけが聞こえる
   { k: 'fin', d: 3.8, snd: 'fin' },
   { k: 'iris', d: 1.5 },
 ];
@@ -55,6 +90,7 @@ function cardEnter() {
     else if (K.snd === 'hum') { tone(120, 4.4, .022, 'sawtooth'); tone(240, 4.4, .008, 'sawtooth'); }
     else if (K.snd === 'chirp') chirp(10, 14);
     else if (K.snd === 'fin') tone(98, 3.4, .06, 'sine', 70);
+    else if (K.snd === 'quiet') { projOff(); chirp(4, 4.5); }
   } catch (e) { }
 }
 // 映写機の回る音：雑音を 24 コマ／秒で刻む
@@ -112,6 +148,8 @@ function drawFilm(t) {
     else if (K.k === 'card') { if (K.towers) drawTowers(t, fade(ft, K.d), wy, wh); drawCardText(K, fade(ft, K.d), wy, wh); }
     else if (K.k === 'peck') drawPeck(t, K, ft, wy, wh);
     else if (K.k === 'credits') drawCredits(t, K, ft, wy, wh);
+    else if (K.k === 'epi') epiDraw(EPI[K.e], ft, wy + wh / 2, fade(ft, K.d));
+    else if (K.k === 'count') { const r = Math.max(0, 4.33 - Math.max(0, ft - .6)); c.globalAlpha = Math.min(1, ft / .4, (K.d - ft) / .4); c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.font = '500 44px Georgia,"Times New Roman",serif'; c.fillText(r.toFixed(2), W / 2, wy + wh / 2 + 15); c.globalAlpha = 1; }
     else if (K.k === 'fin') { const a = fade(ft, K.d); c.globalAlpha = a; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.font = '600 italic 46px Georgia,"Times New Roman",serif'; c.fillText('FIN', W / 2, wy + wh / 2 + 10); c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.6)'; c.fillText('BIRDS RECLAIM', W / 2, wy + wh / 2 + 40); c.globalAlpha = 1; }
   });
   if (FILM.wait && FILM.kind === 'intro') drawNoShow();

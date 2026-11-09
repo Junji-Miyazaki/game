@@ -343,7 +343,8 @@ function step(dt) {
   for (let i = S.parts.length - 1; i >= 0; i--) { const p = S.parts[i]; p.t += dt; if (p.y < GY) { p.vy += 300 * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.y >= GY) { p.y = GY - p.s * Math.random(); p.vx = 0; p.vy = 0; } } if (p.t > 6) S.parts.splice(i, 1); }
   for (let i = S.pops.length - 1; i >= 0; i--) { S.pops[i].t += dt; if (S.pops[i].t > .4) S.pops.splice(i, 1); }
   for (let i = S.txt.length - 1; i >= 0; i--) { const q = S.txt[i]; q.t += dt; q.y -= dt * 30; if (q.t > 1.1) S.txt.splice(i, 1); }
-  for (const f of S.flora) f.t += dt;
+  for (const f of S.flora) f.t += dt; if (S.bb) S.bb.t += dt;
+  if (play && !S.siege && (S.callT = (S.callT ?? 3) - dt) <= 0) { S.callT = 10 + Math.random() * 7; sfx('call'); } // 土地の鳥の鳴き声
   if (play && !SV.tip && S.t > 7 && !S.banner && !S.card) { SV.tip = 1; save(); banner('下のボタンで鳥を呼ぶ', '鳥ごとに得意な建物がある。ボスの前のカードで、効く鳥を確かめよう'); }
   stepSky(dt); // 雨・雪・稲光・竜巻は、いまの本物の空（sky.js）で決める
   for (let i = S.drops.length - 1; i >= 0; i--) { const d = S.drops[i]; d.y += d.v * dt; d.x -= d.v * .18 * dt; if (d.y > GY) S.drops.splice(i, 1); }
@@ -353,6 +354,7 @@ function step(dt) {
     if (!coreLeft(B) && !B.dead) {
       if (!B.final) {
         B.dead = 1; S.killed.push(B.name); S.score += 250; S.pts += 60; S.shake = 10; sfx('boss'); S.atk += GROW.atk; S.armor += GROW.armor; for (const bd of S.birds) if (bd.st !== 2) bd.hp += GROW.armor; // 群れの勢い
+        if (B.id === 'abbey') { S.bb = { x: B.x + B.w / 2, y: GY - 100, t: 0 }; sfx('blackbird'); } // クロウタドリ（ある歌への目くばせ。歌詞も曲も使わない）
         const rest = [...B.cells.values()]; if (rest.length) detach(B, rest, (Math.random() - .5) * 1.2); S.bi++; banner(B.name + ' 崩壊', (BOSS[B.id].after || '跡地に草木が戻る') + '　+250 点  +60 ポイント');
         sprout(B.x - 10, B.w + 20, 1);
       } else if (!S.lightOut) {
@@ -423,6 +425,7 @@ function sfx(k, n) {
   try {
     if (k === 'hit') { if (now - lastHit < .035) return; lastHit = now; nz(.07, 'bandpass', 700 + Math.random() * 700, 1.2, .16); }
     else if (k === 'tick') { if (now - lastHit < .05) return; lastHit = now; nz(.035, 'highpass', 2500, 1, .05); }
+    else if (k === 'crash' && S && S.st && S.st.id === 'vegas' && Math.random() < .55) vegasCrash(n);
     else if (k === 'crash') nz(Math.min(1.3, .3 + n * .012), 'lowpass', Math.min(900, 300 + n * 4), .7, Math.min(.5, .14 + n * .005), 60);
     else if (k === 'buy') { tone(660, .12, .08, 'triangle'); tone(990, .16, .06, 'triangle', 0, .07); }
     else if (k === 'deny') tone(170, .12, .06, 'square');
@@ -439,7 +442,30 @@ function sfx(k, n) {
     else if (k === 'burn') nz(.5, 'bandpass', 2400, 1.5, .2, 600);
     else if (k === 'sway') { tone(70, .7, .22, 'sine', 45); nz(.5, 'lowpass', 400, .7, .2, 80); }
     else if (k === 'gust') nz(1.4, 'bandpass', 260, .7, .24, 900);
+    else if (k === 'blackbird') { const P = [784, 880, 988, 1175, 1319, 1568]; let d = .2; for (let i = 0; i < 9; i++) { const f = P[Math.floor(Math.random() * P.length)]; tone(f, .11 + Math.random() * .1, .045, 'sine', f * (Math.random() < .5 ? 1.12 : .9), d); d += .1 + Math.random() * .12; } }
+    else if (k === 'call') birdCall(S.st.bird);
   } catch (e) { }
+}
+// 土地の鳥の鳴き声：鳥ごとの短い型（実際の鳴き方に寄せた粗い近似）
+function birdCall(k) {
+  const T = (f, d, v, ty, f2, dl) => tone(f, d, v, ty || 'sine', f2, dl);
+  if (k === 'crow' || k === 'hcrow' || k === 'amcrow' || k === 'raven') cry(k === 'raven' ? 2 : 3, .5);
+  else if (k === 'kite') { T(1700, .5, .03, 'sine', 1300); T(1500, .9, .03, 'sine', 900, .55); } // ピーヒョロロ
+  else if (k === 'myna' || k === 'parakeet' || k === 'grackle') chirp(k === 'parakeet' ? 9 : 6, 1);
+  else if (k === 'falcon') for (let i = 0; i < 4; i++) T(2300, .09, .03, 'triangle', 2100, i * .12);
+  else if (k === 'jackdaw') { T(950, .08, .035, 'triangle', 800); T(1000, .08, .035, 'triangle', 820, .22); }
+  else if (k === 'gull') { T(1250, .35, .035, 'triangle', 820); T(1200, .3, .03, 'triangle', 800, .4); T(1150, .3, .03, 'triangle', 760, .75); }
+  else if (k === 'pigeon') { T(430, .45, .04, 'sine', 380); T(410, .6, .035, 'sine', 360, .55); }
+  else if (k === 'pelican') nz(.3, 'lowpass', 300, .7, .05);
+  else chirp(4, .8);
+}
+// ラスベガス：崩れる音を、ちぐはぐな音のコラージュにする（ベル、拍手、すべり笛）
+function vegasCrash(n) {
+  const r = Math.random();
+  if (r < .34) { tone(1319, .28, .05, 'triangle'); tone(1760, .32, .045, 'triangle', 0, .09); tone(2093, .4, .04, 'triangle', 0, .18); }
+  else if (r < .67) nz(Math.min(1.2, .5 + n * .01), 'bandpass', 2600, .5, .14);
+  else tone(320, .55, .06, 'sine', 1300);
+  nz(.3, 'lowpass', 400, .7, Math.min(.3, .1 + n * .004), 60);
 }
 function toggleMute() { muted = !muted; if (MG) MG.gain.value = muted ? 0 : .7; lsSet(MUTE_KEY, muted ? '1' : '0'); }
 
@@ -452,6 +478,7 @@ function resY() { return 132 + 334; }
 function tap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
   if (S.card && S.mode === 'play') { S.card = null; return; }
+  if (S.arr && S.arr.t < chapDur()) { S.arr.t = chapDur(); return; } // 章のカードを閉じる
   if (S.mode === 'over' || S.mode === 'win') {
     if (S.endT <= endWait()) return; const ry = resY();
     if (S.mode === 'win') { if (y > ry - 10 && y < ry + 54) { if (clearedN() === STAGES.length && !SV.ended) { SV.ended = 1; save(); filmStart('end'); } else mapEnter(S.si); } return; }
@@ -635,6 +662,7 @@ function drawWorld(t) {
     const g = G.gust > 0; c.strokeStyle = 'rgba(236,244,250,' + (g ? .5 : .15) + ')'; c.lineWidth = 1.2; c.beginPath();
     for (let i = 0; i < 26; i++) { const y = 110 + (i * 61) % 380, x = W + 60 - ((i * 137 + t * (g ? 900 : 260)) % (W + 120)); c.moveTo(x, y); c.lineTo(x + 30 + (i % 3) * 14, y); } c.stroke();
   }
+  if (S.bb) { const u = S.bb.t; if (u > 7) S.bb = null; else { const x = S.bb.x - cam + u * 40, y = S.bb.y - u * 55 - Math.sin(u * 3) * 8; birdS(x, y, 8, Math.sin(t * 13) * .7, 0, -.2, '#08080A', 'starling'); c.fillStyle = '#E8A93A'; c.beginPath(); c.arc(x, y - 4, 1.4, 0, 7); c.fill(); } }
   for (const q of S.inc) { const sp = BIRD[S.st.bird]; birdS(q.x - cam, q.y, sp.s * .93, Math.sin(t * 16 + q.ph) * .65, 0, Math.atan2(q.vy, Math.abs(q.vx) + 1) * .5 * Math.sign(q.vx || 1), sp.col, sp.shape); }
   for (const b of S.birds) { if (b.st === 2) continue; const P = b.sp.lvP || 0, Q = b.sp.lvS || 0; if (!P && !Q) continue; const x = b.x - cam;
     if (Q && b.st === 1) { c.strokeStyle = 'rgba(255,255,255,' + (.18 + .12 * Q) + ')'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, b.y); c.lineTo(x - b.vx * .05 * Q, b.y - b.vy * .05 * Q); c.stroke(); }
@@ -798,14 +826,22 @@ function drawCard(t) {
   c.globalAlpha = 1;
 }
 function localTime(tz) { try { return new Intl.DateTimeFormat('ja-JP', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()); } catch (e) { return ''; } }
+// 章のカードの長さ：題辞のある都市は長め（タップで飛ばせる）
+function chapDur() { return typeof EPI !== 'undefined' && EPI[S.st.id] ? 6 : 1.25; }
 // 到着のカード：都市に入って最初の数秒。国、都市名、その土地のあいさつ、現地の時刻、天気
 function drawArrival(t) {
   const A = S.arr; if (!A) return;
   // v3：古い映画の章のカード（白黒、1秒）
-  if (A.t < 1.25) { const ca = Math.min(1, (1.25 - A.t) / .3); c.globalAlpha = ca; c.fillStyle = '#0B0B0B'; c.fillRect(0, 0, W, PY + 24); if (typeof filmGrain === 'function') filmGrain(t, 0, PY + 24, .9);
-    c.font = '700 11px ' + SERIF; c.fillStyle = '#D8D4CA'; c.textAlign = 'center'; c.fillText('CHAPITRE ' + (S.si + 1), W / 2, 250);
-    c.font = '700 24px ' + SERIF; c.fillText(S.st.en.split(' → ').join(' — '), W / 2, 286, W - 40); c.font = '500 13px ' + SERIF; c.fillText(S.st.city, W / 2, 312); c.globalAlpha = 1; return; }
-  const at = A.t - 1.25, d = 4.6; if (at > d) return; const a = Math.max(0, Math.min(1, at / .35, (d - at) / .5)); c.globalAlpha = a;
+  const CD = chapDur(), E = typeof EPI !== 'undefined' && EPI[S.st.id];
+  if (A.t < CD) { const ca = Math.min(1, (CD - A.t) / .3); c.globalAlpha = ca;
+    if (S.st.id === 'seattle') { for (let x = 0; x < W; x += 6) { const f = .55 + .45 * Math.sin(x * .19 + Math.sin(x * .05) * 2); c.fillStyle = 'rgb(' + Math.round(70 + 70 * f) + ',' + Math.round(8 + 8 * f) + ',' + Math.round(12 + 10 * f) + ')'; c.fillRect(x, 0, 6, PY + 24); } } // 赤いカーテン（ある映画監督への目くばせ。名前は出さない）
+    else { c.fillStyle = '#0B0B0B'; c.fillRect(0, 0, W, PY + 24); }
+    if (typeof filmGrain === 'function') filmGrain(t, 0, PY + 24, .9);
+    const ty = E ? 170 : 250; c.font = '700 11px ' + SERIF; c.fillStyle = '#D8D4CA'; c.textAlign = 'center'; c.fillText('CHAPITRE ' + (S.si + 1), W / 2, ty);
+    c.font = '700 24px ' + SERIF; c.fillText(S.st.en.split(' → ').join(' — '), W / 2, ty + 36, W - 40); c.font = '500 13px ' + SERIF; c.fillText(S.st.city, W / 2, ty + 62);
+    if (E) epiDraw(E, A.t - .6, 350, ca * Math.min(1, Math.max(0, (A.t - .4) / .6)));
+    c.globalAlpha = 1; return; }
+  const at = A.t - CD, d = 4.6; if (at > d) return; const a = Math.max(0, Math.min(1, at / .35, (d - at) / .5)); c.globalAlpha = a;
   const ST = S.st, c0 = ST.zones[0].c || ST.country, h = HELLO[c0] || ['ようこそ', ''], y0 = 150;
   { const nf = Math.min(2, (S.wfx || wxFx(S.wx || wxFor(S.st))).txt.length); rr(36, y0, W - 72, 194 + (nf ? nf * 14 + 8 : 0), 20); c.fillStyle = 'rgba(14,16,20,.74)'; c.fill(); }
   c.font = F(10, 700); const cw = c.measureText(ST.country).width + 18; rr(W / 2 - cw / 2, y0 + 14, cw, 18, 9); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); txt(ST.country, W / 2, y0 + 27, 10, UI.sub, 700, 'center');
