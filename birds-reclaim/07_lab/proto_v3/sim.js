@@ -61,6 +61,8 @@ scene = 'pass'; P.sel = -1; draw(0); P.sel = 0; draw(0); P.sel = 3; draw(0); con
 for (const kind of ['intro', 'end']) { filmStart(kind); if (FILM.wait) filmTap(10, 300); let i = 0; for (; i < 6000 && scene === 'film'; i++) { stepFilm(1 / 30); draw(i / 30); } console.log('film', kind, 'ok', (i / 30).toFixed(1) + 's', '→', scene); }
 // 鳥の図鑑
 SV = SV0(); SV.fe = 6; SV.kinds = Object.keys(KIND); scene = 'book'; draw(0); bookTap(W - 70 + 5, BK.y0 + 8 + 5); bookTap(W - 70 + 5, BK.y0 + BK.h + 8 + 26 + 5); draw(0); console.log('book', JSON.stringify(SV.lv), 'fe', SV.fe); bookTap(R_RESPEC.x + 5, R_RESPEC.y + 5); console.log('respec fe', SV.fe);
+// 言葉の書架
+SV.epi = { intro: 1, osaka: 1, end: 1 }; scene = 'pass'; P.sel = -1; draw(0); passTap(R_WORDS.x + 5, R_WORDS.y + 5); console.log('words scene', scene); draw(0);
 // 還った時の結果画面とごほうび
 SV = SV0(); startStage(5); S.win = 1; S.mode = 'win'; finish(); for (let i = 0; i < 480; i++) { step(1 / 60); draw(i / 60); } console.log('reward', JSON.stringify(S.reward), 'area', S.area, 'kinds', SV.kinds.join(','));
 mapEnter(0); for (let i = 0; i < 120; i++) { stepMap(1 / 60); draw(i / 60); } console.log('map after ok');

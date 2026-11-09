@@ -6,27 +6,30 @@
 const FW = { y: 185, h: 270 }; // 縦長の画面の真ん中に開ける、昔の映画の比率（4:3）の窓
 const R_SKIP = { x: 250, y: 584, w: 100, h: 36 };
 // ---------- 題辞（エピグラフ） ----------
-// 人にとって大事な言葉を、きちんと美しく出す。そこへ鳥が1羽来て、まるで気にせず文字をついばんで落とす（自然にとっては無用、というジョーク）。
+// 人にとって大事な言葉を、きちんと美しく出す。言葉は馬鹿にしない（ユーザー指示：無用に見える教養こそ大事。ただ鳥は意に介さない）。
+// 鳥が1羽降りてきて、文字の上を2〜3字歩き、1字を少しずらして飛び去る。言葉は壊さず、最後まで読めるまま残す。
+// 出会った題辞は SV.epi に記録し、パスポートの「言葉の書架」で原文・訳・出典と読み返せる。
 // どれも作者の死後 70 年以上たち著作権の切れた原文。和訳・英訳はこのゲームで付けた。原文は入れる前に原典で照らし合わせること［要確認］。
-// mode: 'peck'＝ついばんで落とす 'rest'＝降りてとまるだけ（終わりのゲーテ「おまえも安らぐ」）
+// mode: 既定＝文字の上を歩いて飛び去る 'rest'＝降りてとまるだけ（終わりのゲーテ「おまえも安らぐ」）
 const EPI = {
   intro: { o: 'Ein Käfig ging einen Vogel suchen.', ja: '檻が、鳥を探しに出かけた。', en: 'A cage went in search of a bird.', by: 'Franz Kafka — Zürauer Aphorismen, 16' },
   osaka: { o: '行く春や鳥啼魚の目は泪', cjk: 1, ja: 'ゆくはるや　とりなき　うおのめはなみだ', en: 'Spring departs — birds cry, and the eyes of the fish are wet.', by: '松尾芭蕉『おくのほそ道』' },
-  saigon: { o: '國破山河在　城春草木深', cjk: 1, ja: '国破れて山河在り　城春にして草木深し', en: 'The state is broken; mountains and rivers remain. Spring in the city — grass and trees grow deep.', by: '杜甫「春望」' },
-  paris: { o: "Ses ailes de géant l'empêchent de marcher.", ja: '巨人の翼が、彼を歩かせない。', en: "His giant's wings keep him from walking.", by: 'Charles Baudelaire — « L’Albatros »' },
+  saigon: { o: '國破山河在，城春草木深', cjk: 1, ja: '国破れて山河在り　城春にして草木深し', en: 'The state is broken; mountains and rivers remain. Spring in the city — grass and trees grow deep.', by: '杜甫「春望」' },
+  paris: { o: 'Ses ailes de géant l’empêchent de marcher.', ja: '巨人の翼が、彼を歩かせない。', en: "His giant's wings keep him from walking.", by: 'Charles Baudelaire — « L’Albatros »' },
   seattle: { o: '…in Wildness is the preservation of the World.', ja: '野生のなかにこそ、世界は保たれている。', en: '', by: 'Henry David Thoreau — “Walking”' },
-  newyork: { o: '“Hope” is the thing with feathers', ja: '「希望」とは、羽のあるもの', en: '', by: 'Emily Dickinson' },
-  end: { o: 'Die Vögelein schweigen im Walde. Warte nur, balde ruhest du auch.', ja: '小鳥たちは森で黙る。待つがいい、やがて、おまえも安らぐ。', en: 'The little birds are silent in the wood. Only wait — soon you too will rest.', by: 'Goethe — „Wandrers Nachtlied“', mode: 'rest' },
+  newyork: { o: 'Hope is the thing with feathers / That perches in the soul,', ja: '希望とは、羽のあるもの　魂にとまっている', en: '', by: 'Emily Dickinson — “Hope”, Poems: Second Series (1891)' },
+  end: { o: 'Die Vögelein schweigen im Walde. / Warte nur, balde / Ruhest du auch.', ja: '小鳥たちは森で黙る。待つがいい、やがて、おまえも安らぐ。', en: 'The little birds are silent in the wood. Only wait — soon you too will rest.', by: 'Goethe — „Ein Gleiches“ (Wandrers Nachtlied II)', mode: 'rest' },
 };
 // 題辞を描く。at＝出してからの秒、cy＝縦の中心。文字は1字ずつ描き、選ばれた数字が鳥についばまれて落ちる
 function epiDraw(E, at, cy, a) {
-  const big = E.cjk ? '600 18px ' + SERIF : '600 italic 15px Georgia,"Times New Roman",serif', L = wrapF(E.o, big, W - 64), lh = E.cjk ? 26 : 22;
+  const big = E.cjk ? '600 18px ' + SERIF : '600 italic 15px Georgia,"Times New Roman",serif', L = E.o.split(' / ').flatMap(p => wrapF(p, big, W - 64)), lh = E.cjk ? 26 : 22;
   const sub = [...wrapF(E.ja, '500 11px ' + SERIF, W - 44).map(l => [l, '500 11px ' + SERIF]), ...(E.en ? wrapF(E.en, LATIN, W - 70).map(l => [l, LATIN]) : [])];
   const hh = L.length * lh + 14 + sub.length * 15 + 26; let y = cy - hh / 2 + lh - 4; c.globalAlpha = a; c.textAlign = 'left'; c.font = big;
   const chars = []; for (const l of L) { let x = W / 2 - c.measureText(l).width / 2; for (const ch of l) { const w = c.measureText(ch).width; chars.push({ ch, x, y, w }); x += w; } y += lh; }
-  const n = chars.length, picks = chars.map((q, i) => i).filter(i => chars[i].ch.trim()).sort((p, q) => hash(p, n) - hash(q, n)).slice(0, E.mode === 'rest' ? 0 : 5).sort((p, q) => p - q), T0 = 2.4;
-  chars.forEach((q, i) => { const j = picks.indexOf(i), tk = T0 + .45 + j * .38, d = j >= 0 ? Math.max(0, at - tk) : 0; c.globalAlpha = a * Math.max(0, 1 - d * 1.2); c.fillStyle = '#ECE7DC'; c.fillText(q.ch, q.x + d * 14, q.y + d * d * 160); });
-  c.globalAlpha = a; c.textAlign = 'center'; y += 10; for (const [l, f] of sub) { c.font = f; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(l, W / 2, y); y += 15; }
+  const n = chars.length, s0 = Math.floor(hash(n, 3) * Math.max(1, n - 4)), picks = E.mode === 'rest' ? [] : [s0, s0 + 1, s0 + 2].filter(i => i < n && chars[i].ch.trim()), T0 = 2.4;
+  const nudge = picks.length ? picks[picks.length - 1] : -1, tN = T0 + .45 + (picks.length - .5) * .38; // 最後に歩いた字だけ、少しずれたまま残る
+  chars.forEach((q, i) => { const u = i === nudge ? Math.min(1, Math.max(0, (at - tN) / .15)) : 0; c.save(); c.translate(q.x + q.w / 2 + u * 1.5, q.y + u * 2.5); c.rotate(u * .12); c.fillStyle = '#ECE7DC'; c.fillText(q.ch, -q.w / 2, 0); c.restore(); });
+  c.globalAlpha = a; c.textAlign = 'left'; c.textAlign = 'center'; y += 10; for (const [l, f] of sub) { c.font = f; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(l, W / 2, y); y += 15; }
   c.font = '500 9.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText(E.by, W / 2, y + 10);
   // 鳥：右から来て、選んだ字を順にとまってつつき、飛び去る（rest は最後の字にとまったまま）
   const tgt = E.mode === 'rest' ? [chars[n - 1]] : picks.map(i => chars[i]); if (!tgt.length) { c.globalAlpha = 1; return; }
@@ -83,6 +86,7 @@ function stepFilm(dt) {
 function cardEnter() {
   const K = FILM.list[FILM.i]; if (K.k === 'iris') { mapEnter(); scene = 'film'; }
   if (K.k === 'peck') { FILM.blocks = textBlocks(K.ja); FILM.flock = []; }
+  if (K.k === 'epi') { SV.epi = SV.epi || {}; if (!SV.epi[K.e]) { SV.epi[K.e] = 1; save(); } }
   if (!AC || muted) return;
   try {
     if (K.snd === 'rumble') { tone(42, 3.2, .2, 'sine', 28); nz(2.6, 'lowpass', 160, .7, .14, 60); }

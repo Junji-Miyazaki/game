@@ -18,7 +18,7 @@ let S = null, ff = 1, scene = 'map';
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { } }
-const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, intro: 0, skipIntro: 0, ended: 0, fe: 0, lv: {}, tip: 0 });
+const SV0 = () => ({ clear: {}, best: {}, seen: {}, lm: {}, date: {}, last: null, kinds: [...KIND_START], team: [...KIND_START], verse: {}, epi: {}, intro: 0, skipIntro: 0, ended: 0, fe: 0, lv: {}, tip: 0 });
 // clear=還した都市 best=最高得点 seen=見た建物のカード lm=還した名所 date=スタンプの日付 last=最後に還した都市（渡りの出発地）
 function loadSave() { try { const o = JSON.parse(lsGet(SAVE_KEY) || '{}'); return Object.assign(SV0(), o); } catch (e) { return SV0(); } }
 let SV = loadSave();
@@ -46,7 +46,8 @@ function startStage(i) {
   S.kinds = {}; for (const k in KIND) { const L = (SV.lv || {})[k] || { p: 0, s: 0 }; S.kinds[k] = Object.assign({}, KIND[k], { am: KIND[k].am * (1 + .2 * L.p), spd: KIND[k].spd * (1 + .15 * L.s), lvP: L.p, lvS: L.s }); }
   S.cdn = { b1: 0, b2: 0, b3: 0 };
   KEYS.forEach((k, j) => { S.cost[k] = KIND[S.team[j]].cost; });
-  S.wx = wxFor(ST); S.wfx = wxFx(S.wx); wxFetch(ST); S.flakes = []; S.evt = Math.random() < .65 ? { at: 1200 + Math.random() * 3500, sand: SAND.includes(ST.id) } : null; // いまの空と、通り過ぎる竜巻（見た目だけ）
+  S.wx = wxFor(ST); S.wfx = wxFx(S.wx); wxFetch(ST);
+  if (typeof EPI !== 'undefined' && EPI[ST.id]) { SV.epi = SV.epi || {}; SV.epi[ST.id] = 1; } // 章の題辞に出会った S.flakes = []; S.evt = Math.random() < .65 ? { at: 1200 + Math.random() * 3500, sand: SAND.includes(ST.id) } : null; // いまの空と、通り過ぎる竜巻（見た目だけ）
   const fl = flockOf(i); for (const sp of fl) addBird(60 + Math.random() * 80, GY - 280 + Math.random() * 120, 0, 0, sp); S.peak = fl.length;
   const mids = ST.bosses.map(b => makeBoss(b.id, b.x)); S.L = makeBoss(ST.final, END); S.L.final = 1;
   const lms = (ST.lm || []).map(([x, id]) => { const D = LM[id], b = D.make(x); b.lm = D.name; b.real = D.real; return b; }); S.lmN = lms.length;
@@ -498,6 +499,7 @@ cv.addEventListener('pointerdown', e => {
   if (scene === 'pass') { passTap(x, y); return; }
   if (scene === 'film') { filmTap(x, y); return; }
   if (scene === 'book') { bookTap(x, y); return; }
+  if (scene === 'words') { if (inR(x, y, R_SND)) toggleMute(); else if (inR(x, y, R_WBACK)) { scene = 'pass'; sfx('buy'); } return; }
   tap(x, y);
 });
 cv.addEventListener('pointermove', e => {
@@ -778,6 +780,7 @@ function draw(t) {
   if (scene === 'pass') { drawPass(t); return; }
   if (scene === 'film') { drawFilm(t); return; }
   if (scene === 'book') { drawBook(t); return; }
+  if (scene === 'words') { drawWords(t); return; }
   drawWorld(t); drawHUD(t); drawBanner(); drawToast(); drawArrival(t); drawCard(t); if (S.mode !== 'play') drawResult(t); drawPanel(t);
 }
 
@@ -912,7 +915,9 @@ function drawPass(t) {
     const got = Object.keys(SV.lm[ST.id] || {}).length; txt('名所 ' + got + '/' + (ST.lm || []).length, R.x + R.w / 2, R.y + R.h - 7, 8.5, UI.sub, 500, 'center');
     if (done) stamp(R.x + R.w / 2, R.y + 44, 23, i, ST, (hash(i, 3) - .5) * .5); else txt('未踏', R.x + R.w / 2, R.y + 48, 11, UI.dim, 600, 'center');
   });
-  pillAt('地図へ戻る', R_BACK.x, R_BACK.y, R_BACK.w, false); drawToggles();
+  pillAt('地図へ戻る', R_BACK.x, R_BACK.y, R_BACK.w, false);
+  rr(R_WORDS.x, R_WORDS.y, R_WORDS.w, R_WORDS.h, 13); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); txt('言葉の書架  ' + Object.keys(SV.epi || {}).length + '/' + Object.keys(EPI).length, R_WORDS.x + R_WORDS.w / 2, R_WORDS.y + 17, 10.5, '#DDE8C8', 600, 'center');
+  drawToggles();
 }
 function drawPassPage(t) {
   const i = P.sel, ST = STAGES[i], done = SV.clear[ST.id];
@@ -932,6 +937,7 @@ function drawPassPage(t) {
 function passTap(x, y) {
   if (inR(x, y, R_SND)) { toggleMute(); return; }
   if (inR(x, y, R_BACK)) { if (P.sel >= 0) P.sel = -1; else scene = 'map'; sfx('buy'); return; }
+  if (P.sel < 0 && inR(x, y, R_WORDS)) { scene = 'words'; sfx('buy'); return; }
   if (P.sel < 0) STAGES.forEach((s, i) => { if (inR(x, y, slotR(i))) { P.sel = i; sfx('buy'); } });
 }
 
@@ -976,4 +982,23 @@ function bookTap(x, y) {
   if (inR(x, y, R_BKBACK)) { scene = 'map'; sfx('buy'); return; }
   if (inR(x, y, R_RESPEC)) { let back = 0; for (const k in SV.lv) for (const f of ['p', 's']) for (let l = 1; l <= SV.lv[k][f]; l++) back += l; SV.lv = {}; SV.fe = (SV.fe || 0) + back; save(); sfx('buy'); return; }
   Object.keys(KIND).forEach((k, i) => { if (!SV.kinds.includes(k)) return; ['p', 's'].forEach((f, j) => { if (!inR(x, y, bkBtn(i, j))) return; const L = SV.lv[k] = SV.lv[k] || { p: 0, s: 0 }, cost = L[f] + 1; if (L[f] < 3 && (SV.fe || 0) >= cost) { SV.fe -= cost; L[f]++; save(); sfx('buy'); } else sfx('deny'); }); });
+}
+
+// ---------- v3：言葉の書架（出会った題辞を、原文・和訳・英訳・出典と読み返す） ----------
+// ゲームの中では役に立たない言葉。でも人にとっては残しておくものなので、ここに並べる
+const R_WORDS = { x: 14, y: 20, w: 128, h: 28 }, R_WBACK = { x: 110, y: 596, w: 140, h: 36 };
+function drawWords(t) {
+  const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0E0E0C'); bg.addColorStop(1, '#16150F'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  c.textAlign = 'center'; c.fillStyle = '#ECE7DC'; c.font = '600 18px ' + SERIF; c.fillText('言葉の書架', W / 2, 62); c.font = LATIN; c.fillStyle = 'rgba(236,231,220,.55)'; c.fillText('words the birds did not need', W / 2, 80);
+  let y = 112; const keys = ['intro', 'osaka', 'saigon', 'paris', 'seattle', 'newyork', 'end'];
+  for (const k of keys) {
+    const E = EPI[k], seen = (SV.epi || {})[k]; c.fillStyle = 'rgba(236,231,220,.08)'; c.fillRect(28, y - 14, W - 56, 1);
+    if (!seen) { c.font = '500 11px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.25)'; c.fillText('— まだ出会っていない言葉 —', W / 2, y + 12); y += 40; continue; }
+    const big = E.cjk ? '600 13px ' + SERIF : '600 italic 12px Georgia,"Times New Roman",serif';
+    for (const l of E.o.split(' / ').flatMap(p => wrapF(p, big, W - 60))) { c.font = big; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.fillText(l, W / 2, y + 4); y += 16; }
+    for (const l of wrapF(E.ja, '500 10px ' + SERIF, W - 60)) { c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.72)'; c.fillText(l, W / 2, y + 4); y += 13; }
+    if (E.en) for (const l of wrapF(E.en, '500 italic 9.5px Georgia,serif', W - 60)) { c.font = '500 italic 9.5px Georgia,serif'; c.fillStyle = 'rgba(236,231,220,.6)'; c.fillText(l, W / 2, y + 4); y += 12; }
+    c.font = '500 8.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.42)'; c.fillText(E.by, W / 2, y + 5); y += 22;
+  }
+  c.textAlign = 'left'; pillAt('もどる', R_WBACK.x, R_WBACK.y - 4, R_WBACK.w, false); drawToggles();
 }
