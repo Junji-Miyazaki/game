@@ -696,7 +696,38 @@ function cityTags(ST) { const s = new Set(); for (const id of [...ST.bosses.map(
 // v3 その5（ユーザー案）：最初はムクドリ1種・枠1つ。都市を還すと枠が増え（3つまで）、都市ごとに新しい鳥が仲間になる
 // 鍵の鳥はおもに「その仕掛けに会った都市を還すと来る」。答えを持って前の都市に戻ると、まだの言葉を掘り出しやすい
 const KIND_START = ['starling'];
-const UNLOCK = { osaka: ['crow'], tokyo: ['swallow', 'owl'], taipei: ['woodpecker'], saigon: ['darter'], dubai: ['falcon'], berlin: ['goose'], paris: ['magpie'], london: ['swift'], sf: ['pelican'] };
+// v3 その8（ユーザー案）：都市は初級・中級・上級の3段。次の段は、緑にした面積の合計で開く
+// 都市を還すたびに、その段の鳥が1羽ランダムで仲間になる（まだ持っていない鳥から。かぶらない）。その鳥が、同じ段の都市に入る鍵になる
+// 段の鳥がそろったあとは、鳥の代わりに攻撃力・攻撃速度ポイント。段の最初の都市（大阪・ドバイ・シアトル）は鍵なしで入れる
+const TIERS = [
+  { nm: '初級', need: 0, cities: ['osaka', 'tokyo', 'taipei', 'saigon'], pool: ['crow', 'swallow', 'owl'] },
+  { nm: '中級', need: 80, cities: ['dubai', 'berlin', 'paris', 'barcelona', 'london'], pool: ['woodpecker', 'goose', 'magpie', 'swift'] },
+  { nm: '上級', need: 220, cities: ['seattle', 'sf', 'vegas', 'newyork'], pool: ['falcon', 'darter', 'pelican'] },
+];
+const CITYKEY = { tokyo: 'crow', taipei: 'swallow', saigon: 'owl', berlin: 'goose', paris: 'magpie', barcelona: 'woodpecker', london: 'swift', sf: 'pelican', vegas: 'darter', newyork: 'falcon' };
+const UNLOCK = {}; // その5の表（還した都市 → 決まった鳥）はやめた。前の保存の読み替えにだけ使う
+const UNLOCK5 = { osaka: ['crow'], tokyo: ['swallow', 'owl'], taipei: ['woodpecker'], saigon: ['darter'], dubai: ['falcon'], berlin: ['goose'], paris: ['magpie'], london: ['swift'], sf: ['pelican'] };
+const tierOf = id => TIERS.findIndex(T => T.cities.includes(id));
+// ---------- 鳥よけ（v3 その8、ユーザー案：鍵がないと届かない、ではなく、建物が鳥ごとに耐性を持つ） ----------
+// 建物は実在の鳥よけで身を守る。耐性 .8＝その鳥の攻撃を 80% 減らす、.5＝半分。育てても攻撃力は最大 1.6 倍なので、いろいろな鳥を育てないと苦しい
+// どの鳥よけがどの鳥に効くかは、ゲームの味付け（実際の効き目は鳥や場所で違う）［要確認：実在の鳥よけの説明と合っているか］
+const DETER = {
+  net: { nm: '防鳥ネット', why: '大きな鳥は網にかかる。小さな鳥はすり抜ける', r: { crow: .8, goose: .8, pelican: .8, owl: .5 } },
+  spike: { nm: 'バードスパイク', why: 'とまる鳥は足場がない。とまらない鳥には効かない', r: { woodpecker: .8, owl: .8, magpie: .5, starling: .5 } },
+  decoy: { nm: 'タカの模型', why: '小さな鳥はこわがる。カラスやタカは見破る', r: { starling: .8, swallow: .8, magpie: .5 } },
+  tape: { nm: '反射テープ', why: 'まぶしくて近寄れない。夜の鳥は気にしない', r: { swallow: .8, goose: .5, darter: .5, starling: .5 } },
+  sonic: { nm: '超音波', why: '耳ざわりな音。水にもぐる鳥や大きな鳥は平気', r: { crow: .5, starling: .5, swallow: .5, magpie: .5, owl: .5 } },
+};
+const BDET = { // ボスごとの鳥よけ（大阪は最初の都市なのでなし）。どの都市にも防鳥ネットを1つ置き、カラスだけでは押し切れないようにした
+  roppongi: 'net', diet: 'decoy', tmg: 'spike', t101: 'tape', tsmc: 'net', maha: 'spike', l81: 'decoy', petronas: 'net', mbs: 'tape',
+  frame: 'tape', baa: 'spike', khalifa: 'net', tesla: 'sonic', dbank: 'net', ecb: 'decoy', arche: 'spike', flv: 'tape', montecarlo: 'net',
+  glories: 'tape', kio: 'decoy', bernabeu: 'net', abbey: 'decoy', walkie: 'tape', battersea: 'net', msft: 'tape', boeing: 'net', spheres: 'decoy', /* 上級の入口なので、鍵のフクロウには効かない鳥よけだけにした */
+  cloud: 'net', nvidia: 'spike', apple: 'sonic', luxor: 'tape', strat: 'net', sphere: 'sonic', rock: 'spike', goldtower: 'net', liberty: 'decoy',
+};
+const RES_TIER = [.5, .8, 1]; // 段ごとの耐性の強さ（初級は半分）。表の .8 → 実際 60%、.5 → 35%（自動プレイで詰まりすぎたので弱めた）
+const resistOf = (k, id) => { const d = DETER[BDET[id]]; if (!d || !d.r[k]) return 0; if (BOSS[id] && KEYB[BOSS[id].gim] === k) return 0; // 仕掛けの鍵の鳥には、その建物の鳥よけは効かない（鍵なのに耐性で負ける二重の罠を防ぐ）
+  const v = d.r[k] >= .8 ? .6 : .35; let ti = 0; for (let j = 0; j < TIERS.length; j++) if (TIERS[j].cities.some(c0 => { const st = STAGES.find(q => q.id === c0); return st && (st.final === id || st.bosses.some(b => b.id === id)); })) ti = j; return v * RES_TIER[ti]; };
+
 const slotsFor = n => Math.min(3, 1 + n); // 還した都市の数 → 連れていける種類の数
 // 仕掛けごとに効く鳥（建物のカードに出す）
 const KEYB = { fan: 'swallow', gust: 'swallow', slow: 'swallow', glare: 'owl', map: 'owl', eye: 'owl', sway: 'woodpecker', beam: 'swift', pillar: 'darter' };

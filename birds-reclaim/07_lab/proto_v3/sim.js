@@ -25,9 +25,11 @@ const list = WHICH === 'all' ? STAGES.map((_, i) => i) : [Number(WHICH)];
 // smart の3種：象徴（なければ中ボス）の仕掛けに効く鳥1種 → カラス → ムクドリ → ハヤブサ の順に埋める
 function teamFor(ST) { // 効く鳥1種（象徴を優先）＋ 都市の札で得意が多く苦手が少ない鳥。ムクドリかカラスを1種は入れる
   const T = []; for (const id of [ST.final, ...ST.bosses.map(b => b.id)]) { const k = KEYB[BOSS[id].gim]; if (k && !T.length && OWN().includes(k)) T.push(k); }
-  const CT = cityTags(ST), base = { starling: .8, crow: .5, falcon: .3 }, sc = k => (base[k] || 0) + .5 * (KIND[k].am * (KIND[k].wall || 1) - 1) + KIND[k].like.filter(t => CT.includes(t)).length - KIND[k].hate.filter(t => CT.includes(t)).length; // 壁への強さも見る // 数の役（ムクドリ）は少し高く見る
+  const ids = [...ST.bosses.map(b => b.id), ST.final], base = { starling: .8, crow: .5, falcon: .3 }, sc = k => (base[k] || 0) + .5 * (KIND[k].am * (KIND[k].wall || 1) - 1) - ids.reduce((a, id) => a + resistOf(k, id), 0); // 壁への強さ − 鳥よけの耐性
   if (!T.includes('starling')) T.push('starling'); // 道中で群れを育てる数の鳥は必ず連れていく
-  for (const k of OWN().filter(k => !T.includes(k)).sort((a, b) => sc(b) - sc(a))) if (T.length < NSL()) T.push(k); return T.filter(k => OWN().includes(k)).slice(0, NSL()); }
+  const eff = (k, id) => KIND[k].am * (KIND[k].wall || 1) * (1 - resistOf(k, id)), cover = L => { const v = ids.map(id => Math.max(...L.map(k => eff(k, id)))); return Math.min(...v) * 10 + v.reduce((a, b) => a + b, 0); }; // いちばん弱い建物を見て選ぶ
+  while (T.length < NSL()) { const C = OWN().filter(k => !T.includes(k)); if (!C.length) break; C.sort((a, b) => cover([...T, b]) - cover([...T, a]) || sc(b) - sc(a)); T.push(C[0]); }
+  return T.filter(k => OWN().includes(k)).slice(0, NSL()); }
 const OWN = () => SV.kinds, NSL = () => slotsNow();
 // 羽の使い方（route）：連れていく鳥の、段のいちばん低い所から上げる（攻撃力2：攻撃速度1）
 function autoGrow() { for (let g = 0; g < 60; g++) { const opts = []; for (const k of SV.team) { const L = kindLv(k); opts.push([k, 'p', L.p], [k, 's', L.s * 2 + 1]); } opts.sort((a, b) => a[2] - b[2]); if (!opts.some(([k, f]) => growBuy(k, f))) break; } }
@@ -40,16 +42,18 @@ function smart() {
 }
 // 順路：最初からの旅を通しで遊ぶ（ムクドリ1種・枠1つから。還すと枠と鳥が増える）。都市ごとに3回まで挑む。
 // route=考えて遊ぶ（その時の仲間から組を選び、場面で効く鳥を呼ぶ。羽は連れていく鳥の威力から育てる） routen=1枠目だけを連打
-if (MODE === 'route' || MODE === 'routen') { const out = [];
-  for (let rep = 0; rep < RUNS; rep++) { SV = SV0(); const row = [];
-    for (let si = 0; si < STAGES.length; si++) { let res = 'x', tries = 0;
-      for (; tries < 3; tries++) { if (MODE === 'route') SV.team = teamFor(STAGES[si]); fixTeam(); startStage(si); S.brief = 0;
-        if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] };
-        let gT = 0; while (S.mode === 'play' && S.t < 420) { step(1 / 60); if (S.card) S.card = null; if (MODE === 'route') { smart(); if ((gT += 1 / 60) > 10) { gT = 0; autoGrow(); } } else if (S.pts >= S.cost.b1) buy('b1'); }
-        if (S.mode === 'win') { res = String(tries + 1); break; } }
-      if (MODE === 'route') autoGrow();
-      row.push(STAGES[si].id + ':' + res + '[' + SV.team.join(',') + ']'); }
-    console.log(MODE, 'rep' + rep, row.join(' ')); console.log('  仲間', SV.kinds.join(','), '枠', slotsNow(), '入った時の段', JSON.stringify(SV.gift || {}), '育てた段', JSON.stringify(SV.lv)); }
+if (MODE === 'route' || MODE === 'routen') {
+  for (let rep = 0; rep < RUNS; rep++) { SV = SV0(); const row = []; let plays = 0, lose = 0;
+    while (plays < Number(process.env.MAXPLAY || 70) && STAGES.some(st => !SV.clear[st.id])) { // 順に、行ける・まだの都市へ。なければ、開いている段の還した都市を周回して鳥と面積を集める
+      let si = STAGES.findIndex((st, i) => unlocked(i) && !SV.clear[st.id]); let farm = 0; if (lose >= 2) { si = -1; lose = 0; } // 2回続けて負けたら、一度ほかの都市を周回して育てる
+      if (si < 0) { farm = 1; const open = TIERS.map((T, j) => tierOpen(j)).lastIndexOf(true); si = STAGES.findIndex(st => SV.clear[st.id] && tierOf(st.id) === open); if (si < 0) si = STAGES.findIndex(st => SV.clear[st.id]); }
+      plays++; if (MODE === 'route') SV.team = teamFor(STAGES[si]); fixTeam(); if (MODE === 'route') autoGrow(); startStage(si); S.brief = 0;
+      if (!process.env.WX) S.wfx = { spd: 1, light: 1, scroll: 1, txt: [] };
+      let gT = 0; while (S.mode === 'play' && S.t < 420) { step(1 / 60); if (S.card) S.card = null; if (MODE === 'route') { smart(); if ((gT += 1 / 60) > 10) { gT = 0; autoGrow(); } } else if (S.pts >= S.cost.b1) buy('b1'); }
+      if (!farm) lose = S.mode === 'win' ? 0 : lose + 1;
+      row.push((farm ? '周' : '') + STAGES[si].id + (S.mode === 'win' ? '' : '×' + (process.env.DBG ? '[' + S.team.join('/') + ' ' + S.killed.length + '/' + S.bossList.length + ' HPM' + HPM.toFixed(2) + ']' : '')) + (S.reward && S.reward.kinds.length ? '+' + S.reward.kinds[0] : '')); }
+    console.log(MODE, 'rep' + rep, plays + '回', 'あと', STAGES.filter(st => !SV.clear[st.id]).map(st => st.id).join(',') || 'なし', '面積', SV.area);
+    console.log('  ' + row.join(' ')); console.log('  仲間', SV.kinds.join(','), '育てた段', JSON.stringify(SV.lv)); }
   process.exit(0); }
 for (const si of list) for (let run = 0; run < RUNS; run++) {
   SV = SV0(); SV.allSlots = 1; if (MODE !== 'smart') { SV.kinds = ['starling', 'crow', 'swallow']; SV.team = SV.kinds.slice(); } // 連打の比較は、その5の前と同じ3種で
@@ -66,6 +70,7 @@ for (const si of list) for (let run = 0; run < RUNS; run++) {
   }
   if (lo) ev.push('崩しきり ' + (S.t - lo).toFixed(1) + 's');
   for (let i = 0; i < 300; i++) { step(1 / 60); draw(i / 60); }
+  if (process.env.AREA) console.log('  面積', S.st.id, S.area, 'ha');
   if (process.env.BLD) console.log('  建物', S.blds.filter(b => !b.boss && !b.lm).length, '倒れた', S.blds.filter(b => b.gone && !b.lm).length, '名所', S.lmDown);
   if (process.env.WORDS) console.log('  言葉', S.wordsGot.join(','), '新しい', S.wordsNew.length);
   console.log(MODE, S.st.id, run, S.mode.toUpperCase(), '[' + S.team.join(',') + ']', 't=' + S.t.toFixed(0) + 's', '得点=' + S.score, '最大' + S.peak + '羽', '名所' + S.lmDown + '/' + S.lmN, '|', ev.join(' '));

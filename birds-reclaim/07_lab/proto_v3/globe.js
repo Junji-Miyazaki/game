@@ -160,7 +160,7 @@ function drawMap(t) {
   spaced('BIRDS RECLAIM', W / 2, 84, 23, UI.ink, 4);
   rr(W / 2 - 14, 95, 28, 3, 1.5); c.fillStyle = UI.acc; c.fill();
   txt('鳥たちは、取り戻しにくる。', W / 2, 114, 11, '#C9CED6', 500, 'center');
-  const nC = clearedN(); txt('自然に還った都市  ' + nC + ' / ' + STAGES.length, W / 2, 402, 11, nC ? '#68D680' : UI.sub, 600, 'center');
+  { const A = SV.area || 0, tt = titleNow(A); txt('緑にした土地  ' + A + ' ha（東京ドーム ' + domes(A) + ' 個分）' + (tt ? '　·　' + tt + '超え' : ''), W / 2, 402, 10.5, A ? '#68D680' : UI.sub, 600, 'center'); } // その8：得点の代わりに面積の合計
   drawCityCard(t); drawToggles(); if (M.pick >= 0) drawPicker(t); if (M.grow) drawGrow(t, SV.team, BASE_ATK);
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_PASS.x + 18, R_PASS.y + 18, 18, 0, 7); c.fill(); icon('book', R_PASS.x + 18, R_PASS.y + 18, UI.ink);
   c.fillStyle = 'rgba(255,255,255,.08)'; c.beginPath(); c.arc(R_FILM.x + 18, R_FILM.y + 18, 18, 0, 7); c.fill(); icon('film', R_FILM.x + 18, R_FILM.y + 18, UI.ink);
@@ -178,13 +178,13 @@ function drawCityCard(t) {
   const chip = { done: ['自然に還った', '#68D680'], open: ['未踏', UI.acc], lock: ['まだ行けない', UI.sub], soon: ['準備中', UI.dim] }[st];
   c.font = F(10, 700); const cw = c.measureText(chip[0]).width + 20; rr(W - 34 - cw, y0 + 20, cw, 22, 11); c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); txt(chip[0], W - 34 - cw / 2, y0 + 35, 10, chip[1], 700, 'center');
   if (C.si >= 0) { const w = wxFor(STAGES[C.si]); txt('いま  ' + wxLine(w), 34, y0 + 72, 10.5, w.live ? UI.acc : UI.sub, 600); } // 現地のいまの空
-  const CT = C.si >= 0 ? cityTags(STAGES[C.si]) : []; if (CT.length) txt('札 ' + CT.map(t => TAGN[t]).join('・'), W - 34, y0 + 72, 10, '#C9CED6', 600, 'right');
+  const CT = []; if (C.si >= 0) { const ti = tierOf(C.id); txt(TIERS[ti].nm, W - 34, y0 + 72, 10, '#C9CED6', 600, 'right'); }
   if (C.si < 0) { txt('この都市はまだ準備中（次の便）。', 34, y0 + 96, 12, '#C9CED6', 500); txt('どんな建物が待っているかは、来てのお楽しみ。', 34, y0 + 118, 12, UI.sub, 500); drawArrows(); return; }
   const list = [...C.bosses.map(b => b.id), C.final];
   list.forEach((id, j) => {
     const D = BOSS[id], y = y0 + 90 + j * 20, seen = SV.seen[id];
     c.save(); c.translate(42, y - 4); c.rotate(Math.PI / 4); c.fillStyle = D.kind === '象徴' ? UI.red : 'rgba(224,96,74,.6)'; c.fillRect(-3.5, -3.5, 7, 7); c.restore();
-    txt(seen ? D.name : '？？？', 56, y, 13, seen ? UI.ink : UI.dim, 700); txt(D.kind, W - 34, y, 10, UI.sub, 500, 'right');
+    txt(seen ? D.name : '？？？', 56, y, 13, seen ? UI.ink : UI.dim, 700); txt((DETER[BDET[id]] ? DETER[BDET[id]].nm + '　' : '') + D.kind, W - 34, y, 10, UI.sub, 500, 'right');
   });
   // v3 その5：連れていく鳥。枠は還した都市の数で 1 → 2 → 3。枠をタップすると、仲間から選ぶ一覧が開く
   fixTeam(); const NS = slotsNow(); drawGrowPill2(t, R_GROWM, SV.team); // その6：「連れていく」の所を「育てる」の入口にした（枠はタップで選ぶ）
@@ -192,9 +192,9 @@ function drawCityCard(t) {
     if (j >= NS) { c.fillStyle = 'rgba(255,255,255,.03)'; c.fill(); c.setLineDash && c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,.15)'; c.lineWidth = 1; c.stroke(); c.setLineDash && c.setLineDash([]); txt('還すと増える', R.x + R.w / 2, R.y + 16, 8.5, UI.dim, 500, 'center'); continue; }
     const k = SV.team[j], K = KIND[k]; if (!K) continue; c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); birdS(R.x + 13, R.y + 12, 6.5, .5, 0, 0, KUI[k], K.shape);
     let nm = K.name; c.font = F(10, 700); while (c.measureText(nm).width > R.w - 38 && nm.length > 2) nm = nm.slice(0, -1); txt(nm, R.x + 24, R.y + 16, 10, UI.ink, 700);
-    const gd = K.like.some(t => CT.includes(t)), bd = K.hate.some(t => CT.includes(t)); if (gd) txt('○', R.x + R.w - (bd ? 16 : 7), R.y + 16, 10, UI.green, 700, 'right'); if (bd) txt('×', R.x + R.w - 6, R.y + 16, 10, UI.red, 700, 'right'); }
+    const rn = resN(k, STAGES[C.si]); if (rn) txt('×' + rn, R.x + R.w - 6, R.y + 16, 10, UI.red, 700, 'right'); } // 鳥よけに弱い建物の数
   drawArrows();
-  if (st === 'lock') { txt('前の都市を自然に還すと行ける', W / 2, R_GO.y + 26, 12, UI.sub, 600, 'center'); return; }
+  if (st === 'lock') { let m = lockWhy(C.si); c.font = F(11, 600); while (c.measureText(m).width > W - 60 && m.length > 6) m = m.slice(0, -1); txt(m, W / 2, R_GO.y + 26, 11, UI.sub, 600, 'center'); return; }
   rr(R_GO.x, R_GO.y, R_GO.w, R_GO.h, 21); c.fillStyle = Math.sin(t * 3) > -.6 ? UI.acc : 'rgba(242,184,75,.75)'; c.fill();
   txt((st === 'done' ? 'もう一度飛ぶ' : '飛び立つ') + '（' + startBirds(C.si) + ' 羽）', W / 2, R_GO.y + 26, 14, '#17191E', 700, 'center');
 }
@@ -227,19 +227,21 @@ function drawGrowPill2(t, R, team) { const can = canGrow(team); rr(R.x, R.y, R.w
 M.pick = -1;
 const pkCell = i => ({ x: 22 + (i % 3) * 107, y: 236 + Math.floor(i / 3) * 46, w: 101, h: 40 });
 const R_PKBACK = { x: 110, y: 576, w: 140, h: 40 };
-function drawPicker(t) {
-  const C = CITIES[M.sel], ST = C.si >= 0 ? STAGES[C.si] : null, CT = ST ? cityTags(ST) : [], keys = ST ? [...ST.bosses.map(b => b.id), ST.final].map(id => KEYB[BOSS[id].gim]).filter(Boolean) : [];
+function drawPicker(t, ST, slotJ) {
+  if (ST === undefined) { const C = CITIES[M.sel]; ST = C.si >= 0 ? STAGES[C.si] : null; slotJ = M.pick; } const keys = ST ? [...ST.bosses.map(b => b.id), ST.final].map(id => KEYB[BOSS[id].gim]).filter(Boolean) : [];
   c.fillStyle = 'rgba(6,8,12,.86)'; c.fillRect(0, 0, W, H);
-  txt('枠 ' + (M.pick + 1) + ' に連れていく鳥', W / 2, 190, 15, UI.ink, 700, 'center'); txt((ST ? ST.city + '　' : '') + '○ 得意な札　× 苦手な札　鍵＝この都市の仕掛けに効く', W / 2, 212, 9, UI.sub, 500, 'center');
-  SV.kinds.forEach((k, i) => { const R = pkCell(i), K = KIND[k], at = SV.team.indexOf(k), gd = K.like.some(q => CT.includes(q)), bd = K.hate.some(q => CT.includes(q)), ky = keys.includes(k);
-    rr(R.x, R.y, R.w, R.h, 12); c.fillStyle = at === M.pick ? 'rgba(242,184,75,.22)' : at >= 0 ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.05)'; c.fill();
+  txt('枠 ' + (slotJ + 1) + ' に連れていく鳥', W / 2, 190, 15, UI.ink, 700, 'center'); txt((ST ? ST.city + '　' : '') + '×n＝鳥よけに弱い建物の数　鍵＝仕掛けに効く', W / 2, 212, 9, UI.sub, 500, 'center');
+  SV.kinds.forEach((k, i) => { const R = pkCell(i), K = KIND[k], at = SV.team.indexOf(k), rn = ST ? resN(k, ST) : 0, ky = keys.includes(k);
+    rr(R.x, R.y, R.w, R.h, 12); c.fillStyle = at === slotJ ? 'rgba(242,184,75,.22)' : at >= 0 ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.05)'; c.fill();
     if (ky) { rr(R.x + .5, R.y + .5, R.w - 1, R.h - 1, 12); c.strokeStyle = 'rgba(104,214,128,.7)'; c.lineWidth = 1.2; c.stroke(); }
     birdS(R.x + 16, R.y + 20, 8, .5 + .15 * Math.sin(t * 3 + i), 0, 0, KUI[k], K.shape);
     let nm = K.name; c.font = F(10.5, 700); while (c.measureText(nm).width > R.w - 36 && nm.length > 2) nm = nm.slice(0, -1); txt(nm, R.x + 30, R.y + 17, 10.5, UI.ink, 700);
-    txt((ky ? '鍵 ' : '') + (gd ? '○' : '') + (bd ? '×' : '') + (at >= 0 ? '　枠' + (at + 1) : ''), R.x + 30, R.y + 32, 9, ky ? '#BFF0C8' : bd ? '#E8A08C' : gd ? '#BFF0C8' : UI.dim, 600); });
+    txt((ky ? '鍵 ' : '') + (rn ? '×' + rn : '') + (at >= 0 ? '　枠' + (at + 1) : ''), R.x + 30, R.y + 32, 9, ky ? '#BFF0C8' : rn ? '#E8A08C' : UI.dim, 600); });
   pillAt('もどる', R_PKBACK.x, R_PKBACK.y, R_PKBACK.w, false);
 }
-function pickTap(x, y) {
-  const j = M.pick; SV.kinds.forEach((k, i) => { if (!inR(x, y, pkCell(i))) return; const at = SV.team.indexOf(k); if (at >= 0) SV.team[at] = SV.team[j]; SV.team[j] = k; save(); sfx('buy'); });
-  M.pick = -1;
+function pickTap(x, y, slotJ) { // 選んだら true。ほかの枠にいる鳥を選ぶと入れ替わる
+  const j = slotJ ?? M.pick; let hit = false; SV.kinds.forEach((k, i) => { if (!inR(x, y, pkCell(i))) return; const at = SV.team.indexOf(k); if (at >= 0) SV.team[at] = SV.team[j]; SV.team[j] = k; save(); sfx('buy'); hit = true; });
+  if (slotJ == null) M.pick = -1; return hit;
 }
+// 鳥よけに弱い建物の数（耐性 .5 以上）
+function resN(k, ST) { return [...ST.bosses.map(b => b.id), ST.final].filter(id => resistOf(k, id) >= .5).length; }
