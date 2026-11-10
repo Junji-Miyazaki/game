@@ -667,19 +667,19 @@ const TEASERS = [];
 // 下の3つのボタンで、連れてきた3種のどれかを呼ぶ。ポイントは建物を崩すとたまる。同じ種類を呼ぶたびに少し高くなる
 // wall=外壁への威力の倍率 core=核への倍率 seek=核へ一直線 wind=風（冷却ファン・帆の横風・牛歩）が効かない light=光で目がくらまない／目玉で固まらない stone=石を落として周りも砕く
 const KIND = {
-  starling: { name: 'ムクドリ', role: '数で押す', n: 8, cost: 18, col: '#15181D', s: 7, hp: 0, am: 1, shape: 'starling' },
-  crow: { name: 'カラス', role: '硬い壁を割る', n: 3, cost: 30, col: '#07080A', s: 9.5, hp: 1, am: 1, wall: 2.5, shape: 'crow' },
-  swallow: { name: 'ツバメ', role: '風に流されない', n: 5, cost: 26, col: '#1B2440', s: 7.5, hp: 0, am: 1, wind: 1, shape: 'swallow' },
-  owl: { name: 'フクロウ', role: '光で目がくらまない', n: 3, cost: 30, col: '#6E5438', s: 9.5, hp: 1, am: 1.2, light: 1, shape: 'owl' },
-  falcon: { name: 'ハヤブサ', role: '核へ一直線', n: 3, cost: 34, col: '#48505E', s: 9, hp: 0, am: 1.2, core: 4, seek: 1, shape: 'falcon' },
-  pelican: { name: 'ペリカン', role: '石で壁ごと砕く', n: 3, cost: 32, col: '#9A9184', s: 12.5, hp: 2, am: 1.3, wall: 2, stone: 1, shape: 'pelican' },
+  starling: { name: 'ムクドリ', role: '一度にたくさん来る', n: 8, cost: 18, col: '#15181D', s: 7, hp: 0, am: 1, shape: 'starling' },
+  crow: { name: 'カラス', role: '硬い壁に強い', n: 3, cost: 30, col: '#07080A', s: 9.5, hp: 1, am: 1, wall: 2.5, shape: 'crow' },
+  swallow: { name: 'ツバメ', role: '風に飛ばされない', n: 5, cost: 26, col: '#1B2440', s: 7.5, hp: 0, am: 1, wind: 1, shape: 'swallow' },
+  owl: { name: 'フクロウ', role: 'まぶしい光が平気', n: 3, cost: 30, col: '#6E5438', s: 9.5, hp: 1, am: 1.2, light: 1, shape: 'owl' },
+  falcon: { name: 'ハヤブサ', role: '弱点をまっすぐ狙う', n: 3, cost: 34, col: '#48505E', s: 9, hp: 0, am: 1.2, core: 4, seek: 1, shape: 'falcon' },
+  pelican: { name: 'ペリカン', role: '石でまとめて壊す', n: 3, cost: 32, col: '#9A9184', s: 12.5, hp: 2, am: 1.3, wall: 2, stone: 1, shape: 'pelican' },
   // v3 その5：新しい5種（案は Fable）。どれも画面で動きが違う。cling=壁に張り付いて同じ所をつつき、揺れではじかれない low=足元の段だけを突く（光の柱に入らない）
   // vee=V字で来て、群れの全員が同じ1点を叩く loot=崩したマスの点が 1.5 倍 dodge=止まらず飛ぶので反射光に焼かれない
-  woodpecker: { name: 'キツツキ', role: '張り付いてつつく', n: 2, cost: 34, col: '#33503A', s: 8.5, hp: 2, am: 1, wall: 1.8, cling: 1, shape: 'woodpecker' },
-  darter: { name: 'ヘビウ', role: '足元を崩す', n: 3, cost: 32, col: '#2A2622', s: 9.5, hp: 1, am: 1.2, low: 1, shape: 'darter' },
-  goose: { name: 'ハイイロガン', role: 'V字で一点を叩く', n: 5, cost: 36, col: '#77746C', s: 10, hp: 2, am: 1.6, vee: 1, shape: 'goose' },
-  magpie: { name: 'カササギ', role: '光るものを拾う', n: 5, cost: 24, col: '#101216', s: 8, hp: 1, am: 1, loot: 1.5, shape: 'magpie' },
-  swift: { name: 'アマツバメ', role: '止まらず光線をかわす', n: 6, cost: 28, col: '#1A1A1C', s: 7, hp: 0, am: .6, dodge: 1, shape: 'swift' },
+  woodpecker: { name: 'キツツキ', role: '同じ所をつつき続ける', n: 2, cost: 34, col: '#33503A', s: 8.5, hp: 2, am: 1, wall: 1.8, cling: 1, shape: 'woodpecker' },
+  darter: { name: 'ヘビウ', role: '建物の足元を崩す', n: 3, cost: 32, col: '#2A2622', s: 9.5, hp: 1, am: 1.2, low: 1, shape: 'darter' },
+  goose: { name: 'ハイイロガン', role: 'みんなで1か所を叩く', n: 5, cost: 36, col: '#77746C', s: 10, hp: 2, am: 1.6, vee: 1, shape: 'goose' },
+  magpie: { name: 'カササギ', role: 'エサが1.5倍とれる', n: 5, cost: 24, col: '#101216', s: 8, hp: 1, am: 1, loot: 1.5, shape: 'magpie' },
+  swift: { name: 'アマツバメ', role: '光線をよける', n: 6, cost: 28, col: '#1A1A1C', s: 7, hp: 0, am: .6, dodge: 1, shape: 'swift' },
 };
 // cd=呼んだあとボタンが使えない秒数 spd=突っ込む速さと間隔 like/hate=得意・苦手な建物の札（威力 ×1.35／×0.65）
 for (const [k, cd, spd, like, hate] of [['starling', 1.2, 1.1, [], []], ['crow', 2.5, .9, ['hard'], ['wind']], ['swallow', 2.5, 1.4, ['wind'], ['light']],
@@ -728,7 +728,7 @@ const RES_TIER = [.5, .8, 1]; // 段ごとの耐性の強さ（初級は半分�
 const resistOf = (k, id) => { const d = DETER[BDET[id]]; if (!d || !d.r[k]) return 0; if (BOSS[id] && KEYB[BOSS[id].gim] === k) return 0; // 仕掛けの鍵の鳥には、その建物の鳥よけは効かない（鍵なのに耐性で負ける二重の罠を防ぐ）
   const v = d.r[k] >= .8 ? .6 : .35; let ti = 0; for (let j = 0; j < TIERS.length; j++) if (TIERS[j].cities.some(c0 => { const st = STAGES.find(q => q.id === c0); return st && (st.final === id || st.bosses.some(b => b.id === id)); })) ti = j; return v * RES_TIER[ti]; };
 
-const slotsFor = n => Math.min(3, 1 + n); // 還した都市の数 → 連れていける種類の数
+const slotsFor = n => 3; // その9（ユーザー指示）：枠は最初から3つ。仲間が1種なら残り2つは空き枠として見せ、新しい鳥が入ると分かるようにする
 // 仕掛けごとに効く鳥（建物のカードに出す）
 const KEYB = { fan: 'swallow', gust: 'swallow', slow: 'swallow', glare: 'owl', map: 'owl', eye: 'owl', sway: 'woodpecker', beam: 'swift', pillar: 'darter' };
 // 道中で合流する土地の鳥の形（呼ぶ鳥と同じ描き分けを使う）

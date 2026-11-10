@@ -397,7 +397,7 @@ function step(dt) {
   for (const f of S.flora) f.t += dt; if (S.bb) S.bb.t += dt;
   if (play && !S.siege && (S.callT = (S.callT ?? 3) - dt) <= 0) { S.callT = 10 + Math.random() * 7; sfx('call'); } // 土地の鳥の鳴き声
   if (play && SV.tip && !SV.tip2 && !S.banner && !S.card && canGrow(S.team)) { SV.tip2 = 1; save(); banner('ポイントがたまった', '右下の「育てる」で、時間を止めて鳥の攻撃力や攻撃速度を上げられる'); }
-  if (play && !SV.tip && S.t > 7 && !S.banner && !S.card) { SV.tip = 1; save(); banner('下のボタンで鳥を呼ぶ', '鳥ごとに得意な建物がある。ボスの前のカードで、効く鳥を確かめよう'); }
+  if (play && !SV.tip && S.t > 7 && !S.banner && !S.card) { SV.tip = 1; save(); banner('下のボタンで仲間を呼ぶ　エサを使う', '建物を崩すとエサがたまる。空いた枠には、都市を還すと新しい鳥が入る'); }
   stepFrags(dt);
   stepSky(dt); // 雨・雪・稲光・竜巻は、いまの本物の空（sky.js）で決める
   for (let i = S.drops.length - 1; i >= 0; i--) { const d = S.drops[i]; d.y += d.v * dt; d.x -= d.v * .18 * dt; if (d.y > GY) S.drops.splice(i, 1); }
@@ -531,7 +531,7 @@ function toggleMute() { muted = !muted; if (MG) MG.gain.value = muted ? 0 : .7; 
 // ---------- 操作 ----------
 const R_MAP = { x: 224, y: 17, w: 36, h: 36 }, R_SPD = { x: 268, y: 17, w: 36, h: 36 }, R_SND = { x: 312, y: 17, w: 36, h: 36 };
 const inR = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-function btnRect(i) { const n = S && S.team ? Math.max(1, S.team.length) : 3, w = (W - 24 - (n - 1) * 9) / n; return { x: 12 + i * (w + 9), y: PY + 38, w, h: 64 }; } // 枠の数で幅を割る
+function btnRect(i) { const n = 3, w = (W - 24 - (n - 1) * 9) / n; /* その9：枠は最初から3つ */ return { x: 12 + i * (w + 9), y: PY + 38, w, h: 64 }; } // 枠の数で幅を割る
 const R_AGAIN = { x: 40, w: 132, h: 44 }, R_TOMAP = { x: 188, w: 132, h: 44 };
 function resY() { return 132 + 334; }
 function tap(x, y) {
@@ -796,16 +796,17 @@ function drawPanel(t) {
   rr(0, PY, W, H - PY + 24, 20); c.fillStyle = UI.panel; c.fill(); c.restore();
   rr(W / 2 - 18, PY + 6, 36, 3, 1.5); c.fillStyle = 'rgba(255,255,255,.10)'; c.fill();
   const play = S.mode === 'play';
-  icon('coin', 22, PY + 22, UI.acc); txt(String(Math.floor(S.pts)), 32, PY + 27, 15, UI.ink, 700); txt('ポイント', 32 + (c.measureText(String(Math.floor(S.pts))).width) + 6, PY + 27, 10, UI.sub, 500);
+  icon('coin', 22, PY + 22, UI.acc); txt(String(Math.floor(S.pts)), 32, PY + 27, 15, UI.ink, 700); txt('エサ', 32 + (c.measureText(String(Math.floor(S.pts))).width) + 6, PY + 27, 10, UI.sub, 500);
   drawGrowPill(t, R_GROWP, S.team);
   KEYS.forEach((k, i) => {
-    if (!S.team[i]) return; const r = btnRect(i), kk = S.team[i], u = S.kinds[kk], cw = S.cdn[k] > 0, ok = play && S.pts >= S.cost[k] && !cw, fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
+    if (!S.team[i]) { const r = btnRect(i); rr(r.x, r.y, r.w, r.h, 14); c.setLineDash && c.setLineDash([4, 4]); c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 1.2; c.stroke(); c.setLineDash && c.setLineDash([]); txt('空き枠', r.x + r.w / 2, r.y + 28, 11, UI.dim, 700, 'center'); txt('都市を還すと', r.x + r.w / 2, r.y + 44, 9, UI.dim, 500, 'center'); txt('新しい鳥が入る', r.x + r.w / 2, r.y + 56, 9, UI.dim, 500, 'center'); return; } // 空き枠
+    const r = btnRect(i), kk = S.team[i], u = S.kinds[kk], cw = S.cdn[k] > 0, ok = play && S.pts >= S.cost[k] && !cw, fl = S.flash[k], dx = fl < 0 ? Math.sin(t * 60) * 3 * (-fl / .35) : 0, x = r.x + dx;
     rr(x, r.y, r.w, r.h, 14); c.fillStyle = ok ? UI.btnOn : UI.btn; c.fill();
     if (fl > 0) { rr(x, r.y, r.w, r.h, 14); c.fillStyle = 'rgba(242,184,75,' + fl * 1.2 + ')'; c.fill(); }
     if (ok) { rr(x + .75, r.y + .75, r.w - 1.5, r.h - 1.5, 13.5); c.lineWidth = 1.5; c.strokeStyle = 'rgba(242,184,75,' + (.55 + .35 * Math.sin(t * 4)) + ')'; c.stroke(); }
     c.fillStyle = ok ? UI.accD : 'rgba(255,255,255,.05)'; c.beginPath(); c.arc(x + 21, r.y + 21, 13, 0, 7); c.fill();
     birdS(x + 21, r.y + 22, 9, .5, 0, 0, ok ? KUI[kk] : UI.dim, u.shape);
-    txt(u.name, x + 39, r.y + 21, 12.5, ok ? UI.ink : UI.sub, 700); txt('×' + u.n + '　攻撃力 ' + (S.atk * u.am * (u.wall || 1)).toFixed(1), x + 39, r.y + 35, 9.5, ok ? KUI[kk] : UI.dim, 700);
+    txt(u.name, x + 39, r.y + 21, 12.5, ok ? UI.ink : UI.sub, 700); txt(u.n + '羽呼ぶ', x + 39, r.y + 35, 10, ok ? KUI[kk] : UI.dim, 700); if (!(S.cdn[k] > 0)) txt('攻 ' + (S.atk * u.am * (u.wall || 1)).toFixed(1), x + r.w - 8, r.y + 58, 9.5, ok ? '#F0A07A' : UI.dim, 700, 'right'); // 攻撃力は右下に
     c.font = F(9.5, 500); let ro = u.role; while (c.measureText(ro).width > r.w - 16 && ro.length > 2) ro = ro.slice(0, -1); txt(ro, x + 9, r.y + 47, 9.5, ok ? '#C9CED6' : UI.dim, 500);
     icon('coin', x + 15, r.y + 54, ok ? UI.acc : UI.dim); txt(String(S.cost[k]), x + 23, r.y + 58, 12, ok ? UI.acc : UI.dim, 700);
     if (cw) { const f = S.cdn[k] / u.cd; rr(x, r.y, r.w, r.h, 14); c.fillStyle = 'rgba(8,9,12,.55)'; c.fill(); c.fillStyle = 'rgba(242,184,75,.7)'; c.fillRect(x + 14, r.y + r.h - 3, (r.w - 28) * (1 - f), 2); txt(S.cdn[k].toFixed(1) + '秒', x + r.w - 10, r.y + 58, 10, UI.acc, 700, 'right'); }
@@ -926,7 +927,7 @@ function drawBrief(t, at) {
     birdS(W - 124, y + 14, 7, .5, 0, 0, KUI[kb], kd.shape); txt(kd.name, W - 113, y + 18, 11.5, have ? '#BFF0C8' : '#E8A08C', 700); if (!have) txt('いない', W - 113, y + 32, 8.5, '#E8A08C', 600);
     y += 46; });
   // 連れていく鳥：ここで入れ替えられる（タップで一覧）
-  txt('連れていく（タップで入れ替え）', 34, y + 12, 9.5, UI.sub, 600); S.team.forEach((k, j) => { const R = briefChip(j), K = KIND[k], rn = resN(k, ST); rr(R.x, R.y, R.w, R.h, 12); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); birdS(R.x + 14, R.y + 13, 7, .5, 0, 0, KUI[k], K.shape);
+  txt('連れていく（タップで入れ替え）', 34, y + 12, 9.5, UI.sub, 600); [0, 1, 2].forEach(j => { const R = briefChip(j), k = S.team[j]; if (!k) { rr(R.x, R.y, R.w, R.h, 12); c.setLineDash && c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 1; c.stroke(); c.setLineDash && c.setLineDash([]); txt('空き枠', R.x + R.w / 2, R.y + 17, 10, UI.dim, 600, 'center'); return; } const K = KIND[k], rn = resN(k, ST); rr(R.x, R.y, R.w, R.h, 12); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill(); birdS(R.x + 14, R.y + 13, 7, .5, 0, 0, KUI[k], K.shape);
     let nm = K.name; c.font = F(10.5, 700); while (c.measureText(nm).width > R.w - 40 && nm.length > 2) nm = nm.slice(0, -1); txt(nm, R.x + 26, R.y + 17, 10.5, UI.ink, 700); if (rn) txt('×' + rn, R.x + R.w - 6, R.y + 17, 10, UI.red, 700, 'right'); });
   txt('タップで出発', W / 2, y0 + h - 12, 12, 'rgba(242,184,75,' + (.55 + .45 * Math.sin(t * 4)) + ')', 700, 'center');
   c.globalAlpha = 1; if (S.pick >= 0) drawPicker(t, ST, S.pick);
