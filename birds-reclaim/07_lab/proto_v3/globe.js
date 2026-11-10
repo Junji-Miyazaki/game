@@ -190,7 +190,7 @@ function drawCityCard(t) {
   fixTeam(); const NS = slotsNow(); drawGrowPill2(t, R_GROWM, SV.team); // その6：「連れていく」の所を「育てる」の入口にした（枠はタップで選ぶ）
   for (let j = 0; j < 3; j++) { const R = chipR(j); rr(R.x, R.y, R.w, R.h, 12);
     if (j >= NS) { c.fillStyle = 'rgba(255,255,255,.03)'; c.fill(); c.setLineDash && c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,.15)'; c.lineWidth = 1; c.stroke(); c.setLineDash && c.setLineDash([]); txt('還すと増える', R.x + R.w / 2, R.y + 16, 8.5, UI.dim, 500, 'center'); continue; }
-    const k = SV.team[j], K = KIND[k]; if (!K) { c.fillStyle = 'rgba(255,255,255,.03)'; c.fill(); c.setLineDash && c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 1; c.stroke(); c.setLineDash && c.setLineDash([]); txt('空き枠', R.x + R.w / 2, R.y + 16, 9.5, UI.dim, 600, 'center'); continue; } // 新しい鳥が入る枠 c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); birdS(R.x + 13, R.y + 12, 6.5, .5, 0, 0, KUI[k], K.shape);
+    const k = SV.team[j], K = KIND[k]; if (!K) { c.fillStyle = 'rgba(255,255,255,.03)'; c.fill(); c.setLineDash && c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 1; c.stroke(); c.setLineDash && c.setLineDash([]); txt('空き枠', R.x + R.w / 2, R.y + 16, 9.5, UI.dim, 600, 'center'); continue; } /* 新しい鳥が入る枠 */ c.fillStyle = 'rgba(255,255,255,.07)'; c.fill(); birdS(R.x + 13, R.y + 12, 6.5, .5, 0, 0, KUI[k], K.shape);
     let nm = K.name; c.font = F(10, 700); while (c.measureText(nm).width > R.w - 38 && nm.length > 2) nm = nm.slice(0, -1); txt(nm, R.x + 24, R.y + 16, 10, UI.ink, 700);
     const rn = resN(k, STAGES[C.si]); if (rn) txt('×' + rn, R.x + R.w - 6, R.y + 16, 10, UI.red, 700, 'right'); } // 鳥よけに弱い建物の数
   drawArrows();

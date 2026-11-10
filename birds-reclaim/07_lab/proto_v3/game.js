@@ -818,35 +818,35 @@ function endWait() { return S.mode === 'win' ? 6.6 : 1; } // 還った時：草�
 function pillAt(label, x, y, w, on) { rr(x, y, w, 44, 22); c.fillStyle = on ? UI.acc : 'rgba(255,255,255,.10)'; c.fill(); txt(label, x + w / 2, y + 28, 14, on ? '#17191E' : UI.ink, 700, 'center'); }
 function drawResult(t) {
   const win = S.mode === 'win', a = Math.max(0, Math.min(1, (S.endT - (win ? 3.2 : endWait() - 1)) / .6)); if (!a) return; c.globalAlpha = a;
-  c.fillStyle = 'rgba(14,16,20,' + (win ? .2 : .4) + ')'; c.fillRect(0, 0, W, PY);
-  const y0 = (win ? 92 : 132) + (1 - a) * 14; rr(24, y0, W - 48, win ? 360 : 314, 22); // 還した時は、ごほうび（新しい鳥・枠）の分だけ上に広げる c.fillStyle = 'rgba(18,20,25,.92)'; c.fill();
-  if (win) { spaced('RECLAIMED', W / 2, y0 + 50, 26, UI.green, 5); txt(S.st.end, W / 2, y0 + 74, 12, UI.sub, 500, 'center'); txt(BOSS[S.st.final].after || '', W / 2, y0 + 92, 11, UI.green, 500, 'center'); }
-  else { txt('群れが尽きた', W / 2, y0 + 48, 22, UI.ink, 700, 'center'); txt(S.lightOut ? S.L.out + 'が、' + S.L.name + 'は残った' : S.st.city + '・' + S.st.zones[Math.max(0, S.zone)].n + 'で力尽きた', W / 2, y0 + 73, 12, UI.sub, 500, 'center'); }
+  c.fillStyle = 'rgba(14,16,20,' + (win ? .35 : .45) + ')'; c.fillRect(0, 0, W, PY);
+  const y0 = (win ? 92 : 132) + (1 - a) * 14; rr(24, y0, W - 48, win ? 360 : 314, 22); c.fillStyle = 'rgba(14,16,20,.96)'; c.fill(); // 還した時は、ごほうび（新しい鳥・枠）の分だけ上に広げる。札は濃くして、昼の空でも字が読めるように
+  if (win) { spaced('RECLAIMED', W / 2, y0 + 50, 26, UI.green, 5); txt(S.st.end, W / 2, y0 + 74, 12, '#C3C8D0', 500, 'center'); txt(BOSS[S.st.final].after || '', W / 2, y0 + 92, 11, UI.green, 500, 'center'); }
+  else { txt('群れが尽きた', W / 2, y0 + 48, 22, UI.ink, 700, 'center'); txt(S.lightOut ? S.L.out + 'が、' + S.L.name + 'は残った' : S.st.city + '・' + S.st.zones[Math.max(0, S.zone)].n + 'で力尽きた', W / 2, y0 + 73, 12, '#C3C8D0', 500, 'center'); }
   if (win) { drawReclaimResult(t, y0); if (S.endT > endWait()) pillAt(S.wordsGot.length ? '掘り出した言葉を見る' : 'つづける', W / 2 - 110, resY(), 220, true); c.globalAlpha = 1; return; }
   const rows = [['時間', fmtT(S.t)], ['崩した象徴', S.killed.length ? S.killed.length + ' / ' + S.bossList.length : 'なし'], ['還した名所', S.lmDown + ' / ' + S.lmN], ['拾った言葉', S.wordsGot.length + (S.wordsNew.length ? '（新しい言葉 ' + S.wordsNew.length + '）' : '')], ['最大の群れ', S.peak + ' 羽']];
-  rows.forEach(([k, v], i) => { const y = y0 + 114 + i * 25; c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(48, y - 17, W - 96, 1); txt(k, 48, y, 12, UI.sub, 500); txt(v, W - 48, y, 12, UI.ink, 600, 'right'); });
-  txt('得点', 48, y0 + 262, 12, UI.sub, 500); txt(S.score.toLocaleString(), W - 48, y0 + 266, 28, UI.ink, 700, 'right');
+  rows.forEach(([k, v], i) => { const y = y0 + 114 + i * 25; c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(48, y - 17, W - 96, 1); txt(k, 48, y, 12.5, '#C3C8D0', 500); txt(v, W - 48, y, 12.5, UI.ink, 700, 'right'); });
+  txt('得点', 48, y0 + 262, 12, '#C3C8D0', 500); txt(S.score.toLocaleString(), W - 48, y0 + 266, 28, UI.ink, 700, 'right');
   if (S.newBest) { rr(W / 2 - 62, y0 + 280, 124, 22, 11); c.fillStyle = UI.accD; c.fill(); txt('最高得点を更新', W / 2, y0 + 295, 11, UI.acc, 700, 'center'); }
-  else txt('最高得点  ' + (SV.best[S.st.id] || 0).toLocaleString(), W / 2, y0 + 295, 11, UI.sub, 500, 'center');
+  else txt('最高得点  ' + (SV.best[S.st.id] || 0).toLocaleString(), W / 2, y0 + 295, 11, '#C3C8D0', 500, 'center');
   if (S.endT > endWait()) { const ry = resY(); if (win) pillAt('地球へ戻る', W / 2 - 94, ry, 188, true); else { pillAt('もう一度', R_AGAIN.x, ry, R_AGAIN.w, true); pillAt('地球へ戻る', R_TOMAP.x, ry, R_TOMAP.w, false); } }
   c.globalAlpha = 1;
 }
 // v3：還った時の結果。得点は少し見せたあと崩れ落ち、「還った土地」「戻った鳥」に置き換わる。下にごほうび
 function drawReclaimResult(t, y0) {
   const rows = [['時間', fmtT(S.t)], ['崩した象徴', S.killed.length + ' / ' + S.bossList.length], ['還した名所', S.lmDown + ' / ' + S.lmN], ['拾った言葉', S.wordsGot.length + (S.wordsNew.length ? '（新しい言葉 ' + S.wordsNew.length + '）' : '')]];
-  rows.forEach(([k, v], i) => { const y = y0 + 116 + i * 23; c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(48, y - 16, W - 96, 1); txt(k, 48, y, 12, UI.sub, 500); txt(v, W - 48, y, 12, UI.ink, 600, 'right'); });
+  rows.forEach(([k, v], i) => { const y = y0 + 116 + i * 23; c.fillStyle = 'rgba(255,255,255,.06)'; c.fillRect(48, y - 16, W - 96, 1); txt(k, 48, y, 12.5, '#C3C8D0', 500); txt(v, W - 48, y, 12.5, UI.ink, 700, 'right'); });
   const u = Math.max(0, Math.min(1, (S.endT - 4.4) / 1)), ys = y0 + 222;
   if (u < 1) { // 得点の数字が1つずつ崩れ落ちる
-    const s = S.score.toLocaleString(); c.font = F(26, 700); let x = W - 48 - c.measureText(s).width; txt('得点', 48, ys, 12, UI.sub, 500);
+    const s = S.score.toLocaleString(); c.font = F(26, 700); let x = W - 48 - c.measureText(s).width; txt('得点', 48, ys, 12, '#C3C8D0', 500);
     [...s].forEach((ch, i) => { const w = c.measureText(ch).width, d = Math.max(0, u * 1.6 - hash(i, 7) * .6); c.globalAlpha = Math.max(0, 1 - d) * Math.min(1, (S.endT - 3.2) / .6); txt(ch, x, ys + 4 + d * d * 70, 26, UI.ink, 700); x += w; });
     c.globalAlpha = 1;
   }
-  if (u > .3) { const b = Math.min(1, (u - .3) / .5); c.globalAlpha = b; txt('還った土地', 48, ys - 6, 12, UI.sub, 500); txt(S.area + ' ha', W - 48, ys - 2, 24, UI.green, 700, 'right'); txt('これまでの合計', 48, ys + 20, 12, UI.sub, 500); txt((S.reward ? S.reward.area : SV.area) + ' ha（東京ドーム ' + domes(S.reward ? S.reward.area : SV.area) + ' 個分）', W - 48, ys + 21, 11.5, UI.green, 700, 'right'); c.globalAlpha = 1; }
+  if (u > .3) { const b = Math.min(1, (u - .3) / .5); c.globalAlpha = b; txt('還った土地', 48, ys - 6, 12, '#C3C8D0', 500); txt(S.area + ' ha', W - 48, ys - 2, 24, UI.green, 700, 'right'); txt('これまでの合計', 48, ys + 20, 12, '#C3C8D0', 500); txt((S.reward ? S.reward.area : SV.area) + ' ha（東京ドーム ' + domes(S.reward ? S.reward.area : SV.area) + ' 個分）', W - 48, ys + 21, 11.5, UI.green, 700, 'right'); c.globalAlpha = 1; }
   const R = S.reward; if (!R || S.endT < 5.6) return; c.globalAlpha = Math.min(1, (S.endT - 5.6) / .5);
   let y = ys + 46; for (const l of wrapL('「' + R.verse + '」', W - 96, 12, 600)) { txt(l, W / 2, y, 12, '#DDE8C8', 600, 'center'); y += 17; }
   if ((R.kinds || []).length) { rr(36, y - 2, W - 72, 26, 13); c.fillStyle = 'rgba(242,184,75,.14)'; c.fill(); let x = 54; R.kinds.forEach(k => { birdS(x, y + 11, 7, .5, 0, 0, KUI[k], KIND[k].shape); x += 16; }); const ck = Object.keys(CITYKEY).find(c0 => CITYKEY[c0] === R.kinds[0]), cs = ck && ck !== S.st.id ? STAGES.find(q => q.id === ck) : null; txt('新しい仲間：' + R.kinds.map(k => KIND[k].name).join('・') + (cs ? '（' + cs.city.split('〜')[0] + 'に行ける）' : ''), x, y + 15, 10.5, UI.acc, 700); y += 30; }
   { const msg = R.tier >= 0 ? TIERS[R.tier].nm + 'の都市が開いた' : R.title ? '称号：' + R.title + 'の広さを緑にした' : R.extra ? TIERS[tierOf(S.st.id)].nm + 'の鳥はそろった（代わりにポイント +' + R.extra + '）' : ''; if (msg) { txt(msg, W / 2, y + 10, 11, '#BFF0C8', 700, 'center'); y += 18; } }
-  txt((R.slot ? '枠が増えた（' + R.slot + '種まで連れていける）　' : '') + '攻撃力・攻撃速度ポイント 各 +' + R.pt + '（道中 +' + S.got.p + '・+' + S.got.s + '）', W / 2, y + 12, 10, R.slot ? '#BFF0C8' : UI.sub, 600, 'center');
+  txt((R.slot ? '枠が増えた（' + R.slot + '種まで連れていける）　' : '') + '攻撃力・攻撃速度ポイント 各 +' + R.pt + '（道中 +' + S.got.p + '・+' + S.got.s + '）', W / 2, y + 12, 10.5, R.slot ? '#BFF0C8' : '#D5D9E0', 600, 'center');
   c.globalAlpha = 1;
 }
 function draw(t) {

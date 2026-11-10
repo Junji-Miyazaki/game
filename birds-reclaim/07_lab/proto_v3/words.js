@@ -145,7 +145,7 @@ function drawCityWords(t) {
     c.fillStyle = isN ? 'rgba(242,210,122,' + (.1 + .06 * glow) + ')' : 'rgba(236,231,220,.05)'; c.fillRect(30, y, W - 60, q.h - 4);
     if (isN) { c.strokeStyle = 'rgba(242,210,122,.55)'; c.lineWidth = 1; c.strokeRect(30.5, y + .5, W - 61, q.h - 5); rr(38, y + 6, 24, 16, 8); c.fillStyle = '#F2D27A'; c.fill(); c.font = '700 10px ' + SERIF; c.fillStyle = '#1A160C'; c.fillText('新', 50, y + 18); }
     else if (isG) { c.font = '500 9px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.45)'; c.textAlign = 'left'; c.fillText('また出てきた', 38, y + 17); c.textAlign = 'center'; }
-    let yy = y + 22 + (isN || isG ? 16 : 0); // 「新」「また出てきた」は上の1行に for (const l of q.o) { c.font = big(E); c.fillStyle = '#ECE7DC'; c.fillText(l, W / 2, yy); yy += 18; }
+    let yy = y + 22 + (isN || isG ? 16 : 0); /* 「新」「また出てきた」は上の1行に */ for (const l of q.o) { c.font = big(E); c.fillStyle = '#ECE7DC'; c.fillText(l, W / 2, yy); yy += 18; }
     for (const l of q.j) { c.font = '500 10.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.7)'; c.fillText(l, W / 2, yy); yy += 14; }
     c.font = '500 8.5px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.45)'; c.fillText(E.by, W / 2, yy + 2); y += q.h + 10; }
   c.font = '500 10px ' + SERIF; c.fillStyle = 'rgba(236,231,220,.5)'; c.fillText('書架 ' + wordCount() + ' / ' + Object.keys(WORDS).length + '　·　地図の紙片のボタンからいつでも読める', W / 2, 556);
