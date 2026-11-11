@@ -52,7 +52,7 @@
   <div>
     <button id="bPlate">背景を撮り直す (R)</button><button id="bBirds">鳥をやり直す (0)</button><button id="bFull">全画面 (F)</button><button id="bDef">初期値に戻す</button><button id="bClose">閉じる (H)</button>
   </div>
-  <div id="keys"><span class="pc">H 設定　F 全画面　A / B 欠けた所　N 白黒→ネガ→カラー　G 粒子　M 音　R 背景の撮り直し　0 鳥をやり直す　T 合成の人影　D 動きの検出を表示<br>見比べ：↑↓ 鳥の大きさ　←→ マスの大きさ　− ＝ 鳥の増え方　[ ] 払われて離れる距離　; ' 払いが届く範囲<br></span>映像はこのブラウザの中だけで処理し、外へ送らない・保存しない。音は最初のクリックかキーで鳴り始める。</div>
+  <div id="keys"><span class="pc">H 設定　F 全画面　A / B 欠けた所　N 白黒→ネガ→カラー　G 粒子　M 音　R 背景の撮り直し　0 鳥をやり直す　D 動きの検出を表示<br>見比べ：↑↓ 鳥の大きさ　←→ マスの大きさ　− ＝ 鳥の増え方　[ ] 払われて離れる距離　; ' 払いが届く範囲<br></span>映像はこのブラウザの中だけで処理し、外へ送らない・保存しない。音は最初のクリックかキーで鳴り始める。</div>
 </div>
 <button id="gear" aria-label="設定">⚙</button>
 <div id="start"><div class="in">
@@ -60,7 +60,6 @@
   <p>カメラに映ったあなたの輪郭を、鳥がついばみます。</p><p class="en">Birds peck away at your silhouette.</p>
   <p>映像はこの端末の中だけで処理し、送信も保存もしません。</p><p class="en">The video is processed on this device only. Nothing is sent or stored.</p>
   <button id="sCam" class="main">カメラで始める<small>Start with the camera</small></button>
-  <button id="sDemo">カメラなしで見る<small>Watch without a camera</small></button>
   <div class="err" id="sErr"></div>
   <div class="hint">設定は右下の ⚙<span class="pc">、または H キー。F で全画面</span>。音が出ます。<br>手で払うと、鳥は少し離れます。</div>
 </div></div>
@@ -81,9 +80,10 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 // ---------- 設定（H キーの中。localStorage に残す） ----------
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
-const DEF = { cam: '', cell: PHONE ? 10 : 14, grow: 1, max: 120, bsz: 1.3, regrow: 4, fill: 'A', tone: 'bw', flash: 1, sens: 1, swR: 1.4, swD: 1.6, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
+// 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
+const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
 let CFG = Object.assign({}, DEF, (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } })());
-const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } }; // 合成の人影は保存しない（展示で誤って合成のまま始まらないように）
+const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } };
 const UI = [
   ['cam', 'カメラ', 'select'],
   ['cell', 'マスの大きさ', 'range', 6, 40, 1, 'px'],
@@ -104,7 +104,6 @@ const UI = [
   ['rs', '描画の細かさ', 'choice', [[0, '自動'], [1, '1'], [1.5, '1.5'], [2, '2']]],
   ['dbg', '動きの検出を表示', 'check'],
   ['inv', '輪郭を反転（確認用）', 'check'],
-  ['test', '合成の人影で試す（カメラなし）', 'check'],
 ];
 const TONE = { bw: '白黒', neg: 'ネガ', color: 'カラー' };
 
@@ -241,7 +240,7 @@ function sense() {
   calm = clamp(1 - (bodyV - .12) / .2, 0, 1);
 }
 
-// ---------- 合成の人影（カメラなしで動きを確かめる。T キー、または ?test） ----------
+// ---------- 合成の人影（開発の確かめ用。URL に ?test を付けた時だけ。画面からは選べない：ユーザー指示 2026-11-11） ----------
 const [tv, tvx] = mkc(640, 360), [tm, tmx2] = mkc(640, 360), [tbg, tbx] = mkc(640, 360); let tsC, tsx; let ST = 0, sAcc = 0;
 { // 部屋らしい背景を1枚
   const g = tbx.createLinearGradient(0, 0, 0, 360); g.addColorStop(0, '#8d8a84'); g.addColorStop(.62, '#a9a59c'); g.addColorStop(.63, '#5b554d'); g.addColorStop(1, '#3f3a34'); tbx.fillStyle = g; tbx.fillRect(0, 0, 640, 360);
@@ -572,7 +571,6 @@ function applyCfg(k) {
   if (k === 'cell' || k === 'mirror' || k === 'rs') layout();
   if (k === 'tone') cvA.classList.toggle('bw', CFG.tone !== 'color');
   if (k === 'cam' && MODE === 'cam') startCam();
-  if (k === 'test') useTest(!!CFG.test);
   if (k === 'sound' && MG) MG.gain.value = CFG.sound ? .7 : 0;
   if (k === 'max' || k === 'grow') { /* 次のコマから効く */ }
 }
@@ -610,7 +608,6 @@ addEventListener('keydown', e => {
   else if (k === 'd') setKey('dbg', CFG.dbg ? 0 : 1, '動きの検出の表示：' + (CFG.dbg ? 'なし' : 'あり'));
   else if (k === 'r') { plateReset(); say('背景を撮り直す', 1.8); }
   else if (k === '0') { resetBirds(); say('鳥をやり直す', 1.8); }
-  else if (k === 't') { hideStart(); useTest(!CFG.test); if (panel.classList.contains('show')) buildUI(); }
   else if (STEP[e.key]) { const [key, d, lo, hi, label, unit] = STEP[e.key], v = clamp(Math.round((CFG[key] + d) * 100) / 100, lo, hi); e.preventDefault(); setKey(key, v, label + '：' + v + unit); }
 });
 for (const ev of ['pointerdown', 'click', 'touchend']) addEventListener(ev, audioInit);
@@ -628,8 +625,7 @@ $('bDef').onclick = () => { const t = CFG.test, cam = CFG.cam; CFG = Object.assi
 const startEl = $('start'), startOpen = () => startEl.classList.contains('show');
 function showStart(err) { $('sErr').textContent = err || ''; startEl.classList.add('show'); document.body.classList.remove('idle'); }
 function hideStart() { startEl.classList.remove('show'); wake(); }
-$('sCam').onclick = () => { hideStart(); audioInit(); if (CFG.test) useTest(false); else { MODE = 'cam'; startCam(); } };
-$('sDemo').onclick = () => { hideStart(); audioInit(); useTest(true); };
+$('sCam').onclick = () => { hideStart(); audioInit(); MODE = 'cam'; startCam(); };
 cvA.classList.toggle('bw', CFG.tone !== 'color');
 setSrc(640, 360);
 (async () => {
