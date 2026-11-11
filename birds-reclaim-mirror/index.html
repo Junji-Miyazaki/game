@@ -519,6 +519,40 @@ function drawPlants() { // B：欠けた所に苔が付き、草が伸びて葉�
   c.fillStyle = 'rgba(34,60,32,.62)'; c.fill(moss); c.strokeStyle = '#3E7A3A'; c.lineWidth = Math.max(1, cs * .1); c.lineCap = 'round'; c.stroke(stem);
   c.fillStyle = '#3F8A3C'; c.fill(l1); c.fillStyle = '#6FB04E'; c.fill(l2); c.fillStyle = '#A5CF6A'; c.fill(l3); c.fillStyle = '#F4EDC0'; c.fill(fl); c.fillStyle = '#E9A9B8'; c.fill(fl2);
 }
+// ---------- 題の画面の言葉：存在を問う1文。無人になって題の画面に戻るたびに、別の言葉に替わる（ユーザー指示。元のゲームの題辞と同じ考え方） ----------
+// どれも作者の死後 70 年以上たった原文。原典の本文と照らした（出典と照合先は 00_log/LOG.md）。和訳はこの作品で付けた。
+const QUOTES = [
+  { o: 'Pourquoi il y a plutôt quelque chose que rien ?', ja: 'なぜ、何もないのではなく、何かがあるのか。', by: 'G. W. Leibniz — Principes de la nature et de la grâce, §7' },
+  { o: 'Nicht wie die Welt ist, ist das Mystische, sondern dass sie ist.', ja: '世界がいかにあるかではなく、世界があるということ、それが神秘である。', by: 'Ludwig Wittgenstein — Tractatus logico-philosophicus, 6.44' },
+  { o: '… die Eule der Minerva beginnt erst mit der einbrechenden Dämmerung ihren Flug.', ja: 'ミネルヴァのふくろうは、迫りくる黄昏にようやく飛びはじめる。', by: 'G. W. F. Hegel — Grundlinien der Philosophie des Rechts, Vorrede' },
+  { o: 'Und wenn du lange in einen Abgrund blickst, blickt der Abgrund auch in dich hinein.', ja: 'おまえが長く深淵をのぞくとき、深淵もまた、おまえをのぞきこむ。', by: 'Friedrich Nietzsche — Jenseits von Gut und Böse, 146' },
+];
+let qi = 0, qBag = [], qLay = null, glT = 0, glCd = 4, glSeed = 1, glMode = 0; // qi＝いまの言葉（最初はライプニッツ）。glT＝言葉が乱れている残り秒
+function nextQuote() { if (!qBag.length) qBag = QUOTES.map((_, i) => i).filter(i => i !== qi).sort(() => Math.random() - .5); qi = qBag.pop(); qLay = null; } // 一回りするまで同じ言葉は出ない
+function wrapText(str, font, maxW) { c.font = font; const out = []; let cur = ''; const parts = / /.test(str) ? str.split(' ').map((w, i) => (i ? ' ' : '') + w) : [...str]; for (const q of parts) { if (cur && c.measureText(cur + q).width > maxW) { out.push(cur); cur = q.trimStart(); } else cur += q; } if (cur) out.push(cur); return out; }
+function quoteLayout() { // 1字ずつ動かせるよう、原文は字ごとの位置を先に測っておく
+  const key = qi + ':' + W + ':' + H; if (qLay && qLay.key === key) return qLay;
+  const Q = QUOTES[qi], fq = clamp(Math.min(W * .036, H * .05), 13, 30), fO = '600 italic ' + fq.toFixed(1) + 'px Georgia,"Times New Roman",serif', fJ = '500 ' + (fq * .62).toFixed(1) + 'px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif', fB = '500 ' + Math.max(9, fq * .48).toFixed(1) + 'px Georgia,"Times New Roman",serif';
+  const lines = []; let n = 0; for (const ln of wrapText(Q.o, fO, W * .82)) { c.font = fO; let x = W / 2 - c.measureText(ln).width / 2; const chars = []; for (const ch of ln) { const w = c.measureText(ch).width; chars.push({ ch, x, w, i: n++ }); x += w; } lines.push({ text: ln, chars }); }
+  return qLay = { key, fq, fO, fJ, fB, lines, ja: wrapText(Q.ja, fJ, W * .86), by: Q.by };
+}
+function drawQuote(ta, top) {
+  const Y = quoteLayout(), on = glT > 0, drift = Math.sin(TT * .7) * 1.5 * SZ, lh = Y.fq * 1.45; let y = top + Y.fq;
+  c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.font = Y.fO; c.fillStyle = '#ECE7DC';
+  Y.lines.forEach((ln, li) => {
+    const tear = on && glMode ? (li % 2 ? 1 : -1) * Math.sin(glT * 43) * 11 * SZ : 0; // 行ごとに左右へずれる
+    if (on) { c.globalAlpha = ta * .22; c.fillText(ln.text, ln.chars[0].x + 7 * SZ - tear, y - 3 * SZ); } // ずれた残像
+    for (const q of ln.chars) {
+      let dx = drift + tear, dy = 0, a = ta * .92, r = 0;
+      if (on) { const h = hash(q.i, glSeed); if (h < .24) { dy = (hash(q.i, glSeed + 3) - .5) * 16 * SZ; dx += (hash(q.i, glSeed + 5) - .5) * 8 * SZ; r = (hash(q.i, glSeed + 7) - .5) * .5; a *= .35 + hash(q.i, glSeed + 9) * .65; } else if (h > .93) a = 0; } // 一部の字が浮き、傾き、薄れ、抜け落ちる
+      if (a <= 0) continue; c.globalAlpha = a;
+      if (r) { c.save(); c.translate(q.x + dx + q.w / 2, y + dy); c.rotate(r); c.fillText(q.ch, -q.w / 2, 0); c.restore(); } else c.fillText(q.ch, q.x + dx, y + dy);
+    }
+    y += lh;
+  });
+  c.textAlign = 'center'; c.font = Y.fJ; c.globalAlpha = ta * (on ? .4 : .7); y += Y.fq * .1; for (const l of Y.ja) { c.fillText(l, W / 2 - drift * .5, y); y += Y.fq * .98; }
+  c.font = Y.fB; c.globalAlpha = ta * .42; c.fillText(Y.by, W / 2, y + Y.fq * .45);
+}
 // 古い映画の粒子と傷（film.js の filmGrain から。全画面用に、粒子は先に作った模様を毎コマずらして敷く）
 const GRAIN = [0, 1, 2].map(() => { const [cv, g] = mkc(256, 256), im = g.createImageData(256, 256), d = im.data; for (let i = 0; i < 65536; i++) { const w = Math.random() < .5, sp = Math.random() < .004; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = w ? 255 : 0; d[i * 4 + 3] = sp ? 90 + Math.random() * 90 : Math.random() * (w ? 16 : 26); } g.putImageData(im, 0, 0); return cv; });
 let GPAT = null, VIG = null, vigW = 0, vigH = 0;
@@ -546,7 +580,12 @@ function draw() {
   if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
     if (intro > .05 && intro < .95) { if (flk > 0) flk--; else if (Math.random() < .03) flk = 3 + ((Math.random() * 3) | 0); } else flk = 0; // 幕が上がる間、切れかけた灯りのように、まばらに明るくなる
     const e = intro * intro * (3 - 2 * intro), ta = clamp((intro - .45) / .4, 0, 1); c.fillStyle = 'rgba(0,0,0,' + (.94 * e * (flk > 0 ? .82 : 1)).toFixed(3) + ')'; c.fillRect(0, 0, W, H);
-    if (ta > 0) { const fs = Math.min(W * .2, H * .2, 170 * SZ); c.globalAlpha = ta * (.9 + Math.random() * .1); c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif'; c.fillText('VÖGEL', W / 2 + (Math.random() - .5) * 1.2, H / 2 + (Math.random() - .5) * 1.2); c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic'; }
+    if (ta > 0) { // 題字と、その下の問いの1文。ふだんは静かに呼吸し、時折、言葉が乱れる
+      const fs = Math.min(W * .2, H * .2, 170 * SZ), ty = H * .4, gx = glT > 0 && glMode ? Math.sin(glT * 43) * 9 * SZ : 0; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif';
+      if (glT > 0) { c.globalAlpha = ta * .22; c.fillText('VÖGEL', W / 2 - gx * 1.6 + 6 * SZ, ty - 3 * SZ); }
+      c.globalAlpha = ta * (.9 + Math.random() * .1); c.fillText('VÖGEL', W / 2 + gx + (Math.random() - .5) * 1.2, ty + (Math.random() - .5) * 1.2);
+      drawQuote(ta, ty + fs * .62); c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    }
   }
   if (CFG.grain) filmGrain();
 }
@@ -561,7 +600,7 @@ function tick(dt) {
   present = srcOK && occN >= Math.max(6, NC * .004);
   // 題の画面：人が 0.8 秒続けて映ったら、3.5 秒かけて薄れる（映像が来て最初の 2.5 秒は題を見せる）。無人が 6 秒続き、鳥も去ったら、2.5 秒かけて戻る
   if (srcOK) runT += dt; seenT = present ? seenT + dt : 0;
-  if (!CFG.title) intro = 0; else if (present && seenT > .8 && runT > 2.5) intro = Math.max(0, intro - dt / 3.5); else if (!present && gone > 6 && !birds.length) intro = Math.min(1, intro + dt / 2.5);
+  if (!CFG.title) intro = 0; else if (present && seenT > .8 && runT > 2.5) intro = Math.max(0, intro - dt / 3.5); else if (!present && gone > 6 && !birds.length) { if (intro === 0) nextQuote(); intro = Math.min(1, intro + dt / 2.5); }
   if (present) { gone = 0; if (intro < OPEN) T += dt; } else { gone += dt; if (gone > 1.2) T = Math.max(0, T - dt * 10); }
   for (let i = 0; i < NC; i++) if (hole[i] > 0) { hole[i] -= dt; if (hole[i] <= 0) { hole[i] = 0; hp[i] = 1; } }
   buildExposed(); stepBirds(dt); audioTick(dt);
@@ -569,6 +608,8 @@ function tick(dt) {
   // 鏡が遅れる瞬間：10羽を超えたら、24〜46 秒ごとに 1.1〜2 秒、マス目の人影だけが止まる。鳥は止まった人影をつつき続ける
   if (CFG.lag && present && intro <= 0 && birds.length >= 10 && lagT <= 0) { lagCd -= dt; if (lagCd <= 0) { lagT = 1.1 + Math.random() * .9; lagCd = 24 + Math.random() * 22; } }
   if (lagT > 0) lagT -= dt;
+  // 言葉の乱れ：題の画面が出ている間、2.5〜8.5 秒ごとに 0.25〜0.75 秒。同時に、電気のはぜる小さな音
+  if (glT > 0) glT -= dt; else if (intro > .6) { glCd -= dt; if (glCd <= 0) { glT = .25 + Math.random() * .5; glCd = 2.5 + Math.random() * 6; glSeed = Math.random() * 900; glMode = Math.random() < .5 ? 1 : 0; if (AC && CFG.sound && CFG.amb) try { nz(.09, 'highpass', 3500, 1, .03); nz(.2, 'bandpass', 120, 2, .06); } catch (e) { } } }
   const neg = (CFG.tone === 'neg') !== (flashT > 0); if (neg !== negOn) { negOn = neg; stage.classList.toggle('neg', neg); }
 }
 let lastVT = -1, last = 0, fT = 0, fcount = 0, FPS = 0, SFPS = 0, fMin = 1e9, fSum = 0, fN = 0;
@@ -694,7 +735,7 @@ setSrc(640, 360);
 wake();
 requestAnimationFrame(loop);
 // 確かめ用：コンソールから状態を見たり、時間を進めたりできる（展示では使わない）
-window.__dbg = { lag(v) { lagT = v; }, amb: () => AMB ? { state: AC.state, notes: AMB.notes, stepN, mel: +AMB.mel.gain.value.toFixed(3), dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), det: +AMB.det.offset.value.toFixed(0) } : null, useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
+window.__dbg = { lag(v) { lagT = v; }, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, notes: AMB.notes, stepN, mel: +AMB.mel.gain.value.toFixed(3), dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), det: +AMB.det.offset.value.toFixed(0) } : null, useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
 </script>
 </body>
 </html>
