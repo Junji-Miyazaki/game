@@ -11,7 +11,6 @@
   #stage { position: fixed; inset: 0; background: #000; }
   #stage.neg { filter: invert(1); }
   #stage canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
-  #a.bw { filter: grayscale(1) contrast(1.12); }
   #msg { position: fixed; left: 0; right: 0; bottom: 10%; text-align: center; color: #ECE7DC; font: 500 15px/1.9 "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; white-space: pre-line; pointer-events: none; text-shadow: 0 0 6px #000, 0 0 2px #000; }
   #panel { display: none; position: fixed; top: 12px; left: 12px; width: min(352px, calc(100vw - 24px)); max-height: calc(100% - 24px); overflow: auto; box-sizing: border-box; padding: 12px 14px; background: rgba(12, 13, 16, .88); color: #E8E8E8; font-size: 12px; line-height: 1.5; border: 1px solid rgba(255, 255, 255, .16); border-radius: 8px; }
   #panel.show { display: block; }
@@ -43,7 +42,7 @@
 </style>
 </head>
 <body>
-<div id="stage"><canvas id="a" class="bw"></canvas><canvas id="b"></canvas></div>
+<div id="stage"><canvas id="a"></canvas><canvas id="b"></canvas></div>
 <div id="msg"></div>
 <div id="panel">
   <h1>VÖGEL（試作）</h1>
@@ -78,8 +77,10 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 1, depth: 1, rough: 1, roughK: 1, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
-let CFG = Object.assign({}, DEF, (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } })());
+const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: .6, v: 2, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
+const SAVED = (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { return {}; } })();
+let CFG = Object.assign({}, DEF, SAVED);
+if ((SAVED.v | 0) < 2) { CFG.lag = 0; CFG.v = 2; } // 前に保存した設定（版 2 より前）でも、「鏡が遅れる瞬間」は切から始める（ユーザー 2026-11-11：途中の変な演出は入れない）
 const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } };
 const UI = [
   ['cam', 'カメラ', 'select'],
@@ -97,12 +98,11 @@ const UI = [
   ['sWing', '羽音', 'check'],
   ['lag', '鏡が遅れる瞬間', 'check'],
   ['depth', '奥行き（手前を飛ぶ鳥）', 'check'],
-  ['rough', '背景のざらつきの波と乱れ', 'check'],
-  ['roughK', 'ざらつきの強さ', 'range', .2, 2, .1, '倍'],
   ['sens', '払う感度', 'range', .3, 3, .1, '倍'],
   ['swR', '払いが届く範囲', 'range', .5, 3, .1, '倍'],
   ['swD', '払われて離れる距離', 'range', .5, 3, .1, '倍'],
   ['grain', 'フィルムの粒子と傷', 'check'],
+  ['soft', '輪郭のやわらかさ', 'range', 0, 2, .1, 'px'],
   ['mirror', '鏡像（左右反転）', 'check'],
   ['sound', '音', 'check'],
   ['thr', '輪郭のしきい値', 'range', .2, .8, .05, ''],
@@ -135,29 +135,7 @@ function layout() {
   for (const b of birds) { b.tg = -1; if (b.st === 1) b.st = 0; }
 }
 function srcIdx(x, y) { let u = (x - ox) / dw; if (CFG.mirror) u = 1 - u; const v = (y - oy) / dh; return clamp(Math.floor(v * SH), 0, SH - 1) * SW + clamp(Math.floor(u * SW), 0, SW - 1); }
-function drawCover(g, img) { // 乱れている間は、横の帯に切って左右にずらす（部屋の映像と、人物を消した層を、同じ帯でずらす。人物のマス目はずれない）
-  g.save(); if (CFG.mirror) { g.translate(W, 0); g.scale(-1, 1); }
-  if (tearT > 0 && tearBands) { const iw = img.videoWidth || img.width, ih = img.videoHeight || img.height; for (const [a, b, dx] of tearBands) g.drawImage(img, 0, a * ih, iw, (b - a) * ih, ox + dx, oy + a * dh, dw, (b - a) * dh + .6); }
-  else g.drawImage(img, ox, oy, dw, dh);
-  g.restore();
-}
-// ---------- 背景のざらつきの波と、時たまの乱れ（ユーザーの案 2026-11-11：悪夢と現実の交差。ざらつきは時間の波で大きくなったり小さくなったりする） ----------
-let rough = 0, roughHold = -1, tearT = 0, tearNext = 0, tearBands = null, tears = 0; // rough＝いまのざらつき（0〜1）
-function roughWave() { // 23 秒と 37 秒の2つの波を重ねる（そろわないので、山の高さと間が毎回ちがう）。7 秒の小さな揺れを足す
-  const a = .5 + .5 * Math.sin(TT * 6.2832 / 23 + 1.3), b = .5 + .5 * Math.sin(TT * 6.2832 / 37 + 4.1), w = .5 + .5 * Math.sin(TT * 6.2832 / 7.3);
-  return clamp(Math.pow(a * .6 + b * .4, 1.6) * 1.15 + (w - .5) * .12, 0, 1);
-}
-function makeBands() { // 4〜7 本の帯。半分近くはずれない。ずれ幅は、ざらつきが強いほど大きい
-  const n = 4 + ((Math.random() * 4) | 0), cuts = [0, 1]; for (let i = 1; i < n; i++) cuts.push(Math.random()); cuts.sort((p, q) => p - q);
-  tearBands = []; for (let i = 0; i < cuts.length - 1; i++) tearBands.push([cuts[i], cuts[i + 1], Math.random() < .45 ? 0 : (Math.random() - .5) * 2 * (14 + 60 * rough) * SZ]);
-}
-function stepRough(dt) {
-  inten += ((present ? clamp(birds.length / Math.max(20, CFG.max * .6), 0, 1) : 0) - inten) * Math.min(1, dt * .8); // 鳥の多さ（0〜1）。ゆっくり追う
-  const tgt = roughHold >= 0 ? roughHold : CFG.rough && present && intro < OPEN ? roughWave() * (.55 + .45 * inten) : 0; // 鳥が多いほど、波の山が高くなる。無人の時と題の画面では掛けない
-  rough += (tgt - rough) * Math.min(1, dt * 1.5);
-  if (tearT > 0) { tearT -= dt; tearNext -= dt; if (tearNext <= 0) { makeBands(); tearNext = .05 + Math.random() * .07; } }
-  else if (CFG.rough && present && intro <= 0 && Math.random() < dt * .3 * rough * rough) { tearT = .18 + Math.random() * .32; tearNext = 0; tears++; } // 乱れ：ざらつきの山で起きやすい（山の頂で 3 秒に1回ほど、谷ではほぼ起きない）
-}
+function drawCover(g, img) { g.save(); if (CFG.mirror) { g.translate(W, 0); g.scale(-1, 1); } g.drawImage(img, ox, oy, dw, dh); g.restore(); }
 
 // ---------- 入力（カメラ／合成の人影／静止画）と、切り出し用の作業キャンバス ----------
 const mkc = (w, h, o) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return [cv, cv.getContext('2d', o)]; };
@@ -342,7 +320,7 @@ const FORM = ['V字', '帯', '球'];
 const birds = [], parts = [], pops = [];
 let intro = 1, seenT = 0, runT = 0; // intro＝題の画面の濃さ（1＝題だけ、0＝消えている）。seenT＝人が続けて映っている秒。runT＝映像が来てからの秒
 const OPEN = .35; // 題の画面がここまで薄れたら、鳥が来はじめる
-let lagT = 0, lagCd = 20, flk = 0; // lagT＝鏡が遅れている残り秒。flk＝幕のちらつきの残りコマ
+let lagT = 0, lagCd = 20; // lagT＝鏡が遅れている残り秒（設定で入れた時だけ）
 let T = 0, gone = 9, present = false, hadBirds = false; // T＝人が映っている時間（秒）。いなくなると速く減る
 let FT = 0, TT = 0, ax = 0, ay = 0, anchored = false, orb = 0, fdir = 1, ptx = 0;
 let backCd = 3; // 次に、人物の後ろを回る鳥を出すまでの秒
@@ -418,7 +396,7 @@ function stepBirds(dt) {
   // 人物の後ろを回る：8羽を超えたら、1.5〜4 秒ごとに 1〜6 羽（群れが大きいほど多く）
   if (CFG.depth && present && N >= 8) { backCd -= dt; if (backCd <= 0) { backCd = 1.5 + Math.random() * 2.5; let n = 1 + Math.floor(N / 40); for (const b of birds) { if (!n) break; if (b.st === 0 && !b.fz && b.scare <= 0 && b.stun <= 0 && Math.random() < .15) { goBehind(b); n--; } } } }
   if (CFG.depth && present && N >= 12 && !preW && waveCd < 1.3) { preW = true; let n = 0; for (const b of birds) { if (n >= 16) break; if (b.st !== 0 || b.fz || b.scare > 0 || Math.random() > .1) continue; const ux = Math.sign(b.x - W / 2 || 1) * (.5 + Math.random() * .5), uy = .2 + Math.random() * .8, m = Math.hypot(ux, uy); goFront(b, 1, ux / m, uy / m, Math.max(0, waveCd - .6) + Math.random() * .3); n++; } }
-  if (present && N >= 12) { waveCd -= dt; if (waveCd <= 0) { preW = false; wave = 2.2; waveCd = 16 + Math.random() * 6; if (CFG.rough && tearT <= 0) { tearT = .22 + Math.random() * .15; tearNext = 0; tears++; } if (CFG.flash) flashT = .16; sfx('wave'); for (const b of birds) if (b.st === 0) b.cd = Math.random() * .4; } }
+  if (present && N >= 12) { waveCd -= dt; if (waveCd <= 0) { preW = false; wave = 2.2; waveCd = 16 + Math.random() * 6; if (CFG.flash) flashT = .16; sfx('wave'); for (const b of birds) if (b.st === 0) b.cd = Math.random() * .4; } }
   if (wave > 0) wave -= dt;
   // 群れの中心：人物のまわりを、頭の上を通る弧でゆっくり往復する。人物が動けば付いていく
   if (present) {
@@ -606,14 +584,8 @@ function drawQuote(ta, top) {
   c.font = Y.fB; c.globalAlpha = ta * .42; c.fillText(Y.by, W / 2, y + Y.fq * .45);
 }
 // 古い映画の粒子と傷（film.js の filmGrain から。全画面用に、粒子は先に作った模様を毎コマずらして敷く）
-const GRAIN = [0, 1, 2].map(() => { const [cv, g] = mkc(256, 256), im = g.createImageData(256, 256), d = im.data; for (let i = 0; i < 65536; i++) { const w = Math.random() < .5, sp = Math.random() < .004; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = w ? 255 : 0; d[i * 4 + 3] = sp ? 90 + Math.random() * 90 : Math.random() * (w ? 16 : 26); } g.putImageData(im, 0, 0); return cv; });
+const GRAIN = [0, 1, 2].map(() => { const [cv, g] = mkc(256, 256), im = g.createImageData(256, 256), d = im.data; for (let i = 0; i < 65536; i++) { const w = Math.random() < .5, sp = Math.random() < .004; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = w ? 255 : 0; d[i * 4 + 3] = sp ? 90 + Math.random() * 90 : Math.random() * (w ? 24 : 36); } g.putImageData(im, 0, 0); return cv; });
 let GPAT = null, VIG = null, vigW = 0, vigH = 0;
-const ROUGH = [0, 1, 2].map(() => { const [cv, g] = mkc(256, 256), im = g.createImageData(256, 256), d = im.data; for (let i = 0; i < 65536; i++) { const w = Math.random() < .5, q = Math.random(); d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = w ? 255 : 0; d[i * 4 + 3] = q * q * 185; } g.putImageData(im, 0, 0); return cv; }); // 題の画面のざらつきを、明るい映像の上でも見える濃さにした模様
-let RPAT = null;
-function drawRough() { // 部屋の映像にだけ掛ける（人物のマス目は、このあとに描くので澄んだまま）
-  const al = Math.min(1, rough * CFG.roughK); if (al < .02) return; if (!RPAT) RPAT = ROUGH.map(g => A.createPattern(g, 'repeat'));
-  const rx = Math.floor(Math.random() * 256), ry = Math.floor(Math.random() * 256); A.save(); A.globalAlpha = al; A.translate(-rx, -ry); A.fillStyle = RPAT[(Math.random() * 3) | 0]; A.fillRect(rx, ry, W, H); A.restore();
-}
 function filmGrain() {
   if (!GPAT) GPAT = GRAIN.map(g => c.createPattern(g, 'repeat'));
   const rx = Math.floor(Math.random() * 256), ry = Math.floor(Math.random() * 256); c.save(); c.translate(-rx, -ry); c.fillStyle = GPAT[(Math.random() * 3) | 0]; c.fillRect(rx, ry, W, H); c.restore();
@@ -627,7 +599,7 @@ function drawFar() { // 人物より奥にいる鳥：小さく、少し薄く�
 }
 function draw() {
   A.setTransform(RS, 0, 0, RS, 0, 0); A.fillStyle = '#000'; A.fillRect(0, 0, W, H);
-  if (srcOK) { drawCover(A, src); if (rmC && sinceSense < 1) drawCover(A, rmC); drawRough(); drawFar(); drawBlocks(); }
+  if (srcOK) { drawCover(A, src); if (rmC && sinceSense < 1) drawCover(A, rmC); drawFar(); drawBlocks(); }
   c.setTransform(RS, 0, 0, RS, 0, 0); c.clearRect(0, 0, W, H);
   if (CFG.fill === 'B') drawPlants();
   for (const p of parts) { c.globalAlpha = Math.max(0, 1 - p.t / 1.3); c.fillStyle = 'rgb(' + p.g + ',' + p.g + ',' + p.g + ')'; c.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s); } c.globalAlpha = 1;
@@ -640,7 +612,10 @@ function draw() {
     if (b.z < .97) continue; // 奥の鳥は、下のキャンバスに描いてある
     if (b.z > 1.03) { front.push(b); continue; }
     const ang = Math.sin(TT * 16 + b.ph) * .7, fold = b.st === 1 ? .5 : 0;
-    const bs = b.s * CFG.bsz; birdS(b.x, b.y, bs * 1.24, ang, fold, b.rot, 'rgba(236,231,220,.5)', b.k); birdS(b.x, b.y, bs, ang, fold, b.rot, '#0B0B0C', b.k);
+    const bs = b.s * CFG.bsz, cs2 = CFG.cell, ci = Math.floor(b.y / cs2) * cols + Math.floor(b.x / cs2), over = b.x >= 0 && b.x < W && ci >= 0 && ci < NC && occ[ci] && hole[ci] <= 0;
+    if (over) birdS(b.x, b.y, bs * 1.3, ang, fold, b.rot, 'rgba(236,231,220,.24)', b.k); // 人物の暗いマスの上にいる時だけ、淡くにじむ縁（前はどこでもはっきり縁取っていて、貼り絵のようだった）
+    birdS(b.x - b.vx * .014, b.y - b.vy * .014, bs, ang, fold, b.rot, 'rgba(22,21,20,.3)', b.k); // 動きの向きに尾を引く（フィルムのぶれ）
+    birdS(b.x, b.y, bs, ang, fold, b.rot, 'rgba(22,21,20,.9)', b.k);
   }
   front.sort((p, q) => p.z - q.z); // 手前の鳥ほど、あとに描く
   for (const b of front) { // 手前の鳥：大きく、薄く、輪郭をぼかす（少しずつずらして重ね描きする。ぼかしの命令は端末によって使えないため）
@@ -653,8 +628,7 @@ function draw() {
   }
   if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ * CFG.swR, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
   if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
-    if (intro > .05 && intro < .95) { if (flk > 0) flk--; else if (Math.random() < .03) flk = 3 + ((Math.random() * 3) | 0); } else flk = 0; // 幕が上がる間、切れかけた灯りのように、まばらに明るくなる
-    const e = intro * intro * (3 - 2 * intro), ta = clamp((intro - .45) / .4, 0, 1); c.fillStyle = 'rgba(0,0,0,' + (.94 * e * (flk > 0 ? .82 : 1)).toFixed(3) + ')'; c.fillRect(0, 0, W, H);
+    const e = intro * intro * (3 - 2 * intro), ta = clamp((intro - .45) / .4, 0, 1); c.fillStyle = 'rgba(0,0,0,' + (.94 * e).toFixed(3) + ')'; c.fillRect(0, 0, W, H);
     if (ta > 0) { // 題字と、その下の問いの1文。ふだんは静かに呼吸し、時折、言葉が乱れる
       const fs = Math.min(W * .2, H * .2, 170 * SZ), ty = H * .4, gx = glT > 0 && glMode ? Math.sin(glT * 43) * 9 * SZ : 0; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif';
       if (glT > 0) { c.globalAlpha = ta * .22; c.fillText('VÖGEL', W / 2 - gx * 1.6 + 6 * SZ, ty - 3 * SZ); }
@@ -664,7 +638,7 @@ function draw() {
       c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
     }
   }
-  if (CFG.grain) filmGrain();
+  if (CFG.grain) { c.fillStyle = 'rgba(128,124,116,.07)'; c.fillRect(0, 0, W, H); filmGrain(); } // 黒をわずかに浮かせる（フィルムは真っ黒にならない）
 }
 
 // ---------- 進める ----------
@@ -682,7 +656,7 @@ function tick(dt) {
   for (let i = 0; i < NC; i++) if (hole[i] > 0) { hole[i] -= dt; if (hole[i] <= 0) { hole[i] = 0; hp[i] = 1; } }
   buildExposed(); stepBirds(dt); audioTick(dt);
   if (flashT > 0) flashT -= dt;
-  stepRough(dt);
+  inten += ((present ? clamp(birds.length / Math.max(20, CFG.max * .6), 0, 1) : 0) - inten) * Math.min(1, dt * .8); // 鳥の多さ（0〜1）。ゆっくり追う。声の変化に使う
   // 鏡が遅れる瞬間：10羽を超えたら、24〜46 秒ごとに 1.1〜2 秒、マス目の人影だけが止まる。鳥は止まった人影をつつき続ける
   if (CFG.lag && present && intro <= 0 && birds.length >= 10 && lagT <= 0) { lagCd -= dt; if (lagCd <= 0) { lagT = 1.1 + Math.random() * .9; lagCd = 24 + Math.random() * 22; } }
   if (lagT > 0) lagT -= dt;
@@ -701,7 +675,7 @@ function loop(now) {
 function stat() {
   let holes = 0; if (hole) for (let i = 0; i < NC; i++) if (hole[i] > 0) holes++;
   const N = birds.length, k = Math.floor((FT / 7) % 3);
-  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), lag: lagT > 0, front: birds.filter(b => b.fz && b.fz !== 4).length, back: birds.filter(b => b.fz === 4).length, rough: +rough.toFixed(2), tear: tearT > 0, tears, inten: +inten.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
+  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), lag: lagT > 0, front: birds.filter(b => b.fz && b.fz !== 4).length, back: birds.filter(b => b.fz === 4).length, inten: +inten.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
   window.__stats = S;
   if (!panel.classList.contains('show')) return;
   $('stat').textContent = '描画 ' + S.fps + ' コマ/秒（最低 ' + (S.fpsMin ?? '—') + '、平均 ' + (S.fpsAvg ?? '—') + '）\n輪郭 ' + S.segFps + ' コマ/秒　1コマ ' + S.segMs + ' ms　' + (S.delegate || '未読込') + '\n部品：' + (seg ? S.from : segErr ? '読めない（' + segErr + '）' : '読み込み中') + '\n入力：' + ({ cam: 'カメラ', test: '合成の人影', img: '静止画' })[MODE] + ' ' + S.src + '　画面 ' + S.canvas + '　マス ' + S.grid
@@ -742,9 +716,12 @@ const segMsg = () => '人物の切り出しを読めません（' + segErr + '�
 // ---------- 画面の文字と、隠しUI ----------
 let msgT = 0;
 function say(s, sec) { msgEl.textContent = s; clearTimeout(msgT); if (sec) msgT = setTimeout(() => { msgEl.textContent = ''; }, sec * 1000); }
+function applyLook() { // 画質：白黒と、わずかなぼかし（フィルムのやわらかさ。鳥や草木の輪郭がくっきりしすぎないように）
+  const sf = +CFG.soft || 0; cvA.style.filter = (CFG.tone !== 'color' ? 'grayscale(1) contrast(1.1) ' : '') + (sf > 0 ? 'blur(' + (sf * .6).toFixed(2) + 'px)' : ''); cvB.style.filter = sf > 0 ? 'blur(' + sf.toFixed(2) + 'px)' : 'none';
+}
 function applyCfg(k) {
   if (k === 'cell' || k === 'mirror' || k === 'rs') layout();
-  if (k === 'tone') cvA.classList.toggle('bw', CFG.tone !== 'color');
+  if (k === 'tone' || k === 'soft') applyLook();
   if (k === 'cam' && MODE === 'cam') startCam();
   if (k === 'sound' && MG) MG.gain.value = CFG.sound ? .7 : 0;
   if (k === 'max' || k === 'grow') { /* 次のコマから効く */ }
@@ -793,7 +770,7 @@ if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechang
 $('bPlate').onclick = () => { plateReset(); say('背景を撮り直す', 1.8); };
 $('bBirds').onclick = () => { resetBirds(); say('鳥をやり直す', 1.8); };
 $('bFull').onclick = fullscreen;
-$('bDef').onclick = () => { const t = CFG.test, cam = CFG.cam; CFG = Object.assign({}, DEF, { test: t, cam }); saveCfg(); cvA.classList.toggle('bw', CFG.tone !== 'color'); if (MG) MG.gain.value = .7; layout(); buildUI(); };
+$('bDef').onclick = () => { const t = CFG.test, cam = CFG.cam; CFG = Object.assign({}, DEF, { test: t, cam }); saveCfg(); applyLook(); if (MG) MG.gain.value = .7; layout(); buildUI(); };
 
 // ---------- 始まりの画面と、始める ----------
 // 開いたら、題の画面のままカメラを始める（ユーザー指示 2026-11-11：始め方はカメラしかないので、「カメラで始める」の画面はいらない）。
@@ -802,7 +779,7 @@ const startEl = $('start'), startOpen = () => startEl.classList.contains('show')
 function showStart(err) { $('sErr').textContent = err || ''; startEl.classList.add('show'); document.body.classList.remove('idle'); }
 function hideStart() { startEl.classList.remove('show'); wake(); }
 $('sCam').onclick = () => { hideStart(); audioInit(); MODE = 'cam'; startCam(); };
-cvA.classList.toggle('bw', CFG.tone !== 'color');
+applyLook();
 setSrc(640, 360);
 (async () => {
   if (QS.get('img')) return useImage(QS.get('img'));
@@ -812,7 +789,7 @@ setSrc(640, 360);
 wake();
 requestAnimationFrame(loop);
 // 確かめ用：コンソールから状態を見たり、時間を進めたりできる（展示では使わない）
-window.__dbg = { lag(v) { lagT = v; }, rough(v) { roughHold = v; }, tear(v) { tearT = v; tearNext = 0; }, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), fl: FL ? +FL.out.gain.value.toFixed(3) : null } : null, cry: n => cry(n || 1, .2), useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
+window.__dbg = { lag(v) { lagT = v; }, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), fl: FL ? +FL.out.gain.value.toFixed(3) : null } : null, cry: n => cry(n || 1, .2), useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
 </script>
 </body>
 </html>
