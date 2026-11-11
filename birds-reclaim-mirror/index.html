@@ -321,7 +321,7 @@ const FORM = ['V字', '帯', '球'];
 // ---------- 群れ ----------
 const birds = [], parts = [], pops = [];
 let intro = 1, seenT = 0, runT = 0; // intro＝題の画面の濃さ（1＝題だけ、0＝消えている）。seenT＝人が続けて映っている秒。runT＝映像が来てからの秒
-const VEIL = .66; // 題の画面の幕の濃さ。部屋の映像は約 3 分の 1 の明るさで見えている（ユーザー 2026-11-11：完全な黒ではなく、トーンを落としたカメラの映像の上に）
+const VEIL = .2; // 題の画面の幕の濃さ。部屋の映像は、ほぼそのまま見えている（ユーザー 2026-11-11：そこまで暗く落とさなくてよい。そのまま乗るくらいで、文字が見える程度に）
 const OPEN = .35; // 題の画面がここまで薄れたら、鳥が来はじめる
 let lagT = 0, lagCd = 20; // lagT＝鏡が遅れている残り秒（設定で入れた時だけ）
 let T = 0, gone = 9, present = false, hadBirds = false; // T＝人が映っている時間（秒）。いなくなると速く減る
@@ -640,11 +640,16 @@ function draw() {
   if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
     const e = intro * intro * (3 - 2 * intro), ta = clamp((intro - .45) / .4, 0, 1); c.fillStyle = 'rgba(0,0,0,' + ((srcOK ? VEIL : .94) * e).toFixed(3) + ')'; c.fillRect(0, 0, W, H); // 映像が来ていれば、部屋を暗く落とすだけ（真っ黒にはしない）
     if (ta > 0) { // 題字と、その下の問いの1文。ふだんは静かに呼吸し、時折、言葉が乱れる
+      { const Y = quoteLayout(), fs0 = Math.min(W * .2, H * .2, 170 * SZ), y0 = H * .4 - fs0 * 1.05, y1 = H * .4 + fs0 * .62 + Y.fq * (2.6 + Y.lines.length * 1.45 + Y.ja.length * .98) + fs0 * .35, g = c.createLinearGradient(0, y0, 0, y1), k = 'rgba(0,0,0,' + (.36 * ta).toFixed(3) + ')';
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.28, k); g.addColorStop(.72, k); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, y0, W, y1 - y0); } // 題字と言葉のあたりだけ、帯のようにやわらかく暗くする（部屋全体は暗くしない）
+      tc.shadowColor = 'rgba(0,0,0,.85)'; tc.shadowBlur = 9 * RS * SZ; // 文字のまわりに暗いにじみ
       const fs = Math.min(W * .2, H * .2, 170 * SZ), ty = H * .4, gx = glT > 0 && glMode ? Math.sin(glT * 43) * 9 * SZ : 0; tc.fillStyle = '#ECE7DC'; tc.textAlign = 'center'; tc.textBaseline = 'middle'; tc.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif';
       if (glT > 0) { tc.globalAlpha = ta * .22; tc.fillText('VÖGEL', W / 2 - gx * 1.6 + 6 * SZ, ty - 3 * SZ); }
       tc.globalAlpha = ta * (.9 + Math.random() * .1); tc.fillText('VÖGEL', W / 2 + gx + (Math.random() - .5) * 1.2, ty + (Math.random() - .5) * 1.2);
       drawQuote(ta, ty + fs * .62);
-      tc.globalAlpha = ta * .3; tc.textAlign = 'center'; tc.textBaseline = 'alphabetic'; tc.font = '500 10px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif'; tc.fillText('映像はこの端末の中だけで処理し、送信も保存もしません', W / 2, H - 16); // カメラの許可を押す前に読める、ただ一つの約束
+      tc.shadowBlur = 5 * RS * SZ;
+      tc.globalAlpha = ta * .5; tc.textAlign = 'center'; tc.textBaseline = 'alphabetic'; tc.font = '500 10px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif'; tc.fillText('映像はこの端末の中だけで処理し、送信も保存もしません', W / 2, H - 16); // カメラの許可を押す前に読める、ただ一つの約束
+      tc.shadowBlur = 0; tc.shadowColor = 'rgba(0,0,0,0)';
       tc.globalAlpha = 1; tc.textAlign = 'left'; tc.textBaseline = 'alphabetic';
     }
   }
