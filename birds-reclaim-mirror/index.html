@@ -279,22 +279,29 @@ const SHP = { // span=羽の長さ chord=羽の幅 sweep=羽先の後ろへの�
   swallow: { span: 1.28, chord: .2, sweep: .45, tail: 'fork', head: .13 }, falcon: { span: 1.22, chord: .26, sweep: .32, tail: 'narrow', head: .14 },
   swift: { span: 1.45, chord: .15, sweep: .75, tail: 'fork', head: .11 },
 };
+let G = c; // 鳥を描く先。ふだんは上のキャンバス。人物の後ろを回る鳥の時だけ、下のキャンバスに切り替える
 function birdS(x, y, s, ang, fold, rot, col, shp) {
-  const P = SHP[shp] || SHP.starling; c.save(); c.translate(x, y); c.rotate(rot); c.fillStyle = col;
+  const P = SHP[shp] || SHP.starling; G.save(); G.translate(x, y); G.rotate(rot); G.fillStyle = col;
   const sp = s * P.span * (1 - fold * .72), up = -Math.sin(ang) * s * .55, ch = s * P.chord;
   for (const d of [-1, 1]) { // 羽：肩 → ひじ → 羽先 → 後ろの縁
-    c.beginPath(); c.moveTo(d * s * .08, -s * .14); c.quadraticCurveTo(d * sp * .45, up - ch * .4, d * sp, up * 1.2 + s * P.sweep); c.quadraticCurveTo(d * sp * .5, up * .6 + ch, d * s * .08, s * .16); c.fill();
+    G.beginPath(); G.moveTo(d * s * .08, -s * .14); G.quadraticCurveTo(d * sp * .45, up - ch * .4, d * sp, up * 1.2 + s * P.sweep); G.quadraticCurveTo(d * sp * .5, up * .6 + ch, d * s * .08, s * .16); G.fill();
   }
-  c.beginPath(); c.ellipse(0, s * .02, s * .13, s * .36, 0, 0, 7); c.fill(); // 胴
-  const hy = -.36; c.beginPath(); c.arc(0, s * hy, s * P.head, 0, 7); c.fill(); // 頭
-  c.beginPath(); // 尾
-  if (P.tail === 'fork') { c.moveTo(-s * .06, s * .3); c.lineTo(-s * .2, s * .85); c.lineTo(0, s * .45); c.lineTo(s * .2, s * .85); c.lineTo(s * .06, s * .3); }
-  else if (P.tail === 'fan') { c.moveTo(-s * .08, s * .3); c.lineTo(-s * .22, s * .72); c.lineTo(s * .22, s * .72); c.lineTo(s * .08, s * .3); }
-  else if (P.tail === 'narrow') { c.moveTo(-s * .06, s * .3); c.lineTo(-s * .08, s * .7); c.lineTo(s * .08, s * .7); c.lineTo(s * .06, s * .3); }
-  else { c.moveTo(-s * .08, s * .3); c.lineTo(-s * .12, s * .55); c.lineTo(s * .12, s * .55); c.lineTo(s * .08, s * .3); }
-  c.fill();
-  if (P.beak) { const b0 = hy - .12; c.beginPath(); c.moveTo(-s * .06, s * b0); c.lineTo(0, s * (b0 - .18)); c.lineTo(s * .06, s * b0); c.fill(); }
-  c.restore();
+  G.beginPath(); G.ellipse(0, s * .02, s * .13, s * .36, 0, 0, 7); G.fill(); // 胴
+  const hy = -.36; G.beginPath(); G.arc(0, s * hy, s * P.head, 0, 7); G.fill(); // 頭
+  G.beginPath(); // 尾
+  if (P.tail === 'fork') { G.moveTo(-s * .06, s * .3); G.lineTo(-s * .2, s * .85); G.lineTo(0, s * .45); G.lineTo(s * .2, s * .85); G.lineTo(s * .06, s * .3); }
+  else if (P.tail === 'fan') { G.moveTo(-s * .08, s * .3); G.lineTo(-s * .22, s * .72); G.lineTo(s * .22, s * .72); G.lineTo(s * .08, s * .3); }
+  else if (P.tail === 'narrow') { G.moveTo(-s * .06, s * .3); G.lineTo(-s * .08, s * .7); G.lineTo(s * .08, s * .7); G.lineTo(s * .06, s * .3); }
+  else { G.moveTo(-s * .08, s * .3); G.lineTo(-s * .12, s * .55); G.lineTo(s * .12, s * .55); G.lineTo(s * .08, s * .3); }
+  G.fill();
+  if (P.beak) { const b0 = hy - .12; G.beginPath(); G.moveTo(-s * .06, s * b0); G.lineTo(0, s * (b0 - .18)); G.lineTo(s * .06, s * b0); G.fill(); }
+  G.restore();
+}
+function birdR(x, y, s, ang, bank, col) { // 後ろ姿（奥へ飛んでいく鳥、こちらへ来る鳥）：胴は小さな丸、羽は左右に伸びて上下に打つ
+  const up = -Math.sin(ang) * s * .62; G.save(); G.translate(x, y); G.rotate(bank); G.fillStyle = col;
+  for (const d of [-1, 1]) { G.beginPath(); G.moveTo(d * s * .08, -s * .07); G.quadraticCurveTo(d * s * .5, up * .75 - s * .16, d * s * 1.05, up); G.quadraticCurveTo(d * s * .55, up * .55 + s * .1, d * s * .08, s * .09); G.fill(); }
+  G.beginPath(); G.ellipse(0, 0, s * .15, s * .19, 0, 0, 7); G.fill(); G.beginPath(); G.arc(0, -s * .17, s * .1, 0, 7); G.fill();
+  G.restore();
 }
 const KINDS = ['starling', 'starling', 'starling', 'crow', 'starling', 'swallow', 'starling', 'starling', 'falcon', 'starling', 'swift'];
 
@@ -314,6 +321,7 @@ const OPEN = .35; // 題の画面がここまで薄れたら、鳥が来はじ�
 let lagT = 0, lagCd = 20, flk = 0; // lagT＝鏡が遅れている残り秒。flk＝幕のちらつきの残りコマ
 let T = 0, gone = 9, present = false, hadBirds = false; // T＝人が映っている時間（秒）。いなくなると速く減る
 let FT = 0, TT = 0, ax = 0, ay = 0, anchored = false, orb = 0, fdir = 1, ptx = 0;
+let backCd = 3; // 次に、人物の後ろを回る鳥を出すまでの秒
 let preW = false; // 総攻撃の前触れ（手前へ消える鳥）を出したか
 let ATK = 1, flockN = 0, wave = 0, waveCd = 14, flashT = 0, negOn = false, spawnCd = 0, born = 0, eaten = 0;
 const inGrid = j => j >= 0 && j < NC;
@@ -342,27 +350,38 @@ const nextCd = () => wave > 0 ? Math.random() * .35 : (flockN < 4 ? .5 + Math.ra
 function spawn() {
   const q = Math.random(); let x, y; if (q < .5) { x = Math.random() * W; y = -30; } else if (q < .75) { x = -30; y = Math.random() * H * .6; } else { x = W + 30; y = Math.random() * H * .6; }
   birds.push({ x, y, vx: 0, vy: 0, st: 0, ph: Math.random() * 6, cd: .8 + Math.random(), stun: 0, scare: 0, fx: 0, fy: 0, tg: -1, dv: 0, rot: Math.PI, ret: 0, fz: 0, z: 1, s: (9 + Math.random() * 4) * SZ, k: KINDS[born++ % KINDS.length] });
-  if (CFG.depth && (birds.length === 1 || Math.random() < .1)) goFront(birds[birds.length - 1], 3); // 最初の1羽と、あとから来る鳥の1割は、手前から飛び込んでくる
+  if (CFG.depth && (birds.length === 1 || Math.random() < .1)) goFront(birds[birds.length - 1], 3, 0, 0, 0, birds.length === 1 ? 6.5 + Math.random() * 1.5 : 0); // 最初の1羽（いちばん大きく）と、あとから来る鳥の1割は、手前から飛び込んでくる
 }
 // ---------- 奥行き（ユーザーの案 2026-11-11：手前から奥へ飛んで人に向かう鳥。一部だけ） ----------
 // 画面は平面のまま。手前の鳥は大きく、ぼけて、薄く描き、縮みながら人物の所へ来る。fz：1＝手前へ出ていく、2＝画面の外で待つ、3＝手前から入ってくる
 function goFront(b, phase, ux, uy, wait, K) {
-  b.fz = phase; b.ft = 0; b.K = K || 3.2 + Math.random() * 2.6; b.st = 0; b.tg = -1; b.stun = 0; b.scare = 0; b.kw = wait || 0;
+  b.fz = phase; b.ft = 0; b.K = K || 4 + Math.random() * 3.5; b.st = 0; b.tg = -1; b.stun = 0; b.scare = 0; b.kw = wait || 0;
   if (phase === 1) { const d = Math.max(W, H) * .75; b.sx = b.x; b.sy = b.y; b.ex = b.x + ux * d; b.ey = b.y + uy * d; b.fd = .5 + Math.random() * .25; }
   else { // 入ってくる所は、下の端か、左右の端の下寄り（上は空＝奥なので使わない）
     const q = Math.random(); if (q < .4) { b.sx = Math.random() * W; b.sy = H + 90 * SZ; } else { b.sx = q < .7 ? -90 * SZ : W + 90 * SZ; b.sy = H * (.3 + Math.random() * .7); }
     b.ox = (Math.random() - .5) * 120 * SZ; b.oy = (Math.random() - .5) * 80 * SZ; b.fd = .7 + Math.random() * .4; b.x = b.sx; b.y = b.sy; b.z = b.K; b.vx = b.vy = 0;
   }
 }
+function goBehind(b) { // 人物の後ろを回る：遠ざかって小さくなり、人影に隠れながら反対側へ抜けて、戻ってくる（fz＝4）
+  const cs = CFG.cell, cx = (sxm / occN + .5) * cs, bw = (bx1 - bx0 + 1) * cs, top = by0 * cs, bh = (by1 - by0 + 1) * cs, side = b.x < cx ? 1 : -1;
+  b.fz = 4; b.ft = 0; b.fd = 1.8 + Math.random() * .9; b.st = 0; b.tg = -1; b.sx = b.x; b.sy = b.y; b.cx = cx; b.cy = top + bh * (.2 + Math.random() * .4);
+  b.ex = cx + side * (bw / 2 + (60 + Math.random() * 80) * SZ); b.ey = top + bh * (.25 + Math.random() * .45); b.zm = .5 + Math.random() * .15;
+  b.cx = 2 * b.cx - (b.sx + b.ex) / 2; b.cy = 2 * b.cy - (b.sy + b.ey) / 2; // 弧の真ん中が、ちょうど人物の体の上を通るようにする
+}
 function stepFront(b, dt) { // 戻り値：true＝まだ奥行きの動きの途中
   b.ft += dt; const px = b.x, py = b.y;
-  if (b.fz === 1) { const u = Math.min(1, b.ft / b.fd), e = u * u; b.x = b.sx + (b.ex - b.sx) * e; b.y = b.sy + (b.ey - b.sy) * e; b.z = 1 + (b.K - 1) * e; if (u >= 1) { b.fz = 2; b.ft = 0; } }
+  if (b.fz === 4) { // 人物の真ん中あたりを通る弧。前の4分の1で遠ざかり、後ろの4分の1で戻る
+    const u = Math.min(1, b.ft / b.fd), e = u * u * (3 - 2 * u), m = 1 - e; b.x = m * m * b.sx + 2 * m * e * b.cx + e * e * b.ex; b.y = m * m * b.sy + 2 * m * e * b.cy + e * e * b.ey;
+    const w = u < .25 ? u / .25 : u > .75 ? (1 - u) / .25 : 1; b.z = 1 + (b.zm - 1) * w * w * (3 - 2 * w);
+    if (u >= 1) { b.fz = 0; b.z = 1; b.cd = .3 + Math.random() * .8; b.vx *= .4; b.vy *= .4; return false; }
+  }
+  else if (b.fz === 1) { const u = Math.min(1, b.ft / b.fd), e = u * u; b.x = b.sx + (b.ex - b.sx) * e; b.y = b.sy + (b.ey - b.sy) * e; b.z = 1 + (b.K - 1) * e; if (u >= 1) { b.fz = 2; b.ft = 0; } }
   else if (b.fz === 2) { if (b.ft >= b.kw) goFront(b, 3, 0, 0, 0, b.K); return true; }
   else { const u = Math.min(1, b.ft / b.fd), e = 1 - (1 - u) * (1 - u), tx = ax + b.ox, ty = ay + b.oy; b.x = b.sx + (tx - b.sx) * e; b.y = b.sy + (ty - b.sy) * e; b.z = b.K + (1 - b.K) * e; if (u >= 1) { b.fz = 0; b.z = 1; b.cd = wave > 0 ? 0 : .2 + Math.random() * .6; b.vx *= .3; b.vy *= .3; return false; } }
   if (dt > 0) { b.vx = (b.x - px) / dt; b.vy = (b.y - py) / dt; }
   return true;
 }
-function resetBirds() { preW = false; birds.length = 0; parts.length = 0; T = 0; born = 0; wave = 0; waveCd = 14; anchored = false; if (hole) { hole.fill(0); hp.fill(1); } }
+function resetBirds() { preW = false; backCd = 3; birds.length = 0; parts.length = 0; T = 0; born = 0; wave = 0; waveCd = 14; anchored = false; if (hole) { hole.fill(0); hp.fill(1); } }
 function stepBirds(dt) {
   const cs = CFG.cell, Te = T * CFG.grow; let N = 0;
   for (const b of birds) { if (b.st === 3 && present && !b.ret) { b.st = 0; b.cd = .5 + Math.random(); } /* 去りかけた鳥は、人が戻れば引き返す */ if (b.st !== 3) N++; }
@@ -372,6 +391,8 @@ function stepBirds(dt) {
   if (present && N > want + 1) { for (let i = birds.length - 1; i >= 0; i--) if (birds[i].st !== 3) { birds[i].st = 3; birds[i].ret = 1; N--; break; } }
   if (!birds.length && hadBirds && !present) { hadBirds = false; sfx('gone'); }
   // 総攻撃：12羽を超えたら、16〜22 秒ごとに 2.2 秒だけ、いっせいに速く強くつつく。その始まりに一瞬だけ反転する
+  // 人物の後ろを回る：8羽を超えたら、1.5〜4 秒ごとに 1〜6 羽（群れが大きいほど多く）
+  if (CFG.depth && present && N >= 8) { backCd -= dt; if (backCd <= 0) { backCd = 1.5 + Math.random() * 2.5; let n = 1 + Math.floor(N / 40); for (const b of birds) { if (!n) break; if (b.st === 0 && !b.fz && b.scare <= 0 && b.stun <= 0 && Math.random() < .15) { goBehind(b); n--; } } } }
   if (CFG.depth && present && N >= 12 && !preW && waveCd < 1.3) { preW = true; let n = 0; for (const b of birds) { if (n >= 16) break; if (b.st !== 0 || b.fz || b.scare > 0 || Math.random() > .1) continue; const ux = Math.sign(b.x - W / 2 || 1) * (.5 + Math.random() * .5), uy = .2 + Math.random() * .8, m = Math.hypot(ux, uy); goFront(b, 1, ux / m, uy / m, Math.max(0, waveCd - .6) + Math.random() * .3); n++; } }
   if (present && N >= 12) { waveCd -= dt; if (waveCd <= 0) { preW = false; wave = 2.2; waveCd = 16 + Math.random() * 6; if (CFG.flash) flashT = .16; sfx('wave'); for (const b of birds) if (b.st === 0) b.cd = Math.random() * .4; } }
   if (wave > 0) wave -= dt;
@@ -572,9 +593,12 @@ function filmGrain() {
   if (vigW !== W || vigH !== H) { VIG = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .35, W / 2, H / 2, Math.hypot(W, H) * .56); VIG.addColorStop(0, 'rgba(0,0,0,0)'); VIG.addColorStop(1, 'rgba(0,0,0,.55)'); vigW = W; vigH = H; }
   c.fillStyle = VIG; c.fillRect(0, 0, W, H); // 四隅の暗さ
 }
+function drawFar() { // 人物より奥にいる鳥：小さく、少し薄く、人物のマス目より先に描く（人影に隠れ、欠けた所からはのぞく）
+  G = A; for (const b of birds) if (b.z < .97 && b.fz !== 2) birdS(b.x, b.y, b.s * CFG.bsz * b.z, Math.sin(TT * 16 + b.ph) * .7, 0, b.rot, 'rgba(14,14,15,.82)', b.k); G = c;
+}
 function draw() {
   A.setTransform(RS, 0, 0, RS, 0, 0); A.fillStyle = '#000'; A.fillRect(0, 0, W, H);
-  if (srcOK) { drawCover(A, src); if (rmC && sinceSense < 1) drawCover(A, rmC); drawBlocks(); }
+  if (srcOK) { drawCover(A, src); if (rmC && sinceSense < 1) drawCover(A, rmC); drawFar(); drawBlocks(); }
   c.setTransform(RS, 0, 0, RS, 0, 0); c.clearRect(0, 0, W, H);
   if (CFG.fill === 'B') drawPlants();
   for (const p of parts) { c.globalAlpha = Math.max(0, 1 - p.t / 1.3); c.fillStyle = 'rgb(' + p.g + ',' + p.g + ',' + p.g + ')'; c.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s); } c.globalAlpha = 1;
@@ -583,16 +607,20 @@ function draw() {
   for (const b of birds) { // 黒い鳥に、淡い縁取り（暗い服の上でも見える）
     if (b.fz === 2) continue; // 画面の外で待っている
     if (Math.hypot(b.vx, b.vy) > 20) { let d = Math.atan2(b.vy, b.vx) + Math.PI / 2 - b.rot; d = Math.atan2(Math.sin(d), Math.cos(d)); b.rot += d * .25; }
-    if (!b.fz && b.z > 1) b.z += (1 - b.z) * .12; // 途中で去る時は、ゆっくり元の大きさへ
+    if (!b.fz && b.z !== 1) { b.z += (1 - b.z) * .12; if (Math.abs(b.z - 1) < .01) b.z = 1; } // 途中で去る時は、ゆっくり元の大きさへ
+    if (b.z < .97) continue; // 奥の鳥は、下のキャンバスに描いてある
     if (b.z > 1.03) { front.push(b); continue; }
     const ang = Math.sin(TT * 16 + b.ph) * .7, fold = b.st === 1 ? .5 : 0;
     const bs = b.s * CFG.bsz; birdS(b.x, b.y, bs * 1.24, ang, fold, b.rot, 'rgba(236,231,220,.5)', b.k); birdS(b.x, b.y, bs, ang, fold, b.rot, '#0B0B0C', b.k);
   }
   front.sort((p, q) => p.z - q.z); // 手前の鳥ほど、あとに描く
   for (const b of front) { // 手前の鳥：大きく、薄く、輪郭をぼかす（少しずつずらして重ね描きする。ぼかしの命令は端末によって使えないため）
-    const ang = Math.sin(TT * 13 + b.ph) * .7, bs = b.s * CFG.bsz * b.z, r = Math.min(15, (b.z - 1) * 2.6) * SZ, al = clamp(1.08 - b.z * .12, .32, 1), col = 'rgba(11,11,12,' + (al / 3).toFixed(3) + ')';
-    for (let j = 0; j < 6; j++) birdS(b.x + Math.cos(j * 1.047) * r, b.y + Math.sin(j * 1.047) * r, bs, ang, 0, b.rot, col, b.k);
-    birdS(b.x, b.y, bs, ang, 0, b.rot, 'rgba(11,11,12,' + (al / 2).toFixed(3) + ')', b.k);
+    // 遠いうちは真上から見た形、近づくほど後ろ姿（正面）の形に入れ替わる（倍率 1.3〜1.9 の間で重ねて切り替える）
+    const ang = Math.sin(TT * 11 + b.ph) * .7, bs = b.s * CFG.bsz * b.z, r = Math.min(22, (b.z - 1) * 2.8) * SZ, al = clamp(1.08 - b.z * .1, .3, 1), w = clamp((b.z - 1.3) / .6, 0, 1), bank = clamp(b.vx / (900 * SZ), -.5, .5);
+    for (const [wt, rear] of [[1 - w, 0], [w, 1]]) {
+      if (wt <= .02) continue; const c1 = 'rgba(11,11,12,' + (al * wt / 3).toFixed(3) + ')', c2 = 'rgba(11,11,12,' + (al * wt / 2).toFixed(3) + ')';
+      for (let j = 0; j < 7; j++) { const ox2 = j < 6 ? Math.cos(j * 1.047) * r : 0, oy2 = j < 6 ? Math.sin(j * 1.047) * r : 0, col = j < 6 ? c1 : c2; if (rear) birdR(b.x + ox2, b.y + oy2, bs * .8, ang, bank, col); else birdS(b.x + ox2, b.y + oy2, bs, ang, 0, b.rot, col, b.k); }
+    }
   }
   if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ * CFG.swR, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
   if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
@@ -643,7 +671,7 @@ function loop(now) {
 function stat() {
   let holes = 0; if (hole) for (let i = 0; i < NC; i++) if (hole[i] > 0) holes++;
   const N = birds.length, k = Math.floor((FT / 7) % 3);
-  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), lag: lagT > 0, front: birds.filter(b => b.fz).length, inten: +inten.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
+  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), lag: lagT > 0, front: birds.filter(b => b.fz && b.fz !== 4).length, back: birds.filter(b => b.fz === 4).length, inten: +inten.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
   window.__stats = S;
   if (!panel.classList.contains('show')) return;
   $('stat').textContent = '描画 ' + S.fps + ' コマ/秒（最低 ' + (S.fpsMin ?? '—') + '、平均 ' + (S.fpsAvg ?? '—') + '）\n輪郭 ' + S.segFps + ' コマ/秒　1コマ ' + S.segMs + ' ms　' + (S.delegate || '未読込') + '\n部品：' + (seg ? S.from : segErr ? '読めない（' + segErr + '）' : '読み込み中') + '\n入力：' + ({ cam: 'カメラ', test: '合成の人影', img: '静止画' })[MODE] + ' ' + S.src + '　画面 ' + S.canvas + '　マス ' + S.grid
