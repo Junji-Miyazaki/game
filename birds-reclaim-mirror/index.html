@@ -155,12 +155,13 @@ function useSource(w, h) { // 入力の大きさが決まった時・遅れの�
 }
 // 現在と過去（ユーザーの案 2026-11-11：5 秒の遅れと、いまを混在させる。現在と過去が交差する）。既定は「過去だけ」。
 //  1 いまを重ねる：遅れた映像（塔になった過去の自分）の上に、いまの映像をうっすら重ねる。部屋は同じなので、動くもの＝自分だけが二重になる。鳥がつつくのは過去の自分だけ
-//  2 行き来する：遅れそのものが、ゆっくり縮んで現在に追いつき（映像が少し速く流れる）、しばらく鏡になり、またゆっくり開いて過去へ離れていく（少し遅く流れる）。切り替わりの継ぎ目はない
+//  2 行き来する：遅れそのものが、ゆっくり縮んで現在に追いつき（映像がわずかに速く流れる）、しばらく鏡になり、またゆっくり開いて過去へ離れていく（少し遅く流れる）。切り替わりの継ぎ目はない
 let mixT = 0, dEff = 0; // mixT＝行き来の時計（人がいて、言葉が消えてから進む）。dEff＝いまの実際の遅れ（秒）
-const MIXP = [22, 6, 10, 14]; // 過去のまま 22 秒 → 6 秒で追いつく → 現在 10 秒 → 14 秒かけて離れる
-function delayNow() {
-  const D = +CFG.delay || 0; if (+CFG.mix !== 2) return D; const u = mixT % (MIXP[0] + MIXP[1] + MIXP[2] + MIXP[3]), sm = x => x * x * (3 - 2 * x);
-  if (u < MIXP[0]) return D; if (u < MIXP[0] + MIXP[1]) return D * (1 - sm((u - MIXP[0]) / MIXP[1])); if (u < MIXP[0] + MIXP[1] + MIXP[2]) return 0; return D * sm((u - MIXP[0] - MIXP[1] - MIXP[2]) / MIXP[3]);
+function delayNow() { // 追いつく・離れる時間は、遅れの秒数に比例させる（映像の流れる速さが、遅れの設定によらず同じになる）
+  const D = +CFG.delay || 0; if (+CFG.mix !== 2 || !D) return D;
+  const P0 = 22, P1 = Math.max(4, 4 * D), P2 = 10, P3 = Math.max(4, 2.8 * D), u = mixT % (P0 + P1 + P2 + P3), sm = x => x * x * (3 - 2 * x);
+  // 過去のまま 22 秒 → ゆっくり追いつく（遅れ 5 秒なら 20 秒かけて。映像は平均 1.25 倍、いちばん速い所で約 1.4 倍。前は 6 秒で、約 2.3 倍の早送りに見えた）→ 現在 10 秒 → また離れる（遅れ 5 秒なら 14 秒。いちばん遅い所で約 0.46 倍）
+  if (u < P0) return D; if (u < P0 + P1) return D * (1 - sm((u - P0) / P1)); if (u < P0 + P1 + P2) return 0; return D * sm((u - P0 - P1 - P2) / P3);
 }
 function ringPush(raw, rawMask) { // いまのコマを覚え、いちばん古いコマ（＝遅れの秒数ぶん前）を、画面に出す映像にする。たまるまでは最初のコマを出し続ける
   const i = rw % (rN + 1); if (!ring[i]) { ring[i] = mkc(ringW, ringH, { willReadFrequently: true }); if (rawMask) ringM[i] = mkc(SW, SH, { willReadFrequently: true }); }
