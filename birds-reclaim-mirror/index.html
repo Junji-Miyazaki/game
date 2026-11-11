@@ -55,7 +55,6 @@
 </div>
 <button id="gear" aria-label="設定">⚙</button>
 <div id="start"><div class="in">
-  <h2>VÖGEL</h2>
   <div class="err" id="sErr"></div>
   <button id="sCam">もう一度試す<small>Try again</small></button>
 </div></div>
@@ -570,7 +569,7 @@ function nextQuote() { if (!qBag.length) qBag = QUOTES.map((_, i) => i).filter(i
 function wrapText(str, font, maxW) { tc.font = font; const out = []; let cur = ''; const parts = / /.test(str) ? str.split(' ').map((w, i) => (i ? ' ' : '') + w) : [...str]; for (const q of parts) { if (cur && tc.measureText(cur + q).width > maxW) { out.push(cur); cur = q.trimStart(); } else cur += q; } if (cur) out.push(cur); return out; }
 function quoteLayout() { // 1字ずつ動かせるよう、原文は字ごとの位置を先に測っておく
   const key = qi + ':' + W + ':' + H; if (qLay && qLay.key === key) return qLay;
-  const Q = QUOTES[qi], fq = clamp(Math.min(W * .036, H * .05), 13, 30), fO = '600 italic ' + fq.toFixed(1) + 'px Georgia,"Times New Roman",serif', fJ = '500 ' + (fq * .62).toFixed(1) + 'px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif', fB = '500 ' + Math.max(9, fq * .48).toFixed(1) + 'px Georgia,"Times New Roman",serif';
+  const Q = QUOTES[qi], fq = clamp(Math.min(W * .046, H * .062), 15, 40), /* 題字をなくしたので、言葉を少し大きく */ fO = '600 italic ' + fq.toFixed(1) + 'px Georgia,"Times New Roman",serif', fJ = '500 ' + (fq * .62).toFixed(1) + 'px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif', fB = '500 ' + Math.max(9, fq * .48).toFixed(1) + 'px Georgia,"Times New Roman",serif';
   const lines = []; let n = 0; for (const ln of wrapText(Q.o, fO, W * .82)) { tc.font = fO; let x = W / 2 - tc.measureText(ln).width / 2; const chars = []; for (const ch of ln) { const w = tc.measureText(ch).width; chars.push({ ch, x, w, i: n++ }); x += w; } lines.push({ text: ln, chars }); }
   return qLay = { key, fq, fO, fJ, fB, lines, ja: wrapText(Q.ja, fJ, W * .86), by: Q.by };
 }
@@ -637,16 +636,13 @@ function draw() {
     }
   }
   if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ * CFG.swR, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
-  if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
+  if (intro > 0) { // 無人の時の画面：部屋の映像の上に、問いの言葉だけが乗る（題字は出さない）
     const e = intro * intro * (3 - 2 * intro), ta = e; /* 題字と言葉は、幕と同じ速さでゆっくり消える（鳥の出現と重なる） */ c.fillStyle = 'rgba(0,0,0,' + ((srcOK ? VEIL : .94) * e).toFixed(3) + ')'; c.fillRect(0, 0, W, H); // 映像が来ていれば、部屋を暗く落とすだけ（真っ黒にはしない）
-    if (ta > 0) { // 題字と、その下の問いの1文。ふだんは静かに呼吸し、時折、言葉が乱れる
-      { const Y = quoteLayout(), fs0 = Math.min(W * .2, H * .2, 170 * SZ), y0 = H * .4 - fs0 * 1.05, y1 = H * .4 + fs0 * .62 + Y.fq * (2.6 + Y.lines.length * 1.45 + Y.ja.length * .98) + fs0 * .35, g = c.createLinearGradient(0, y0, 0, y1), k = 'rgba(0,0,0,' + (.36 * ta).toFixed(3) + ')';
-        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.28, k); g.addColorStop(.72, k); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, y0, W, y1 - y0); } // 題字と言葉のあたりだけ、帯のようにやわらかく暗くする（部屋全体は暗くしない）
+    if (ta > 0) { // 問いの1文だけを出す（ユーザー 2026-11-11：題字 VÖGEL もいらない。言葉のみでよい）。ふだんは静かに呼吸し、時折、言葉が乱れる
+      const Y = quoteLayout(), hq = Y.fq * (1.45 * Y.lines.length + .98 * Y.ja.length + 1.6), top = H * .47 - hq / 2, y0 = top - Y.fq * 2.4, y1 = top + hq + Y.fq * 2.4, g = c.createLinearGradient(0, y0, 0, y1), k = 'rgba(0,0,0,' + (.36 * ta).toFixed(3) + ')';
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.3, k); g.addColorStop(.7, k); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, y0, W, y1 - y0); // 言葉のあたりだけ、帯のようにやわらかく暗くする（部屋全体は暗くしない）
       tc.shadowColor = 'rgba(0,0,0,.85)'; tc.shadowBlur = 9 * RS * SZ; // 文字のまわりに暗いにじみ
-      const fs = Math.min(W * .2, H * .2, 170 * SZ), ty = H * .4, gx = glT > 0 && glMode ? Math.sin(glT * 43) * 9 * SZ : 0; tc.fillStyle = '#ECE7DC'; tc.textAlign = 'center'; tc.textBaseline = 'middle'; tc.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif';
-      if (glT > 0) { tc.globalAlpha = ta * .22; tc.fillText('VÖGEL', W / 2 - gx * 1.6 + 6 * SZ, ty - 3 * SZ); }
-      tc.globalAlpha = ta * (.9 + Math.random() * .1); tc.fillText('VÖGEL', W / 2 + gx + (Math.random() - .5) * 1.2, ty + (Math.random() - .5) * 1.2);
-      drawQuote(ta, ty + fs * .62);
+      drawQuote(ta, top);
       tc.shadowBlur = 5 * RS * SZ;
       tc.globalAlpha = ta * .5; tc.textAlign = 'center'; tc.textBaseline = 'alphabetic'; tc.font = '500 10px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif'; tc.fillText('映像はこの端末の中だけで処理し、送信も保存もしません', W / 2, H - 16); // カメラの許可を押す前に読める、ただ一つの約束
       tc.shadowBlur = 0; tc.shadowColor = 'rgba(0,0,0,0)';
