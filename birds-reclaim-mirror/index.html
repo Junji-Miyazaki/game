@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>BIRDS RECLAIM — MIRROR（試作）</title>
+<title>VÖGEL</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
   body.idle { cursor: none; }
@@ -29,7 +29,7 @@
   #start { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, .9); color: #ECE7DC; text-align: center; font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", Georgia, serif; padding: 20px; box-sizing: border-box; overflow: auto; }
   #start.show { display: flex; }
   #start .in { max-width: 460px; }
-  #start h2 { font: 600 italic 30px/1.2 Georgia, "Times New Roman", serif; letter-spacing: .04em; margin: 0 0 4px; }
+  #start h2 { font: 600 italic 34px/1.2 Georgia, "Times New Roman", serif; letter-spacing: .04em; margin: 0 0 26px; }
   #start .sub { font: 600 12px/1 Georgia, serif; letter-spacing: .5em; opacity: .7; margin-bottom: 26px; }
   #start p { font-size: 14px; line-height: 1.9; margin: 0 0 6px; }
   #start p.en { font: italic 12.5px/1.6 Georgia, serif; opacity: .7; margin-bottom: 16px; }
@@ -46,7 +46,7 @@
 <div id="stage"><canvas id="a" class="bw"></canvas><canvas id="b"></canvas></div>
 <div id="msg"></div>
 <div id="panel">
-  <h1>BIRDS RECLAIM — MIRROR（試作）</h1>
+  <h1>VÖGEL（試作）</h1>
   <div id="stat"></div>
   <div id="rows"></div>
   <div>
@@ -56,7 +56,7 @@
 </div>
 <button id="gear" aria-label="設定">⚙</button>
 <div id="start"><div class="in">
-  <h2>BIRDS RECLAIM</h2><div class="sub">MIRROR</div>
+  <h2>VÖGEL</h2>
   <p>カメラに映ったあなたの輪郭を、鳥がついばみます。</p><p class="en">Birds peck away at your silhouette.</p>
   <p>映像はこの端末の中だけで処理し、送信も保存もしません。</p><p class="en">The video is processed on this device only. Nothing is sent or stored.</p>
   <button id="sCam" class="main">カメラで始める<small>Start with the camera</small></button>
@@ -66,7 +66,7 @@
 <video id="v" playsinline muted autoplay style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1"></video>
 <script>
 'use strict';
-// BIRDS RECLAIM — MIRROR（試作 v0）
+// VÖGEL（ドイツ語で「鳥たち」。BIRDS RECLAIM から派生した映像インスタレーションの試作。フォルダ名は birds-reclaim-mirror のまま）
 // カメラに映った人物を「塔」に見立て、鳥がその輪郭を外側のマスからついばむ映像インスタレーションの試作。
 // 鳥の形・編隊・ついばみ・音は birds-reclaim/07_lab/proto_v3/game.js、粒子と傷は film.js から写した（元のファイルは変えていない）。
 // 人物の切り出し：MediaPipe Tasks Vision の ImageSegmenter ＋ Selfie Segmentation（横長）モデル。どちらも Apache-2.0。出典は 00_log/LOG.md。
@@ -81,7 +81,7 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
+const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
 let CFG = Object.assign({}, DEF, (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } })());
 const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } };
 const UI = [
@@ -94,6 +94,7 @@ const UI = [
   ['fill', '欠けた所', 'choice', [['A', 'A 部屋の背景'], ['B', 'B 草木']]],
   ['tone', '色', 'choice', [['bw', '白黒'], ['neg', 'ネガ'], ['color', 'カラー']]],
   ['flash', '総攻撃の一瞬だけ反転', 'check'],
+  ['title', '無人の時は題の画面', 'check'],
   ['sens', '払う感度', 'range', .3, 3, .1, '倍'],
   ['swR', '払いが届く範囲', 'range', .5, 3, .1, '倍'],
   ['swD', '払われて離れる距離', 'range', .5, 3, .1, '倍'],
@@ -304,6 +305,8 @@ const FORM = ['V字', '帯', '球'];
 
 // ---------- 群れ ----------
 const birds = [], parts = [], pops = [];
+let intro = 1, seenT = 0, runT = 0; // intro＝題の画面の濃さ（1＝題だけ、0＝消えている）。seenT＝人が続けて映っている秒。runT＝映像が来てからの秒
+const OPEN = .35; // 題の画面がここまで薄れたら、鳥が来はじめる
 let T = 0, gone = 9, present = false, hadBirds = false; // T＝人が映っている時間（秒）。いなくなると速く減る
 let FT = 0, TT = 0, ax = 0, ay = 0, anchored = false, orb = 0, fdir = 1, ptx = 0;
 let ATK = 1, flockN = 0, wave = 0, waveCd = 14, flashT = 0, negOn = false, spawnCd = 0, born = 0, eaten = 0;
@@ -338,7 +341,7 @@ function resetBirds() { birds.length = 0; parts.length = 0; T = 0; born = 0; wav
 function stepBirds(dt) {
   const cs = CFG.cell, Te = T * CFG.grow; let N = 0;
   for (const b of birds) { if (b.st === 3 && present && !b.ret) { b.st = 0; b.cd = .5 + Math.random(); } /* 去りかけた鳥は、人が戻れば引き返す */ if (b.st !== 3) N++; }
-  const want = present ? Math.min(CFG.max, Math.floor(1 + .12 * Math.pow(Math.max(0, Te - 5), 1.55))) : 0; // 最初の5秒は1羽。30秒で約18羽、60秒で約60羽、90秒で約120羽
+  const want = present && intro < OPEN ? Math.min(CFG.max, Math.floor(1 + .12 * Math.pow(Math.max(0, Te - 5), 1.55))) : 0; // 最初の5秒は1羽。30秒で約18羽、60秒で約60羽、90秒で約120羽
   ATK = 1 + Te / 40; FT += dt; flockN = N; spawnCd -= dt;
   if (present && N < want && spawnCd <= 0) { spawn(); spawnCd = N < 3 ? .6 : .1; N++; hadBirds = true; if (N === 1) sfx('arrive'); }
   if (present && N > want + 1) { for (let i = birds.length - 1; i >= 0; i--) if (birds[i].st !== 3) { birds[i].st = 3; birds[i].ret = 1; N--; break; } }
@@ -497,6 +500,10 @@ function draw() {
     const bs = b.s * CFG.bsz; birdS(b.x, b.y, bs * 1.24, ang, fold, b.rot, 'rgba(236,231,220,.5)', b.k); birdS(b.x, b.y, bs, ang, fold, b.rot, '#0B0B0C', b.k);
   }
   if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ * CFG.swR, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
+  if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
+    const e = intro * intro * (3 - 2 * intro), ta = clamp((intro - .45) / .4, 0, 1); c.fillStyle = 'rgba(0,0,0,' + (.94 * e).toFixed(3) + ')'; c.fillRect(0, 0, W, H);
+    if (ta > 0) { const fs = Math.min(W * .2, H * .2, 170 * SZ); c.globalAlpha = ta * (.9 + Math.random() * .1); c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif'; c.fillText('VÖGEL', W / 2 + (Math.random() - .5) * 1.2, H / 2 + (Math.random() - .5) * 1.2); c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic'; }
+  }
   if (CFG.grain) filmGrain();
 }
 
@@ -508,7 +515,10 @@ function tick(dt) {
   else if (srcOK && video.readyState >= 2 && video.currentTime !== lastVT) { lastVT = video.currentTime; if (video.videoWidth && (video.videoWidth !== vw || video.videoHeight !== vh)) setSrc(video.videoWidth, video.videoHeight); /* スマホを回した時 */ sense(); }
   if (sinceSense > 1 && occN) { occ.fill(0); occF.fill(0); occN = 0; hots.length = 0; } // 映像が止まったら、人物はいないものとして扱う
   present = srcOK && occN >= Math.max(6, NC * .004);
-  if (present) { gone = 0; T += dt; } else { gone += dt; if (gone > 1.2) T = Math.max(0, T - dt * 10); }
+  // 題の画面：人が 0.8 秒続けて映ったら、3.5 秒かけて薄れる（映像が来て最初の 2.5 秒は題を見せる）。無人が 6 秒続き、鳥も去ったら、2.5 秒かけて戻る
+  if (srcOK) runT += dt; seenT = present ? seenT + dt : 0;
+  if (!CFG.title) intro = 0; else if (present && seenT > .8 && runT > 2.5) intro = Math.max(0, intro - dt / 3.5); else if (!present && gone > 6 && !birds.length) intro = Math.min(1, intro + dt / 2.5);
+  if (present) { gone = 0; if (intro < OPEN) T += dt; } else { gone += dt; if (gone > 1.2) T = Math.max(0, T - dt * 10); }
   for (let i = 0; i < NC; i++) if (hole[i] > 0) { hole[i] -= dt; if (hole[i] <= 0) { hole[i] = 0; hp[i] = 1; } }
   buildExposed(); stepBirds(dt); audioTick(dt);
   if (flashT > 0) flashT -= dt;
@@ -525,7 +535,7 @@ function loop(now) {
 function stat() {
   let holes = 0; if (hole) for (let i = 0; i < NC; i++) if (hole[i] > 0) holes++;
   const N = birds.length, k = Math.floor((FT / 7) % 3);
-  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
+  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
   window.__stats = S;
   if (!panel.classList.contains('show')) return;
   $('stat').textContent = '描画 ' + S.fps + ' コマ/秒（最低 ' + (S.fpsMin ?? '—') + '、平均 ' + (S.fpsAvg ?? '—') + '）\n輪郭 ' + S.segFps + ' コマ/秒　1コマ ' + S.segMs + ' ms　' + (S.delegate || '未読込') + '\n部品：' + (seg ? S.from : segErr ? '読めない（' + segErr + '）' : '読み込み中') + '\n入力：' + ({ cam: 'カメラ', test: '合成の人影', img: '静止画' })[MODE] + ' ' + S.src + '　画面 ' + S.canvas + '　マス ' + S.grid
@@ -545,7 +555,7 @@ async function startCam() {
     if (MODE !== 'cam') { stopCam(); return; }
     video.srcObject = stream; await video.play();
     const tr = stream.getVideoTracks()[0]; if (tr) tr.onended = () => { if (MODE !== 'cam') return; srcOK = false; say('カメラが切れた。つなぎ直すと、また始まる', 0); setTimeout(() => { if (MODE === 'cam' && !srcOK) startCam(); }, 3000); }; // 展示中にカメラが抜けても、自分でつなぎ直す
-    MODE = 'cam'; src = video; setSrc(video.videoWidth || 1280, video.videoHeight || 720); srcOK = true; say(seg ? '' : segErr ? segMsg() : '人物の切り出しを読み込んでいます', 0);
+    MODE = 'cam'; src = video; setSrc(video.videoWidth || 1280, video.videoHeight || 720); srcOK = true; runT = 0; say(seg ? '' : segErr ? segMsg() : '人物の切り出しを読み込んでいます', 0);
     listCams();
   } catch (e) { camErr = (e && e.name) || String(e); say('', 0); showStart('カメラを使えません（' + camErr + '）\nブラウザのカメラの許可を確かめてください'); }
 }

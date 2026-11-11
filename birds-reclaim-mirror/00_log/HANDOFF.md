@@ -1,11 +1,11 @@
-# BIRDS RECLAIM — MIRROR 引き継ぎ書（新セッションはここから読む）
+# VÖGEL（旧称 BIRDS RECLAIM — MIRROR）引き継ぎ書（新セッションはここから読む）
 
-更新: 2026-11-11（Fable 5.2、v0.2）。経緯と出典は `00_log/LOG.md`。作品の背景は `../birds-reclaim/00_log/HANDOFF.md`。
+更新: 2026-11-11（Fable 5.2、v0.3）。経緯と出典は `00_log/LOG.md`。作品の背景は `../birds-reclaim/00_log/HANDOFF.md`。
 
 ## 1. 現状
 | 対象 | 場所 | 状態 |
 |---|---|---|
-| 試作 v0.2 | `index.html`（1枚。スクリプトも中にある）。PC・スマホ対応。公開：https://junji-miyazaki.github.io/game/birds-reclaim-mirror/index.html | 合成の人影と写真で動く。本物のカメラは、ユーザーが Chrome で「動いた」と確認（2026-11-11。細かい感想は未聴取） |
+| 試作 v0.3 | `index.html`（1枚。スクリプトも中にある）。PC・スマホ対応。公開：https://junji-miyazaki.github.io/game/birds-reclaim-mirror/index.html | 合成の人影と写真で動く。本物のカメラは、ユーザーが Chrome で「動いた」と確認（2026-11-11。細かい感想は未聴取） |
 | 開発用サーバ | `server.js`（:4182）。`.claude/launch.json` の `birds-reclaim-mirror` | — |
 | 部品の取得 | `get_vendor.sh` → `vendor/`（30MB、`.gitignore` 済み、コミットしていない） | この Mac には取得済み |
 
@@ -56,6 +56,8 @@
 ## 4.5 決まったこと（2026-11-11、ユーザー）
 - 欠けた所は **B（草木）**。色は白黒＋総攻撃の一瞬の反転。
 - 既定値：マス 12px（PC は 14px のまま）、増え方 4 倍、上限 220 羽、鳥の大きさ 2.4 倍、欠けが戻るまで 4 秒、払う感度 1.3、払いの範囲 0.7、離れる距離 1.3。スマホで試して決めた値。
+- 題は **VÖGEL**（副題なし）。フォルダ名と URL は `birds-reclaim-mirror` のまま。
+- 無人の時は題の画面。人を検知して 3.5 秒で薄れ、鳥が来る。無人が 6 秒続くと題に戻る（`tick()` の `intro`、`draw()` の末尾）。
 - カメラなしで見るモードは画面から外した（`?test` は開発の確かめ用に残す）。設定の歯車は残す。
 
 ## 5. ユーザーの確認待ち（上の「決まったこと」と重なる項目は済み）
