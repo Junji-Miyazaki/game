@@ -77,7 +77,7 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', delay: 5, cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 2, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
+const DEF = { cam: '', delay: 5, mix: 0, mixA: .3, cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 2, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
 const SAVED = (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { return {}; } })();
 let CFG = Object.assign({}, DEF, SAVED);
 if ((SAVED.v | 0) < 2) { CFG.lag = 0; CFG.v = 2; } // 前に保存した設定（版 2 より前）でも、「鏡が遅れる瞬間」は切から始める（ユーザー 2026-11-11：途中の変な演出は入れない）
@@ -85,6 +85,8 @@ const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.ass
 const UI = [
   ['cam', 'カメラ', 'select'],
   ['delay', '映像の遅れ', 'range', 0, 10, .5, '秒'],
+  ['mix', '現在と過去', 'choice', [[0, '過去だけ'], [1, 'いまを重ねる'], [2, '行き来する']]],
+  ['mixA', '重ねる濃さ', 'range', .1, .7, .05, ''],
   ['cell', 'マスの大きさ', 'range', 6, 40, 1, 'px'],
   ['grow', '鳥の増え方', 'range', .25, 6, .25, '倍'],
   ['max', '鳥の上限', 'range', 10, 300, 10, '羽'],
@@ -151,11 +153,21 @@ function useSource(w, h) { // 入力の大きさが決まった時・遅れの�
   rawW = w; rawH = h; rN = MODE === 'img' ? 0 : Math.round((+CFG.delay || 0) * DFPS); ring = []; ringM = []; rw = 0; rcount = 0; dMask = null; storeAcc = 0;
   if (rN) { const k = (PHONE ? 384 : 512) / Math.max(w, h); ringW = Math.max(2, Math.round(w * k)); ringH = Math.max(2, Math.round(h * k)); setSrc(ringW, ringH); } else setSrc(w, h);
 }
+// 現在と過去（ユーザーの案 2026-11-11：5 秒の遅れと、いまを混在させる。現在と過去が交差する）。既定は「過去だけ」。
+//  1 いまを重ねる：遅れた映像（塔になった過去の自分）の上に、いまの映像をうっすら重ねる。部屋は同じなので、動くもの＝自分だけが二重になる。鳥がつつくのは過去の自分だけ
+//  2 行き来する：遅れそのものが、ゆっくり縮んで現在に追いつき（映像が少し速く流れる）、しばらく鏡になり、またゆっくり開いて過去へ離れていく（少し遅く流れる）。切り替わりの継ぎ目はない
+let mixT = 0, dEff = 0; // mixT＝行き来の時計（人がいて、言葉が消えてから進む）。dEff＝いまの実際の遅れ（秒）
+const MIXP = [22, 6, 10, 14]; // 過去のまま 22 秒 → 6 秒で追いつく → 現在 10 秒 → 14 秒かけて離れる
+function delayNow() {
+  const D = +CFG.delay || 0; if (+CFG.mix !== 2) return D; const u = mixT % (MIXP[0] + MIXP[1] + MIXP[2] + MIXP[3]), sm = x => x * x * (3 - 2 * x);
+  if (u < MIXP[0]) return D; if (u < MIXP[0] + MIXP[1]) return D * (1 - sm((u - MIXP[0]) / MIXP[1])); if (u < MIXP[0] + MIXP[1] + MIXP[2]) return 0; return D * sm((u - MIXP[0] - MIXP[1] - MIXP[2]) / MIXP[3]);
+}
 function ringPush(raw, rawMask) { // いまのコマを覚え、いちばん古いコマ（＝遅れの秒数ぶん前）を、画面に出す映像にする。たまるまでは最初のコマを出し続ける
   const i = rw % (rN + 1); if (!ring[i]) { ring[i] = mkc(ringW, ringH, { willReadFrequently: true }); if (rawMask) ringM[i] = mkc(SW, SH, { willReadFrequently: true }); }
   ring[i][1].drawImage(raw, 0, 0, ringW, ringH); if (rawMask) ringM[i][1].drawImage(rawMask, 0, 0, SW, SH);
   rw++; if (rcount <= rN) rcount++;
-  const j = rcount > rN ? rw % (rN + 1) : 0; src = ring[j][0]; dMask = rawMask ? ringM[j][1] : null;
+  dEff = delayNow(); const ne = Math.min(Math.round(dEff * DFPS), rN), have = rcount - 1; // ne＝何コマ前を出すか。まだたまっていない間は、いちばん古いコマ
+  const j = ne <= have ? ((rw - 1 - ne) % (rN + 1) + rN + 1) % (rN + 1) : 0; src = ring[j][0]; dMask = rawMask ? ringM[j][1] : null;
 }
 let sc, sx, mkC, mkX, bkC, bkX, plC, plX, tmC, tmX, rmC, rmX, mkImg, bkImg, b1C, b1X, b2C, b2X; // 小さな映像／人物の覆い／背景の覆い／背景の板／作業用／人物を消した層
 let PW = 480, PH = 270, MW = 32, MH = 18;
@@ -623,7 +635,7 @@ function drawFar() { // 人物より奥にいる鳥：小さく、少し薄く�
 }
 function draw() {
   A.setTransform(RS, 0, 0, RS, 0, 0); A.fillStyle = '#000'; A.fillRect(0, 0, W, H);
-  if (srcOK) { drawCover(A, src); if (rmC && sinceSense < 1) drawCover(A, rmC); drawFar(); drawBlocks(); }
+  if (srcOK) { drawCover(A, src); if (rmC && sinceSense < 1) drawCover(A, rmC); drawFar(); drawBlocks(); if (+CFG.mix === 1 && rN) { const live = MODE === 'test' ? tv : camOK && video.readyState >= 2 ? video : null; if (live) { A.globalAlpha = clamp(+CFG.mixA || .3, 0, 1); drawCover(A, live); A.globalAlpha = 1; } } }
   c.setTransform(RS, 0, 0, RS, 0, 0); c.clearRect(0, 0, W, H);
   if (intro > 0 || tDirty) { tc.setTransform(RS, 0, 0, RS, 0, 0); tc.clearRect(0, 0, W, H); tDirty = intro > 0; }
   if (CFG.fill === 'B') drawPlants();
@@ -671,7 +683,7 @@ function draw() {
 // ---------- 進める ----------
 function tick(dt) {
   TT += dt; sinceSense += dt;
-  storeAcc += dt;
+  storeAcc += dt; if (present && intro <= 0) mixT += dt; else if (!present && gone > 3) mixT = 0;
   if (MODE === 'test') { ST += dt; sAcc += dt; if (sAcc >= 1 / 30) { sAcc %= 1 / 30; synth(); if (!rN) { src = tv; dMask = null; sense(); } else if (storeAcc >= 1 / DFPS) { storeAcc %= 1 / DFPS; ringPush(tv, tsC); sense(); } } }
   else if (MODE === 'img') { sAcc += dt; if (srcOK && sAcc >= 1 / 30) { sAcc %= 1 / 30; sense(); } }
   else if (camOK && video.readyState >= 2 && video.currentTime !== lastVT) {
@@ -706,7 +718,7 @@ function loop(now) {
 function stat() {
   let holes = 0; if (hole) for (let i = 0; i < NC; i++) if (hole[i] > 0) holes++;
   const N = birds.length, k = Math.floor((FT / 7) % 3);
-  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), lag: lagT > 0, delay: rN / DFPS, held: rcount, front: birds.filter(b => b.fz && b.fz !== 4).length, back: birds.filter(b => b.fz === 4).length, inten: +inten.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
+  const S = { fps: +FPS.toFixed(1), fpsMin: fMin < 1e9 ? +fMin.toFixed(1) : null, fpsAvg: fN ? +(fSum / fN).toFixed(1) : null, segFps: +SFPS.toFixed(1), segMs: +segMs.toFixed(2), delegate: segDelegate, from: segFrom, birds: N, T: +T.toFixed(1), atk: +ATK.toFixed(2), occ: occN, exposed: exN, holes, eaten, present, intro: +intro.toFixed(2), lag: lagT > 0, delay: rN / DFPS, dEff: +dEff.toFixed(2), mix: +CFG.mix, held: rcount, front: birds.filter(b => b.fz && b.fz !== 4).length, back: birds.filter(b => b.fz === 4).length, inten: +inten.toFixed(2), calm: +calm.toFixed(2), bodyV: +bodyV.toFixed(3), mode: MODE, src: vw + '×' + vh, canvas: cvA.width + '×' + cvA.height, grid: cols + '×' + rows, form: N < 5 ? '—' : FORM[k], wave: wave > 0, hots: hots.length, segErr, camErr };
   window.__stats = S;
   if (!panel.classList.contains('show')) return;
   $('stat').textContent = '描画 ' + S.fps + ' コマ/秒（最低 ' + (S.fpsMin ?? '—') + '、平均 ' + (S.fpsAvg ?? '—') + '）\n輪郭 ' + S.segFps + ' コマ/秒　1コマ ' + S.segMs + ' ms　' + (S.delegate || '未読込') + '\n部品：' + (seg ? S.from : segErr ? '読めない（' + segErr + '）' : '読み込み中') + '\n入力：' + ({ cam: 'カメラ', test: '合成の人影', img: '静止画' })[MODE] + ' ' + S.src + '　画面 ' + S.canvas + '　マス ' + S.grid
@@ -822,7 +834,7 @@ setSrc(640, 360);
 wake();
 requestAnimationFrame(loop);
 // 確かめ用：コンソールから状態を見たり、時間を進めたりできる（展示では使わない）
-window.__dbg = { lag(v) { lagT = v; }, titleCries: () => titleCries, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), fl: FL ? +FL.out.gain.value.toFixed(3) : null } : null, cry: n => cry(n || 1, .2), useCanvas(cv) { MODE = 'img'; src = cv; useSource(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
+window.__dbg = { lag(v) { lagT = v; }, mixT(v) { mixT = v; }, titleCries: () => titleCries, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), fl: FL ? +FL.out.gain.value.toFixed(3) : null } : null, cry: n => cry(n || 1, .2), useCanvas(cv) { MODE = 'img'; src = cv; useSource(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
 </script>
 </body>
 </html>
