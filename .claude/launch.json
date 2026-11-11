@@ -72,6 +72,14 @@
         "birds-reclaim/server.js"
       ],
       "port": 4179
+    },
+    {
+      "name": "birds-reclaim-mirror",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "birds-reclaim-mirror/server.js"
+      ],
+      "port": 4182
     }
   ]
 }
