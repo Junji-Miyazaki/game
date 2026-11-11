@@ -322,7 +322,7 @@ const FORM = ['V字', '帯', '球'];
 const birds = [], parts = [], pops = [];
 let intro = 1, seenT = 0, runT = 0; // intro＝題の画面の濃さ（1＝題だけ、0＝消えている）。seenT＝人が続けて映っている秒。runT＝映像が来てからの秒
 const VEIL = .2; // 題の画面の幕の濃さ。部屋の映像は、ほぼそのまま見えている（ユーザー 2026-11-11：そこまで暗く落とさなくてよい。そのまま乗るくらいで、文字が見える程度に）
-const OPEN = .35; // 題の画面がここまで薄れたら、鳥が来はじめる
+const OPEN = .82; // 題の画面がここまで薄れたら、鳥が来はじめる（消え始めて約 1.6 秒。題がまだ残っているうちに鳥が来る）
 let lagT = 0, lagCd = 20; // lagT＝鏡が遅れている残り秒（設定で入れた時だけ）
 let T = 0, gone = 9, present = false, hadBirds = false; // T＝人が映っている時間（秒）。いなくなると速く減る
 let FT = 0, TT = 0, ax = 0, ay = 0, anchored = false, orb = 0, fdir = 1, ptx = 0;
@@ -638,7 +638,7 @@ function draw() {
   }
   if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ * CFG.swR, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
   if (intro > 0) { // 題の画面：暗い幕と題字。先に題字が消え、そのあと幕が上がる。幕は少し透けるので、近づく人影がうっすら見える
-    const e = intro * intro * (3 - 2 * intro), ta = clamp((intro - .45) / .4, 0, 1); c.fillStyle = 'rgba(0,0,0,' + ((srcOK ? VEIL : .94) * e).toFixed(3) + ')'; c.fillRect(0, 0, W, H); // 映像が来ていれば、部屋を暗く落とすだけ（真っ黒にはしない）
+    const e = intro * intro * (3 - 2 * intro), ta = e; /* 題字と言葉は、幕と同じ速さでゆっくり消える（鳥の出現と重なる） */ c.fillStyle = 'rgba(0,0,0,' + ((srcOK ? VEIL : .94) * e).toFixed(3) + ')'; c.fillRect(0, 0, W, H); // 映像が来ていれば、部屋を暗く落とすだけ（真っ黒にはしない）
     if (ta > 0) { // 題字と、その下の問いの1文。ふだんは静かに呼吸し、時折、言葉が乱れる
       { const Y = quoteLayout(), fs0 = Math.min(W * .2, H * .2, 170 * SZ), y0 = H * .4 - fs0 * 1.05, y1 = H * .4 + fs0 * .62 + Y.fq * (2.6 + Y.lines.length * 1.45 + Y.ja.length * .98) + fs0 * .35, g = c.createLinearGradient(0, y0, 0, y1), k = 'rgba(0,0,0,' + (.36 * ta).toFixed(3) + ')';
         g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.28, k); g.addColorStop(.72, k); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, y0, W, y1 - y0); } // 題字と言葉のあたりだけ、帯のようにやわらかく暗くする（部屋全体は暗くしない）
@@ -664,9 +664,9 @@ function tick(dt) {
   else if (srcOK && video.readyState >= 2 && video.currentTime !== lastVT) { lastVT = video.currentTime; if (video.videoWidth && (video.videoWidth !== vw || video.videoHeight !== vh)) setSrc(video.videoWidth, video.videoHeight); /* スマホを回した時 */ sense(); }
   if (sinceSense > 1 && occN) { occ.fill(0); occF.fill(0); occN = 0; hots.length = 0; } // 映像が止まったら、人物はいないものとして扱う
   present = srcOK && occN >= Math.max(6, NC * .004);
-  // 題の画面：人が 0.8 秒続けて映ったら、3.5 秒かけて薄れる（映像が来て最初の 2.5 秒は題を見せる）。無人が 5 秒続き、鳥も去ったら、7 秒かけてゆっくり戻る
+  // 題の画面：人が 0.8 秒続けて映ったら、9 秒かけてゆっくり薄れる（ユーザー 2026-11-11：もっとゆっくりでよい。鳥の出現とかぶってよい）（映像が来て最初の 2.5 秒は題を見せる）。無人が 5 秒続き、鳥も去ったら、7 秒かけてゆっくり戻る
   if (srcOK) runT += dt; seenT = present ? seenT + dt : 0;
-  if (!CFG.title) intro = 0; else if (present && seenT > .8 && runT > 2.5) intro = Math.max(0, intro - dt / 3.5); else if (!present && gone > 5 && !birds.length) { if (intro === 0) nextQuote(); intro = Math.min(1, intro + dt / 7); }
+  if (!CFG.title) intro = 0; else if (present && seenT > .8 && runT > 2.5) intro = Math.max(0, intro - dt / 9); else if (!present && gone > 5 && !birds.length) { if (intro === 0) nextQuote(); intro = Math.min(1, intro + dt / 7); }
   if (present) { gone = 0; if (intro < OPEN) T += dt; } else { gone += dt; if (gone > 1.2) T = Math.max(0, T - dt * 10); }
   for (let i = 0; i < NC; i++) if (hole[i] > 0) { hole[i] -= dt; if (hole[i] <= 0) { hole[i] = 0; hp[i] = 1; } }
   buildExposed(); stepBirds(dt); audioTick(dt);
