@@ -77,7 +77,7 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: .6, v: 2, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
+const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 2, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
 const SAVED = (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { return {}; } })();
 let CFG = Object.assign({}, DEF, SAVED);
 if ((SAVED.v | 0) < 2) { CFG.lag = 0; CFG.v = 2; } // 前に保存した設定（版 2 より前）でも、「鏡が遅れる瞬間」は切から始める（ユーザー 2026-11-11：途中の変な演出は入れない）
@@ -102,10 +102,10 @@ const UI = [
   ['swR', '払いが届く範囲', 'range', .5, 3, .1, '倍'],
   ['swD', '払われて離れる距離', 'range', .5, 3, .1, '倍'],
   ['grain', 'フィルムの粒子と傷', 'check'],
-  ['soft', '輪郭のやわらかさ', 'range', 0, 2, .1, 'px'],
+  ['soft', '輪郭のやわらかさ', 'range', 0, 3, .1, ''],
   ['mirror', '鏡像（左右反転）', 'check'],
   ['sound', '音', 'check'],
-  ['thr', '輪郭のしきい値', 'range', .2, .8, .05, ''],
+  ['thr', '輪郭のしきい値', 'range', .2, .95, .05, ''],
   ['rs', '描画の細かさ', 'choice', [[0, '自動'], [1, '1'], [1.5, '1.5'], [2, '2']]],
   ['dbg', '動きの検出を表示', 'check'],
   ['inv', '輪郭を反転（確認用）', 'check'],
@@ -133,6 +133,7 @@ function layout() {
   sidx = new Int32Array(NC * 4); ex = new Int32Array(NC); exN = 0; occN = 0; colN = new Int32Array(cols); rowN = new Int32Array(rows);
   for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) { const i = r * cols + k; for (let j = 0; j < 4; j++) sidx[i * 4 + j] = srcIdx((k + (j & 1 ? .75 : .25)) * cs, (r + (j & 2 ? .75 : .25)) * cs); }
   for (const b of birds) { b.tg = -1; if (b.st === 1) b.st = 0; }
+  applyLook();
 }
 function srcIdx(x, y) { let u = (x - ox) / dw; if (CFG.mirror) u = 1 - u; const v = (y - oy) / dh; return clamp(Math.floor(v * SH), 0, SH - 1) * SW + clamp(Math.floor(u * SW), 0, SW - 1); }
 function drawCover(g, img) { g.save(); if (CFG.mirror) { g.translate(W, 0); g.scale(-1, 1); } g.drawImage(img, ox, oy, dw, dh); g.restore(); }
@@ -717,7 +718,8 @@ const segMsg = () => '人物の切り出しを読めません（' + segErr + '�
 let msgT = 0;
 function say(s, sec) { msgEl.textContent = s; clearTimeout(msgT); if (sec) msgT = setTimeout(() => { msgEl.textContent = ''; }, sec * 1000); }
 function applyLook() { // 画質：白黒と、わずかなぼかし（フィルムのやわらかさ。鳥や草木の輪郭がくっきりしすぎないように）
-  const sf = +CFG.soft || 0; cvA.style.filter = (CFG.tone !== 'color' ? 'grayscale(1) contrast(1.1) ' : '') + (sf > 0 ? 'blur(' + (sf * .6).toFixed(2) + 'px)' : ''); cvB.style.filter = sf > 0 ? 'blur(' + sf.toFixed(2) + 'px)' : 'none';
+  const sf = (+CFG.soft || 0) * SZ / .64; // 値はスマホの画面での px。大きな画面では、画面の大きさに比例して広げる（見え方をそろえる）
+  cvA.style.filter = (CFG.tone !== 'color' ? 'grayscale(1) contrast(1.1) ' : '') + (sf > 0 ? 'blur(' + (sf * .6).toFixed(2) + 'px)' : ''); cvB.style.filter = sf > 0 ? 'blur(' + sf.toFixed(2) + 'px)' : 'none';
 }
 function applyCfg(k) {
   if (k === 'cell' || k === 'mirror' || k === 'rs') layout();
