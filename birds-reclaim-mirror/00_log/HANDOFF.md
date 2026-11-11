@@ -1,11 +1,11 @@
 # VÖGEL（旧称 BIRDS RECLAIM — MIRROR）引き継ぎ書（新セッションはここから読む）
 
-更新: 2026-11-11（Fable 5.2、v0.6）。経緯と出典は `00_log/LOG.md`。作品の背景は `../birds-reclaim/00_log/HANDOFF.md`。
+更新: 2026-11-11（Fable 5.2、v0.7）。経緯と出典は `00_log/LOG.md`。作品の背景は `../birds-reclaim/00_log/HANDOFF.md`。
 
 ## 1. 現状
 | 対象 | 場所 | 状態 |
 |---|---|---|
-| 試作 v0.6 | `index.html`（1枚。スクリプトも中にある）。PC・スマホ対応。公開：https://junji-miyazaki.github.io/game/birds-reclaim-mirror/index.html | 合成の人影と写真で動く。本物のカメラは、ユーザーが Chrome で「動いた」と確認（2026-11-11。細かい感想は未聴取） |
+| 試作 v0.7 | `index.html`（1枚。スクリプトも中にある）。PC・スマホ対応。公開：https://junji-miyazaki.github.io/game/birds-reclaim-mirror/index.html | 合成の人影と写真で動く。本物のカメラは、ユーザーが Chrome で「動いた」と確認（2026-11-11。細かい感想は未聴取） |
 | 開発用サーバ | `server.js`（:4182）。`.claude/launch.json` の `birds-reclaim-mirror` | — |
 | 部品の取得 | `get_vendor.sh` → `vendor/`（30MB、`.gitignore` 済み、コミットしていない） | この Mac には取得済み |
 
@@ -17,7 +17,7 @@
 - `index.html` を Chrome で直接開いても動くはず（部品は CDN から読む。通信が要る。ユーザーがどちらの開き方で確かめたかは未聴取）。
 - 通信なし：`./get_vendor.sh` を1回 → `node server.js` で開く。`H` のパネルに「部品：ローカル（通信なし）」と出る。
 - 見比べ用のキー：`↑↓` 鳥の大きさ　`←→` マスの大きさ　`−` `＝` 鳥の増え方　`[` `]` 払われて離れる距離　`;` `'` 払いが届く範囲。タッチでは右下の歯車。
-- 始まりの画面は、カメラが許可済みの時と `?auto` の時は出ない。
+- 開くと題の画面のまま、すぐカメラを始める（「カメラで始める」の画面は v0.7 でやめた）。重ねた画面はカメラを使えなかった時だけ。音は画面を一度さわるまで鳴らない。
 - キー：`H` 設定　`F` 全画面　`A` / `B` 欠けた所　`N` 色　`G` 粒子　`M` 音　`R` 背景の撮り直し　`0` 鳥をやり直す　`D` 動きの検出を表示。
 - 確かめ用の URL
   | URL | 何をするか |

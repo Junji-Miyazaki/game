@@ -57,9 +57,8 @@
 <button id="gear" aria-label="設定">⚙</button>
 <div id="start"><div class="in">
   <h2>VÖGEL</h2>
-  <button id="sCam" class="main">カメラで始める<small>Start with the camera</small></button>
   <div class="err" id="sErr"></div>
-  <div class="hint">映像はこの端末の中だけで処理し、送信も保存もしません。音が出ます。</div>
+  <button id="sCam">もう一度試す<small>Try again</small></button>
 </div></div>
 <video id="v" playsinline muted autoplay style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1"></video>
 <script>
@@ -569,7 +568,9 @@ function draw() {
       const fs = Math.min(W * .2, H * .2, 170 * SZ), ty = H * .4, gx = glT > 0 && glMode ? Math.sin(glT * 43) * 9 * SZ : 0; c.fillStyle = '#ECE7DC'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '600 italic ' + fs.toFixed(1) + 'px Georgia,"Times New Roman",serif';
       if (glT > 0) { c.globalAlpha = ta * .22; c.fillText('VÖGEL', W / 2 - gx * 1.6 + 6 * SZ, ty - 3 * SZ); }
       c.globalAlpha = ta * (.9 + Math.random() * .1); c.fillText('VÖGEL', W / 2 + gx + (Math.random() - .5) * 1.2, ty + (Math.random() - .5) * 1.2);
-      drawQuote(ta, ty + fs * .62); c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      drawQuote(ta, ty + fs * .62);
+      c.globalAlpha = ta * .3; c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '500 10px "Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif'; c.fillText('映像はこの端末の中だけで処理し、送信も保存もしません', W / 2, H - 16); // カメラの許可を押す前に読める、ただ一つの約束
+      c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
     }
   }
   if (CFG.grain) filmGrain();
@@ -621,7 +622,6 @@ function stopCam() { if (stream) { for (const t of stream.getTracks()) t.stop();
 async function startCam() {
   stopCam(); srcOK = false; camErr = '';
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camErr = 'このページではカメラを使えません（https か localhost で開く）'; say('', 0); showStart(camErr); return; }
-  say('カメラの許可を待っています', 0);
   const want = id => ({ audio: false, video: Object.assign({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : { facingMode: 'user' }) }); // 選んでいなければ、自分の側を向いたカメラ
   try {
     try { stream = await navigator.mediaDevices.getUserMedia(want(CFG.cam)); } catch (e) { if (!CFG.cam) throw e; stream = await navigator.mediaDevices.getUserMedia(want('')); }
@@ -704,7 +704,8 @@ $('bFull').onclick = fullscreen;
 $('bDef').onclick = () => { const t = CFG.test, cam = CFG.cam; CFG = Object.assign({}, DEF, { test: t, cam }); saveCfg(); cvA.classList.toggle('bw', CFG.tone !== 'color'); if (MG) MG.gain.value = .7; layout(); buildUI(); };
 
 // ---------- 始まりの画面と、始める ----------
-// 公開ページでは、いきなりカメラの許可を求めない。すでに許可されている時（展示の localhost など）と ?auto の時は、そのまま始める
+// 開いたら、題の画面のままカメラを始める（ユーザー指示 2026-11-11：始め方はカメラしかないので、「カメラで始める」の画面はいらない）。
+// この重ねた画面は、カメラを使えなかった時だけ出す（理由と、やり直しのボタン）
 const startEl = $('start'), startOpen = () => startEl.classList.contains('show');
 function showStart(err) { $('sErr').textContent = err || ''; startEl.classList.add('show'); document.body.classList.remove('idle'); }
 function hideStart() { startEl.classList.remove('show'); wake(); }
@@ -714,8 +715,7 @@ setSrc(640, 360);
 (async () => {
   if (QS.get('img')) return useImage(QS.get('img'));
   if (QS.has('test')) return useTest(true);
-  let ok = QS.has('auto'); try { const p = await navigator.permissions.query({ name: 'camera' }); if (p.state === 'granted') ok = true; } catch (e) { }
-  if (ok) startCam(); else showStart('');
+  startCam();
 })();
 wake();
 requestAnimationFrame(loop);
