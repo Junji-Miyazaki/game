@@ -79,7 +79,7 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, lag: 1, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
+const DEF = { cam: '', cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 1, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
 let CFG = Object.assign({}, DEF, (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } })());
 const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } };
 const UI = [
@@ -93,7 +93,9 @@ const UI = [
   ['tone', '色', 'choice', [['bw', '白黒'], ['neg', 'ネガ'], ['color', 'カラー']]],
   ['flash', '総攻撃の一瞬だけ反転', 'check'],
   ['title', '無人の時は題の画面', 'check'],
-  ['amb', '夢の音（低い持続音と旋律）', 'check'],
+  ['amb', 'かすかな低音', 'check'],
+  ['sPeck', 'つつく音', 'check'],
+  ['sWing', '羽音', 'check'],
   ['lag', '鏡が遅れる瞬間', 'check'],
   ['sens', '払う感度', 'range', .3, 3, .1, '倍'],
   ['swR', '払いが届く範囲', 'range', .5, 3, .1, '倍'],
@@ -418,78 +420,61 @@ function flutterInit() {
   for (const [f, a] of [[13, .3], [17.7, .2], [9.1, .15]]) { const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = f; g.gain.value = a; o.connect(g); g.connect(am.gain); o.start(); }
   out.gain.value = 0; s.connect(bp); bp.connect(am); am.connect(out); out.connect(MG); s.start(); FL = { out };
 }
-// 鳴き声：のこぎり波と矩形波を帯域で絞り、音程を跳ね上げてから落とし、速く震わせる（電子的な鳥の叫び）
-function shriek(pitch, vol, dur, pan, delay) {
+// 鳴き声：のこぎり波と矩形波を帯域で絞り、音程を跳ね上げてから落とし、速く震わせる（電子的な鳥の叫び。game.js から）
+// u＝不穏さ（0〜1。鳥の多さ）。大きいほど、低く、長く、震えが遅く深く、遠く（残響）なる。時々、ふくらんで急に切れる声（逆回しのよう）や、ひどく低く遅い声が混じる
+function shriek(pitch, vol, dur, pan, delay, u) {
+  u = u || 0; const low = Math.random() < .08 * u, rev = !low && Math.random() < .35 * u; pitch *= low ? .36 : 1 - .3 * u; dur *= low ? 2.6 : 1 + .6 * u;
   const t = AC.currentTime + (delay || 0), o = AC.createOscillator(), o2 = AC.createOscillator(), bp = AC.createBiquadFilter(), g = AC.createGain(), vib = AC.createOscillator(), vg = AC.createGain();
   o.type = 'sawtooth'; o2.type = 'square';
-  for (const [osc, m] of [[o, 1], [o2, 1.007]]) { const f = osc.frequency; f.setValueAtTime(pitch * .75 * m, t); f.exponentialRampToValueAtTime(pitch * 1.3 * m, t + dur * .25); f.exponentialRampToValueAtTime(pitch * .6 * m, t + dur); }
-  vib.frequency.value = 18 + Math.random() * 20; vg.gain.value = pitch * .05; vib.connect(vg); vg.connect(o.frequency); vg.connect(o2.frequency);
+  for (const [osc, m] of [[o, 1], [o2, 1.007 + .012 * u]]) { const f = osc.frequency; f.setValueAtTime(pitch * .75 * m, t); f.exponentialRampToValueAtTime(pitch * 1.3 * m, t + dur * .25); f.exponentialRampToValueAtTime(pitch * (.6 - .15 * u) * m, t + dur); }
+  vib.frequency.value = (18 + Math.random() * 20) * (1 - .55 * u); vg.gain.value = pitch * (.05 + .05 * u); vib.connect(vg); vg.connect(o.frequency); vg.connect(o2.frequency);
   bp.type = 'bandpass'; bp.frequency.value = pitch * 2; bp.Q.value = 2.5;
-  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .015); g.gain.setValueAtTime(vol * .8, t + dur * .5); g.gain.exponentialRampToValueAtTime(.0005, t + dur);
+  if (rev) { g.gain.setValueAtTime(.0005, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * .92); g.gain.linearRampToValueAtTime(0, t + dur); }
+  else { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .015); g.gain.setValueAtTime(vol * .8, t + dur * .5); g.gain.exponentialRampToValueAtTime(.0005, t + dur); }
   o.connect(bp); o2.connect(bp); bp.connect(g);
-  let end = g; if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan || 0; g.connect(p); end = p; }
-  end.connect(MG);
+  let end = g; if (AC.createStereoPanner) { const q = AC.createStereoPanner(); q.pan.value = pan || 0; g.connect(q); end = q; }
+  end.connect(MG); if (AMB && u > 0) { const sg = AC.createGain(); sg.gain.value = .15 + .6 * u; end.connect(sg); sg.connect(AMB.rev); }
   for (const x of [o, o2, vib]) { x.start(t); x.stop(t + dur + .03); }
 }
-function cry(n, spread, delay) { for (let i = 0; i < n; i++) shriek(900 + Math.random() * 900, .045 + Math.random() * .035, .18 + Math.random() * .25, (Math.random() * 2 - 1) * .8, (delay || 0) + Math.random() * spread); }
+function cry(n, spread, delay) { for (let i = 0; i < n; i++) shriek(900 + Math.random() * 900, .03 + Math.random() * .025, .18 + Math.random() * .25, (Math.random() * 2 - 1) * .8, (delay || 0) + Math.random() * spread, inten); }
 // さえずり：高い正弦波を短く上下させる（鳥が去って、静かになった時だけ）
 function chirp(n, spread) { for (let i = 0; i < n; i++) { const d = Math.random() * spread, f = 2600 + Math.random() * 1800; tone(f, .07, .035, 'sine', f * 1.35, d); tone(f * 1.2, .06, .025, 'sine', f * .9, d + .08); } }
-function sfx(k) {
+function sfx(k) { // ユーザー指示（2026-11-11）：音は鳥の声だけ。つつく音と羽音は設定で入れた時だけ鳴らす
   if (!AC || !CFG.sound) return; const now = AC.currentTime;
   try {
-    if (k === 'hit') { if (now - lastHit < .035) return; lastHit = now; nz(.07, 'bandpass', 700 + Math.random() * 700, 1.2, .16); }
-    else if (k === 'tick') { if (now - lastHit < .05) return; lastHit = now; nz(.035, 'highpass', 2500, 1, .05); }
-    else if (k === 'wave') { tone(70, 1.6, .18, 'sine', 55); cry(8, .8); }
-    else if (k === 'scatter') { if (now - lastSc < .3) return; lastSc = now; nz(.22, 'bandpass', 700, .9, .12); nz(.22, 'bandpass', 600, .9, .1); }
+    if (k === 'hit') { if (!CFG.sPeck || now - lastHit < .035) return; lastHit = now; nz(.07, 'bandpass', 700 + Math.random() * 700, 1.2, .16); }
+    else if (k === 'tick') { if (!CFG.sPeck || now - lastHit < .05) return; lastHit = now; nz(.035, 'highpass', 2500, 1, .05); }
+    else if (k === 'wave') cry(3, .8);
+    else if (k === 'scatter') { if (!CFG.sWing || now - lastSc < .3) return; lastSc = now; nz(.22, 'bandpass', 700, .9, .12); nz(.22, 'bandpass', 600, .9, .1); }
     else if (k === 'arrive') cry(1, .1);
     else if (k === 'gone') chirp(8, 3);
   } catch (e) { }
 }
-// ---------- 夢の層の音（ユーザーのキーワード：夢と現実、日常とその裏の悪夢、低周波のアンビエント、甘くレトロな旋律と不穏なノイズの交差） ----------
-// 無人の時は低い持続音と電気のうなりだけ。人が映ると、ゆっくりした甘い旋律が始まる（日常）。鳥が増えるほど旋律の音程が揺れて下がり、低音が膨らむ（その裏）。
-// 総攻撃ではテープが止まりかけるように音程が落ちる。旋律と和音はこの作品のために作った（既存の曲は写していない）。
-let AMB = null, nextStep = 0, stepN = 0, inten = 0;
-const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
-const BARS = [ // 1小節＝8分音符6つ。[分散和音の3音, 上の旋律の2音]（MIDI 番号）。C – Em – F – Fm ／ C – A♭ – Fm6 – G7
-  [[48, 55, 64], [76, 79]], [[52, 59, 67], [74, 71]], [[53, 60, 69], [72, 69]], [[53, 60, 68], [68, 72]],
-  [[48, 55, 64], [76, 79]], [[44, 51, 60], [75, 72]], [[53, 56, 62], [74, 68]], [[55, 62, 65], [71, 74]],
-];
+// ---------- かすかな低音と、声の残響 ----------
+// ユーザー指示（2026-11-11）：旋律はいらない。音は鳥の声だけ。あるとすれば、聞こえるかどうかの低い持続音か低い雑音。
+// 不穏さは、鳥が増えるにつれて声そのものが変わることで出す（shriek の u）。
+let AMB = null, inten = 0; // inten＝鳥の多さ（0〜1）
 function ambInit() {
   const out = AC.createGain(); out.gain.value = 0; out.connect(MG);
   const len = Math.floor(AC.sampleRate * 3.6), ir = AC.createBuffer(2, len, AC.sampleRate); for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); } // 残響：減っていく雑音
-  const rev = AC.createConvolver(), wet = AC.createGain(); rev.buffer = ir; wet.gain.value = .55; rev.connect(wet); wet.connect(out);
-  const dr = AC.createGain(); dr.gain.value = 0; dr.connect(out); // 低い持続音：わずかにずれた2つの低音のうなり＋倍音（小さなスピーカーでも聞こえるように）＋低い雑音
-  for (const [f, g, type] of [[41.2, .5, 'sine'], [41.55, .5, 'sine'], [82.6, .16, 'sine'], [123.4, .07, 'triangle']]) { const o = AC.createOscillator(), og = AC.createGain(); o.type = type; o.frequency.value = f; og.gain.value = g; o.connect(og); og.connect(dr); o.start(); }
+  const rev = AC.createConvolver(), wet = AC.createGain(); rev.buffer = ir; wet.gain.value = .5; rev.connect(wet); wet.connect(MG); // 声を遠くに置くための残響（低音の入り切りとは別）
+  const dr = AC.createGain(); dr.gain.value = 0; dr.connect(out); // 低い持続音：わずかにずれた2つの低音のうなり＋1オクターブ上をごく小さく＋低い雑音
+  for (const [f, g] of [[41.2, .5], [41.55, .5], [82.6, .1]]) { const o = AC.createOscillator(), og = AC.createGain(); o.frequency.value = f; og.gain.value = g; o.connect(og); og.connect(dr); o.start(); }
   const rn = AC.createBufferSource(), rf = AC.createBiquadFilter(), rg = AC.createGain(); rn.buffer = NB; rn.loop = true; rf.type = 'lowpass'; rf.frequency.value = 90; rg.gain.value = .9; rn.connect(rf); rf.connect(rg); rg.connect(dr); rn.start();
-  const hum = AC.createOscillator(), hf = AC.createBiquadFilter(), hg = AC.createGain(); hum.type = 'sawtooth'; hum.frequency.value = 50; hf.type = 'lowpass'; hf.frequency.value = 260; hg.gain.value = .04; hum.connect(hf); hf.connect(hg); hg.connect(dr); hum.start(); // 電気のうなり
-  const mel = AC.createGain(), trem = AC.createGain(), tl = AC.createOscillator(), tg = AC.createGain(); mel.gain.value = 0; trem.gain.value = .8; tl.frequency.value = 5.3; tg.gain.value = .2; tl.connect(tg); tg.connect(trem.gain); tl.start(); // 旋律：音量をゆらす（古い電気楽器のトレモロ）
-  trem.connect(mel); mel.connect(out); mel.connect(rev);
-  const det = AC.createConstantSource(), wl = AC.createOscillator(), wg = AC.createGain(); det.offset.value = 0; det.start(); wl.frequency.value = .31; wg.gain.value = 4; wl.connect(wg); wl.start(); // 音程の揺れと下がり（全部の音に掛かる）
-  AMB = { out, dr, mel, trem, det, wg, hg, notes: 0 };
-}
-function note(m, t, dur, vol) {
-  const f = mtof(m), g = AC.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .012); g.gain.exponentialRampToValueAtTime(.0004, t + dur); g.connect(AMB.trem); AMB.notes++;
-  for (const [k, a] of [[1, 1], [2, .22], [3, .05]]) { const o = AC.createOscillator(), og = AC.createGain(); o.frequency.value = f * k; og.gain.value = a; AMB.det.connect(o.detune); AMB.wg.connect(o.detune); o.connect(og); og.connect(g); o.start(t); o.stop(t + dur + .05); o.onended = () => { try { AMB.det.disconnect(o.detune); AMB.wg.disconnect(o.detune); og.disconnect(); } catch (e) { } }; }
+  AMB = { out, dr, rev };
 }
 function ambTick(dt) {
-  if (!AMB) return; const now = AC.currentTime, on = CFG.amb && CFG.sound ? 1 : 0, play = !!on && present && intro < OPEN;
-  inten += ((present ? clamp(birds.length / Math.max(20, CFG.max * .6), 0, 1) : 0) - inten) * Math.min(1, dt * .8); // 鳥の多さ（0〜1）。ゆっくり追う
-  AMB.out.gain.setTargetAtTime(on, now, .4);
-  AMB.dr.gain.setTargetAtTime(.07 + .15 * inten + (lagT > 0 ? .1 : 0), now, lagT > 0 ? .15 : .8);
-  AMB.hg.gain.setTargetAtTime(.04 + .1 * inten + (intro > 0 && intro < 1 ? .1 : 0), now, .3);
-  AMB.mel.gain.setTargetAtTime(play ? .5 : 0, now, play ? 1.5 : 2.5);
-  AMB.wg.gain.setTargetAtTime(4 + 55 * inten * inten, now, 1);
-  AMB.det.offset.setTargetAtTime(wave > 0 ? -260 : -40 * inten, now, wave > 0 ? .5 : 1.2);
-  if (!play) { nextStep = 0; return; }
-  if (!nextStep) { nextStep = now + .15; stepN = 0; } else if (nextStep < now - 1) nextStep = now + .05; // 裏に回って止まっていた時は、いまから続ける
-  while (nextStep < now + .35) { const bar = BARS[Math.floor(stepN / 6) % 8], q = stepN % 6; note(bar[0][[0, 1, 2, 1, 2, 1][q]], nextStep, 1.9, .05); if (q === 0) note(bar[1][0], nextStep, 3.4, .1); if (q === 3) note(bar[1][1], nextStep, 3, .085); nextStep += .38; stepN++; }
+  if (!AMB) return; const now = AC.currentTime;
+  inten += ((present ? clamp(birds.length / Math.max(20, CFG.max * .6), 0, 1) : 0) - inten) * Math.min(1, dt * .8); // ゆっくり追う
+  AMB.out.gain.setTargetAtTime(CFG.amb && CFG.sound ? 1 : 0, now, .4);
+  AMB.dr.gain.setTargetAtTime(.035 + .05 * inten + (wave > 0 ? .04 : 0) + (lagT > 0 ? .05 : 0), now, lagT > 0 ? .15 : .8); // 聞こえるかどうか、の大きさ。鳥が増えるとわずかに膨らむ
 }
 function audioTick(dt) {
   if (!AC) return; ambTick(dt);
   if (!CFG.sound) return; const n = birds.length;
-  flT -= dt; if (flT < 0 && FL) { flT = .2; FL.out.gain.setTargetAtTime(Math.min(.22, .02 * Math.sqrt(n)), AC.currentTime, .3); }
-  if (!n || !present) return;
-  shT -= dt; if (shT < 0) { try { cry(wave > 0 ? 2 : 1, .15); } catch (e) { } shT = (wave > 0 ? .25 + Math.random() * .5 : .8 + Math.random() * 2.2) / Math.min(2, .5 + n / 40); }
+  flT -= dt; if (flT < 0 && FL) { flT = .2; FL.out.gain.setTargetAtTime(CFG.sWing ? Math.min(.22, .02 * Math.sqrt(n)) : 0, AC.currentTime, .3); }
+  if (!n || !present || lagT > 0) return; // 鏡が遅れている間は、声も止む
+  shT -= dt; if (shT < 0) { try { cry(1, .15); } catch (e) { } shT = (wave > 0 ? .3 + Math.random() * .4 : 1.2 + Math.random() * 3) / Math.min(1.6, .6 + n / 120); } // うるさくならないよう、まばらに
 }
 
 // ---------- 描く ----------
@@ -608,8 +593,8 @@ function tick(dt) {
   // 鏡が遅れる瞬間：10羽を超えたら、24〜46 秒ごとに 1.1〜2 秒、マス目の人影だけが止まる。鳥は止まった人影をつつき続ける
   if (CFG.lag && present && intro <= 0 && birds.length >= 10 && lagT <= 0) { lagCd -= dt; if (lagCd <= 0) { lagT = 1.1 + Math.random() * .9; lagCd = 24 + Math.random() * 22; } }
   if (lagT > 0) lagT -= dt;
-  // 言葉の乱れ：題の画面が出ている間、2.5〜8.5 秒ごとに 0.25〜0.75 秒。同時に、電気のはぜる小さな音
-  if (glT > 0) glT -= dt; else if (intro > .6) { glCd -= dt; if (glCd <= 0) { glT = .25 + Math.random() * .5; glCd = 2.5 + Math.random() * 6; glSeed = Math.random() * 900; glMode = Math.random() < .5 ? 1 : 0; if (AC && CFG.sound && CFG.amb) try { nz(.09, 'highpass', 3500, 1, .03); nz(.2, 'bandpass', 120, 2, .06); } catch (e) { } } }
+  // 言葉の乱れ：題の画面が出ている間、2.5〜8.5 秒ごとに 0.25〜0.75 秒。音は付けない
+  if (glT > 0) glT -= dt; else if (intro > .6) { glCd -= dt; if (glCd <= 0) { glT = .25 + Math.random() * .5; glCd = 2.5 + Math.random() * 6; glSeed = Math.random() * 900; glMode = Math.random() < .5 ? 1 : 0; } }
   const neg = (CFG.tone === 'neg') !== (flashT > 0); if (neg !== negOn) { negOn = neg; stage.classList.toggle('neg', neg); }
 }
 let lastVT = -1, last = 0, fT = 0, fcount = 0, FPS = 0, SFPS = 0, fMin = 1e9, fSum = 0, fN = 0;
@@ -735,7 +720,7 @@ setSrc(640, 360);
 wake();
 requestAnimationFrame(loop);
 // 確かめ用：コンソールから状態を見たり、時間を進めたりできる（展示では使わない）
-window.__dbg = { lag(v) { lagT = v; }, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, notes: AMB.notes, stepN, mel: +AMB.mel.gain.value.toFixed(3), dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), det: +AMB.det.offset.value.toFixed(0) } : null, useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
+window.__dbg = { lag(v) { lagT = v; }, glitch(v, m) { glT = v; glMode = m | 0; glSeed = Math.random() * 900; }, quote: () => ({ qi, o: QUOTES[qi].o }), nextQuote, amb: () => AMB ? { state: AC.state, dr: +AMB.dr.gain.value.toFixed(3), out: +AMB.out.gain.value.toFixed(2), fl: FL ? +FL.out.gain.value.toFixed(3) : null } : null, cry: n => cry(n || 1, .2), useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
 </script>
 </body>
 </html>
