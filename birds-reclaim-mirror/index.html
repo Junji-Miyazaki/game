@@ -2,17 +2,18 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>BIRDS RECLAIM — MIRROR（試作）</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
-  body.clean { cursor: none; }
+  body.idle { cursor: none; }
+  html, body { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   #stage { position: fixed; inset: 0; background: #000; }
   #stage.neg { filter: invert(1); }
   #stage canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
   #a.bw { filter: grayscale(1) contrast(1.12); }
   #msg { position: fixed; left: 0; right: 0; bottom: 10%; text-align: center; color: #ECE7DC; font: 500 15px/1.9 "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; white-space: pre-line; pointer-events: none; text-shadow: 0 0 6px #000, 0 0 2px #000; }
-  #panel { display: none; position: fixed; top: 12px; left: 12px; width: 352px; max-height: calc(100% - 24px); overflow: auto; box-sizing: border-box; padding: 12px 14px; background: rgba(12, 13, 16, .88); color: #E8E8E8; font-size: 12px; line-height: 1.5; border: 1px solid rgba(255, 255, 255, .16); border-radius: 8px; }
+  #panel { display: none; position: fixed; top: 12px; left: 12px; width: min(352px, calc(100vw - 24px)); max-height: calc(100% - 24px); overflow: auto; box-sizing: border-box; padding: 12px 14px; background: rgba(12, 13, 16, .88); color: #E8E8E8; font-size: 12px; line-height: 1.5; border: 1px solid rgba(255, 255, 255, .16); border-radius: 8px; }
   #panel.show { display: block; }
   #panel h1 { font-size: 13px; margin: 0 0 6px; letter-spacing: .06em; }
   #stat { font: 11px/1.6 ui-monospace, Menlo, monospace; color: #F2B84B; white-space: pre-line; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, .12); }
@@ -23,10 +24,25 @@
   .row .val { flex: 0 0 48px; text-align: right; font-family: ui-monospace, Menlo, monospace; color: #9AA1AB; }
   .row label { margin-right: 8px; white-space: nowrap; }
   #panel button { background: #1C1F26; color: #E8E8E8; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; margin: 6px 4px 0 0; font-size: 11.5px; cursor: pointer; }
+  #gear { position: fixed; right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(255, 255, 255, .35); background: rgba(12, 13, 16, .55); color: #ECE7DC; font-size: 20px; line-height: 1; cursor: pointer; transition: opacity .4s; }
+  body.idle #gear { opacity: 0; pointer-events: none; }
+  #start { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, .9); color: #ECE7DC; text-align: center; font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", Georgia, serif; padding: 20px; box-sizing: border-box; overflow: auto; }
+  #start.show { display: flex; }
+  #start .in { max-width: 460px; }
+  #start h2 { font: 600 italic 30px/1.2 Georgia, "Times New Roman", serif; letter-spacing: .04em; margin: 0 0 4px; }
+  #start .sub { font: 600 12px/1 Georgia, serif; letter-spacing: .5em; opacity: .7; margin-bottom: 26px; }
+  #start p { font-size: 14px; line-height: 1.9; margin: 0 0 6px; }
+  #start p.en { font: italic 12.5px/1.6 Georgia, serif; opacity: .7; margin-bottom: 16px; }
+  #start .err { color: #E0A860; font-size: 13px; min-height: 1.4em; margin: 10px 0 0; white-space: pre-line; }
+  #start button { display: block; width: 100%; max-width: 320px; margin: 12px auto 0; padding: 13px 10px; border-radius: 4px; border: 1px solid #ECE7DC; background: transparent; color: #ECE7DC; font: 600 15px/1.3 "Hiragino Mincho ProN", "Yu Mincho", serif; cursor: pointer; }
+  #start button.main { background: #ECE7DC; color: #0b0b0b; }
+  #start button small { display: block; font: italic 11.5px Georgia, serif; opacity: .75; margin-top: 3px; }
+  #start .hint { font-size: 11.5px; opacity: .55; margin-top: 22px; line-height: 1.7; }
+  @media (pointer: coarse) { #panel { font-size: 14px; top: auto; bottom: calc(66px + env(safe-area-inset-bottom)); max-height: 48%; background: rgba(12, 13, 16, .74); } /* スマホでは下半分に出し、上で絵を見ながら変えられるようにする */ .row { margin: 9px 0; } .row input[type=checkbox], .row input[type=radio] { width: 20px; height: 20px; vertical-align: middle; } #panel button { padding: 9px 11px; font-size: 13px; } .pc { display: none; } }
   #keys { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .12); color: #9AA1AB; font-size: 11px; }
 </style>
 </head>
-<body class="clean">
+<body>
 <div id="stage"><canvas id="a" class="bw"></canvas><canvas id="b"></canvas></div>
 <div id="msg"></div>
 <div id="panel">
@@ -34,11 +50,21 @@
   <div id="stat"></div>
   <div id="rows"></div>
   <div>
-    <button id="bPlate">背景を撮り直す (R)</button><button id="bBirds">鳥をやり直す (0)</button><button id="bFull">全画面 (F)</button><button id="bDef">初期値に戻す</button>
+    <button id="bPlate">背景を撮り直す (R)</button><button id="bBirds">鳥をやり直す (0)</button><button id="bFull">全画面 (F)</button><button id="bDef">初期値に戻す</button><button id="bClose">閉じる (H)</button>
   </div>
-  <div id="keys">H 設定　F 全画面　A / B 欠けた所　N 白黒→ネガ→カラー　G 粒子　M 音　R 背景の撮り直し　0 鳥をやり直す　T 合成の人影　D 動きの検出を表示<br>映像はこのブラウザの中だけで処理し、外へ送らない・保存しない。音は最初のクリックかキーで鳴り始める。</div>
+  <div id="keys"><span class="pc">H 設定　F 全画面　A / B 欠けた所　N 白黒→ネガ→カラー　G 粒子　M 音　R 背景の撮り直し　0 鳥をやり直す　T 合成の人影　D 動きの検出を表示<br>見比べ：↑↓ 鳥の大きさ　←→ マスの大きさ　− ＝ 鳥の増え方　[ ] 払われて離れる距離　; ' 払いが届く範囲<br></span>映像はこのブラウザの中だけで処理し、外へ送らない・保存しない。音は最初のクリックかキーで鳴り始める。</div>
 </div>
-<video id="v" playsinline muted style="display:none"></video>
+<button id="gear" aria-label="設定">⚙</button>
+<div id="start"><div class="in">
+  <h2>BIRDS RECLAIM</h2><div class="sub">MIRROR</div>
+  <p>カメラに映ったあなたの輪郭を、鳥がついばみます。</p><p class="en">Birds peck away at your silhouette.</p>
+  <p>映像はこの端末の中だけで処理し、送信も保存もしません。</p><p class="en">The video is processed on this device only. Nothing is sent or stored.</p>
+  <button id="sCam" class="main">カメラで始める<small>Start with the camera</small></button>
+  <button id="sDemo">カメラなしで見る<small>Watch without a camera</small></button>
+  <div class="err" id="sErr"></div>
+  <div class="hint">設定は右下の ⚙<span class="pc">、または H キー。F で全画面</span>。音が出ます。<br>手で払うと、鳥は少し離れます。</div>
+</div></div>
+<video id="v" playsinline muted autoplay style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1"></video>
 <script>
 'use strict';
 // BIRDS RECLAIM — MIRROR（試作 v0）
@@ -54,20 +80,23 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 
 // ---------- 設定（H キーの中。localStorage に残す） ----------
 const LS = 'birdsreclaim.mirror.v1';
-const DEF = { cam: '', cell: 14, grow: 1, max: 120, bsz: 1.3, regrow: 4, fill: 'A', tone: 'bw', flash: 1, sens: 1, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
+const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
+const DEF = { cam: '', cell: PHONE ? 10 : 14, grow: 1, max: 120, bsz: 1.3, regrow: 4, fill: 'A', tone: 'bw', flash: 1, sens: 1, swR: 1.4, swD: 1.6, grain: 1, mirror: 1, sound: 1, thr: .5, rs: 0, dbg: 0, inv: 0, test: 0 };
 let CFG = Object.assign({}, DEF, (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } })());
 const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } }; // 合成の人影は保存しない（展示で誤って合成のまま始まらないように）
 const UI = [
   ['cam', 'カメラ', 'select'],
   ['cell', 'マスの大きさ', 'range', 6, 40, 1, 'px'],
-  ['grow', '鳥の増え方', 'range', .25, 4, .25, '倍'],
+  ['grow', '鳥の増え方', 'range', .25, 6, .25, '倍'],
   ['max', '鳥の上限', 'range', 10, 300, 10, '羽'],
-  ['bsz', '鳥の大きさ', 'range', .6, 3, .1, '倍'],
+  ['bsz', '鳥の大きさ', 'range', .6, 4, .1, '倍'],
   ['regrow', '欠けが戻るまで', 'range', 1, 15, .5, '秒'],
   ['fill', '欠けた所', 'choice', [['A', 'A 部屋の背景'], ['B', 'B 草木']]],
   ['tone', '色', 'choice', [['bw', '白黒'], ['neg', 'ネガ'], ['color', 'カラー']]],
   ['flash', '総攻撃の一瞬だけ反転', 'check'],
   ['sens', '払う感度', 'range', .3, 3, .1, '倍'],
+  ['swR', '払いが届く範囲', 'range', .5, 3, .1, '倍'],
+  ['swD', '払われて離れる距離', 'range', .5, 3, .1, '倍'],
   ['grain', 'フィルムの粒子と傷', 'check'],
   ['mirror', '鏡像（左右反転）', 'check'],
   ['sound', '音', 'check'],
@@ -91,9 +120,9 @@ let colN, rowN, occN = 0, sxm = 0, sym = 0, bx0 = 0, bx1 = 0, by0 = 0, by1 = 0;
 function layout() {
   W = innerWidth; H = innerHeight;
   RS = CFG.rs > 0 ? +CFG.rs : Math.min(devicePixelRatio || 1, 2);
-  if (!(CFG.rs > 0) && W * H * RS * RS > 4.5e6) RS = Math.sqrt(4.5e6 / (W * H)); // 自動：画素が多すぎる時は落とす
+  const lim = PHONE ? 2.6e6 : 4.5e6; if (!(CFG.rs > 0) && W * H * RS * RS > lim) RS = Math.sqrt(lim / (W * H)); // 自動：画素が多すぎる時は落とす
   for (const cv of [cvA, cvB]) { cv.width = Math.max(1, Math.round(W * RS)); cv.height = Math.max(1, Math.round(H * RS)); }
-  SZ = clamp(Math.min(W, H) / 800, .5, 2.4);
+  SZ = clamp(Math.sqrt(W * H) / 900, .6, 2.4); // 縦長の小さな画面でも鳥が小さくなりすぎないよう、面積で決める
   const s = Math.max(W / vw, H / vh); dw = vw * s; dh = vh * s; ox = (W - dw) / 2; oy = (H - dh) / 2;
   const cs = CFG.cell; cols = Math.ceil(W / cs); rows = Math.ceil(H / cs); NC = cols * rows;
   occ = new Uint8Array(NC); occF = new Float32Array(NC); hole = new Float32Array(NC); holeT = new Float32Array(NC); hp = new Float32Array(NC).fill(1); lum = new Float32Array(NC).fill(120);
@@ -112,11 +141,13 @@ let PW = 480, PH = 270, MW = 32, MH = 18;
 let mask, dilA, dilB, Y, heat, energy, firstY = true;
 let hots = [];                               // 速く動いた所（画面座標）
 function setSrc(w, h) {
-  vw = w; vh = h; SW = 256; SH = Math.max(16, Math.round(256 * vh / vw / 8) * 8); PW = 480; PH = Math.round(480 * vh / vw); MW = SW / 8; MH = SH / 8;
-  [sc, sx] = mkc(SW, SH, { willReadFrequently: true }); [mkC, mkX] = mkc(SW, SH); [bkC, bkX] = mkc(SW, SH); [plC, plX] = mkc(PW, PH); [tmC, tmX] = mkc(PW, PH); [rmC, rmX] = mkc(PW, PH); [b1C, b1X] = mkc(8, Math.max(2, Math.round(8 * vh / vw))); [b2C, b2X] = mkc(32, Math.max(4, Math.round(32 * vh / vw)));
+  vw = w; vh = h; // 長い辺を 256 にする（縦画面のスマホでも、切り出しの画素数が増えない）
+  if (vw >= vh) { SW = 256; SH = Math.max(16, Math.round(256 * vh / vw / 8) * 8); PW = 480; PH = Math.round(480 * vh / vw); } else { SH = 256; SW = Math.max(16, Math.round(256 * vw / vh / 8) * 8); PH = 480; PW = Math.round(480 * vw / vh); }
+  MW = SW / 8; MH = SH / 8;
+  [sc, sx] = mkc(SW, SH, { willReadFrequently: true }); [mkC, mkX] = mkc(SW, SH); [bkC, bkX] = mkc(SW, SH); [plC, plX] = mkc(PW, PH); [tmC, tmX] = mkc(PW, PH); [rmC, rmX] = mkc(PW, PH); [b1C, b1X] = mkc(Math.max(2, Math.round(PW / 60)), Math.max(2, Math.round(PH / 60))); [b2C, b2X] = mkc(Math.max(4, Math.round(PW / 15)), Math.max(4, Math.round(PH / 15)));
   mkImg = mkX.createImageData(SW, SH); bkImg = bkX.createImageData(SW, SH);
   mask = new Float32Array(SW * SH); dilA = new Float32Array(SW * SH); dilB = new Float32Array(SW * SH); Y = new Uint8Array(SW * SH); heat = new Float32Array(MW * MH); energy = new Float32Array(MW * MH); firstY = true; hots = [];
-  layout();
+  layout(); if (typeof ensureSeg === 'function') ensureSeg();
 }
 function median(cnt, n) { let acc = 0; const half = n / 2; for (let k = 0; k < cnt.length; k++) { if (acc + cnt[k] >= half) return k + (half - acc) / cnt[k]; acc += cnt[k]; } return 0; } // マスの数の中央値（マスの中は按分）
 function plateReset() { if (plX) plX.clearRect(0, 0, PW, PH); }
@@ -124,22 +155,35 @@ function plateReset() { if (plX) plX.clearRect(0, 0, PW, PH); }
 // ---------- 人物の切り出し（MediaPipe ImageSegmenter。ブラウザの中だけで動く） ----------
 const MP_VER = '1.2.2';
 const MP_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VER;
-const MODEL_CDN = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
-let seg = null, segErr = '', segFrom = '', segDelegate = '', personIdx = 1, segMs = 0, lastTs = 0;
-async function loadSeg() {
-  let base = MP_CDN, model = MODEL_CDN; segFrom = 'CDN（通信あり）';
-  if (location.protocol !== 'file:' && !QS.has('cdn')) { // 同じフォルダの vendor/ に部品があれば、そちらを使う（展示用。通信なし）
-    try { const a = await fetch('vendor/tasks-vision/vision_bundle.mjs', { method: 'HEAD' }), b = await fetch('vendor/models/selfie_segmenter_landscape.tflite', { method: 'HEAD' }); if (a.ok && b.ok) { base = new URL('vendor/tasks-vision', location.href).href; model = new URL('vendor/models/selfie_segmenter_landscape.tflite', location.href).href; segFrom = 'ローカル（通信なし）'; } } catch (e) { }
-  }
-  const mp = await import(base + '/vision_bundle.mjs');
-  const fileset = await mp.FilesetResolver.forVisionTasks(base + '/wasm');
-  let err = null;
-  for (const delegate of QS.has('cpu') ? ['CPU'] : ['GPU', 'CPU']) {
-    try { seg = await mp.ImageSegmenter.createFromOptions(fileset, { baseOptions: { modelAssetPath: model, delegate }, runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true }); segDelegate = delegate; break; } catch (e) { err = e; }
-  }
-  if (!seg) throw err || new Error('ImageSegmenter を作れなかった');
-  try { const L = seg.getLabels(); const i = L.findIndex(s => /person|human/i.test(s)); if (i >= 0) personIdx = i; } catch (e) { }
+const MODELS = { // 横長の映像には横長モデル（入力 256×144）、縦長（スマホの縦持ち）には正方形モデル（256×256）
+  landscape: ['selfie_segmenter_landscape.tflite', 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite'],
+  square: ['selfie_segmenter.tflite', 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite'],
+};
+let seg = null, segErr = '', segFrom = '', segDelegate = '', segKind = '', segBusy = false, personIdx = 1, segMs = 0, lastTs = 0, mpLib = null, mpFiles = null, mpLocal = false;
+const wantKind = () => vh > vw * 1.1 ? 'square' : 'landscape';
+const headOk = async u => { try { return (await fetch(u, { method: 'HEAD' })).ok; } catch (e) { return false; } };
+async function loadLib() { // 同じフォルダの vendor/ に部品があれば、そちらを使う（展示用。通信なし）
+  let base = MP_CDN; mpLocal = location.protocol !== 'file:' && !QS.has('cdn') && await headOk('vendor/tasks-vision/vision_bundle.mjs');
+  if (mpLocal) base = new URL('vendor/tasks-vision', location.href).href;
+  mpLib = await import(base + '/vision_bundle.mjs'); mpFiles = await mpLib.FilesetResolver.forVisionTasks(base + '/wasm');
 }
+async function loadSeg(kind) {
+  if (segBusy || kind === segKind) return; segBusy = true;
+  try {
+    if (!mpLib) await loadLib();
+    const [file, cdn] = MODELS[kind], local = mpLocal && await headOk('vendor/models/' + file), model = local ? new URL('vendor/models/' + file, location.href).href : cdn;
+    let made = null, err = null;
+    for (const delegate of QS.has('cpu') ? ['CPU'] : ['GPU', 'CPU']) {
+      try { made = await mpLib.ImageSegmenter.createFromOptions(mpFiles, { baseOptions: { modelAssetPath: model, delegate }, runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true }); segDelegate = delegate; break; } catch (e) { err = e; }
+    }
+    if (!made) throw err || new Error('ImageSegmenter を作れなかった');
+    try { const L = made.getLabels(); const i = L.findIndex(x => /person|human/i.test(x)); if (i >= 0) personIdx = i; } catch (e) { }
+    const old = seg; seg = made; segKind = kind; segErr = ''; segFrom = (local ? 'ローカル（通信なし）' : 'CDN（通信あり）') + '・' + (kind === 'square' ? '正方形' : '横長'); if (old) try { old.close(); } catch (e) { }
+    if (srcOK && MODE === 'cam' && !startOpen()) say('', 0);
+  } catch (e) { segErr = String(e && e.message || e); if (MODE !== 'test' && !startOpen()) say(segMsg(), 0); }
+  finally { segBusy = false; if (!segErr && wantKind() !== segKind) loadSeg(wantKind()); } // 読み込み中に画面の向きが変わっていたら、もう一度
+}
+function ensureSeg() { loadSeg(wantKind()); }
 function readMask(res, mask) { // mask＝書き込む先（合成の人影の時は捨てる）
   const ms = res.confidenceMasks; if (!ms || !ms.length) return;
   const m = ms.length > 1 ? ms[Math.min(personIdx, ms.length - 1)] : ms[0]; // マスクが1枚なら、それが人物の確からしさ（モデルカード：mask of person, [0,1]）
@@ -311,7 +355,7 @@ function stepBirds(dt) {
     if (Math.abs(tx - ptx) > .4) fdir = tx > ptx ? 1 : -1; ptx = tx;
     ax += (tx - ax) * Math.min(1, dt * 2.5); ay += (ty - ay) * Math.min(1, dt * 2.5);
   }
-  const leave = !present && gone > 1.2, SC = 1.7 * SZ, R = 125 * SZ; let my = 0, scared = 0;
+  const leave = !present && gone > 1.2, SC = 1.7 * SZ, R = 125 * SZ * CFG.swR, R2 = R * 1.8, SD = CFG.swD; let my = 0, scared = 0; // R の内側は強く、R2 までは外へ行くほど弱く払われる
   for (let i = birds.length - 1; i >= 0; i--) {
     const b = birds[i];
     if (leave && b.st !== 3) { b.st = 3; b.tg = -1; }
@@ -319,9 +363,16 @@ function stepBirds(dt) {
       { const lx = b.x < W / 2 ? -1 : 1; b.vx += (lx * 260 * SZ - b.vx) * dt * 1.6; b.vy += (-330 * SZ - b.vy) * dt * 1.6; b.x += b.vx * dt; b.y += b.vy * dt; if (b.y < -60 || b.x < -80 || b.x > W + 80) birds.splice(i, 1); continue; }
     }
     // 払う：速く動いた所の近くにいる鳥は、離れる向きに飛びのき、数秒してから戻る
-    if (b.scare < .4 && calm > .3 && present) for (const h of hots) { const dx = b.x - h.x, dy = b.y - h.y, d = Math.hypot(dx, dy); if (d < R) { const ux = d > 1 ? dx / d : Math.random() - .5, uy = d > 1 ? dy / d : -1, q = clamp((h.e * CFG.sens - 9) / 30, .25, 1) * calm; /* q＝動きの強さ。強いほど遠くへ、長く離れる */ b.scare = (1 + 2.6 * q) * (.8 + Math.random() * .4); b.st = 0; b.tg = -1; b.stun = 0; b.fx = clamp(b.x + ux * (90 + 190 * q) * SZ + (Math.random() - .5) * 90, -40, W + 40); b.fy = clamp(b.y + uy * (80 + 150 * q) * SZ - 70 * SZ * q, -40, H * .9); b.vx += ux * (160 + 300 * q) * SZ; b.vy += uy * (160 + 300 * q) * SZ - 60 * SZ * q; scared++; break; } }
+    if (b.scare < .4 && calm > .3 && present) for (const h of hots) {
+      const dx = b.x - h.x, dy = b.y - h.y, d = Math.hypot(dx, dy); if (d >= R2) continue;
+      const q = clamp((h.e * CFG.sens - 9) / 30, 0, 1) * calm * (d < R ? 1 : 1 - (d - R) / (R2 - R)); if (q < .15) continue; /* 弱い動き（体のゆれ）では離れない */ // q＝効き目。動きが強く、近いほど大きい。大きいほど遠くへ、長く離れる
+      const ux = d > 1 ? dx / d : Math.random() - .5, uy = d > 1 ? dy / d : -1;
+      b.scare = (1 + 2.6 * q) * (.8 + Math.random() * .4); b.st = 0; b.tg = -1; b.stun = 0;
+      b.fx = clamp(b.x + ux * (90 + 190 * q) * SZ * SD + (Math.random() - .5) * 90, -40, W + 40); b.fy = clamp(b.y + uy * (80 + 150 * q) * SZ * SD - 70 * SZ * q, -40, H * .9);
+      b.vx += ux * (160 + 300 * q) * SZ * Math.sqrt(SD); b.vy += uy * (160 + 300 * q) * SZ * Math.sqrt(SD) - 60 * SZ * q; scared++; break;
+    }
     let cap = 320 * SZ;
-    if (b.scare > 0) { b.scare -= dt; b.vx += ((b.fx - b.x) * 2.4 - b.vx) * dt * 3; b.vy += ((b.fy - b.y) * 2.4 - b.vy) * dt * 3; cap = 560 * SZ; if (b.scare <= 0) b.cd = .4 + Math.random() * .9; }
+    if (b.scare > 0) { b.scare -= dt; b.vx += ((b.fx - b.x) * 2.4 - b.vx) * dt * 3; b.vy += ((b.fy - b.y) * 2.4 - b.vy) * dt * 3; cap = 560 * SZ * Math.max(1, Math.sqrt(SD)); if (b.scare <= 0) b.cd = .4 + Math.random() * .9; }
     else if (b.stun > 0) { b.stun -= dt; b.vy += 200 * SZ * dt; }
     else if (b.st === 1) { // 降下：狙ったマスへ。マスが消えたら近くの別のマスへ狙い直す
       b.dv += dt; if (!inGrid(b.tg) || !solid(b.tg)) b.tg = pickTarget(b);
@@ -409,19 +460,19 @@ function drawBlocks() { // 人物を、明るさ7段の粗いマス（建物の�
   A.fillStyle = 'rgba(0,0,0,.5)'; A.fill(G);
   for (const i of fade) { A.globalAlpha = 1 - hole[i] / .35; A.fillStyle = GR[lev(i)]; A.fillRect((i % cols) * cs, ((i / cols) | 0) * cs, cs - 1, cs - 1); } A.globalAlpha = 1; // 戻る直前は、ふっと現れる
 }
-function drawPlants() { // B：欠けた所に苔と草が生え、戻る直前にしおれる。草木だけ色が付く（白黒の中で、自然だけが色を持つ）
-  const cs = CFG.cell, moss = new Path2D(), stem = new Path2D(), l1 = new Path2D(), l2 = new Path2D(), fl = new Path2D();
+function drawPlants() { // B：欠けた所に苔が付き、草が伸びて葉を広げ、花が咲く。戻る直前にしおれる。草木だけ色が付く（白黒の中で、自然だけが色を持つ）
+  const cs = CFG.cell, moss = new Path2D(), stem = new Path2D(), l1 = new Path2D(), l2 = new Path2D(), l3 = new Path2D(), fl = new Path2D(), fl2 = new Path2D();
   for (let i = 0; i < NC; i++) {
-    const h = hole[i]; if (h <= 0 || !occ[i]) continue; /* 人物が動いて体の外に出た欠けには生やさない */ const age = holeT[i] - h, g = Math.min(1, age / 1.1) * Math.min(1, h / .5); if (g < .05) continue;
-    const x = (i % cols) * cs, y = ((i / cols) | 0) * cs, hs = hash(i, 7), bx = x + cs * (.3 + hs * .4), by = y + cs, hh = cs * (.9 + hs * .6) * g, lean = (hash(i, 3) - .5) * cs * .7 * g, tx = bx + lean, ty = by - hh;
-    if (g > .3) moss.rect(x, y, cs, cs);
+    const h = hole[i]; if (h <= 0 || !occ[i]) continue; /* 人物が動いて体の外に出た欠けには生やさない */ const age = holeT[i] - h, g = Math.min(1, age / 1.3) * Math.min(1, h / .5); if (g < .05) continue;
+    const x = (i % cols) * cs, y = ((i / cols) | 0) * cs, hs = hash(i, 7), bx = x + cs * (.25 + hs * .5), by = y + cs, hh = cs * (1.3 + hs * 1.3) * g, lean = (hash(i, 3) - .5) * cs * 1.1 * g, tx = bx + lean, ty = by - hh; // 草は隣のマスの上まで伸びる（塔を覆う）
+    if (g > .25) moss.rect(x, y, cs, cs);
     stem.moveTo(bx, by); stem.quadraticCurveTo(bx, by - hh * .6, tx, ty);
-    const L = hs < .5 ? l1 : l2, s = cs * .26 * g;
-    for (const [u, sd] of [[.5, -1], [.8, 1]]) { const ex2 = bx + lean * u * u + sd * s * .9, ey2 = by - hh * u; L.moveTo(ex2 + s, ey2); L.ellipse(ex2, ey2, s, s * .45, sd * -.6, 0, 7); }
-    if (hash(i, 11) < .2 && age > 1.5) { fl.moveTo(tx + cs * .16 * g, ty); fl.arc(tx, ty, cs * .16 * g, 0, 7); }
+    const L = hs < .34 ? l1 : hs < .67 ? l2 : l3, sz = cs * .42 * g;
+    for (const [u, sd] of [[.35, -1], [.6, 1], [.85, -1]]) { const ex2 = bx + lean * u * u + sd * sz * .85, ey2 = by - hh * u; L.moveTo(ex2 + sz, ey2); L.ellipse(ex2, ey2, sz, sz * .42, sd * -.55, 0, 7); }
+    const fh = hash(i, 11); if (fh < .3 && age > 1.6) { const F = fh < .15 ? fl : fl2, r = cs * .2 * g; F.moveTo(tx + r, ty); F.arc(tx, ty, r, 0, 7); }
   }
-  c.fillStyle = 'rgba(30,52,30,.5)'; c.fill(moss); c.strokeStyle = '#3E7A3A'; c.lineWidth = Math.max(1, cs * .09); c.lineCap = 'round'; c.stroke(stem);
-  c.fillStyle = '#4E9A46'; c.fill(l1); c.fillStyle = '#86C261'; c.fill(l2); c.fillStyle = '#F1E9B8'; c.fill(fl);
+  c.fillStyle = 'rgba(34,60,32,.62)'; c.fill(moss); c.strokeStyle = '#3E7A3A'; c.lineWidth = Math.max(1, cs * .1); c.lineCap = 'round'; c.stroke(stem);
+  c.fillStyle = '#3F8A3C'; c.fill(l1); c.fillStyle = '#6FB04E'; c.fill(l2); c.fillStyle = '#A5CF6A'; c.fill(l3); c.fillStyle = '#F4EDC0'; c.fill(fl); c.fillStyle = '#E9A9B8'; c.fill(fl2);
 }
 // 古い映画の粒子と傷（film.js の filmGrain から。全画面用に、粒子は先に作った模様を毎コマずらして敷く）
 const GRAIN = [0, 1, 2].map(() => { const [cv, g] = mkc(256, 256), im = g.createImageData(256, 256), d = im.data; for (let i = 0; i < 65536; i++) { const w = Math.random() < .5, sp = Math.random() < .004; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = w ? 255 : 0; d[i * 4 + 3] = sp ? 90 + Math.random() * 90 : Math.random() * (w ? 16 : 26); } g.putImageData(im, 0, 0); return cv; });
@@ -446,7 +497,7 @@ function draw() {
     const ang = Math.sin(TT * 16 + b.ph) * .7, fold = b.st === 1 ? .5 : 0;
     const bs = b.s * CFG.bsz; birdS(b.x, b.y, bs * 1.24, ang, fold, b.rot, 'rgba(236,231,220,.5)', b.k); birdS(b.x, b.y, bs, ang, fold, b.rot, '#0B0B0C', b.k);
   }
-  if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
+  if (CFG.dbg) { c.strokeStyle = 'rgba(255,80,60,.9)'; c.lineWidth = 2; for (const h of hots) { c.beginPath(); c.arc(h.x, h.y, 125 * SZ * CFG.swR, 0, 7); c.stroke(); } c.strokeStyle = 'rgba(80,200,255,.9)'; c.beginPath(); c.arc(ax, ay, 8, 0, 7); c.stroke(); }
   if (CFG.grain) filmGrain();
 }
 
@@ -455,7 +506,7 @@ function tick(dt) {
   TT += dt; sinceSense += dt;
   if (MODE === 'test') { ST += dt; sAcc += dt; if (sAcc >= 1 / 30) { sAcc %= 1 / 30; synth(); sense(); } }
   else if (MODE === 'img') { sAcc += dt; if (srcOK && sAcc >= 1 / 30) { sAcc %= 1 / 30; sense(); } }
-  else if (srcOK && video.readyState >= 2 && video.currentTime !== lastVT) { lastVT = video.currentTime; sense(); }
+  else if (srcOK && video.readyState >= 2 && video.currentTime !== lastVT) { lastVT = video.currentTime; if (video.videoWidth && (video.videoWidth !== vw || video.videoHeight !== vh)) setSrc(video.videoWidth, video.videoHeight); /* スマホを回した時 */ sense(); }
   if (sinceSense > 1 && occN) { occ.fill(0); occF.fill(0); occN = 0; hots.length = 0; } // 映像が止まったら、人物はいないものとして扱う
   present = srcOK && occN >= Math.max(6, NC * .004);
   if (present) { gone = 0; T += dt; } else { gone += dt; if (gone > 1.2) T = Math.max(0, T - dt * 10); }
@@ -468,6 +519,7 @@ let lastVT = -1, last = 0, fT = 0, fcount = 0, FPS = 0, SFPS = 0, fMin = 1e9, fS
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(.05, (now - last) / 1000 || 0); last = now;
+  if (innerWidth !== W || innerHeight !== H) layout(); // 開いた瞬間に窓の大きさが 0 のことがある（その後 resize が来ない）。毎コマ見て合わせる
   tick(dt); draw(); fcount++;
   if (now - fT >= 1000) { FPS = fcount * 1000 / (now - fT); SFPS = segCount * 1000 / (now - fT); fcount = 0; segCount = 0; fT = now; if (TT > 3) { fMin = Math.min(fMin, FPS); fSum += FPS; fN++; } stat(); }
 }
@@ -486,9 +538,9 @@ let stream = null;
 function stopCam() { if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null; } video.srcObject = null; }
 async function startCam() {
   stopCam(); srcOK = false; camErr = '';
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camErr = 'このページではカメラを使えない（https か localhost で開く）'; say(camErr + '\nT キーで、合成の人影で試せる', 0); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camErr = 'このページではカメラを使えません（https か localhost で開く）'; say('', 0); showStart(camErr); return; }
   say('カメラの許可を待っています', 0);
-  const want = id => ({ audio: false, video: Object.assign({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : {}) });
+  const want = id => ({ audio: false, video: Object.assign({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : { facingMode: 'user' }) }); // 選んでいなければ、自分の側を向いたカメラ
   try {
     try { stream = await navigator.mediaDevices.getUserMedia(want(CFG.cam)); } catch (e) { if (!CFG.cam) throw e; stream = await navigator.mediaDevices.getUserMedia(want('')); }
     if (MODE !== 'cam') { stopCam(); return; }
@@ -496,7 +548,7 @@ async function startCam() {
     const tr = stream.getVideoTracks()[0]; if (tr) tr.onended = () => { if (MODE !== 'cam') return; srcOK = false; say('カメラが切れた。つなぎ直すと、また始まる', 0); setTimeout(() => { if (MODE === 'cam' && !srcOK) startCam(); }, 3000); }; // 展示中にカメラが抜けても、自分でつなぎ直す
     MODE = 'cam'; src = video; setSrc(video.videoWidth || 1280, video.videoHeight || 720); srcOK = true; say(seg ? '' : segErr ? segMsg() : '人物の切り出しを読み込んでいます', 0);
     listCams();
-  } catch (e) { camErr = (e && e.name) || String(e); say('カメラを使えない（' + camErr + '）\nブラウザのカメラの許可を確かめる。T キーで、合成の人影で試せる', 0); }
+  } catch (e) { camErr = (e && e.name) || String(e); say('', 0); showStart('カメラを使えません（' + camErr + '）\nブラウザのカメラの許可を確かめてください'); }
 }
 async function listCams() {
   try { const sel = $('c_cam'); if (!sel) return; const ds = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); const cur = stream && stream.getVideoTracks()[0] && stream.getVideoTracks()[0].getSettings().deviceId; sel.innerHTML = ''; ds.forEach((d, i) => { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || 'カメラ ' + (i + 1); if (d.deviceId === cur) o.selected = true; sel.appendChild(o); }); } catch (e) { }
@@ -511,7 +563,7 @@ function useImage(url) { // 確かめ用：?img=URL で静止画を入力にす�
   im.onload = () => { const w = Math.min(1280, im.naturalWidth), h = Math.round(w * im.naturalHeight / im.naturalWidth), [cv, g] = mkc(w, h); g.drawImage(im, 0, 0, w, h); src = cv; setSrc(w, h); srcOK = true; say('', 0); };
   im.onerror = () => say('静止画を読めない', 0); im.src = url;
 }
-const segMsg = () => '人物の切り出しを読めない（' + segErr + '）\n通信、または vendor/ の部品を確かめる';
+const segMsg = () => '人物の切り出しを読めません（' + segErr + '）\n通信を確かめてください';
 
 // ---------- 画面の文字と、隠しUI ----------
 let msgT = 0;
@@ -537,11 +589,16 @@ function buildUI() {
   }
   listCams();
 }
-function togglePanel() { const on = panel.classList.toggle('show'); document.body.classList.toggle('clean', !on); if (on) { buildUI(); stat(); } }
-function fullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => { }); }
+function togglePanel() { const on = panel.classList.toggle('show'); if (on) { buildUI(); stat(); } wake(); }
+let idleT = 0;
+function wake() { document.body.classList.remove('idle'); clearTimeout(idleT); idleT = setTimeout(() => { if (!panel.classList.contains('show') && !startOpen()) document.body.classList.add('idle'); }, 3000); } // 3秒さわらなければ、歯車とカーソルを隠す
+function fullscreen() { try { if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => { }); else say('この端末では全画面にできません', 2); } catch (e) { } }
 function setKey(k, v, text) { CFG[k] = v; saveCfg(); applyCfg(k); if (panel.classList.contains('show')) buildUI(); say(text, 1.8); }
+// 見比べ用：パネルを開かずに、キーで少しずつ変える
+const STEP = { ArrowUp: ['bsz', .2, .6, 4, '鳥の大きさ', '倍'], ArrowDown: ['bsz', -.2, .6, 4, '鳥の大きさ', '倍'], ArrowLeft: ['cell', -2, 6, 40, 'マスの大きさ', 'px'], ArrowRight: ['cell', 2, 6, 40, 'マスの大きさ', 'px'], '-': ['grow', -.5, .25, 6, '鳥の増え方', '倍'], '=': ['grow', .5, .25, 6, '鳥の増え方', '倍'], '+': ['grow', .5, .25, 6, '鳥の増え方', '倍'], '[': ['swD', -.3, .5, 3, '払われて離れる距離', '倍'], ']': ['swD', .3, .5, 3, '払われて離れる距離', '倍'], ';': ['swR', -.2, .5, 3, '払いが届く範囲', '倍'], "'": ['swR', .2, .5, 3, '払いが届く範囲', '倍'] };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return; audioInit();
+  if (e.target && /^(INPUT|SELECT)$/.test(e.target.tagName) && STEP[e.key]) return; // パネルのつまみを矢印で動かしている時は、そちらに任せる
   const k = e.key.toLowerCase();
   if (k === 'h') togglePanel();
   else if (k === 'f') fullscreen();
@@ -553,9 +610,12 @@ addEventListener('keydown', e => {
   else if (k === 'd') setKey('dbg', CFG.dbg ? 0 : 1, '動きの検出の表示：' + (CFG.dbg ? 'なし' : 'あり'));
   else if (k === 'r') { plateReset(); say('背景を撮り直す', 1.8); }
   else if (k === '0') { resetBirds(); say('鳥をやり直す', 1.8); }
-  else if (k === 't') { useTest(!CFG.test); if (panel.classList.contains('show')) buildUI(); }
+  else if (k === 't') { hideStart(); useTest(!CFG.test); if (panel.classList.contains('show')) buildUI(); }
+  else if (STEP[e.key]) { const [key, d, lo, hi, label, unit] = STEP[e.key], v = clamp(Math.round((CFG[key] + d) * 100) / 100, lo, hi); e.preventDefault(); setKey(key, v, label + '：' + v + unit); }
 });
-addEventListener('pointerdown', audioInit);
+for (const ev of ['pointerdown', 'click', 'touchend']) addEventListener(ev, audioInit);
+for (const ev of ['pointermove', 'pointerdown', 'keydown']) addEventListener(ev, wake);
+$('gear').onclick = togglePanel; $('bClose').onclick = togglePanel;
 addEventListener('resize', layout);
 if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechange', () => { listCams(); if (MODE === 'cam' && !srcOK) startCam(); });
 $('bPlate').onclick = () => { plateReset(); say('背景を撮り直す', 1.8); };
@@ -563,15 +623,25 @@ $('bBirds').onclick = () => { resetBirds(); say('鳥をやり直す', 1.8); };
 $('bFull').onclick = fullscreen;
 $('bDef').onclick = () => { const t = CFG.test, cam = CFG.cam; CFG = Object.assign({}, DEF, { test: t, cam }); saveCfg(); cvA.classList.toggle('bw', CFG.tone !== 'color'); if (MG) MG.gain.value = .7; layout(); buildUI(); };
 
-// ---------- 始める ----------
+// ---------- 始まりの画面と、始める ----------
+// 公開ページでは、いきなりカメラの許可を求めない。すでに許可されている時（展示の localhost など）と ?auto の時は、そのまま始める
+const startEl = $('start'), startOpen = () => startEl.classList.contains('show');
+function showStart(err) { $('sErr').textContent = err || ''; startEl.classList.add('show'); document.body.classList.remove('idle'); }
+function hideStart() { startEl.classList.remove('show'); wake(); }
+$('sCam').onclick = () => { hideStart(); audioInit(); if (CFG.test) useTest(false); else { MODE = 'cam'; startCam(); } };
+$('sDemo').onclick = () => { hideStart(); audioInit(); useTest(true); };
 cvA.classList.toggle('bw', CFG.tone !== 'color');
 setSrc(640, 360);
-if (QS.has('test')) CFG.test = 1;
-if (QS.get('img')) useImage(QS.get('img')); else if (CFG.test) useTest(true); else startCam();
-loadSeg().then(() => { if (srcOK && MODE === 'cam') say('', 0); }).catch(e => { segErr = String(e && e.message || e); if (MODE !== 'test') say(segMsg(), 0); });
+(async () => {
+  if (QS.get('img')) return useImage(QS.get('img'));
+  if (QS.has('test')) return useTest(true);
+  let ok = QS.has('auto'); try { const p = await navigator.permissions.query({ name: 'camera' }); if (p.state === 'granted') ok = true; } catch (e) { }
+  if (ok) startCam(); else showStart('');
+})();
+wake();
 requestAnimationFrame(loop);
 // 確かめ用：コンソールから状態を見たり、時間を進めたりできる（展示では使わない）
-window.__dbg = { get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
+window.__dbg = { useCanvas(cv) { MODE = 'img'; src = cv; setSrc(cv.width, cv.height); srcOK = true; hideStart(); }, get T() { return T; }, set T(v) { T = v; }, get ST() { return ST; }, set ST(v) { ST = v; }, birds, cfg: () => CFG, step(n, dt) { for (let i = 0; i < n; i++) tick(dt || 1 / 60); draw(); stat(); return window.__stats; }, stat: () => { stat(); return window.__stats; }, bench(n, dt, flush) { const [, fx] = mkc(1, 1, { willReadFrequently: true }); const t0 = performance.now(); for (let i = 0; i < n; i++) { tick(dt || 1 / 60); draw(); if (flush) { fx.drawImage(cvA, 0, 0, 1, 1, 0, 0, 1, 1); fx.drawImage(cvB, 0, 0, 1, 1, 0, 0, 1, 1); fx.getImageData(0, 0, 1, 1); } } return (performance.now() - t0) / n; }, /* flush＝GPU の描画が終わるのを毎コマ待つ（重めに出る） */ hots: () => hots, hole: () => hole, occ: () => occ, mask: () => mask, set: (k, v) => { CFG[k] = v; applyCfg(k); } };
 </script>
 </body>
 </html>
