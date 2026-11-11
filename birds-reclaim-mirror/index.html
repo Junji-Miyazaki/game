@@ -77,10 +77,12 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', delay: 5, mix: 0, mixA: .3, cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'B', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 2, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
+const DEF = { cam: '', delay: 5, mix: 0, mixA: .3, cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'A', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 3, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
 const SAVED = (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { return {}; } })();
 let CFG = Object.assign({}, DEF, SAVED);
-if ((SAVED.v | 0) < 2) { CFG.lag = 0; CFG.v = 2; } // 前に保存した設定（版 2 より前）でも、「鏡が遅れる瞬間」は切から始める（ユーザー 2026-11-11：途中の変な演出は入れない）
+if ((SAVED.v | 0) < 2) CFG.lag = 0; // 版 2 より前に保存した設定でも、「鏡が遅れる瞬間」は切から始める（ユーザー 2026-11-11：途中の変な演出は入れない）
+if ((SAVED.v | 0) < 3) CFG.fill = 'A'; // 版 3 より前に保存した設定でも、欠けた所は「部屋の背景」から始める（ユーザー 2026-11-11：既定を草ではなく背景に）。そのあと設定で選んだものは残る
+CFG.v = 3;
 const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } };
 const UI = [
   ['cam', 'カメラ', 'select'],
