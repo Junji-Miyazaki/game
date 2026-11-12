@@ -77,12 +77,13 @@ const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
 const LS = 'birdsreclaim.mirror.v1';
 const PHONE = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
 // 既定値は、ユーザーがスマホで試して決めた値（2026-11-11）。鳥の大きさや払いの範囲は画面の大きさに比例するので PC も同じ値。マスの大きさ（px）だけ、PC は 14 のまま
-const DEF = { cam: '', delay: 5, mix: 0, mixA: .3, cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'A', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 3, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
+const DEF = { cam: '', delay: 5, mix: 2, mixA: .3, cell: PHONE ? 12 : 14, grow: 4, max: 220, bsz: 2.4, regrow: 4, fill: 'A', tone: 'bw', flash: 1, title: 1, amb: 1, sPeck: 0, sWing: 0, lag: 0, depth: 1, soft: 1.6, v: 4, sens: 1.3, swR: .7, swD: 1.3, grain: 1, mirror: 1, sound: 1, thr: .8, rs: 0, dbg: 0, inv: 0, test: 0 };
 const SAVED = (() => { try { return JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { return {}; } })();
 let CFG = Object.assign({}, DEF, SAVED);
 if ((SAVED.v | 0) < 2) CFG.lag = 0; // 版 2 より前に保存した設定でも、「鏡が遅れる瞬間」は切から始める（ユーザー 2026-11-11：途中の変な演出は入れない）
 if ((SAVED.v | 0) < 3) CFG.fill = 'A'; // 版 3 より前に保存した設定でも、欠けた所は「部屋の背景」から始める（ユーザー 2026-11-11：既定を草ではなく背景に）。そのあと設定で選んだものは残る
-CFG.v = 3;
+if ((SAVED.v | 0) < 4) CFG.mix = 2; // 版 4 より前に保存した設定でも、現在と過去は「行き来する」から始める（ユーザー 2026-11-12：既定を「遅れるだけ」ではなく「行き来する」に）。そのあと設定で選んだものは残る
+CFG.v = 4;
 const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(Object.assign({}, CFG, { test: 0 }))); } catch (e) { } };
 const UI = [
   ['cam', 'カメラ', 'select'],
@@ -686,7 +687,7 @@ function draw() {
 // ---------- 進める ----------
 function tick(dt) {
   TT += dt; sinceSense += dt;
-  storeAcc += dt; if (present && intro <= 0) mixT += dt; else if (!present && gone > 3) mixT = 0;
+  storeAcc += dt; if (present && intro <= 0) mixT += dt; else if (!present && gone > (+CFG.delay || 0) + 1.5) mixT = 0; /* 遅れが閉じている時に人が去ると、時計を戻した瞬間に映像が数秒前へ飛び、去った人がもう一度映る。遅れの分より長く無人になってから戻す */
   if (MODE === 'test') { ST += dt; sAcc += dt; if (sAcc >= 1 / 30) { sAcc %= 1 / 30; synth(); if (!rN) { src = tv; dMask = null; sense(); } else if (storeAcc >= 1 / DFPS) { storeAcc %= 1 / DFPS; ringPush(tv, tsC); sense(); } } }
   else if (MODE === 'img') { sAcc += dt; if (srcOK && sAcc >= 1 / 30) { sAcc %= 1 / 30; sense(); } }
   else if (camOK && video.readyState >= 2 && video.currentTime !== lastVT) {
