@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>NIGHT WALL（仮）— 試作</title>
 <style>
-html,body{margin:0;height:100%;background:#05070d;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;color:#d8f4ff;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#05070d;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;color:#d8f4ff;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#fps{position:fixed;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));font-size:11px;color:#9cc7d6;pointer-events:none;text-shadow:0 0 3px #000}
 canvas{display:block;position:fixed;left:0;top:0}
 .hide{display:none!important}
 button{font:inherit;color:#e8fbff;background:#0d1a26;border:1px solid #2bbbd8;border-radius:10px;padding:8px 12px;min-height:40px}
@@ -68,6 +69,7 @@ button:disabled{opacity:.42;border-color:#35505c}
 <button id="bMute">♪ ON</button>
 <div id="panel" class="hide"></div>
 <div id="card" class="hide"></div>
+<div id="fps" class="hide"></div>
 <script src="rig.js"></script>
 <script src="guns.js"></script>
 <script>
@@ -851,8 +853,11 @@ function resize() {
   setupCamera();
 }
 window.addEventListener('resize', resize);
+window.addEventListener('contextmenu', e => e.preventDefault());   // 長押しのメニューを出さない
+const SHOW_FPS = /[?&]fps/.test(location.search);   // 末尾に ?fps を付けると速さを表示
+if (SHOW_FPS) $('fps').classList.remove('hide');
 
-let last = performance.now(), T = 0, hudT = 0, msS = 0;
+let last = performance.now(), T = 0, hudT = 0, msS = 0, fpsS = 60;
 function step(dt) {
   T += dt;
   if (scene === 'night') { updateWorld(dt, T); updateNight(dt); }
@@ -865,7 +870,8 @@ function frame(now) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (scene === 'shop') renderShop(T); else renderNight(T);
   msS += (performance.now() - t0 - msS) * 0.05;
-  if ((hudT -= dt) <= 0) { hudT = 0.1; if (scene === 'night') updateHud(); }
+  fpsS += (1 / Math.max(dt, 1e-3) - fpsS) * 0.05;
+  if ((hudT -= dt) <= 0) { hudT = 0.1; if (scene === 'night') updateHud(); if (SHOW_FPS) $('fps').textContent = `${fpsS.toFixed(0)} fps・描画 ${msS.toFixed(1)} ms`; }
   requestAnimationFrame(frame);
 }
 resize(); setScene('title');
