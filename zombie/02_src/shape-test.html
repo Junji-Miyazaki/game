@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>造形テスト — NIGHT RUN ×</title>
+<style>
+html,body{margin:0;height:100%;background:#05070d;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;color:#cfe;-webkit-user-select:none;user-select:none}
+canvas{display:block;position:fixed;left:0;top:0}
+#hud{position:fixed;left:8px;top:calc(6px + env(safe-area-inset-top));font-size:12px;line-height:1.45;pointer-events:none;text-shadow:0 0 4px #000;white-space:pre}
+#bar{position:fixed;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:linear-gradient(transparent,#05070dd9 40%)}
+#bar button{font:inherit;font-size:13px;color:#dff;background:#0d1a26;border:1px solid #1d6f86;border-radius:8px;padding:7px 10px;min-height:36px}
+#bar button.on{border-color:#5ff0ff;box-shadow:0 0 8px #2fd8ff88;color:#fff}
+#bar button.hide{display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="bar">
+  <button data-m="show">並べる</button>
+  <button data-m="def">防衛</button>
+  <button data-m="fps">一人称</button>
+  <button id="bYaw">向き:正面</button>
+  <button id="bState">動き:歩く</button>
+  <button id="bNum">数:中</button>
+  <button id="bShoot">自動射撃:ON</button>
+</div>
+<script>
+'use strict';
+// =====================================================================
+// 造形テスト（段階0）：人型を「3D骨格 → 傾けて投影 → 太線と円で描く」方式で作り、
+// 大・中・実寸、防衛（見下ろし）、一人称（近くで大きく）で見え方と速さを確かめる。
+// 画像素材なし。小さく映るものは先に16コマ描いておき貼る（キャッシュ）。
+// =====================================================================
+const TAU = Math.PI * 2;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, CDPR = 1;
+const CS = 36;   // キャッシュの解像度（css px / m）
+const FR = 16;   // 1周のコマ数
+
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+// ---------------------------------------------------------------------
+// 体の型。f=+1 はカメラの方を向く（ゾンビ）、f=-1 は背を向ける（兵士）
+// ---------------------------------------------------------------------
+const BASE_Z = {
+  kind: 'z', f: 1, lean: 0.3, leanBob: 0.04, legA: 0.38, knee: 0.55, drag: 1, dragKnee: 1, asym: 0.25,
+  legLen: 0.4, hipW: 0.1, spine: 0.5, shW: 0.19, torsoW: 0.25, headR: 0.135, headDrop: 0.25, headTilt: 0,
+  wobble: 1, sway: 0.06, armSpread: 0.04, arms: [[1.65, 0.1], [1.6, 0.1]], cycle: 1.4,
+  skin: '#86a173', shirt: '#4b5d4a', pants: '#2f3340', hair: '#262a20', fat: false
+};
+const ZV = [
+  {}, // 0 歩く：両腕を前へ
+  { drag: 0.3, dragKnee: 0.1, asym: 0.45, headTilt: 0.07, arms: [[1.7, 0.08], [0.2, 0.3]], sway: 0.1, cycle: 1.7,
+    skin: '#7f9a78', shirt: '#5a4636', pants: '#33302a', hair: '#1c1a16' },          // 1 右脚を引きずる・右腕だらり
+  { lean: 0.5, asym: 0.35, legA: 0.32, arms: [[1.85, 0.15], [1.4, 0.15]], headDrop: 0.45, headTilt: -0.05, cycle: 1.2,
+    skin: '#93a383', shirt: '#3d4a5c', pants: '#2b2b33', hair: '#3a3428' },          // 2 前のめり
+  { skin: '#9aab84', shirt: '#6a3a3a', pants: '#2a3038', arms: [[1.55, 0.12], [1.72, 0.1]], cycle: 1.5, hair: '#4a3a2a' },
+  { drag: 0.4, dragKnee: 0.15, asym: 0.4, headTilt: -0.08, arms: [[0.25, 0.3], [1.68, 0.1]], sway: 0.09, cycle: 1.8,
+    skin: '#8a9d6e', shirt: '#3e3e3e', pants: '#3a3328' },
+  { lean: 0.45, asym: 0.3, arms: [[1.78, 0.12], [1.7, 0.12]], headDrop: 0.4, cycle: 1.3,
+    skin: '#7c9482', shirt: '#4a5a3a', pants: '#252a30', hair: '#14161a' },
+].map(o => Object.assign({}, BASE_Z, o));
+const FAT = Object.assign({}, BASE_Z, {
+  fat: true, torsoW: 0.4, hipW: 0.15, legLen: 0.35, spine: 0.44, shW: 0.24, headR: 0.14, legA: 0.28, asym: 0.2,
+  sway: 0.1, armSpread: 0.2, arms: [[1.5, 0.1], [1.56, 0.1]], cycle: 1.9, lean: 0.22,
+  skin: '#8fa27a', shirt: '#6b6a55', pants: '#3a3a40'
+});
+const SOLDIER = {
+  kind: 's', f: -1, lean: 0.12, leanBob: 0.02, legA: 0.48, knee: 0.7, drag: 1, dragKnee: 1, asym: 0,
+  legLen: 0.44, hipW: 0.1, spine: 0.5, shW: 0.19, torsoW: 0.27, headR: 0.13, headDrop: 0.05, headTilt: 0,
+  wobble: 0, sway: 0.025, cycle: 0.62, suit: '#1c3048', armor: '#2f5878', glow: '#55f0ff'
+};
+const TYPES = [...ZV, FAT, SOLDIER];
+const T_FAT = 6, T_SOL = 7;
+
+// ---------------------------------------------------------------------
+// 姿勢：p は 0..1 の周期。state = walk | claw（壁を叩く）| aim（構えて撃つ）
+// ---------------------------------------------------------------------
+function pose(P, p, state) {
+  const f = P.f;
+  const q = p + P.asym * Math.sin(TAU * p) / TAU;   // 時間のゆがみ＝歩みの不ぞろい
+  const s = Math.sin(TAU * q), c = Math.cos(TAU * q);
+  let aL, aR, kL, kR, sway, lean;
+  if (state === 'walk') {
+    aL = P.legA * s; aR = -P.legA * P.drag * s;
+    kL = P.knee * Math.max(0, c) + 0.06; kR = P.knee * P.dragKnee * Math.max(0, -c) + 0.06;
+    sway = P.sway * Math.sin(TAU * q);
+    lean = P.lean + P.leanBob * Math.sin(TAU * q * 2);
+  } else {
+    aL = 0.12; aR = -0.18; kL = 0.18; kR = 0.12;
+    sway = P.sway * 0.6 * Math.sin(TAU * p);
+    lean = P.lean + (state === 'claw' ? 0.12 + 0.06 * Math.sin(TAU * p * 2) : 0);
+  }
+  const L = P.legLen;
+  const leg = (hip, a, k) => {
+    const kn = add(hip, [0, -Math.cos(a) * L, f * Math.sin(a) * L]);
+    const ft = add(kn, [0, -Math.cos(a - k) * L, f * Math.sin(a - k) * L]);
+    return [kn, ft];
+  };
+  const pel = [sway * 0.5, 0, 0];
+  const hipL = add(pel, [-P.hipW, 0, 0]), hipR = add(pel, [P.hipW, 0, 0]);
+  const [knL, ftL] = leg(hipL, aL, kL), [knR, ftR] = leg(hipR, aR, kR);
+  const chest = add(pel, [sway, Math.cos(lean) * P.spine, f * Math.sin(lean) * P.spine]);
+  const hunch = P.kind === 'z' ? f * 0.04 : 0;
+  const shL = add(chest, [-P.shW, -0.02, hunch]), shR = add(chest, [P.shW, -0.02, hunch]);
+  const hl = lean * 0.5 + P.headDrop;
+  const head = add(chest, [sway * 0.4 + P.headTilt + 0.025 * P.wobble * Math.sin(TAU * q * 2 + 1),
+    Math.cos(hl) * 0.21, f * Math.sin(hl) * 0.21]);
+  let elL, haL, elR, haR, gun = null;
+  if (P.kind === 'z') {
+    const arm = (sh, side, base, amp, ph) => {
+      const phi = state === 'claw' ? 1.85 + 0.55 * Math.sin(TAU * p + ph) : base + amp * Math.sin(TAU * q + ph);
+      const sp = side * P.armSpread;
+      const el = add(sh, [sp * 0.3, -Math.cos(phi) * 0.3, f * Math.sin(phi) * 0.3]);
+      const p2 = phi - (state === 'claw' ? 0.5 : 0.18);
+      const ha = add(el, [sp * 0.15, -Math.cos(p2) * 0.28, f * Math.sin(p2) * 0.28]);
+      return [el, ha];
+    };
+    [elL, haL] = arm(shL, -1, P.arms[0][0], P.arms[0][1], 0);
+    [elR, haR] = arm(shR, 1, P.arms[1][0], P.arms[1][1], Math.PI * 0.9);
+  } else {
+    const rec = state === 'aim' ? 0.035 * Math.max(0, Math.sin(TAU * p * 3)) : 0;
+    const gs = add(chest, [0.07, -0.15, f * (0.12 - rec)]);
+    const dir = [0, 0.04, f];
+    const ge = add(gs, mul(dir, 0.62));
+    haR = add(gs, mul(dir, 0.04)); haL = add(gs, mul(dir, 0.34));
+    const elbow = (sh, ha, side) => add(mix(sh, ha, 0.5), [side * 0.09, -0.09, 0]);
+    elL = elbow(shL, haL, -1); elR = elbow(shR, haR, 1);
+    gun = [gs, ge];
+  }
+  const up = [0, -Math.min(ftL[1], ftR[1]) + 0.04, 0];   // 低い方の足を地面へ
+  const J = { pel, hipL, hipR, knL, ftL, knR, ftR, chest, shL, shR, head, elL, haL, elR, haR };
+  for (const k in J) J[k] = add(J[k], up);
+  J.gun = gun ? [add(gun[0], up), add(gun[1], up)] : null;
+  return J;
+}
+
+// ---------------------------------------------------------------------
+// 描画：3D の関節を yaw で回し、tilt だけ見下ろして投影。奥から順に太線と円で描く
+// ---------------------------------------------------------------------
+function drawRig(g, P, p, S, ox, oy, yaw, tilt, state) {
+  const J = pose(P, p, state);
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt);
+  const pr = v => {
+    const x = v[0] * cy + v[2] * sy, z = -v[0] * sy + v[2] * cy, y = v[1];
+    return [ox + x * S, oy + (-y * ct + z * st) * S, z * ct + y * st];
+  };
+  const parts = [];
+  const seg = (a, b, w, col) => { const A = pr(a), B = pr(b); parts.push({ t: 0, A, B, w: w * S, col, d: (A[2] + B[2]) * 0.5 }); };
+  const dot = (cc, r, col, fx, bias = 0) => { const C = pr(cc); parts.push({ t: 1, C, r: r * S, col, d: C[2] + bias, fx }); };
+  const f = P.f, isZ = P.kind === 'z';
+  const ol = isZ ? '#0b0e09' : 'rgba(85,240,255,0.9)';
+  const olw = Math.max(0.8, S * 0.02);
+
+  // 影
+  g.fillStyle = 'rgba(0,0,0,0.42)';
+  g.beginPath(); g.ellipse(ox, oy, 0.36 * S, Math.max(0.03, 0.36 * st) * S, 0, 0, TAU); g.fill();
+
+  const legC = isZ ? P.pants : P.suit, footC = isZ ? '#17150f' : '#0a121b';
+  for (const [hp, kn, ft] of [[J.hipL, J.knL, J.ftL], [J.hipR, J.knR, J.ftR]]) {
+    seg(hp, kn, 0.15, legC);
+    if (isZ) { seg(kn, mix(kn, ft, 0.7), 0.125, legC); seg(mix(kn, ft, 0.66), ft, 0.085, P.skin); }   // 破れた裾から足首
+    else seg(kn, ft, 0.12, legC);
+    dot(ft, 0.065, footC);
+  }
+  seg(J.hipL, J.hipR, 0.17, legC);
+  const body = isZ ? P.shirt : P.armor, sleeve = isZ ? P.shirt : P.suit;
+  seg(add(J.pel, [0, 0.06, 0]), mix(J.pel, J.chest, 0.55), P.torsoW * 0.88, body);
+  seg(mix(J.pel, J.chest, 0.45), add(J.chest, [0, -0.04, 0]), P.torsoW * 1.12, body);
+  seg(J.shL, J.shR, isZ ? 0.13 : 0.15, body);
+  if (P.fat) dot(add(mix(J.pel, J.chest, 0.4), [0, 0, f * 0.1]), 0.2, body);
+  const hand = isZ ? P.skin : '#0d1620', fore = isZ ? P.skin : P.suit;
+  for (const [sh, el, ha] of [[J.shL, J.elL, J.haL], [J.shR, J.elR, J.haR]]) {
+    seg(sh, el, 0.1, sleeve); seg(el, ha, 0.085, fore);
+    dot(ha, isZ ? 0.058 : 0.05, hand, isZ && S > 70 ? () => {   // 近くでは指（かぎ爪）
+      const a = pr(el), b = pr(ha), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+      g.strokeStyle = P.skin; g.lineWidth = 0.022 * S; g.lineCap = 'round';
+      for (const k of [-1, 0, 1]) { const nx = -uy * k * 0.035 * S, ny = ux * k * 0.035 * S;
+        g.beginPath(); g.moveTo(b[0] + nx, b[1] + ny); g.lineTo(b[0] + nx + ux * 0.07 * S + nx * 0.4, b[1] + ny + uy * 0.07 * S + ny * 0.4); g.stroke(); }
+    } : null);
+  }
+  seg(J.chest, J.head, 0.08, isZ ? P.skin : P.suit);
+  if (isZ) {
+    // 胸の傷（正面から見えるときだけ前に出る）
+    { const w0 = add(mix(J.pel, J.chest, 0.5), [0.02, 0, f * (P.torsoW * 0.55)]); seg(w0, add(w0, [0.08, 0.1, 0]), 0.045, '#4a1616'); parts[parts.length - 1].d += 0.05; }
+    dot(add(J.head, [0, 0.045, -f * 0.04]), P.headR * 0.92, P.hair, null, -0.3);   // 髪（頭の後ろ上）
+    dot(J.head, P.headR, P.skin, () => {
+      const hc = pr(J.head), e1 = pr(add(J.head, [-0.045, 0.012, f * 0.1])), e2 = pr(add(J.head, [0.045, 0.012, f * 0.1]));
+      if (e1[2] <= hc[2]) return;
+      const m = pr(add(J.head, [0, -0.06, f * 0.115]));
+      g.fillStyle = '#140a0a'; g.beginPath(); g.ellipse(m[0], m[1], 0.045 * S, 0.026 * S, 0, 0, TAU); g.fill();       // 開いた口
+      if (S > 70) { g.fillStyle = '#c9c4a8'; g.fillRect(m[0] - 0.03 * S, m[1] - 0.026 * S, 0.06 * S, 0.01 * S); }     // 歯
+      g.fillStyle = 'rgba(20,20,12,0.75)';
+      g.beginPath(); g.arc(e1[0], e1[1], 0.036 * S, 0, TAU); g.arc(e2[0], e2[1], 0.036 * S, 0, TAU); g.fill();          // くぼんだ目
+      g.fillStyle = '#ff3a2a'; g.shadowColor = '#ff2a1a'; g.shadowBlur = Math.max(2, S * 0.08);
+      g.beginPath(); g.arc(e1[0], e1[1], Math.max(0.8, 0.018 * S), 0, TAU); g.arc(e2[0], e2[1], Math.max(0.8, 0.018 * S), 0, TAU); g.fill();
+      g.shadowBlur = 0;
+    });
+  } else {
+    const bp = add(mix(J.pel, J.chest, 0.62), [0, 0, -f * 0.15]);
+    dot(bp, 0.12, '#14243a', () => {
+      const led = pr(add(bp, [0, 0.03, -f * 0.12]));
+      if (led[2] <= pr(bp)[2]) return;
+      g.fillStyle = P.glow; g.shadowColor = P.glow; g.shadowBlur = Math.max(2, S * 0.1);
+      g.beginPath(); g.arc(led[0], led[1], Math.max(0.8, 0.025 * S), 0, TAU); g.fill(); g.shadowBlur = 0;
+    });
+    seg(J.gun[0], J.gun[1], 0.055, '#0a0e13');
+    dot(J.gun[1], 0.022, P.glow);
+    dot(J.head, P.headR, '#22405f', () => {
+      const hc = pr(J.head), v1 = pr(add(J.head, [-0.07, 0, f * 0.1])), v2 = pr(add(J.head, [0.07, 0, f * 0.1]));
+      g.strokeStyle = P.glow; g.shadowColor = P.glow; g.shadowBlur = Math.max(2, S * 0.08);
+      g.lineWidth = Math.max(1, 0.035 * S);
+      g.beginPath();
+      if (v1[2] > hc[2]) { g.moveTo(v1[0], v1[1]); g.lineTo(v2[0], v2[1]); }        // 正面：バイザー
+      else { const b = pr(add(J.head, [0, 0.04, -f * 0.12])); g.moveTo(b[0], b[1] - 0.04 * S); g.lineTo(b[0], b[1] + 0.03 * S); } // 背面：ライン
+      g.stroke(); g.shadowBlur = 0;
+    });
+  }
+
+  parts.sort((a, b) => a.d - b.d);
+  g.lineCap = 'round';
+  for (const q of parts) {
+    if (q.t === 0) {
+      g.beginPath(); g.moveTo(q.A[0], q.A[1]); g.lineTo(q.B[0], q.B[1]);
+      g.strokeStyle = ol; g.lineWidth = q.w + olw * 2; g.stroke();
+      g.strokeStyle = q.col; g.lineWidth = q.w; g.stroke();
+      if (q.w > 3) { // 立体感のための弱いハイライト
+        const o = q.w * 0.18;
+        g.beginPath(); g.moveTo(q.A[0] - o, q.A[1] - o); g.lineTo(q.B[0] - o, q.B[1] - o);
+        g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = q.w * 0.35; g.stroke();
+      }
+    } else {
+      g.fillStyle = ol; g.beginPath(); g.arc(q.C[0], q.C[1], q.r + olw, 0, TAU); g.fill();
+      g.fillStyle = q.col; g.beginPath(); g.arc(q.C[0], q.C[1], q.r, 0, TAU); g.fill();
+      if (q.r > 3) {
+        g.fillStyle = 'rgba(255,255,255,0.10)'; g.beginPath(); g.arc(q.C[0] - q.r * 0.3, q.C[1] - q.r * 0.3, q.r * 0.45, 0, TAU); g.fill();
+      }
+    }
+    if (q.fx) q.fx();
+  }
+}
+
+// ---------------------------------------------------------------------
+// キャッシュ：型×傾き×動き ごとに16コマを先に描いておく
+// ---------------------------------------------------------------------
+const caches = {};
+let cacheFrames = 0;
+function getSet(ti, tilt, state) {
+  const key = ti + '|' + tilt + '|' + state;
+  if (caches[key]) return caches[key];
+  const P = TYPES[ti], S = CS * CDPR;
+  const w = Math.ceil(1.7 * S), h = Math.ceil(2.6 * S), ax = w / 2, ay = h - 0.45 * S;
+  const frames = [];
+  for (let i = 0; i < FR; i++) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    drawRig(c.getContext('2d'), P, i / FR, S, ax, ay, 0, tilt, state);
+    frames.push(c);
+  }
+  cacheFrames += FR;
+  return (caches[key] = { frames, w, h, ax, ay, S });
+}
+function blit(set, ph, sx, sy, sc, mir) {
+  const fr = set.frames[Math.floor(ph * FR) % FR], k = sc / set.S;
+  const dw = set.w * k, dh = set.h * k, x = sx - set.ax * k, y = sy - set.ay * k;
+  if (mir) { ctx.setTransform(-DPR, 0, 0, DPR, 2 * sx * DPR, 0); ctx.drawImage(fr, x, y, dw, dh); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+  else ctx.drawImage(fr, x, y, dw, dh);
+}
+function live(P, ph, sx, sy, sc, mir, tilt, state) {
+  if (mir) ctx.setTransform(-DPR, 0, 0, DPR, 2 * sx * DPR, 0);
+  drawRig(ctx, P, ph, sc, sx, sy, 0, tilt, state);
+  if (mir) ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+// ---------------------------------------------------------------------
+// カメラ（道の上の x, z を画面へ）。防衛＝高い位置から、一人称＝目の高さ
+// ---------------------------------------------------------------------
+let mode = 'show';
+const TILT = { def: 0.62, fps: 0.1 };
+const cam = {};
+function setupCamera() {
+  cam.cx = W / 2;
+  if (mode === 'fps') { cam.hy = 0.42 * H; cam.F = 0.75 * H; cam.Hc = 1.6; cam.fogA = 22; cam.fogB = 60; cam.zw = 1.9; }
+  else {
+    const scw = Math.min(0.85 * W / 14, 0.05 * H);
+    cam.zw = 20; cam.F = scw * cam.zw; cam.hy = 0.15 * H; cam.Hc = (0.64 * H - cam.hy) / scw; cam.fogA = 50; cam.fogB = 100;
+  }
+}
+const scr = (x, z) => [cam.cx + cam.F * x / z, cam.hy + cam.F * cam.Hc / z, cam.F / z];
+const fogAt = z => clamp((cam.fogB - z) / (cam.fogB - cam.fogA), 0, 1);
+
+const city = [];
+for (let i = 0, x = 0; x < 1; i++) { const w = rnd(0.02, 0.07); city.push({ x, w, h: rnd(0.01, 0.07), lit: Math.random() }); x += w + rnd(0, 0.01); }
+
+function quad(x0, x1, z0, z1, col) {
+  const a = scr(x0, z0), b = scr(x1, z0), c = scr(x1, z1), d = scr(x0, z1);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.fill();
+}
+function drawWorld() {
+  const sky = ctx.createLinearGradient(0, 0, 0, cam.hy);
+  sky.addColorStop(0, '#02030a'); sky.addColorStop(1, '#161c38');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, cam.hy + 1);
+  for (const b of city) {
+    const bh = b.h * H;
+    ctx.fillStyle = '#0a0d1b'; ctx.fillRect(b.x * W, cam.hy - bh, b.w * W, bh);
+    if (b.lit > 0.6) { ctx.fillStyle = 'rgba(255,190,90,0.35)'; ctx.fillRect(b.x * W + b.w * W * 0.3, cam.hy - bh * 0.7, 2, 2); }
+  }
+  ctx.fillStyle = '#07090f'; ctx.fillRect(0, cam.hy, W, H - cam.hy);
+  const zn = mode === 'fps' ? 0.3 : 3, zf = 400;
+  quad(-7, 7, zn, zf, '#10141d');
+  for (let z = mode === 'fps' ? 1 : 4; z < 120; z += 6) {
+    const a = 1 - z / 120;
+    quad(-2.4, -2.25, z, z + 3, `rgba(120,140,170,${0.35 * a})`);
+    quad(2.25, 2.4, z, z + 3, `rgba(120,140,170,${0.35 * a})`);
+  }
+  quad(-7.1, -6.9, zn, zf, 'rgba(255,60,200,0.55)');
+  quad(6.9, 7.1, zn, zf, 'rgba(60,230,255,0.55)');
+  for (let z = mode === 'fps' ? 2 : 6; z < 110; z += 6) {
+    const a = fogAt(z);
+    for (const x of [-7.7, 7.7]) {
+      const [sx, gy, sc] = scr(x, z);
+      ctx.strokeStyle = `rgba(80,230,255,${0.6 * a})`; ctx.lineWidth = Math.max(1, 0.08 * sc);
+      ctx.beginPath(); ctx.moveTo(sx, gy); ctx.lineTo(sx, gy - 0.9 * sc); ctx.stroke();
+    }
+  }
+  const hz = ctx.createLinearGradient(0, cam.hy, 0, cam.hy + 0.1 * H);
+  hz.addColorStop(0, 'rgba(22,28,56,0.9)'); hz.addColorStop(1, 'rgba(22,28,56,0)');
+  ctx.fillStyle = hz; ctx.fillRect(0, cam.hy, W, 0.1 * H);
+}
+
+// ---------------------------------------------------------------------
+// 群れ
+// ---------------------------------------------------------------------
+const PRESET = { def: [[120, 10], [300, 20], [600, 32]], fps: [[12], [30], [60]] };
+const PRESET_NAME = ['少', '中', '多'];
+let presetIdx = 1, autoShoot = true;
+let zs = [], sols = [], particles = [], tracers = [], flashes = [];
+let wallHP = 100, clawing = 0, shotAcc = 0, kills = 0, aim = null, gunKick = 0, liveCount = 0;
+const SPEEDMUL = { def: 1.3, fps: 1.0 };
+
+function newZ(z) {
+  const ti = Math.random() < 0.12 ? T_FAT : (Math.random() * 6) | 0;
+  return {
+    ti, z, x: mode === 'fps' ? rnd(-3.2, 3.2) : rnd(-6.3, 6.3), ph: Math.random(),
+    spd: rnd(0.8, 1.2) * (ti === T_FAT ? 0.75 : 1), mir: Math.random() < 0.5, state: 'walk',
+    stopZ: mode === 'fps' ? rnd(1.7, 2.6) : cam.zw + 0.7 + rnd(0, 2.8), wob: Math.random() * TAU, gen: 0
+  };
+}
+function respawn(o) { const g = o.gen + 1; Object.assign(o, newZ(mode === 'fps' ? rnd(35, 58) : rnd(60, 88))); o.gen = g; }
+function initEntities() {
+  particles = []; tracers = []; flashes = []; wallHP = 100; kills = 0; aim = null;
+  if (mode === 'def') {
+    const [nz, ns] = PRESET.def[presetIdx];
+    zs = Array.from({ length: nz }, () => newZ(rnd(cam.zw + 6, 88)));
+    sols = [];
+    const per = 16;
+    for (let i = 0; i < ns; i++) {
+      const row = (i / per) | 0, col = i % per, n = Math.min(per, ns - row * per);
+      const sp = Math.min(0.8, 12.6 / Math.max(1, n - 1));
+      sols.push({ x: (col - (n - 1) / 2) * sp + (row % 2) * 0.4, z: cam.zw - 0.8 - row * 1.3, ph: Math.random() });
+    }
+  } else if (mode === 'fps') {
+    zs = Array.from({ length: PRESET.fps[presetIdx][0] }, () => newZ(rnd(6, 58)));
+    sols = [];
+  } else { zs = []; sols = []; }
+}
+
+function burst(o) {
+  const P = TYPES[o.ti];
+  const cols = [P.skin, P.skin, P.skin, P.skin, P.shirt, P.shirt, P.shirt, P.shirt, P.pants, P.pants, P.pants, '#a8ff6a', '#a8ff6a', '#a8ff6a'];
+  for (const col of cols) {
+    particles.push({ x: o.x + rnd(-0.2, 0.2), z: o.z + rnd(-0.2, 0.2), h: rnd(0.3, 1.6), vx: rnd(-2.5, 2.5), vz: rnd(-2.5, 2.5),
+      vh: rnd(1.5, 5), life: rnd(0.5, 0.95), max: 0.95, col, s: rnd(0.06, 0.14), glow: col === '#a8ff6a' });
+  }
+  particles.push({ x: o.x, z: o.z, h: 1.65, vx: rnd(-1, 1), vz: rnd(-1, 1), vh: rnd(3, 5), life: 0.9, max: 0.9, col: P.skin, s: 0.2, glow: false });
+  flashes.push({ x: o.x, z: o.z, t: 0 });
+  if (particles.length > 1800) particles.splice(0, particles.length - 1800);
+  kills++;
+}
+function kill(o) { burst(o); respawn(o); }
+
+function update(dt, T) {
+  if (mode === 'show') return;
+  const sm = SPEEDMUL[mode];
+  clawing = 0;
+  for (const o of zs) {
+    const P = TYPES[o.ti];
+    if (o.state === 'walk') {
+      o.z -= 1.2 / P.cycle * o.spd * sm * dt;
+      o.ph = (o.ph + dt / P.cycle * o.spd * sm) % 1;
+      o.x += Math.sin(T * 0.7 + o.wob) * 0.15 * dt;
+      if (o.z <= o.stopZ) { o.z = o.stopZ; o.state = 'claw'; o.ph = Math.random(); }
+    } else { o.ph = (o.ph + dt / 0.9) % 1; clawing++; }
+  }
+  if (mode === 'def') {
+    wallHP -= clawing * dt * 0.4; if (wallHP <= 0) wallHP = 100;
+    for (const s of sols) s.ph = (s.ph + dt) % 1;
+    if (autoShoot && sols.length) {
+      shotAcc += dt * Math.min(36, sols.length * 1.6);
+      while (shotAcc >= 1) {
+        shotAcc -= 1;
+        let best = null;
+        for (let k = 0; k < 8; k++) { const c = zs[(Math.random() * zs.length) | 0]; if (c.z < cam.zw + 45 && (!best || c.z < best.z)) best = c; }
+        if (!best) continue;
+        const s = sols[(Math.random() * sols.length) | 0];
+        tracers.push({ sx: s.x, sz: s.z, tx: best.x, tz: best.z, o: best, gen: best.gen, t: 0, dur: 0.09 });
+      }
+    }
+  }
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    const tr = tracers[i]; tr.t += dt;
+    if (tr.t >= tr.dur) { if (tr.o.gen === tr.gen) kill(tr.o); tracers.splice(i, 1); }
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt; if (p.life <= 0) { particles.splice(i, 1); continue; }
+    if (p.h > 0) { p.vh -= 12 * dt; p.x += p.vx * dt; p.z += p.vz * dt; p.h += p.vh * dt; if (p.h < 0) p.h = 0; }
+  }
+  for (let i = flashes.length - 1; i >= 0; i--) { flashes[i].t += dt; if (flashes[i].t > 0.3) flashes.splice(i, 1); }
+  gunKick = Math.max(0, gunKick - dt * 6);
+}
+
+function drawZombie(o) {
+  const [sx, gy, sc] = scr(o.x, o.z);
+  if (sx < -2 * sc || sx > W + 2 * sc || o.z < 0.5) return;
+  const P = TYPES[o.ti];
+  ctx.globalAlpha = fogAt(o.z);
+  if (ctx.globalAlpha <= 0.02) { ctx.globalAlpha = 1; return; }
+  if (mode === 'fps' && sc * 1.8 > 150) { live(P, o.ph, sx, gy, sc, o.mir, TILT.fps, o.state); liveCount++; }
+  else blit(getSet(o.ti, TILT[mode], o.state), o.ph, sx, gy, sc, o.mir);
+  ctx.globalAlpha = 1;
+}
+function drawSoldier(s) {
+  const [sx, gy, sc] = scr(s.x, s.z);
+  blit(getSet(T_SOL, TILT.def, autoShoot ? 'aim' : 'walk'), autoShoot ? s.ph : 0, sx, gy, sc, false);
+}
+function drawWall() {
+  const z = cam.zw, hgt = 1.1;
+  const [lx, ly, lsc] = scr(-7.4, z), [rx] = scr(7.4, z);
+  const top = ly - hgt * lsc;
+  ctx.fillStyle = '#121a27'; ctx.fillRect(lx, top, rx - lx, ly - top);
+  ctx.strokeStyle = 'rgba(80,230,255,0.25)'; ctx.lineWidth = 1;
+  for (let x = -7.4; x <= 7.4; x += 1.85) { const [px] = scr(x, z); ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, ly); ctx.stroke(); }
+  const dmg = 1 - wallHP / 100;
+  ctx.strokeStyle = `rgb(${80 + 175 * dmg | 0},${230 - 170 * dmg | 0},${255 - 200 * dmg | 0})`;
+  ctx.lineWidth = Math.max(2, 0.12 * lsc); ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(lx, top); ctx.lineTo(rx, top); ctx.stroke(); ctx.shadowBlur = 0;
+}
+function drawFx() {
+  for (const tr of tracers) {
+    const k = tr.t / tr.dur;
+    const [ax, ay, asc] = scr(tr.sx, tr.sz), [bx, by, bsc] = scr(tr.tx, tr.tz);
+    const y0 = ay - 1.25 * asc, y1 = by - 1.2 * bsc;
+    const k0 = Math.max(0, k - 0.35);
+    ctx.strokeStyle = 'rgba(255,240,160,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax + (bx - ax) * k0, y0 + (y1 - y0) * k0); ctx.lineTo(ax + (bx - ax) * k, y0 + (y1 - y0) * k); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fl of flashes) {
+    const [sx, gy, sc] = scr(fl.x, fl.z); const k = fl.t / 0.3;
+    ctx.strokeStyle = `rgba(170,255,120,${0.8 * (1 - k)})`; ctx.lineWidth = Math.max(1, 0.06 * sc);
+    ctx.beginPath(); ctx.arc(sx, gy - 1.0 * sc, (0.2 + 0.9 * k) * sc, 0, TAU); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  for (const p of particles) {
+    const [sx, gy, sc] = scr(p.x, p.z); if (p.z < 0.4) continue;
+    const s = Math.max(1.2, p.s * sc);
+    ctx.globalAlpha = clamp(p.life / p.max * 1.5, 0, 1);
+    if (p.glow) ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = p.col; ctx.fillRect(sx - s / 2, gy - p.h * sc - s / 2, s, s);
+    if (p.glow) ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.globalAlpha = 1;
+}
+function drawFpsOverlay(T) {
+  if (clawing > 0) {
+    const a = 0.22 + 0.12 * Math.sin(T * 8);
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, `rgba(255,20,20,${a})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  if (aim) {
+    ctx.strokeStyle = 'rgba(120,250,255,0.9)'; ctx.lineWidth = 1.5;
+    const r = 12; ctx.beginPath();
+    ctx.moveTo(aim[0] - r, aim[1]); ctx.lineTo(aim[0] - 4, aim[1]); ctx.moveTo(aim[0] + 4, aim[1]); ctx.lineTo(aim[0] + r, aim[1]);
+    ctx.moveTo(aim[0], aim[1] - r); ctx.lineTo(aim[0], aim[1] - 4); ctx.moveTo(aim[0], aim[1] + 4); ctx.lineTo(aim[0], aim[1] + r);
+    ctx.stroke();
+  }
+  const k = gunKick, bx = W * 0.6, by = H - 70 + k * 14;
+  ctx.fillStyle = '#0b1520'; ctx.strokeStyle = 'rgba(85,240,255,0.9)'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx, by + 10); ctx.lineTo(bx + W * 0.16, by - 42); ctx.lineTo(bx + W * 0.24, by - 36); ctx.lineTo(bx + W * 0.2, by + 4);
+  ctx.lineTo(W + 10, by + 40); ctx.lineTo(W + 10, H + 10); ctx.lineTo(bx + 20, H + 10); ctx.closePath(); ctx.fill(); ctx.stroke();
+  if (k > 0.6) {
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,230,140,0.8)';
+    ctx.beginPath(); ctx.arc(bx + W * 0.2, by - 44, 14 * k, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+// ---------------------------------------------------------------------
+// 並べる：大・中は毎フレーム描く、実寸はゲームと同じキャッシュ
+// ---------------------------------------------------------------------
+const SHOW = [0, 1, 2, T_FAT, T_SOL], SHOW_L = ['歩く', '引きずる', '前のめり', '太った', '兵士'];
+const YAWS = [[0, '正面'], [0.75, '斜め'], [Math.PI / 2, '横'], [null, '回転']];
+let yawIdx = 0, showState = 'walk';
+function drawShow(T) {
+  ctx.fillStyle = '#070a12'; ctx.fillRect(0, 0, W, H);
+  const top = 46, bottom = H - 70, avail = bottom - top, colW = W / SHOW.length;
+  const yaw = YAWS[yawIdx][0] === null ? T * 0.8 : YAWS[yawIdx][0];
+  const rows = [0.5, 0.3, 0.2];
+  let y = top;
+  rows.forEach((r, ri) => {
+    const rh = avail * r, gy = y + rh * 0.9;
+    const charH = ri === 0 ? Math.min(rh * 0.82, colW * 2.3) : ri === 1 ? Math.min(rh * 0.8, colW * 1.3) : 24;
+    const S = charH / 1.85;
+    ctx.strokeStyle = '#1b2436'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    ctx.fillStyle = '#5d7a8c'; ctx.font = '11px system-ui'; ctx.textAlign = 'left';
+    ctx.fillText(['大（毎フレーム描画）', '中', '実寸（ゲームと同じ貼り付け）'][ri], 6, y + 12);
+    SHOW.forEach((ti, i) => {
+      const P = TYPES[ti], sx = colW * (i + 0.5);
+      const st = P.kind === 'z' ? showState : (showState === 'claw' ? 'aim' : 'walk');
+      const cyc = st === 'claw' ? 0.9 : st === 'aim' ? 1 : P.cycle;
+      const ph = ((T / cyc) + i * 0.17) % 1;
+      if (ri === 2 && YAWS[yawIdx][0] === 0) blit(getSet(ti, TILT.def, st), ph, sx, gy, S, false);
+      else drawRig(ctx, P, ph, S, sx, gy, yaw, ri === 2 ? TILT.def : 0.35, st);
+      if (ri === 0) { ctx.fillStyle = '#8fb6c8'; ctx.textAlign = 'center'; ctx.fillText(SHOW_L[i], sx, gy + 14); }
+    });
+    y += rh;
+  });
+}
+
+// ---------------------------------------------------------------------
+function render(T) {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  liveCount = 0;
+  if (mode === 'show') { drawShow(T); return; }
+  drawWorld();
+  const list = zs.slice();
+  if (mode === 'def') { for (const s of sols) list.push(s); list.push({ z: cam.zw, wall: true }); }
+  list.sort((a, b) => b.z - a.z);
+  for (const e of list) {
+    if (e.wall) drawWall();
+    else if (e.ti !== undefined) drawZombie(e);
+    else drawSoldier(e);
+  }
+  drawFx();
+  if (mode === 'fps') drawFpsOverlay(T);
+  if (mode === 'def') {
+    const bw = Math.min(220, W * 0.5), bx = (W - bw) / 2, by = 10;
+    ctx.fillStyle = '#0a1018'; ctx.fillRect(bx, by, bw, 8);
+    ctx.fillStyle = wallHP > 40 ? '#4ff0ff' : '#ff5a4a'; ctx.fillRect(bx, by, bw * wallHP / 100, 8);
+    ctx.strokeStyle = '#2a4a5a'; ctx.strokeRect(bx, by, bw, 8);
+  }
+}
+
+function hitTest(px, py) {
+  let best = null;
+  for (const o of zs) {
+    const [sx, gy, sc] = scr(o.x, o.z);
+    if (fogAt(o.z) < 0.1) continue;
+    if (px > sx - 0.38 * sc && px < sx + 0.38 * sc && py > gy - 1.95 * sc && py < gy && (!best || o.z < best.z)) best = o;
+  }
+  return best;
+}
+cv.addEventListener('pointerdown', e => {
+  if (mode === 'show') return;
+  if (mode === 'fps') { aim = [e.clientX, e.clientY]; gunKick = 1; }
+  const o = hitTest(e.clientX, e.clientY);
+  if (o) kill(o);
+});
+
+// ---------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+function setMode(m) {
+  mode = m; setupCamera(); initEntities();
+  document.querySelectorAll('[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  $('bYaw').classList.toggle('hide', m !== 'show');
+  $('bState').classList.toggle('hide', m !== 'show');
+  $('bNum').classList.toggle('hide', m === 'show');
+  $('bShoot').classList.toggle('hide', m !== 'def');
+  if (m !== 'show') { const t = TILT[m]; for (let i = 0; i < 7; i++) { getSet(i, t, 'walk'); getSet(i, t, 'claw'); } if (m === 'def') { getSet(T_SOL, t, 'aim'); getSet(T_SOL, t, 'walk'); } }
+  else for (const ti of SHOW) { getSet(ti, TILT.def, 'walk'); getSet(ti, TILT.def, ti === T_SOL ? 'aim' : 'claw'); }
+}
+document.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.m)));
+$('bYaw').onclick = () => { yawIdx = (yawIdx + 1) % YAWS.length; $('bYaw').textContent = '向き:' + YAWS[yawIdx][1]; };
+$('bState').onclick = () => { showState = showState === 'walk' ? 'claw' : 'walk'; $('bState').textContent = '動き:' + (showState === 'walk' ? '歩く' : '襲う'); };
+$('bNum').onclick = () => { presetIdx = (presetIdx + 1) % 3; $('bNum').textContent = '数:' + PRESET_NAME[presetIdx]; initEntities(); };
+$('bShoot').onclick = () => { autoShoot = !autoShoot; $('bShoot').textContent = '自動射撃:' + (autoShoot ? 'ON' : 'OFF'); };
+
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1); CDPR = Math.min(DPR, 1.5);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  setupCamera();
+}
+window.addEventListener('resize', resize);
+
+let last = performance.now(), T = 0, fpsS = 60, msS = 0, hudT = 0;
+const stats = { fps: 0, ms: 0 };
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
+  const t0 = performance.now();
+  update(dt, T); render(T);
+  const ms = performance.now() - t0;
+  fpsS += (1 / Math.max(dt, 1e-3) - fpsS) * 0.05; msS += (ms - msS) * 0.05;
+  stats.fps = fpsS; stats.ms = msS;
+  if ((hudT -= dt) <= 0) {
+    hudT = 0.25;
+    const L = [`${fpsS.toFixed(0)} fps   描画 ${msS.toFixed(1)} ms`];
+    if (mode === 'def') L.push(`ゾンビ ${zs.length}  兵士 ${sols.length}  撃破 ${kills}  壁際 ${clawing}`, 'ゾンビをタップ → 弾ける');
+    if (mode === 'fps') L.push(`ゾンビ ${zs.length}  撃破 ${kills}  近景(毎フレーム描画) ${liveCount}`, 'タップで撃つ');
+    if (mode === 'show') L.push('大・中＝毎フレーム描画 / 実寸＝貼り付け');
+    L.push(`キャッシュ ${cacheFrames} 枚`);
+    $('hud').textContent = L.join('\n');
+  }
+  requestAnimationFrame(frame);
+}
+resize(); setMode('show');
+window.__zt = { stats, get mode() { return mode; }, setMode, get counts() { return { zs: zs.length, sols: sols.length, kills, cacheFrames, liveCount, particles: particles.length }; } };
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
