@@ -31,26 +31,27 @@ const Rig = (() => {
     skin: '#86a173', shirt: '#4b5d4a', pants: '#2f3340', hair: '#262a20', shoe: '#1b1914',
     outfit: 'tee', hairType: 'short', legStyle: 'torn', fat: false,
     armLen: 1, elbow: -0.18, jawK: 0.74, eye: '#ff3a2a',
+    hem: false, ribs: false, stump: '', deadEye: '', scar: false, blot: [[-0.42, 0.42, 0.24], [0.5, -0.25, 0.17]],
     stains: [[0, 0.86, 0.045], [0.035, 0.7, 0.03], [-0.04, 0.76, 0.024]]
   };
   const ZV = [
-    {},                                                                                         // 0 Tシャツ：両腕を前へ
+    { hem: true, scar: true },                                                                  // 0 Tシャツ：両腕を前へ
     { drag: 0.3, dragKnee: 0.1, asym: 0.45, headTilt: 0.07, arms: [[1.7, 0.08], [0.2, 0.3]], sway: 0.1, cycle: 1.7,
-      skin: '#7f9a78', shirt: '#b4b2a0', pants: '#2a2c33', hair: '#1c1a16', outfit: 'office', tie: '#5a1f24', legStyle: 'full',
+      skin: '#7f9a78', shirt: '#b4b2a0', pants: '#2a2c33', hair: '#1c1a16', outfit: 'office', tie: '#5a1f24', legStyle: 'full', deadEye: 'L',
       stains: [[0.05, 0.6, 0.05], [0.09, 0.45, 0.03], [0.0, 0.82, 0.03]] },                      // 1 会社員：右脚を引きずる・右腕だらり
     { lean: 0.5, asym: 0.35, legA: 0.32, arms: [[1.85, 0.15], [1.4, 0.15]], headDrop: 0.45, headTilt: -0.05, cycle: 1.2,
       skin: '#93a383', shirt: '#3d4a5c', pants: '#2b2b33', outfit: 'hoodie', hairType: 'bald', legStyle: 'full' },   // 2 パーカー：前のめり
     { skin: '#9aab84', shirt: '#6a3a4a', pants: '#6a3a4a', arms: [[1.55, 0.12], [1.72, 0.1]], cycle: 1.5, hair: '#3a2a1a',
-      outfit: 'dress', hairType: 'long', legStyle: 'bare', shoe: null, shW: 0.17, torsoW: 0.22, bulk: 0.9 },         // 3 ワンピース・長い髪
+      outfit: 'dress', hairType: 'long', legStyle: 'bare', shoe: null, shW: 0.17, torsoW: 0.22, bulk: 0.9, deadEye: 'R', blot: [[0.4, 0.5, 0.2]] },         // 3 ワンピース・長い髪
     { drag: 0.4, dragKnee: 0.15, asym: 0.4, headTilt: -0.08, arms: [[0.25, 0.3], [1.68, 0.1]], sway: 0.09, cycle: 1.8,
-      skin: '#8a9d6e', shirt: '#3e3e3e', pants: '#3a3328', outfit: 'vest', vest: '#c8742a', hairType: 'bald', legStyle: 'full', shoe: '#2a2018' }, // 4 作業員
+      skin: '#8a9d6e', shirt: '#3e3e3e', pants: '#3a3328', outfit: 'vest', vest: '#c8742a', hairType: 'bald', legStyle: 'full', shoe: '#2a2018', stump: 'L', scar: true }, // 4 作業員（左腕は途中から無い）
     { lean: 0.45, asym: 0.3, arms: [[1.78, 0.12], [1.7, 0.12]], headDrop: 0.4, cycle: 1.3,
-      skin: '#7c9482', shirt: '#8a8672', pants: '#252a30', hair: '#14161a', outfit: 'tank', hairType: 'messy', shoe: null }, // 5 タンクトップ・裸足
+      skin: '#7c9482', shirt: '#8a8672', pants: '#252a30', hair: '#14161a', outfit: 'tank', hairType: 'messy', shoe: null, ribs: true, hem: true }, // 5 タンクトップ・裸足・あばらが見える
   ].map(o => Object.assign({}, BASE_Z, o));
   const FAT = Object.assign({}, BASE_Z, {
     fat: true, torsoW: 0.4, hipW: 0.15, legLen: 0.35, spine: 0.44, shW: 0.24, headR: 0.13, legA: 0.28, asym: 0.2, bulk: 1.3,
     sway: 0.1, armSpread: 0.2, arms: [[1.5, 0.1], [1.56, 0.1]], cycle: 1.9, lean: 0.22,
-    skin: '#8fa27a', shirt: '#6b6a55', pants: '#3a3a40', hairType: 'bald', legStyle: 'shorts', shoe: null,
+    skin: '#8fa27a', shirt: '#6b6a55', pants: '#3a3a40', hairType: 'bald', legStyle: 'shorts', shoe: null, hem: true, blot: [[-0.3, 0.5, 0.3], [0.45, 0.1, 0.22], [0.1, -0.5, 0.15]],
     stains: [[0, 0.9, 0.05], [0.06, 0.72, 0.035]]
   });
   const SOLDIER = {
@@ -75,7 +76,7 @@ const Rig = (() => {
   const BOSS = Object.assign({}, BASE_Z, {
     boss: true, legLen: 0.36, hipW: 0.14, spine: 0.56, shW: 0.3, torsoW: 0.46, headR: 0.118, bulk: 1.55, armLen: 1.35, armSpread: 0.25,
     arms: [[1.2, 0.15], [1.3, 0.15]], lean: 0.42, cycle: 2.2, legA: 0.3, asym: 0.15, sway: 0.12, jawK: 0.92, eye: '#ffd23a',
-    skin: '#8a7494', shirt: '#3a2a3a', pants: '#2a2630', outfit: 'tank', hairType: 'bald', legStyle: 'torn', shoe: null,
+    skin: '#8a7494', shirt: '#3a2a3a', pants: '#2a2630', outfit: 'tank', hairType: 'bald', legStyle: 'torn', shoe: null, ribs: true, scar: true,
     stains: [[0, 0.88, 0.07], [0.1, 0.66, 0.05], [-0.09, 0.72, 0.04]]
   });
   const TYPES = [...ZV, FAT, SOLDIER, RUNNER, SHIELD, BOSS];
@@ -202,6 +203,24 @@ const Rig = (() => {
           g.beginPath(); g.ellipse(c[0], c[1], sr * S, sr * 1.7 * S, sx * 4, 0, TAU); g.fill();        // 縦に垂れた形・外線なし
         }
       }, 0.06);
+      if (P.hem) fx(fwd(J.pel, front), () => {   // 破れた裾（ぎざぎざに垂れる）
+        if (pr(fwd(J.pel, front))[2] <= pr(J.pel)[2]) return;
+        const n = 5, w = front * 0.86;
+        g.beginPath();
+        for (let i = 0; i <= n; i++) {
+          const x = -w + i * (2 * w / n), a = pr(fwd(add(J.pel, [x, 0.09, 0]), front * 0.8));
+          i ? g.lineTo(a[0], a[1]) : g.moveTo(a[0], a[1]);
+          if (i < n) { const t = pr(fwd(add(J.pel, [x + w / n * (0.7 + (i % 3) * 0.3), 0.02 - ((i * 7) % 3) * 0.035, 0]), front * 0.74)); g.lineTo(t[0], t[1]); }
+        }
+        g.closePath(); g.fillStyle = shade(torsoCol, -0.12); g.fill(); g.strokeStyle = ol; g.lineWidth = olw; g.stroke();
+      }, 0.03);
+      if (P.ribs) fx(fwd(mid, front + 0.02), () => {   // 裂けた脇腹からあばら
+        if (pr(fwd(J.chest, front))[2] <= pr(J.chest)[2]) return;
+        const c = pr(fwd(add(mix(J.pel, J.chest, 0.6), [front * 0.55, 0, 0]), front * 0.88));
+        g.fillStyle = '#4a1010'; g.beginPath(); g.ellipse(c[0], c[1], 0.075 * S * B, 0.1 * S * B, 0.2, 0, TAU); g.fill();
+        g.strokeStyle = '#d8d2b8'; g.lineWidth = Math.max(1, 0.016 * S); g.lineCap = 'round';
+        for (let i = -1; i <= 1; i++) { g.beginPath(); g.arc(c[0] - 0.02 * S, c[1] + i * 0.045 * S * B, 0.055 * S * B, -0.9, 0.9); g.stroke(); }
+      }, 0.07);
       if (P.shield) {   // 盾（上に のぞき窓）
         const c = fwd(add(mid, [-0.05, 0.02, 0]), front + 0.24);
         plate([[-0.27, 0.38, -0.05], [0.27, 0.38, -0.05], [0.27, -0.42, 0.05], [-0.27, -0.42, 0.05]].map(o => add(c, [o[0], o[1], f * o[2]])), '#3a4a66', 0.05);
@@ -215,10 +234,15 @@ const Rig = (() => {
       // 腕
       const longSleeve = P.outfit === 'office' || P.outfit === 'hoodie' || P.outfit === 'vest';
       const bare = P.outfit === 'tank';
-      for (const [sh, el, ha] of [[J.shL, J.elL, J.haL], [J.shR, J.elR, J.haR]]) {
+      for (const [sh, el, ha, tag] of [[J.shL, J.elL, J.haL, 'L'], [J.shR, J.elR, J.haR, 'R']]) {
         if (bare) seg(sh, el, 0.05 * B, 0.043 * B, skin);
         else if (longSleeve) seg(sh, el, 0.056 * B, 0.048 * B, P.shirt);
         else { seg(sh, mix(sh, el, 0.6), 0.058 * B, 0.054 * B, P.shirt); seg(mix(sh, el, 0.5), el, 0.047 * B, 0.043 * B, skin); }
+        if (P.stump === tag) {   // ひじの先で千切れている：骨がのぞく
+          const e2 = mix(el, ha, 0.4);
+          seg(el, e2, 0.045 * B, 0.04 * B, skin); dot(e2, 0.042, '#5c1414', 0.005); dot(mix(el, ha, 0.47), 0.02, '#d8d2b8', 0.01);
+          continue;
+        }
         if (longSleeve) { seg(el, mix(el, ha, 0.8), 0.048 * B, 0.042 * B, P.shirt); seg(mix(el, ha, 0.72), ha, 0.036, 0.033, skin); }
         else seg(el, ha, 0.043 * B, 0.034 * B, skin);
         dot(ha, 0.046, skin);
@@ -245,6 +269,7 @@ const Rig = (() => {
         seg(add(H, [0, 0, -f * 0.08]), add(J.chest, [0, -0.12, -f * 0.13]), 0.105, 0.07, P.hair, -0.3);
         for (const sd of [-1, 1]) seg(add(H, [sd * R * 0.9, 0.02, 0]), add(J.chest, [sd * P.shW * 0.8, -0.08, f * 0.03]), 0.035, 0.022, P.hair, 0.02);
       }
+      if (P.hairType === 'short') for (const o of [[-0.5, 0.62], [0, 0.72], [0.5, 0.62]]) dot(add(H, [o[0] * R, o[1] * R, f * R * 0.62]), R * 0.36, P.hair, 0.015);   // 生えぎわ
       for (const sd of [-1, 1]) dot(add(H, [sd * R * 0.96, -0.01, 0]), 0.03, skin);                 // 耳
       const jaw = add(H, [0, -R * 0.62, f * R * 0.3]);
       dot(H, R, skin); dot(jaw, R * P.jawK, skin);
@@ -254,29 +279,55 @@ const Rig = (() => {
       fx(fwd(H, R), () => {
         const hc = pr(H), nose = pr(fwd(H, R * 1.02));
         if (nose[2] <= hc[2]) return;
-        const e1 = pr(add(H, [-R * 0.4, R * 0.1, f * R * 0.88])), e2 = pr(add(H, [R * 0.4, R * 0.1, f * R * 0.88]));
-        const ex = R * 0.27 * S, big = S > 60;
-        g.fillStyle = 'rgba(18,20,10,0.8)';                                                         // くぼんだ目
+        const big = S > 60, u = R * S;
+        const eye = sd => pr(add(H, [sd * R * 0.4, R * 0.1, f * R * 0.88]));
+        const e1 = eye(-1), e2 = eye(1), ex = 0.27 * u;
+        // 肌のしみ
+        g.fillStyle = shade(skin, -0.32); g.globalAlpha *= 0.4;
+        for (const [bx, by, br] of P.blot) { const c = pr(add(H, [bx * R, by * R, f * R * 0.8])); g.beginPath(); g.ellipse(c[0], c[1], br * u, br * u * 0.8, bx, 0, TAU); g.fill(); }
+        g.globalAlpha /= 0.4;
+        if (big) {   // こけた頬と眉の影
+          g.fillStyle = shade(skin, -0.3); g.globalAlpha *= 0.55;
+          for (const sd of [-1, 1]) { const c = pr(add(H, [sd * R * 0.56, -R * 0.36, f * R * 0.66])); g.beginPath(); g.ellipse(c[0], c[1], 0.17 * u, 0.3 * u, sd * 0.3, 0, TAU); g.fill(); }
+          g.beginPath(); g.ellipse((e1[0] + e2[0]) / 2, (e1[1] + e2[1]) / 2 - ex * 0.9, 0.82 * u, 0.2 * u, 0, 0, TAU); g.fill();
+          g.globalAlpha /= 0.55;
+        }
+        // 目：くぼみ → 白目 → 光る瞳（片目が白くにごった個体もいる）
+        g.fillStyle = 'rgba(14,16,8,0.85)';
         g.beginPath(); g.ellipse(e1[0], e1[1], ex, ex * 0.85, 0, 0, TAU); g.ellipse(e2[0], e2[1], ex, ex * 0.85, 0, 0, TAU); g.fill();
-        g.fillStyle = P.eye; g.shadowColor = P.eye; g.shadowBlur = Math.max(2, S * 0.07);
-        g.beginPath(); g.arc(e1[0], e1[1], Math.max(0.8, R * 0.13 * S), 0, TAU); g.arc(e2[0], e2[1], Math.max(0.8, R * 0.13 * S), 0, TAU); g.fill();
-        g.shadowBlur = 0;
-        if (big) {                                                                                  // 眉（内側へ下がる）と鼻
-          g.strokeStyle = shade(skin, -0.55); g.lineWidth = R * 0.11 * S; g.lineCap = 'round';
-          g.beginPath(); g.moveTo(e1[0] - ex * 1.2, e1[1] - ex * 1.25); g.lineTo(e1[0] + ex * 0.9, e1[1] - ex * 0.7);
-          g.moveTo(e2[0] + ex * 1.2, e2[1] - ex * 1.25); g.lineTo(e2[0] - ex * 0.9, e2[1] - ex * 0.7); g.stroke();
-          g.fillStyle = shade(skin, -0.5);
-          g.beginPath(); g.arc(nose[0] - R * 0.08 * S, nose[1] + R * 0.12 * S, R * 0.05 * S, 0, TAU); g.arc(nose[0] + R * 0.08 * S, nose[1] + R * 0.12 * S, R * 0.05 * S, 0, TAU); g.fill();
+        for (const [e, tag] of [[e1, 'L'], [e2, 'R']]) {
+          const dead = P.deadEye === tag;
+          if (big) { g.fillStyle = dead ? '#cfd3c4' : '#b9b48e'; g.beginPath(); g.ellipse(e[0], e[1] + ex * 0.08, ex * 0.72, ex * 0.52, 0, 0, TAU); g.fill(); }
+          if (dead) continue;
+          g.fillStyle = P.eye; g.shadowColor = P.eye; g.shadowBlur = Math.max(2, S * 0.07);
+          g.beginPath(); g.arc(e[0], e[1] + ex * 0.08, Math.max(0.8, (big ? 0.11 : 0.13) * u), 0, TAU); g.fill(); g.shadowBlur = 0;
+          if (big) { g.fillStyle = '#1a0606'; g.beginPath(); g.arc(e[0], e[1] + ex * 0.08, 0.035 * u, 0, TAU); g.fill(); }
         }
-        const m = pr(add(jaw, [0, -R * 0.05, f * R * 0.72])), mw = R * 0.42 * S, mh = R * (0.12 + 0.2 * J.mouth) * S;
-        g.fillStyle = '#140808'; g.beginPath(); g.ellipse(m[0], m[1], mw, mh, 0, 0, TAU); g.fill();   // 開いた口
+        if (big) {   // 眉（内側へ下がる）・鼻・傷あと
+          g.strokeStyle = shade(skin, -0.6); g.lineWidth = 0.12 * u; g.lineCap = 'round';
+          g.beginPath(); g.moveTo(e1[0] - ex * 1.25, e1[1] - ex * 1.3); g.lineTo(e1[0] + ex * 0.95, e1[1] - ex * 0.7);
+          g.moveTo(e2[0] + ex * 1.25, e2[1] - ex * 1.3); g.lineTo(e2[0] - ex * 0.95, e2[1] - ex * 0.7); g.stroke();
+          g.lineWidth = 0.05 * u; g.beginPath(); g.moveTo(nose[0], nose[1] - 0.18 * u); g.lineTo(nose[0] - 0.02 * u, nose[1] + 0.08 * u); g.stroke();
+          g.fillStyle = shade(skin, -0.55);
+          g.beginPath(); g.arc(nose[0] - 0.08 * u, nose[1] + 0.13 * u, 0.05 * u, 0, TAU); g.arc(nose[0] + 0.08 * u, nose[1] + 0.13 * u, 0.05 * u, 0, TAU); g.fill();
+          if (P.scar) {
+            const a = pr(add(H, [-R * 0.55, R * 0.72, f * R * 0.6])), b = pr(add(H, [R * 0.15, R * 0.42, f * R * 0.86]));
+            g.strokeStyle = '#5c1414'; g.lineWidth = 0.05 * u; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+            g.lineWidth = 0.025 * u; for (let i = 1; i < 4; i++) { const x = a[0] + (b[0] - a[0]) * i / 4, y = a[1] + (b[1] - a[1]) * i / 4; g.beginPath(); g.moveTo(x - 0.05 * u, y - 0.07 * u); g.lineTo(x + 0.05 * u, y + 0.07 * u); g.stroke(); }
+          }
+        }
+        // 口：歯ぐき → 口の中 → 歯 → 垂れた血
+        const m = pr(add(jaw, [0, -R * 0.05, f * R * 0.72])), mw = 0.42 * u, mh = (0.12 + 0.2 * J.mouth) * u;
+        if (big) { g.fillStyle = '#5a2020'; g.beginPath(); g.ellipse(m[0], m[1], mw * 1.14, mh * 1.22, 0, 0, TAU); g.fill(); }
+        g.fillStyle = '#140808'; g.beginPath(); g.ellipse(m[0], m[1], mw, mh, 0, 0, TAU); g.fill();
         if (big) {
-          g.fillStyle = '#cfcaae';                                                                    // 歯
-          for (let i = -2; i <= 2; i++) g.fillRect(m[0] + i * mw * 0.3 - mw * 0.11, m[1] - mh * 0.95, mw * 0.22, mh * 0.5);
-          for (let i = -1; i <= 1; i++) g.fillRect(m[0] + i * mw * 0.34 - mw * 0.1, m[1] + mh * 0.5, mw * 0.2, mh * 0.42);
+          g.fillStyle = '#cfcaae';
+          for (let i = -2; i <= 2; i++) { const tw = mw * (i % 2 ? 0.2 : 0.24); g.fillRect(m[0] + i * mw * 0.3 - tw / 2, m[1] - mh * 0.96, tw, mh * (i % 2 ? 0.42 : 0.56)); }
+          for (let i = -1; i <= 1; i++) g.fillRect(m[0] + i * mw * 0.36 - mw * 0.1, m[1] + mh * 0.5, mw * 0.2, mh * 0.44);
         }
-        g.fillStyle = '#5c1414';                                                                      // 口元の血
-        g.beginPath(); g.ellipse(m[0] + mw * 0.55, m[1] + mh * 0.9, mw * 0.28, mh * 0.9 + R * 0.1 * S, 0.2, 0, TAU); g.fill();
+        g.fillStyle = '#5c1414';
+        g.beginPath(); g.ellipse(m[0] + mw * 0.55, m[1] + mh * 0.9, mw * 0.28, mh * 0.9 + 0.1 * u, 0.2, 0, TAU); g.fill();
+        if (big) { g.beginPath(); g.ellipse(m[0] - mw * 0.4, m[1] + mh * 1.1, mw * 0.12, mh * 0.5 + 0.06 * u, -0.1, 0, TAU); g.fill(); }
       }, 0.05);
     }
 

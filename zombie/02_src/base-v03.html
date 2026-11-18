@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>NIGHT WALL（仮）— 試作</title>
+<style>
+html,body{margin:0;height:100%;background:#05070d;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;color:#d8f4ff;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+canvas{display:block;position:fixed;left:0;top:0}
+.hide{display:none!important}
+#hud{position:fixed;left:0;right:0;top:0;padding:calc(8px + env(safe-area-inset-top)) 12px 6px;pointer-events:none;text-shadow:0 0 4px #000,0 1px 2px #000;font-size:14px}
+#hud .line{display:flex;justify-content:space-between;align-items:baseline}
+#hud b{font-size:17px}
+#wallWrap{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:12px}
+#wallBar{flex:1;height:9px;background:#0a1018;border:1px solid #2a4a5a;border-radius:5px;overflow:hidden}
+#wallFill{display:block;height:100%;width:100%;background:#4ff0ff;transition:width .15s}
+#ammoBox{position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:10px;font-size:20px;text-shadow:0 0 4px #000}
+button{font:inherit;color:#e8fbff;background:#0d1a26;border:1px solid #2bbbd8;border-radius:10px;padding:8px 12px;min-height:40px}
+button:disabled{opacity:.42;border-color:#35505c}
+#bReload{font-size:14px}
+#bMute{position:fixed;right:10px;top:calc(58px + env(safe-area-inset-top));min-height:32px;padding:4px 10px;font-size:13px;opacity:.8}
+#panel{position:fixed;left:0;right:0;bottom:0;top:44%;background:linear-gradient(#0a1220f2,#05070df7);border-top:1px solid #2bbbd8;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;overflow:auto}
+#panel .head{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}
+#panel .head b{font-size:20px;color:#ffe27a}
+#panel .head small{font-size:11px;color:#8fb0bd}
+#panel .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#panel .grid button{text-align:left;display:flex;flex-direction:column;gap:1px;padding:7px 10px;min-height:58px}
+#panel .grid button b{font-size:14px}
+#panel .grid button small{font-size:11px;color:#9cc7d6}
+#panel .grid button i{font-style:normal;font-size:13px;color:#ffe27a}
+#bAway{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border-color:#e0a84a;background:#221a0c}
+#bAway small{font-size:11px;color:#d9c08a}
+#awayBar{position:fixed;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:10px}
+#awayBar button{min-width:110px;font-size:15px}
+#bGo{font-size:18px;min-height:52px;background:#123a2a;border-color:#58ffb0;box-shadow:0 0 12px #2fd88a55;margin-top:auto}
+#card{position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);width:min(84vw,340px);background:#08101cf0;border:1px solid #2bbbd8;border-radius:14px;padding:18px 18px 16px;text-align:center;box-shadow:0 0 30px #000}
+#card h1{margin:0 0 4px;font-size:26px;letter-spacing:.06em;color:#fff;text-shadow:0 0 12px #3fe0ff}
+#card p{margin:8px 0;font-size:13px;line-height:1.6;color:#b9dbe6}
+#card .big{font-size:17px;color:#ffe27a}
+#card button{display:block;width:100%;margin-top:10px;font-size:16px}
+#card button.sub{font-size:12px;min-height:32px;opacity:.7;border-color:#35505c}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hide">
+  <div class="line"><span><b id="hWave"></b>　<span id="hLeft"></span></span><span>◎ <b id="hCoin">0</b></span></div>
+  <div id="wallWrap"><span>壁</span><div id="wallBar"><i id="wallFill"></i></div><span id="wallNum"></span></div>
+</div>
+<div id="ammoBox" class="hide"><b id="hAmmo"></b><button id="bReload">装填</button></div>
+<div id="awayBar" class="hide"><button id="bSpeed">速さ ×1</button><button id="bRetreat">撤退する</button></div>
+<button id="bMute">♪ ON</button>
+<div id="panel" class="hide"></div>
+<div id="card" class="hide"></div>
+<script src="rig.js"></script>
+<script>
+'use strict';
+// =====================================================================
+// NIGHT WALL（仮）試作 v0.3 — 防衛＋育成の合わせ技
+//   夜：壁の上から一人称で撃つ（頭は3倍）。仲間は自動で撃つ。壁が壊れたら負け。
+//   朝：見下ろしの拠点画面で、稼いだコインを武器・壁・仲間に使う。
+//   ゾンビの種類：太った（硬い）、ランナー（速い）、盾持ち（胴は効かない）。5の倍数の WAVE は BOSS の夜。
+//   留守番：朝に1回、仲間だけで弱い波を守らせる（見下ろし・自動・早送り）。稼ぎは少なく、壁が傷む。
+// 人型の描画は rig.js。保存は localStorage。
+// =====================================================================
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const $ = id => document.getElementById(id);
+const cv = $('c'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+const { TYPES, T_FAT, T_SOL, T_RUN, T_SHD, T_BOSS } = Rig;
+const TILT_N = 0.1, TILT_D = 0.62, CT = Math.cos(TILT_N), ST = Math.sin(TILT_N);
+
+// ---------------------------------------------------------------------
+// 保存と強さ
+// ---------------------------------------------------------------------
+const SAVE_KEY = 'nightwall_proto_v1';
+const DEF = { wave: 1, coins: 0, lv: { dmg: 0, rate: 0, mag: 0, wall: 0, ally: 0 }, wallHP: 100, best: 1, mute: false, awayDone: 0 };
+function load() {
+  try { const o = JSON.parse(localStorage.getItem(SAVE_KEY)); if (o && o.lv) return Object.assign({}, DEF, o, { lv: Object.assign({}, DEF.lv, o.lv) }); } catch (e) {}
+  return JSON.parse(JSON.stringify(DEF));
+}
+let sv = load();
+const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); } catch (e) {} };
+
+const rateAt = l => 5 * Math.pow(1.15, l);
+const UP = {
+  dmg:  { name: '威力', base: 40, g: 1.6,  max: 12, desc: l => `1発 ${1 + l} → ${2 + l}` },
+  rate: { name: '連射', base: 30, g: 1.5,  max: 10, desc: l => `毎秒 ${rateAt(l).toFixed(1)} → ${rateAt(l + 1).toFixed(1)}発` },
+  mag:  { name: '弾倉', base: 25, g: 1.4,  max: 12, desc: l => `${20 + 5 * l} → ${25 + 5 * l}発` },
+  wall: { name: '壁',   base: 35, g: 1.5,  max: 12, desc: l => `耐久 ${100 + 50 * l} → ${150 + 50 * l}` },
+  ally: { name: '仲間', base: 60, g: 1.55, max: 8,  desc: l => `${l} → ${l + 1}人（自動で撃つ）` },
+};
+const cost = k => Math.round(UP[k].base * Math.pow(UP[k].g, sv.lv[k]));
+const St = {
+  get dmg() { return 1 + sv.lv.dmg; }, get rate() { return rateAt(sv.lv.rate); }, get mag() { return 20 + 5 * sv.lv.mag; },
+  get wallMax() { return 100 + 50 * sv.lv.wall; }, get allies() { return sv.lv.ally; }, get allyDmg() { return 1 + Math.floor(sv.lv.dmg / 2); }
+};
+const waveCfg = w => {
+  const boss = w % 5 === 0, hp = 2 + Math.floor((w - 1) / 2);
+  return {
+    boss, count: boss ? Math.round((8 + 4 * w) * 0.6) : 8 + 4 * w, hp,
+    fat: w < 2 ? 0 : Math.min(0.25, 0.06 * (w - 1)), run: w < 3 ? 0 : Math.min(0.25, 0.08 * (w - 2)), shd: w < 5 ? 0 : Math.min(0.2, 0.06 * (w - 4)),
+    sm: 1.4 + 0.04 * w, gap: Math.max(0.35, 1.5 - 0.09 * w), claw: 4 * (1 + 0.06 * (w - 1)), bonus: 20 + 5 * w,
+    bossHP: Math.round(90 * hp * Math.sqrt(w / 5)), bossCoin: 100 + 20 * w, slam: 28 + 4 * w
+  };
+};
+// 種類ごとの倍率：体力（波の基準に掛ける）・速さ・コイン
+const KIND = {
+  norm: { hp: 1,   spd: 1,   coin: 5 },
+  fat:  { hp: 4,   spd: 0.7, coin: 15 },
+  run:  { hp: 0.5, spd: 0.8, coin: 8 },    // 細くて速い（歩幅と周期が速いので、実際の速さは約2.5倍）
+  shd:  { hp: 1.5, spd: 0.8, coin: 12 },   // 盾：胴は 1/4 しか通らない。頭は通る
+  boss: { hp: 0,   spd: 1,   coin: 0 },    // 体力とコインは波の設定から
+};
+const SHIELD_PASS = 0.25, BOSS_SCALE = 2.3, BOSS_SLAM = 1.4;
+
+// 留守番の波：夜より少なく、間隔が長い。倒しても稼ぎは少ない
+const awayCfg = w => Object.assign(waveCfg(w), { boss: false, shd: 0, count: 6 + 3 * w, gap: Math.max(1.2, 2.6 - 0.12 * w), bonus: 10 + 2 * w, claw: waveCfg(w).claw * 0.5 });
+const AWAY_RETREAT = 0.5;   // 壁が「出したときの耐久」のこの割合まで減ったら撤退（失うのは最大で半分）
+const AWAY_NEED = 0.25;     // 出すのに必要な壁の割合
+const isAway = () => scene === 'away' || scene === 'awayEnd';
+
+// ---------------------------------------------------------------------
+// 音（Web Audio の合成だけ）
+// ---------------------------------------------------------------------
+let AC = null, noiseBuf = null;
+function audio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+    noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function noise(dur, freq, vol, type = 'bandpass', q = 1) {
+  if (sv.mute || !AC) return; const t = AC.currentTime;
+  const s = AC.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = AC.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = AC.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(f).connect(g).connect(AC.destination); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+}
+function tone(f0, f1, dur, vol, type = 'sine', delay = 0) {
+  if (sv.mute || !AC) return; const t = AC.currentTime + delay;
+  const o = AC.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  const g = AC.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const sfx = {
+  shot() { noise(0.09, 1700, 0.35, 'bandpass', 0.7); tone(190, 55, 0.09, 0.3, 'triangle'); },
+  ally() { noise(0.05, 2400, 0.08, 'bandpass', 1); },
+  hit() { noise(0.05, 500, 0.25, 'lowpass'); },
+  head() { tone(880, 1500, 0.09, 0.16, 'triangle'); },
+  kill() { noise(0.2, 380, 0.35, 'lowpass'); tone(130, 45, 0.18, 0.22, 'sawtooth'); },
+  wall() { tone(75, 48, 0.13, 0.22, 'square'); noise(0.06, 250, 0.18, 'lowpass'); },
+  empty() { tone(1200, 900, 0.03, 0.08, 'square'); },
+  reload() { tone(700, 500, 0.04, 0.12, 'square'); tone(500, 900, 0.05, 0.12, 'square', 0.16); },
+  buy() { tone(660, 990, 0.1, 0.15, 'triangle'); tone(990, 1320, 0.1, 0.12, 'triangle', 0.08); },
+  no() { tone(180, 120, 0.12, 0.12, 'square'); },
+  clear() { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 0.14, 'triangle', i * 0.11)); },
+  over() { [330, 262, 196, 131].forEach((f, i) => tone(f, f * 0.96, 0.3, 0.16, 'sawtooth', i * 0.16)); },
+  groan() { tone(rnd(85, 120), rnd(60, 80), rnd(0.5, 0.9), 0.07, 'sawtooth'); },
+  clang() { tone(1900, 1300, 0.06, 0.12, 'square'); noise(0.05, 4000, 0.12, 'highpass'); },
+  roar() { tone(70, 38, 1.1, 0.3, 'sawtooth'); tone(105, 52, 1.0, 0.18, 'square'); noise(0.9, 300, 0.2, 'lowpass'); },
+  slam() { tone(60, 28, 0.35, 0.4, 'sine'); noise(0.25, 180, 0.4, 'lowpass'); },
+  bossDie() { tone(90, 25, 1.2, 0.35, 'sawtooth'); noise(0.8, 500, 0.35, 'lowpass'); [392, 523, 659, 784].forEach((f, i) => tone(f, f, 0.25, 0.12, 'triangle', 0.5 + i * 0.1)); },
+};
+const lastSfx = {};
+function sfxT(name, gap = 0.07) {   // 早送りで音が重なりすぎないよう間引く
+  const n = performance.now() / 1000; if (n - (lastSfx[name] || 0) < gap) return; lastSfx[name] = n; sfx[name]();
+}
+
+// ---------------------------------------------------------------------
+// カメラ：夜＝目の高さ（壁の上）、朝＝高い位置から拠点を見下ろす
+// ---------------------------------------------------------------------
+let scene = 'title';
+const cam = {};
+function setupCamera() {
+  cam.cx = W / 2;
+  if (scene === 'day') {
+    const Hd = H * 0.44, scw = Math.min(0.85 * W / 9, 0.1 * Hd);
+    cam.zw = 20; cam.F = scw * cam.zw; cam.hy = 0.14 * Hd; cam.Hc = (0.74 * Hd - cam.hy) / scw; cam.fogA = 50; cam.fogB = 100;
+  } else if (isAway()) {
+    const scw = Math.min(0.85 * W / 14, 0.05 * H);
+    cam.zw = 20; cam.F = scw * cam.zw; cam.hy = 0.15 * H; cam.Hc = (0.66 * H - cam.hy) / scw; cam.fogA = 55; cam.fogB = 100;
+  } else { cam.hy = 0.42 * H; cam.F = 0.62 * H; cam.Hc = 2.0; cam.fogA = 18; cam.fogB = 42; }
+}
+let viewKick = 0;
+const scr = (x, z) => [cam.cx + cam.F * x / z, cam.hy - viewKick * 5 + cam.F * cam.Hc / z, cam.F / z];
+const fogAt = z => clamp((cam.fogB - z) / (cam.fogB - cam.fogA), 0, 1);
+
+const city = [];
+for (let x = 0; x < 1;) { const w = rnd(0.02, 0.07); city.push({ x, w, h: rnd(0.01, 0.07), lit: Math.random() }); x += w + rnd(0, 0.01); }
+function quad(x0, x1, z0, z1, col) {
+  const a = scr(x0, z0), b = scr(x1, z0), c = scr(x1, z1), d = scr(x0, z1);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.fill();
+}
+function drawWorld(day) {
+  const hy = cam.hy - viewKick * 5;
+  const sky = ctx.createLinearGradient(0, 0, 0, hy);
+  if (day) { sky.addColorStop(0, '#1a2440'); sky.addColorStop(0.7, '#6a4a5a'); sky.addColorStop(1, '#e89a5a'); }
+  else { sky.addColorStop(0, '#02030a'); sky.addColorStop(1, '#161c38'); }
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, hy + 1);
+  if (!day) {   // 月
+    const mx = W * 0.78, my = hy * 0.3, mr = Math.min(W, H) * 0.045;
+    const g = ctx.createRadialGradient(mx, my, mr * 0.5, mx, my, mr * 4); g.addColorStop(0, 'rgba(200,220,255,0.35)'); g.addColorStop(1, 'rgba(200,220,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(mx - mr * 4, my - mr * 4, mr * 8, mr * 8);
+    ctx.fillStyle = '#dfe8ff'; ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+  }
+  for (const b of city) {
+    const bh = b.h * H * (day ? 0.5 : 1);
+    ctx.fillStyle = day ? '#2a2233' : '#0a0d1b'; ctx.fillRect(b.x * W, hy - bh, b.w * W, bh);
+    if (!day && b.lit > 0.6) { ctx.fillStyle = 'rgba(255,190,90,0.35)'; ctx.fillRect(b.x * W + b.w * W * 0.3, hy - bh * 0.7, 2, 2); }
+  }
+  ctx.fillStyle = day ? '#1a1a22' : '#07090f'; ctx.fillRect(0, hy, W, H - hy);
+  const zn = day ? 3 : 0.3, zf = 400;
+  quad(-7, 7, zn, zf, day ? '#2a2c36' : '#10141d');
+  for (let z = day ? 4 : 1; z < 120; z += 6) {
+    const a = 1 - z / 120;
+    quad(-2.4, -2.25, z, z + 3, `rgba(150,165,190,${0.35 * a})`); quad(2.25, 2.4, z, z + 3, `rgba(150,165,190,${0.35 * a})`);
+  }
+  quad(-7.1, -6.9, zn, zf, 'rgba(255,60,200,0.55)'); quad(6.9, 7.1, zn, zf, 'rgba(60,230,255,0.55)');
+  for (let z = day ? 6 : 2; z < 110; z += 6) {
+    const a = fogAt(z);
+    for (const x of [-7.7, 7.7]) {
+      const [sx, gy, sc] = scr(x, z);
+      ctx.strokeStyle = `rgba(80,230,255,${0.6 * a})`; ctx.lineWidth = Math.max(1, 0.08 * sc);
+      ctx.beginPath(); ctx.moveTo(sx, gy); ctx.lineTo(sx, gy - 0.9 * sc); ctx.stroke();
+    }
+  }
+  const hz = ctx.createLinearGradient(0, hy, 0, hy + 0.1 * H);
+  hz.addColorStop(0, day ? 'rgba(232,154,90,0.5)' : 'rgba(22,28,56,0.9)'); hz.addColorStop(1, day ? 'rgba(232,154,90,0)' : 'rgba(22,28,56,0)');
+  ctx.fillStyle = hz; ctx.fillRect(0, hy, W, 0.1 * H);
+}
+
+// ---------------------------------------------------------------------
+// 夜の状態
+// ---------------------------------------------------------------------
+let cfg = waveCfg(1);
+let zs = [], particles = [], tracers = [], flashes = [], pops = [];
+let toSpawn = 0, spawnT = 0, ammo = 0, reloadT = 0, fireT = 0, aiming = false, aim = [0, 0], gunKick = 0, hurt = 0;
+let earned = 0, killsN = 0, headsN = 0, allyT = [], groanT = 2, wallSfxT = 0, shotLine = 0, clawing = 0, muzzle = [0, 0];
+const RELOAD = 1.3;
+
+let banner = null;
+const seen = {};
+function say(txt) { banner = { txt, t: 0 }; }
+function spawnZ(zNear, zFar, away, force) {
+  let kind = force || 'norm';
+  if (!force) { const r = Math.random(); let a = 0;
+    if (r < (a += cfg.shd || 0)) kind = 'shd'; else if (r < (a += cfg.run || 0)) kind = 'run'; else if (r < (a += cfg.fat)) kind = 'fat'; }
+  const K = KIND[kind], boss = kind === 'boss';
+  const ti = kind === 'fat' ? T_FAT : kind === 'run' ? T_RUN : kind === 'shd' ? T_SHD : boss ? T_BOSS : (Math.random() * 6) | 0;
+  const hp = boss ? cfg.bossHP : Math.max(1, Math.ceil(cfg.hp * K.hp));
+  const x0 = boss ? 0 : away ? rnd(-6.3, 6.3) : rnd(-3.2, 3.2);
+  zs.push({ kind, ti, x0, x: x0, z: rnd(zNear, zFar), ph: Math.random(), spd: (boss ? 1 : rnd(0.85, 1.2)) * K.spd, mir: !boss && Math.random() < 0.5,
+    state: 'walk', stopZ: boss ? 3.4 : away ? cam.zw + 0.7 + rnd(0, 2.2) : 1.9 + rnd(0, 1.5), hp, maxhp: hp, wob: rnd(0, TAU), hit: 0, pend: 0,
+    scale: boss ? BOSS_SCALE : 1, coin: boss ? cfg.bossCoin : K.coin, slamT: 0.8, blockT: 0 });
+  if (scene === 'night' && !seen[kind]) {   // 初めて出た種類はひとこと知らせる
+    seen[kind] = 1;
+    if (kind === 'run') say('ランナー：速い。早めに倒せ');
+    if (kind === 'shd') say('盾持ち：胴は効かない。頭を狙え');
+  }
+}
+function startNight() {
+  cfg = waveCfg(sv.wave);
+  zs = []; particles = []; tracers = []; flashes = []; pops = [];
+  toSpawn = cfg.count; spawnT = 0.6; ammo = St.mag; reloadT = 0; fireT = 0; aiming = false; hurt = 0;
+  earned = 0; killsN = 0; headsN = 0; groanT = 2;
+  allyT = Array.from({ length: St.allies }, (_, i) => 1.5 + i * 0.37);
+  if (sv.wallHP <= 0) sv.wallHP = Math.round(St.wallMax * 0.3);
+  setScene('night'); aim = [W / 2, H * 0.5]; banner = null;
+  if (cfg.boss) { spawnZ(43, 44, false, 'boss'); say('BOSS の夜 — 頭が弱点'); sfx.roar(); }
+}
+function startReload() { if (reloadT > 0 || ammo >= St.mag) return; reloadT = RELOAD; sfx.reload(); }
+
+function zombieScreen(o) {   // 頭の位置（当たり判定用）
+  const [sx, gy, s0] = scr(o.x, o.z), sc = s0 * o.scale, P = TYPES[o.ti], J = Rig.pose(P, o.ph, o.state);
+  return { sx, gy, sc, P, hx: sx + (o.mir ? -1 : 1) * J.head[0] * sc, hy: gy + (-J.head[1] * CT + J.head[2] * ST) * sc };
+}
+function hitTest(px, py) {
+  let best = null;
+  for (const o of zs) {
+    if (fogAt(o.z) < 0.08) continue;
+    const q = zombieScreen(o), hr = Math.max(9, q.P.headR * 1.5 * q.sc);
+    const head = (px - q.hx) ** 2 + (py - q.hy) ** 2 < hr * hr;
+    const body = Math.abs(px - q.sx) < Math.max(7, 0.3 * q.P.bulk * q.sc) && py > q.gy - 1.5 * q.sc && py < q.gy;
+    if ((head || body) && (!best || o.z < best.o.z)) best = { o, head };
+  }
+  return best;
+}
+function burst(o, n) {
+  const P = TYPES[o.ti], cols = [P.skin, P.skin, P.skin, P.shirt, P.shirt, P.shirt, P.pants, P.pants, '#a8ff6a', '#a8ff6a', '#a8ff6a', '#7a1a1a', '#7a1a1a'];
+  for (let i = 0; i < n; i++) {
+    const col = cols[i % cols.length];
+    particles.push({ x: o.x + rnd(-0.2, 0.2) * o.scale, z: o.z + rnd(-0.2, 0.2), h: rnd(0.4, 1.6) * o.scale, vx: rnd(-2.5, 2.5), vz: rnd(-2.5, 2.5), vh: rnd(1.5, 5),
+      life: rnd(0.5, 0.95), max: 0.95, col, s: rnd(0.05, 0.13) * (o.scale > 1 ? 1.6 : 1), glow: col === '#a8ff6a' });
+  }
+  if (particles.length > 900) particles.splice(0, particles.length - 900);
+}
+function damage(o, d, head, by) {
+  const blocked = o.kind === 'shd' && !head;
+  if (blocked) {   // 盾に当たった：ほとんど通らない
+    d *= SHIELD_PASS;
+    for (let i = 0; i < 4; i++) particles.push({ x: o.x + rnd(-0.2, 0.2), z: o.z - 0.3, h: rnd(0.8, 1.3), vx: rnd(-3, 3), vz: rnd(-3, -1), vh: rnd(1, 4), life: 0.25, max: 0.25, col: '#ffe9a0', s: 0.04, glow: true });
+    if (by === 'me') { sfxT('clang', 0.05);
+      if (o.blockT <= 0) { o.blockT = 0.6; const [bx, bgy, bsc] = scr(o.x, o.z); pops.push({ x: bx, y: bgy - 1.2 * bsc, txt: 'BLOCK', t: 0, col: '#9fb8d0' }); } }
+  }
+  o.hp -= d; o.hit = 0.12;
+  if (o.state === 'walk' && o.kind !== 'boss') o.z += 0.25;
+  if (!blocked) burst(o, 3);
+  if (o.hp > 0) { if (by === 'me') { sfx.hit(); if (head) sfx.head(); } return; }
+  const boss = o.kind === 'boss';
+  const c = isAway() ? Math.max(2, Math.round(o.coin * 0.4)) : o.coin + (head && !boss ? 3 : 0);
+  sv.coins += c; earned += c; killsN++; if (head) headsN++;
+  const [px, pgy, psc] = scr(o.x, o.z);
+  pops.push({ x: px, y: Math.max(90, pgy - 1.9 * psc * o.scale), txt: (boss ? 'BOSS ' : head ? 'HEAD ' : '') + '+' + c, t: 0, col: head || boss ? '#ffe27a' : '#bff7ff' });
+  burst(o, boss ? 60 : 14); flashes.push({ x: o.x, z: o.z, t: 0, k: o.scale });
+  zs.splice(zs.indexOf(o), 1);
+  if (boss) { sfx.bossDie(); viewKick = 2; } else { sfxT('kill', 0.06); if (head && by === 'me') sfx.head(); }
+}
+function fire() {
+  ammo--; fireT = 1 / St.rate; gunKick = 1; viewKick = 1; shotLine = 0.06; sfx.shot();
+  const h = hitTest(aim[0], aim[1]);
+  if (h) damage(h.o, St.dmg * (h.head ? 3 : 1), h.head, 'me');
+  if (ammo <= 0) startReload();
+}
+
+function updateWorld(dt, T) {
+  const decor = scene === 'title';
+  const sm = cfg.sm;
+  clawing = 0;
+  for (const o of zs) {
+    const P = TYPES[o.ti];
+    o.hit = Math.max(0, o.hit - dt); o.blockT = Math.max(0, o.blockT - dt);
+    if (o.state === 'walk') {
+      o.z -= 1.5 / P.cycle * o.spd * sm * dt;
+      o.ph = (o.ph + dt / P.cycle * o.spd * sm) % 1;
+      o.x = o.x0 * clamp(0.3 + 0.7 * (o.z - 3) / 12, 0.3, 1) + Math.sin(T * 0.7 + o.wob) * 0.12;
+      if (o.z <= o.stopZ) { if (decor) { o.z = rnd(30, 41); } else { o.z = o.stopZ; o.state = 'claw'; o.ph = Math.random(); } }
+    } else if (o.kind === 'boss') o.ph = (o.ph + dt / BOSS_SLAM) % 1;   // ボスは叩きつけで別に数える
+    else { o.ph = (o.ph + dt / 0.9) % 1; clawing++; }
+  }
+  if (banner && (banner.t += dt) > 2.6) banner = null;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt; if (p.life <= 0) { particles.splice(i, 1); continue; }
+    if (p.h > 0) { p.vh -= 12 * dt; p.x += p.vx * dt; p.z += p.vz * dt; p.h += p.vh * dt; if (p.h < 0) p.h = 0; }
+  }
+  for (let i = flashes.length - 1; i >= 0; i--) { flashes[i].t += dt; if (flashes[i].t > 0.3) flashes.splice(i, 1); }
+  for (let i = pops.length - 1; i >= 0; i--) { pops[i].t += dt; if (pops[i].t > 0.8) pops.splice(i, 1); }
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    const tr = tracers[i]; tr.t += dt;
+    if (tr.t >= tr.dur) { tr.o.pend = Math.max(0, tr.o.pend - St.allyDmg); if (zs.includes(tr.o)) damage(tr.o, St.allyDmg, false, 'ally'); tracers.splice(i, 1); }
+  }
+  gunKick = Math.max(0, gunKick - dt * 7); viewKick = Math.max(0, viewKick - dt * 9); shotLine = Math.max(0, shotLine - dt);
+  hurt = Math.max(0, hurt - dt * 1.5);
+}
+function updateNight(dt) {
+  if (toSpawn > 0 && (spawnT -= dt) <= 0) { spawnZ(27, 41); toSpawn--; spawnT = cfg.gap * rnd(0.5, 1.5); }
+  // 撃つ
+  fireT -= dt;
+  if (reloadT > 0) { if ((reloadT -= dt) <= 0) { ammo = St.mag; reloadT = 0; } }
+  else if (aiming && fireT <= 0) { if (ammo > 0) fire(); else startReload(); }
+  // 仲間
+  for (let i = 0; i < allyT.length; i++) {
+    if ((allyT[i] -= dt) > 0) continue;
+    allyT[i] = rnd(2.6, 3.4);   // 仲間は支え役（1人あたり毎秒 約0.33発）
+    let best = null; for (const o of zs) if (fogAt(o.z) > 0.2 && (!best || o.z < best.z) && Math.random() < 0.7) best = o;
+    if (!best) continue;
+    tracers.push({ side: i % 2 ? 1 : -1, o: best, t: 0, dur: 0.1 }); sfx.ally();
+  }
+  // 壁
+  if (clawing > 0) {
+    sv.wallHP -= clawing * cfg.claw * dt; hurt = Math.min(1, hurt + dt * 3);
+    if ((wallSfxT -= dt) <= 0) { sfx.wall(); wallSfxT = rnd(0.25, 0.5); }
+  }
+  for (const o of zs) {   // ボスの叩きつけ
+    if (o.kind !== 'boss' || o.state !== 'claw' || (o.slamT -= dt) > 0) continue;
+    o.slamT = BOSS_SLAM; sv.wallHP -= cfg.slam; hurt = 1; viewKick = 1.6; sfx.slam();
+  }
+  if ((groanT -= dt) <= 0 && zs.length) { sfx.groan(); groanT = rnd(1.2, 3.5); }
+  if (sv.wallHP <= 0) { sv.wallHP = 0; sv.awayDone = 0; persist(); sfx.over(); setScene('over'); return; }   // 負けた朝は留守番をもう一度出せる
+  if (toSpawn === 0 && zs.length === 0) {
+    const b = cfg.bonus; sv.coins += b; earned += b; sv.wave++; sv.best = Math.max(sv.best, sv.wave); persist(); sfx.clear(); setScene('clear');
+  }
+}
+
+// ---------------------------------------------------------------------
+// 留守番：仲間だけで守る。壁の傷みは本物。壁が出したときの半分まで減ったら撤退
+// ---------------------------------------------------------------------
+let awaySpeed = 1, awayRes = null, wall0 = 0;
+const allySlot = (i, n, withYou) => {   // 壁ぎわの並び位置（中央から左右へ）
+  const m = n + (withYou ? 1 : 0), sp = Math.min(1.0, 7.6 / Math.max(1, m - 1)), j = i + (withYou ? 1 : 0);
+  return (j === 0 ? 0 : (j % 2 ? 1 : -1) * Math.ceil(j / 2)) * sp;
+};
+const canAway = () => St.allies < 1 ? '仲間が1人以上必要' : sv.awayDone === sv.wave ? '今朝は済み（夜を越えるとまた出せる）'
+  : sv.wallHP < St.wallMax * AWAY_NEED ? '壁を修理してから' : '';
+function startAway() {
+  if (canAway()) return;
+  cfg = awayCfg(sv.wave);
+  zs = []; particles = []; tracers = []; flashes = []; pops = [];
+  toSpawn = cfg.count; spawnT = 1; earned = 0; killsN = 0; headsN = 0; hurt = 0; awaySpeed = 1; awayRes = null;
+  allyT = Array.from({ length: St.allies }, (_, i) => 0.8 + i * 0.4);
+  wall0 = Math.ceil(sv.wallHP); sv.awayDone = sv.wave; persist();
+  setScene('away'); $('bSpeed').textContent = '速さ ×1';
+}
+function endAway(kind) {
+  if (kind === 'clear') { sv.coins += cfg.bonus; earned += cfg.bonus; }
+  awayRes = { kind, kills: killsN, total: cfg.count, earned, wall0, wall1: Math.ceil(sv.wallHP), bonus: kind === 'clear' ? cfg.bonus : 0 };
+  persist(); if (kind === 'clear') sfx.clear(); else sfx.no();
+  setScene('awayEnd');
+}
+function updateAway(dt) {
+  if (toSpawn > 0 && (spawnT -= dt) <= 0) { spawnZ(cam.zw + 35, cam.zw + 65, true); toSpawn--; spawnT = cfg.gap * rnd(0.6, 1.4); }
+  for (let i = 0; i < allyT.length; i++) {
+    if ((allyT[i] -= dt) > 0) continue;
+    let best = null;   // 近い順。すでに弾が向かっていて倒れる相手は狙わない
+    for (const o of zs) if (o.z < cam.zw + 45 && o.hp - o.pend > 0 && (!best || o.z < best.z)) best = o;
+    if (!best) { allyT[i] = 0.3; continue; }
+    allyT[i] = rnd(2.6, 3.4); best.pend += St.allyDmg;
+    tracers.push({ ax: allySlot(i, allyT.length, false), o: best, t: 0, dur: 0.09 }); sfxT('ally', 0.09);
+  }
+  if (clawing > 0) {
+    sv.wallHP = Math.max(1, sv.wallHP - clawing * cfg.claw * dt); hurt = Math.min(1, hurt + dt * 3);
+    if ((wallSfxT -= dt) <= 0) { sfxT('wall', 0.2); wallSfxT = rnd(0.25, 0.5); }
+  }
+  if (sv.wallHP <= wall0 * AWAY_RETREAT) return endAway('retreat');
+  if (toSpawn === 0 && zs.length === 0) endAway('clear');
+}
+
+// ---------------------------------------------------------------------
+// 描画（夜）
+// ---------------------------------------------------------------------
+function drawZombie(o) {
+  const [sx, gy, s0] = scr(o.x, o.z), sc = s0 * o.scale;
+  if (sx < -2 * sc || sx > W + 2 * sc || o.z < 0.5) return;
+  const a = fogAt(o.z); if (a <= 0.02) return;
+  ctx.globalAlpha = a;
+  const P = TYPES[o.ti];
+  if (isAway()) Rig.blit(ctx, DPR, Rig.getSet(o.ti, TILT_D, o.state), o.ph, sx, gy, sc, o.mir);
+  else if (sc * 1.8 > 150) Rig.live(ctx, DPR, P, o.ph, sx, gy, sc, o.mir, TILT_N, o.state);
+  else Rig.blit(ctx, DPR, Rig.getSet(o.ti, TILT_N, o.state), o.ph, sx, gy, sc, o.mir);
+  ctx.globalAlpha = 1;
+  if (o.hit > 0) {   // 当たった瞬間の光
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,255,230,${0.3 * o.hit / 0.12})`;
+    ctx.beginPath(); ctx.ellipse(sx, gy - 1.0 * sc, 0.32 * sc, 0.8 * sc, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+  }
+  if (o.hp < o.maxhp && o.maxhp > 2 && o.kind !== 'boss') {   // 残り体力（ボスは画面上の帯）
+    const bw = 0.6 * sc, bx = sx - bw / 2, by = gy - 2.0 * sc;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx, by, bw, 3); ctx.fillStyle = '#ff5a4a'; ctx.fillRect(bx, by, bw * o.hp / o.maxhp, 3);
+  }
+}
+function wallTopY() { return cam.hy - viewKick * 5 + cam.F * (cam.Hc - 1.2) / 1.3; }
+function drawWallFront(T) {
+  const y = wallTopY() + (hurt > 0 ? Math.sin(T * 60) * 2 * hurt : 0), r = clamp(sv.wallHP / St.wallMax, 0, 1);
+  const g = ctx.createLinearGradient(0, y, 0, H); g.addColorStop(0, '#162233'); g.addColorStop(1, '#070b12');
+  ctx.fillStyle = g; ctx.fillRect(0, y, W, H - y);
+  ctx.strokeStyle = 'rgba(80,230,255,0.18)'; ctx.lineWidth = 1;
+  for (let x = W * 0.08; x < W; x += W * 0.21) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - W * 0.03, H); ctx.stroke(); }
+  if (r < 0.7) {   // ひび
+    ctx.strokeStyle = `rgba(255,110,80,${0.8 * (1 - r)})`; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (let i = 0; i < 5; i++) { const x = W * (0.12 + i * 0.19); ctx.moveTo(x, y); ctx.lineTo(x + 8, y + 16); ctx.lineTo(x - 5, y + 30); ctx.lineTo(x + 6, y + 48); }
+    ctx.stroke();
+  }
+  const col = `rgb(${(80 + 175 * (1 - r)) | 0},${(230 - 170 * (1 - r)) | 0},${(255 - 200 * (1 - r)) | 0})`;
+  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.shadowColor = col; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.shadowBlur = 0;
+}
+function drawFx() {
+  for (const tr of tracers) {   // 仲間の弾：夜は画面の左右下から、留守番は仲間の位置から
+    if (!zs.includes(tr.o)) continue;
+    const [bx, bgy, bsc] = scr(tr.o.x, tr.o.z), by = bgy - 1.2 * bsc, k = tr.t / tr.dur, k0 = Math.max(0, k - 0.4);
+    let ax, ay;
+    if (isAway()) { const [sx, sgy, ssc] = scr(tr.ax, cam.zw - 0.9); ax = sx; ay = sgy - 1.25 * ssc; }
+    else { ax = tr.side < 0 ? W * 0.04 : W * 0.96; ay = wallTopY() - 6; }
+    ctx.strokeStyle = 'rgba(140,240,255,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax + (bx - ax) * k0, ay + (by - ay) * k0); ctx.lineTo(ax + (bx - ax) * k, ay + (by - ay) * k); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fl of flashes) {
+    const [sx, gy, s0] = scr(fl.x, fl.z), sc = s0 * (fl.k || 1), k = fl.t / 0.3;
+    ctx.strokeStyle = `rgba(170,255,120,${0.8 * (1 - k)})`; ctx.lineWidth = Math.max(1, 0.06 * sc);
+    ctx.beginPath(); ctx.arc(sx, gy - 1.0 * sc, (0.2 + 0.9 * k) * sc, 0, TAU); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  for (const p of particles) {
+    if (p.z < 0.4) continue;
+    const [sx, gy, sc] = scr(p.x, p.z), s = Math.max(1.2, p.s * sc);
+    ctx.globalAlpha = clamp(p.life / p.max * 1.5, 0, 1);
+    if (p.glow) ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = p.col; ctx.fillRect(sx - s / 2, gy - p.h * sc - s / 2, s, s);
+    if (p.glow) ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.globalAlpha = 1;
+}
+// 銃：右下から狙いへ向く。手前が太く、先が細い（後ろから見たライフル）
+function drawGun() {
+  const u = H * 0.01, ax = W * 0.8, ay = H + 2 * u;
+  let ang = Math.atan2(aim[1] - ay, aim[0] - ax); ang = clamp(ang, -Math.PI * 0.9, -Math.PI * 0.22);
+  const k = gunKick;
+  ctx.save(); ctx.translate(ax - Math.cos(ang) * k * 1.6 * u, ay - Math.sin(ang) * k * 1.6 * u); ctx.rotate(ang);
+  const poly = (pts, fill, stroke) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] * u, p[1] * u) : ctx.moveTo(p[0] * u, p[1] * u)); ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); } };
+  const edge = 'rgba(85,240,255,0.85)';
+  poly([[21, -1.1], [28, -1.0], [28, 1.0], [21, 1.1]], '#0a0f15', edge);                    // 銃身
+  poly([[27.2, -1.6], [30, -1.5], [30, 1.5], [27.2, 1.6]], '#141d28', edge);               // 銃口
+  poly([[10.5, -3.2], [21.5, -2.2], [21.5, 2.2], [10.5, 3.2]], '#15202d', edge);           // ハンドガード
+  for (let x = 12.5; x < 21; x += 2.2) poly([[x, -1.5], [x + 1.1, -1.4], [x + 1.1, 1.4], [x, 1.5]], '#060a10');   // 放熱の溝
+  poly([[-8, -5.4], [11, -3.5], [11, 3.5], [-8, 5.4]], '#0e1722', edge);                   // 機関部
+  poly([[-8, -1.3], [19, -0.9], [19, 0.9], [-8, 1.3]], '#22384c');                         // 上のレール
+  poly([[1.5, -2.3], [3.3, -2.2], [3.3, -1.0], [1.5, -1.0]], '#2c4a60', edge);             // 照門（左）
+  poly([[1.5, 1.0], [3.3, 1.0], [3.3, 2.2], [1.5, 2.3]], '#2c4a60', edge);                 // 照門（右）
+  poly([[25.3, -0.45], [26.7, -0.4], [26.7, 0.4], [25.3, 0.45]], '#55f0ff');               // 照星
+  ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.shadowColor = '#55f0ff'; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(-8 * u, -4.1 * u); ctx.lineTo(10 * u, -2.75 * u); ctx.stroke(); ctx.shadowBlur = 0;   // 側面の光る線
+  ctx.fillStyle = '#0b131c'; ctx.strokeStyle = edge; ctx.lineWidth = 1.5;                   // 支える左手
+  ctx.beginPath(); ctx.ellipse(16 * u, -3.1 * u, 3.4 * u, 2.1 * u, -0.1, 0, TAU); ctx.fill(); ctx.stroke();
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse((13.6 + i * 1.6) * u, -1.5 * u, 0.75 * u, 1.5 * u, 0, 0, TAU); ctx.fill(); ctx.stroke(); }
+  if (reloadT > 0) { ctx.fillStyle = 'rgba(85,240,255,0.25)'; ctx.fillRect(-8 * u, 3.9 * u, 19 * u * (1 - reloadT / RELOAD), 0.8 * u); }
+  ctx.restore();
+  const tip = 30 * u - k * 1.6 * u; muzzle = [ax + Math.cos(ang) * tip, ay + Math.sin(ang) * tip];
+  if (k > 0.5) {   // 発砲の光
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(muzzle[0], muzzle[1], 0, muzzle[0], muzzle[1], 5.5 * u * k);
+    g.addColorStop(0, 'rgba(255,245,200,0.95)'); g.addColorStop(0.4, 'rgba(255,190,90,0.6)'); g.addColorStop(1, 'rgba(255,150,60,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(muzzle[0], muzzle[1], 5.5 * u * k, 0, TAU); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+function drawAim() {
+  if (shotLine > 0) {
+    ctx.strokeStyle = `rgba(255,240,170,${shotLine / 0.06 * 0.8})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(muzzle[0], muzzle[1]); ctx.lineTo(aim[0], aim[1]); ctx.stroke();
+  }
+  const [x, y] = aim, r = 13 + gunKick * 5;
+  ctx.strokeStyle = reloadT > 0 ? 'rgba(255,200,90,0.9)' : 'rgba(120,250,255,0.95)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + r, y);
+  ctx.moveTo(x, y - r); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + r); ctx.stroke();
+  ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(x - 1, y - 1, 2, 2);
+  if (reloadT > 0) { ctx.beginPath(); ctx.arc(x, y, r + 6, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - reloadT / RELOAD)); ctx.stroke(); }
+}
+function renderNight(T) {
+  drawWorld(false);
+  zs.sort((a, b) => b.z - a.z);
+  for (const o of zs) drawZombie(o);
+  drawFx();
+  drawWallFront(T);
+  if (scene !== 'title') {
+    drawGun(); drawAim();
+    ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'center';
+    for (const p of pops) { ctx.globalAlpha = 1 - p.t / 0.8; ctx.fillStyle = p.col; ctx.fillText(p.txt, p.x, p.y - p.t * 40); }
+    ctx.globalAlpha = 1;
+    const boss = zs.find(o => o.kind === 'boss');
+    if (boss) {   // ボスの体力
+      const bw = Math.min(260, W * 0.7), bx = (W - bw) / 2, by = 112;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx, by, bw, 10);
+      ctx.fillStyle = '#c05ae0'; ctx.fillRect(bx, by, bw * clamp(boss.hp / boss.maxhp, 0, 1), 10);
+      ctx.strokeStyle = '#e6b8ff'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 10);
+      ctx.fillStyle = '#f0d8ff'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'; ctx.fillText('BOSS', bx, by - 3);
+    }
+    if (banner) {   // ひとこと
+      const a = clamp(Math.min(banner.t / 0.25, (2.6 - banner.t) / 0.5), 0, 1);
+      ctx.globalAlpha = a; ctx.font = 'bold 19px system-ui'; ctx.textAlign = 'center';
+      const tw = ctx.measureText(banner.txt).width + 28;
+      ctx.fillStyle = 'rgba(8,12,22,0.78)'; ctx.fillRect(W / 2 - tw / 2, H * 0.2 - 24, tw, 36);
+      ctx.fillStyle = '#ffe27a'; ctx.fillText(banner.txt, W / 2, H * 0.2);
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (hurt > 0) {
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, `rgba(255,20,20,${0.3 * hurt})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ---------------------------------------------------------------------
+// 描画（朝の拠点：見下ろし）。壁と仲間は育てた分だけ変わる
+// ---------------------------------------------------------------------
+function drawBase(T, withYou) {
+  const z = cam.zw, lv = sv.lv.wall, hgt = 1.0 + 0.12 * lv;
+  const [lx, ly, lsc] = scr(-7.4, z), [rx] = scr(7.4, z), top = ly - hgt * lsc + (hurt > 0 && isAway() ? Math.sin(T * 60) * 1.5 * hurt : 0);
+  ctx.fillStyle = lv >= 6 ? '#1c2c40' : lv >= 3 ? '#182536' : '#141d2a'; ctx.fillRect(lx, top, rx - lx, ly - top);
+  ctx.strokeStyle = 'rgba(80,230,255,0.25)'; ctx.lineWidth = 1;
+  for (let x = -7.4; x <= 7.4; x += 1.85) { const [px] = scr(x, z); ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, ly); ctx.stroke(); }
+  if (lv >= 2) { ctx.fillStyle = '#2a3b50'; for (let x = -7.2; x <= 7.2; x += 0.6) { const [px] = scr(x, z); ctx.beginPath(); ctx.moveTo(px - 0.14 * lsc, top); ctx.lineTo(px, top - (0.25 + 0.03 * lv) * lsc); ctx.lineTo(px + 0.14 * lsc, top); ctx.fill(); } }   // とげ
+  const r = clamp(sv.wallHP / St.wallMax, 0, 1);
+  const col = `rgb(${(80 + 175 * (1 - r)) | 0},${(230 - 170 * (1 - r)) | 0},${(255 - 200 * (1 - r)) | 0})`;
+  ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, (0.1 + 0.02 * lv) * lsc); ctx.shadowColor = col; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(lx, top); ctx.lineTo(rx, top); ctx.stroke(); ctx.shadowBlur = 0;
+  // 自分（中央）と仲間
+  const set = Rig.getSet(T_SOL, TILT_D, 'aim'), n = St.allies, away = isAway();
+  const m = n + (withYou ? 1 : 0), amp = m <= 1 ? 2.2 : Math.min(0.9, 0.45 * Math.min(1.0, 7.6 / (m - 1)));
+  for (let i = withYou ? -1 : 0; i < n; i++) {
+    const home = i < 0 ? 0 : allySlot(i, n, withYou), big = i < 0 ? 1.12 : 1;
+    if (away) {   // 留守番：持ち場で撃つ
+      const [sx, gy, sc] = scr(home, z - 0.9);
+      Rig.blit(ctx, DPR, set, (T * 0.8 + i * 0.3 + 1) % 1, sx, gy, sc * big, false);
+      continue;
+    }
+    // 朝：壁ぎわを行き来して見回る。折り返しでは立ち止まって外を見る
+    const a = T * 0.45 + i * 1.7, v = Math.cos(a);
+    const [sx, gy, sc] = scr(home + amp * Math.sin(a), z - 0.9);
+    if (Math.abs(v) < 0.35) Rig.blit(ctx, DPR, set, (T * 0.2 + i * 0.3 + 1) % 1, sx, gy, sc * big, false);
+    else Rig.drawRig(ctx, TYPES[T_SOL], (T * 1.1 + i * 0.3 + 1) % 1, sc * big, sx, gy, v > 0 ? -Math.PI / 2 : Math.PI / 2, TILT_D, 'walk');
+    if (i < 0) { ctx.fillStyle = '#ffe27a'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('YOU', sx, gy + 14); }
+  }
+}
+// 朝の空気：朝日、鳥、夜の跡から立つ煙、買ったときの光
+let dayFx = [];
+function dayBurst(k) {
+  const z = cam.zw, n = St.allies;
+  if (k === 'wall' || k === 'repair') for (let i = 0; i < 26; i++) dayFx.push({ x: rnd(-7, 7), z, h: 1.0 + 0.12 * sv.lv.wall, vh: rnd(0.5, 2.5), vx: rnd(-0.6, 0.6), t: 0, life: rnd(0.5, 1.0), col: k === 'wall' ? '#7ff6ff' : '#ffe27a' });
+  else { const x = k === 'ally' ? allySlot(n - 1, n, true) : 0; dayFx.push({ ring: true, x, z: z - 0.9, t: 0, life: 0.6, col: k === 'ally' ? '#7ff6ff' : '#ffe27a' }); }
+}
+function drawDayAir(T, dt) {
+  const hy = cam.hy, sx = W * 0.3;
+  const g = ctx.createRadialGradient(sx, hy, 2, sx, hy, H * 0.16);   // 朝日（ゆっくり明滅）
+  g.addColorStop(0, `rgba(255,236,190,${0.85 + 0.1 * Math.sin(T * 0.8)})`); g.addColorStop(0.25, 'rgba(255,190,110,0.45)'); g.addColorStop(1, 'rgba(255,170,90,0)');
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, hy); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(0, 0, W, hy); ctx.restore();
+  ctx.strokeStyle = 'rgba(20,16,26,0.85)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';   // 鳥
+  for (let i = 0; i < 5; i++) {
+    const u = ((T * (0.035 + i * 0.006) + i * 0.23) % 1.3) - 0.15, x = u * W, y = hy * (0.25 + 0.11 * i) + Math.sin(T * 0.9 + i) * 3, f = Math.sin(T * 7 + i * 2) * 2.2, w = 4 + (i % 2);
+    ctx.beginPath(); ctx.moveTo(x - w, y - f); ctx.lineTo(x, y); ctx.lineTo(x + w, y - f); ctx.stroke();
+  }
+}
+function drawDaySmoke(T) {   // 夜の跡から立つ煙
+  for (let i = 0; i < 14; i += 3) {
+    const [px, gy, sc] = scr(Math.sin(i * 7.3) * 6, cam.zw + 4 + (i * 5.7) % 34);
+    for (let k = 0; k < 4; k++) {
+      const u = (T * 0.22 + k * 0.25 + i * 0.13) % 1;
+      ctx.fillStyle = `rgba(150,160,150,${0.22 * (1 - u)})`;
+      ctx.beginPath(); ctx.arc(px + Math.sin(u * 5 + i) * 0.3 * sc, gy - u * 2.4 * sc, (0.15 + u * 0.45) * sc, 0, TAU); ctx.fill();
+    }
+  }
+}
+function drawDayFx(dt) {
+  for (let i = dayFx.length - 1; i >= 0; i--) {
+    const p = dayFx[i]; p.t += dt; if (p.t >= p.life) { dayFx.splice(i, 1); continue; }
+    const k = p.t / p.life;
+    if (p.ring) {
+      const [px, gy, sc] = scr(p.x, p.z);
+      ctx.strokeStyle = p.col; ctx.globalAlpha = 1 - k; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(px, gy - 0.9 * sc, (0.3 + 1.2 * k) * sc, (0.5 + 1.2 * k) * sc, 0, 0, TAU); ctx.stroke();
+    } else {
+      p.h += p.vh * dt; p.x += p.vx * dt;
+      const [px, gy, sc] = scr(p.x, p.z);
+      ctx.fillStyle = p.col; ctx.globalAlpha = 1 - k; ctx.fillRect(px - 1.5, gy - p.h * sc - 1.5, 3, 3);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+let dayLast = 0;
+function renderDay(T) {
+  const dt = clamp(T - dayLast, 0, 0.05); dayLast = T;
+  drawWorld(true);
+  drawDayAir(T, dt);
+  for (let i = 0; i < 14; i++) {   // 夜の名残（弾けた跡）
+    const [sx, gy, sc] = scr(Math.sin(i * 7.3) * 6, cam.zw + 4 + (i * 5.7) % 34);
+    ctx.fillStyle = 'rgba(120,170,90,0.25)'; ctx.beginPath(); ctx.ellipse(sx, gy, 0.5 * sc, 0.2 * sc, 0, 0, TAU); ctx.fill();
+  }
+  drawDaySmoke(T);
+  drawBase(T, true);
+  drawDayFx(dt);
+  ctx.fillStyle = 'rgba(232,251,255,0.9)'; ctx.font = '12px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText(`壁 Lv${sv.lv.wall}　仲間 ${St.allies}人　最高 WAVE ${sv.best}`, 10, H * 0.44 - 10);
+}
+function renderAway(T) {
+  drawWorld(true);
+  zs.sort((a, b) => b.z - a.z);
+  for (const o of zs) drawZombie(o);
+  drawBase(T, false);
+  drawFx();
+  ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+  for (const p of pops) { ctx.globalAlpha = 1 - p.t / 0.8; ctx.fillStyle = p.col; ctx.fillText(p.txt, p.x, p.y - p.t * 30); }
+  ctx.globalAlpha = 1;
+}
+
+// ---------------------------------------------------------------------
+// 画面の切り替えと UI
+// ---------------------------------------------------------------------
+function setScene(s) {
+  scene = s; setupCamera();
+  $('hud').classList.toggle('hide', !(s === 'night' || s === 'clear' || s === 'over' || s === 'away' || s === 'awayEnd'));
+  $('awayBar').classList.toggle('hide', s !== 'away');
+  $('ammoBox').classList.toggle('hide', s !== 'night');
+  $('panel').classList.toggle('hide', s !== 'day');
+  $('card').classList.toggle('hide', !(s === 'title' || s === 'clear' || s === 'over' || s === 'awayEnd'));
+  aiming = false;
+  if (s === 'title') { cfg = waveCfg(1); zs = []; for (let i = 0; i < 10; i++) spawnZ(6, 41); renderCard(); }
+  if (s === 'clear' || s === 'over' || s === 'awayEnd') { renderCard(); updateHud(); }
+  if (s === 'day') { zs = []; dayFx = []; renderPanel(); }
+}
+function renderCard() {
+  const c = $('card');
+  if (scene === 'title') {
+    const cont = sv.wave > 1 || sv.coins > 0 || Object.values(sv.lv).some(v => v > 0);
+    c.innerHTML = `<h1>NIGHT WALL</h1><p>（仮題・試作 v0.3）</p>
+      <p>夜：壁の上から狙って撃つ。<b>頭は3倍</b>。<br>朝：稼いだコインで武器・壁・仲間を育てる。<br>押したまま動かすと、狙いながら連射。</p>
+      <button id="bStart">${cont ? `つづきから（WAVE ${sv.wave}）` : 'はじめる'}</button>
+      ${cont ? '<button id="bReset" class="sub">最初からやり直す</button>' : ''}`;
+    $('bStart').onclick = () => { audio(); cont ? setScene('day') : startNight(); };
+    if (cont) $('bReset').onclick = () => { if ($('bReset').dataset.sure) { sv = JSON.parse(JSON.stringify(DEF)); persist(); setScene('title'); } else { $('bReset').dataset.sure = 1; $('bReset').textContent = 'もう一度押すと消えます'; } };
+  } else if (scene === 'clear') {
+    c.innerHTML = `<h1>WAVE ${sv.wave - 1} 突破</h1>
+      <p>撃破 ${killsN}　うち頭 ${headsN}<br>壁 ${Math.ceil(sv.wallHP)} / ${St.wallMax}</p>
+      <p class="big">◎ +${earned}（うち突破ボーナス ${cfg.bonus}）</p>
+      <button id="bNext">朝へ（拠点を育てる）</button>`;
+    $('bNext').onclick = () => setScene('day');
+  } else if (scene === 'awayEnd') {
+    const r = awayRes;
+    c.innerHTML = `<h1>留守番 ${r.kind === 'clear' ? '成功' : '撤退'}</h1>
+      <p>${r.kind === 'clear' ? '仲間だけで守り切った。' : r.kind === 'retreat' ? '壁が危ないので引き上げた。' : '途中で引き上げた。'}<br>撃破 ${r.kills} / ${r.total}　壁 ${r.wall0} → ${r.wall1}</p>
+      <p class="big">◎ +${r.earned}${r.bonus ? `（うちボーナス ${r.bonus}）` : ''}</p>
+      <button id="bNext">朝へ戻る</button>`;
+    $('bNext').onclick = () => setScene('day');
+  } else {
+    c.innerHTML = `<h1>壁が破られた</h1>
+      <p>WAVE ${sv.wave} で撃破 ${killsN}<br>稼いだコインは残る。壁は3割まで応急修理される。</p>
+      <p class="big">◎ +${earned}</p>
+      <button id="bNext">朝へ戻って立て直す</button>`;
+    $('bNext').onclick = () => { sv.wallHP = Math.round(St.wallMax * 0.3); persist(); setScene('day'); };
+  }
+}
+function renderPanel() {
+  const miss = St.wallMax - Math.ceil(sv.wallHP), full = Math.ceil(miss / 2), pay = Math.min(full, sv.coins);
+  let h = `<div class="head"><span>朝 — 拠点を育てる <small>（時間は進みません）</small></span><span>◎ <b>${sv.coins}</b></span></div><div class="grid">`;
+  for (const k in UP) {
+    const u = UP[k], l = sv.lv[k], mx = l >= u.max, c = cost(k);
+    h += `<button data-k="${k}" ${mx || sv.coins < c ? 'disabled' : ''}><b>${u.name} Lv${l}</b><small>${mx ? '最大' : u.desc(l)}</small><i>${mx ? '—' : '◎ ' + c}</i></button>`;
+  }
+  h += `<button data-k="repair" ${miss <= 0 || pay <= 0 ? 'disabled' : ''}><b>修理</b><small>壁 ${Math.ceil(sv.wallHP)} / ${St.wallMax}${miss > 0 ? ` → ${Math.min(St.wallMax, Math.ceil(sv.wallHP) + pay * 2)}` : ''}</small><i>${miss <= 0 ? '満タン' : '◎ ' + pay}</i></button>`;
+  const why = canAway();
+  h += `</div><button id="bAway" ${why ? 'disabled' : ''}><span><b>留守番に出す</b><br><small>${why || `仲間だけで ${awayCfg(sv.wave).count}体を守る。稼ぎは少なめ。壁が半分になると撤退`}</small></span><span>▶</span></button>`;
+  h += `<button id="bGo">夜へ ▶ WAVE ${sv.wave}（ゾンビ ${waveCfg(sv.wave).count}体${waveCfg(sv.wave).boss ? '＋BOSS' : ''}）</button>`;
+  $('panel').innerHTML = h;
+  $('panel').querySelectorAll('[data-k]').forEach(b => b.onclick = () => buy(b.dataset.k));
+  $('bGo').onclick = () => { audio(); startNight(); };
+  $('bAway').onclick = () => { audio(); startAway(); };
+}
+function buy(k) {
+  audio();
+  if (k === 'repair') {
+    const miss = St.wallMax - Math.ceil(sv.wallHP), pay = Math.min(Math.ceil(miss / 2), sv.coins);
+    if (pay <= 0) return sfx.no();
+    sv.coins -= pay; sv.wallHP = Math.min(St.wallMax, Math.ceil(sv.wallHP) + pay * 2);
+  } else {
+    const c = cost(k); if (sv.coins < c || sv.lv[k] >= UP[k].max) return sfx.no();
+    sv.coins -= c; sv.lv[k]++; if (k === 'wall') sv.wallHP += 50;
+  }
+  sfx.buy(); persist(); renderPanel(); dayBurst(k);
+}
+function updateHud() {
+  $('hWave').textContent = (isAway() ? '留守番 ' : '') + 'WAVE ' + (scene === 'clear' ? sv.wave - 1 : sv.wave);
+  $('hLeft').textContent = '残り ' + (toSpawn + zs.length);
+  $('hCoin').textContent = sv.coins;
+  const r = clamp(sv.wallHP / St.wallMax, 0, 1);
+  $('wallFill').style.width = (r * 100) + '%'; $('wallFill').style.background = r > 0.4 ? '#4ff0ff' : '#ff5a4a';
+  $('wallNum').textContent = Math.ceil(sv.wallHP) + '/' + St.wallMax;
+  $('hAmmo').textContent = reloadT > 0 ? '装填中…' : ammo + ' / ' + St.mag;
+  $('bReload').disabled = reloadT > 0 || ammo >= St.mag;
+}
+$('bReload').onclick = () => startReload();
+$('bSpeed').onclick = () => { awaySpeed = awaySpeed === 1 ? 2 : awaySpeed === 2 ? 4 : 1; $('bSpeed').textContent = '速さ ×' + awaySpeed; };
+$('bRetreat').onclick = () => { if (scene === 'away') endAway('quit'); };
+const muteLabel = () => { $('bMute').textContent = sv.mute ? '♪ OFF' : '♪ ON'; };
+$('bMute').onclick = () => { sv.mute = !sv.mute; persist(); muteLabel(); audio(); };
+muteLabel();
+
+// 狙い：押している間は連射。タッチは指で隠れないよう少し上を狙う
+function setAim(e) { aim = [clamp(e.clientX, 0, W), clamp(e.clientY - (e.pointerType === 'touch' ? 56 : 0), 0, H)]; }
+cv.addEventListener('pointerdown', e => { audio(); if (scene !== 'night') return; setAim(e); aiming = true; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
+cv.addEventListener('pointermove', e => { if (scene === 'night' && (aiming || e.pointerType === 'mouse')) setAim(e); });
+const stopAim = () => { aiming = false; };
+cv.addEventListener('pointerup', stopAim); cv.addEventListener('pointercancel', stopAim);
+window.addEventListener('keydown', e => { if (e.key === 'r' || e.key === 'R') startReload(); });
+
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1); Rig.cdpr = Math.min(DPR, 1.5);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  setupCamera();
+}
+window.addEventListener('resize', resize);
+
+let last = performance.now(), T = 0, hudT = 0, msS = 0;
+function step(dt) {
+  T += dt;
+  if (scene === 'night') { updateWorld(dt, T); updateNight(dt); }
+  else if (scene === 'away') { updateWorld(dt, T); updateAway(dt); }
+  else if (scene !== 'day') updateWorld(dt, T);
+}
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t0 = performance.now();
+  step(dt);
+  for (let i = 1; i < awaySpeed && scene === 'away'; i++) step(dt);   // 留守番の早送り
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (scene === 'day') renderDay(T); else if (isAway()) renderAway(T); else renderNight(T);
+  msS += (performance.now() - t0 - msS) * 0.05;
+  if ((hudT -= dt) <= 0) { hudT = 0.1; if (scene !== 'title' && scene !== 'day') updateHud(); }
+  requestAnimationFrame(frame);
+}
+resize(); setScene('title');
+// 確認用（テストとデバッグ）
+window.__g = {
+  get scene() { return scene; }, get sv() { return sv; }, get zs() { return zs; }, get ms() { return msS; },
+  get night() { return { toSpawn, alive: zs.length, ammo, reloadT, earned, killsN, headsN, clawing, wall: sv.wallHP }; },
+  step, startNight, startAway, canAway, awayCfg, get awayRes() { return awayRes; }, setScene, hitTest, zombieScreen, fire, setAim: (x, y) => { aim = [x, y]; }, hold: v => { aiming = v; },
+  coins: n => { sv.coins += n; persist(); if (scene === 'day') renderPanel(); }, St, cost, waveCfg
+};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
