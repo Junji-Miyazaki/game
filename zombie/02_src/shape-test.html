@@ -42,7 +42,7 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 // 人型の描画は rig.js（造形テストとゲーム本体で共用）
-const { TYPES, T_FAT, T_SOL, drawRig } = Rig;
+const { TYPES, T_FAT, T_SOL, T_RUN, T_SHD, T_BOSS, drawRig } = Rig;
 const getSet = Rig.getSet;
 const blit = (set, ph, sx, sy, sc, mir) => Rig.blit(ctx, DPR, set, ph, sx, sy, sc, mir);
 const live = (P, ph, sx, sy, sc, mir, tilt, state) => Rig.live(ctx, DPR, P, ph, sx, sy, sc, mir, tilt, state);
@@ -275,7 +275,7 @@ function drawFpsOverlay(T) {
 // ---------------------------------------------------------------------
 // 並べる：大・中は毎フレーム描く、実寸はゲームと同じキャッシュ
 // ---------------------------------------------------------------------
-const SHOW = [0, 1, 2, 3, 4, 5, T_FAT, T_SOL], SHOW_L = ['Tシャツ', '会社員', 'パーカー', 'ワンピース', '作業員', 'タンク', '太った', '兵士'];
+const SHOW = [0, 1, 2, 3, 4, 5, T_FAT, T_RUN, T_SHD, T_BOSS, T_SOL], SHOW_L = ['Tシャツ', '会社員', 'パーカー', 'ワンピース', '作業員', 'タンク', '太った', 'ランナー', '盾持ち', 'ボス', '兵士'];
 const YAWS = [[0, '正面'], [0.75, '斜め'], [Math.PI / 2, '横'], [null, '回転']];
 let yawIdx = 0, showState = 'walk';
 function drawShow(T) {
@@ -283,23 +283,23 @@ function drawShow(T) {
   const top = 64, bottom = H - 70, avail = bottom - top;
   const yaw = YAWS[yawIdx][0] === null ? T * 0.8 : YAWS[yawIdx][0];
   // 大きい段を2つ（4体ずつ）＋実寸の段
-  const rows = [[0.41, SHOW.slice(0, 4)], [0.41, SHOW.slice(4)], [0.18, SHOW]];
+  const rows = [[0.29, SHOW.slice(0, 4)], [0.29, SHOW.slice(4, 8)], [0.29, SHOW.slice(8)], [0.13, SHOW]];
   let y = top;
   rows.forEach(([r, list], ri) => {
-    const rh = avail * r, gy = y + rh * (ri === 2 ? 0.8 : 0.86), colW = W / list.length;
-    const charH = ri === 2 ? 24 : Math.min(rh * 0.78, colW * 2.3);
+    const last = ri === rows.length - 1, rh = avail * r, gy = y + rh * (last ? 0.8 : 0.84), colW = W / Math.max(4, list.length);
+    const charH = last ? 24 : Math.min(rh * 0.72, colW * 2.3);
     const S = charH / 1.85;
     ctx.strokeStyle = '#1b2436'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
     ctx.fillStyle = '#5d7a8c'; ctx.font = '11px system-ui'; ctx.textAlign = 'left';
-    if (ri !== 1) ctx.fillText(ri === 0 ? '大（毎フレーム描画）' : '実寸（ゲームと同じ貼り付け）', 6, y + 12);
+    if (ri === 0 || last) ctx.fillText(ri === 0 ? '大（毎フレーム描画）' : '実寸（ゲームと同じ貼り付け）', 6, y + 12);
     list.forEach((ti, i) => {
       const P = TYPES[ti], sx = colW * (i + 0.5), gi = SHOW.indexOf(ti);
       const st = P.kind === 'z' ? showState : (showState === 'claw' ? 'aim' : 'walk');
       const cyc = st === 'claw' ? 0.9 : st === 'aim' ? 1 : P.cycle;
       const ph = ((T / cyc) + gi * 0.17) % 1;
-      if (ri === 2 && YAWS[yawIdx][0] === 0) blit(getSet(ti, TILT.def, st), ph, sx, gy, S, false);
-      else drawRig(ctx, P, ph, S, sx, gy, yaw, ri === 2 ? TILT.def : 0.3, st);
-      if (ri !== 2) { ctx.fillStyle = '#8fb6c8'; ctx.textAlign = 'center'; ctx.fillText(SHOW_L[gi], sx, gy + 15); }
+      if (last && YAWS[yawIdx][0] === 0) blit(getSet(ti, TILT.def, st), ph, sx, gy, S, false);
+      else drawRig(ctx, P, ph, S * (ti === T_BOSS ? 1.25 : 1), sx, gy, yaw, last ? TILT.def : 0.3, st);
+      if (!last) { ctx.fillStyle = '#8fb6c8'; ctx.textAlign = 'center'; ctx.fillText(SHOW_L[gi], sx, gy + 15); }
     });
     y += rh;
   });
@@ -388,7 +388,7 @@ function frame(now) {
     const L = [`${fpsS.toFixed(0)} fps   描画 ${msS.toFixed(1)} ms`];
     if (mode === 'def') L.push(`ゾンビ ${zs.length}  兵士 ${sols.length}  撃破 ${kills}  壁際 ${clawing}`, 'ゾンビをタップ → 弾ける');
     if (mode === 'fps') L.push(`ゾンビ ${zs.length}  撃破 ${kills}  近景(毎フレーム描画) ${liveCount}`, 'タップで撃つ');
-    if (mode === 'show') L.push('上2段＝毎フレーム描画 / 下＝実寸の貼り付け');
+    if (mode === 'show') L.push('上3段＝毎フレーム描画 / 下＝実寸の貼り付け');
     L.push(`キャッシュ ${Rig.cacheFrames} 枚`);
     $('hud').textContent = L.join('\n');
   }

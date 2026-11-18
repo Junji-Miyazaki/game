@@ -30,6 +30,7 @@ const Rig = (() => {
     wobble: 1, sway: 0.06, armSpread: 0.04, arms: [[1.65, 0.1], [1.6, 0.1]], cycle: 1.4, bulk: 1,
     skin: '#86a173', shirt: '#4b5d4a', pants: '#2f3340', hair: '#262a20', shoe: '#1b1914',
     outfit: 'tee', hairType: 'short', legStyle: 'torn', fat: false,
+    armLen: 1, elbow: -0.18, jawK: 0.74, eye: '#ff3a2a',
     stains: [[0, 0.86, 0.045], [0.035, 0.7, 0.03], [-0.04, 0.76, 0.024]]
   };
   const ZV = [
@@ -57,8 +58,28 @@ const Rig = (() => {
     legLen: 0.44, hipW: 0.1, spine: 0.5, shW: 0.19, torsoW: 0.27, headR: 0.13, headDrop: 0.05, headTilt: 0, bulk: 1,
     wobble: 0, sway: 0.025, cycle: 0.62, suit: '#1c3048', armor: '#2f5878', glow: '#55f0ff'
   };
-  const TYPES = [...ZV, FAT, SOLDIER];
-  const T_FAT = 6, T_SOL = 7;
+  // ランナー：細くて速い。腕を振って走る
+  const RUNNER = Object.assign({}, BASE_Z, {
+    lean: 0.5, leanBob: 0.06, legA: 0.8, knee: 1.1, asym: 0.05, cycle: 0.5, sway: 0.03, headDrop: -0.22, wobble: 0.4,
+    arms: [[0.35, 0.95], [0.35, 0.95]], elbow: 1.05, armSpread: 0.1, torsoW: 0.21, shW: 0.17, bulk: 0.85,
+    skin: '#9aaf8c', shirt: '#a63a2a', pants: '#22262e', hair: '#101216', outfit: 'tank', hairType: 'messy', legStyle: 'shorts', shoe: '#d8d8d0',
+    stains: [[0, 0.86, 0.04]]
+  });
+  // 盾持ち：胴の前に板を構える。頭は出ている
+  const SHIELD = Object.assign({}, BASE_Z, {
+    lean: 0.2, asym: 0.15, cycle: 1.6, arms: [[1.15, 0.04], [1.6, 0.1]], shield: true,
+    skin: '#7f9a8a', shirt: '#26324a', pants: '#1c2434', hair: '#15181c', outfit: 'vest', vest: '#1a2230', legStyle: 'full', shoe: '#101418',
+    stains: [[0.02, 0.9, 0.035]]
+  });
+  // ボス：大きく、腕が長く、肩から骨が出ている。目は黄色
+  const BOSS = Object.assign({}, BASE_Z, {
+    boss: true, legLen: 0.36, hipW: 0.14, spine: 0.56, shW: 0.3, torsoW: 0.46, headR: 0.118, bulk: 1.55, armLen: 1.35, armSpread: 0.25,
+    arms: [[1.2, 0.15], [1.3, 0.15]], lean: 0.42, cycle: 2.2, legA: 0.3, asym: 0.15, sway: 0.12, jawK: 0.92, eye: '#ffd23a',
+    skin: '#8a7494', shirt: '#3a2a3a', pants: '#2a2630', outfit: 'tank', hairType: 'bald', legStyle: 'torn', shoe: null,
+    stains: [[0, 0.88, 0.07], [0.1, 0.66, 0.05], [-0.09, 0.72, 0.04]]
+  });
+  const TYPES = [...ZV, FAT, SOLDIER, RUNNER, SHIELD, BOSS];
+  const T_FAT = 6, T_SOL = 7, T_RUN = 8, T_SHD = 9, T_BOSS = 10;
 
   // -------------------------------------------------------------------
   // 姿勢：p は 0..1 の周期。state = walk | claw（壁を叩く）| aim（構えて撃つ）
@@ -98,9 +119,10 @@ const Rig = (() => {
       const arm = (sh, side, base, amp, ph) => {
         const phi = state === 'claw' ? 1.85 + 0.55 * Math.sin(TAU * p + ph) : base + amp * Math.sin(TAU * q + ph);
         const sp = side * P.armSpread;
-        const el = add(sh, [sp * 0.3, -Math.cos(phi) * 0.3, f * Math.sin(phi) * 0.3]);
-        const p2 = phi - (state === 'claw' ? 0.5 : 0.18);
-        const ha = add(el, [sp * 0.15, -Math.cos(p2) * 0.28, f * Math.sin(p2) * 0.28]);
+        const u = 0.3 * P.armLen, v = 0.28 * P.armLen;
+        const el = add(sh, [sp * 0.3, -Math.cos(phi) * u, f * Math.sin(phi) * u]);
+        const p2 = state === 'claw' ? phi - 0.5 : phi + P.elbow;
+        const ha = add(el, [sp * 0.15, -Math.cos(p2) * v, f * Math.sin(p2) * v]);
         return [el, ha];
       };
       [elL, haL] = arm(shL, -1, P.arms[0][0], P.arms[0][1], 0);
@@ -137,6 +159,7 @@ const Rig = (() => {
     // seg：先細りのカプセル（rA→rB は半径、m 単位）  dot：円  fx：その場で描く飾り
     const seg = (a, b, rA, rB, col, bias = 0) => { const A = pr(a), B = pr(b); parts.push({ t: 0, A, B, rA: rA * S, rB: rB * S, col, d: (A[2] + B[2]) * 0.5 + bias }); };
     const dot = (cc, r, col, bias = 0) => { const C = pr(cc); parts.push({ t: 1, C, r: r * S, col, d: C[2] + bias }); };
+    const plate = (pts, col, bias = 0) => { const Q = pts.map(pr); parts.push({ t: 3, Q, col, d: Q.reduce((a, q) => a + q[2], 0) / Q.length + bias }); };
     const fx = (at, fn, bias = 0) => { parts.push({ t: 2, fn, d: pr(at)[2] + bias }); };
     const f = P.f, isZ = P.kind === 'z', B = P.bulk;
     const ol = isZ ? '#0b0e09' : 'rgba(85,240,255,0.9)';
@@ -168,7 +191,7 @@ const Rig = (() => {
       seg(mix(J.pel, J.chest, 0.45), add(J.chest, [0, -0.05, 0]), front * 0.98, front * 1.12, torsoCol);
       seg(J.shL, J.shR, 0.068 * B, 0.068 * B, P.outfit === 'vest' ? P.shirt : torsoCol);
       if (P.fat) { dot(fwd(mix(J.pel, J.chest, 0.3), 0.11), 0.19, skin); dot(fwd(mix(J.pel, J.chest, 0.52), 0.1), 0.2, P.shirt); }   // 服から出た腹
-      if (P.outfit === 'vest') seg(fwd(add(mid, [-front * 0.8, 0, 0]), front * 0.8), fwd(add(mid, [front * 0.8, 0, 0]), front * 0.8), 0.02, 0.02, '#e8e2a0', 0.03);
+      if (P.outfit === 'vest' && !P.shield) seg(fwd(add(mid, [-front * 0.8, 0, 0]), front * 0.8), fwd(add(mid, [front * 0.8, 0, 0]), front * 0.8), 0.02, 0.02, '#e8e2a0', 0.03);
       if (P.outfit === 'office') seg(fwd(add(J.chest, [0, -0.07, 0]), front + 0.01), fwd(add(mix(J.pel, J.chest, 0.42), [0.03, 0, 0]), front + 0.02), 0.02, 0.032, P.tie, 0.04);
       // 血のしみ（口元から胸へ垂れた形）
       fx(fwd(mid, front + 0.02), () => {
@@ -179,6 +202,16 @@ const Rig = (() => {
           g.beginPath(); g.ellipse(c[0], c[1], sr * S, sr * 1.7 * S, sx * 4, 0, TAU); g.fill();        // 縦に垂れた形・外線なし
         }
       }, 0.06);
+      if (P.shield) {   // 盾（上に のぞき窓）
+        const c = fwd(add(mid, [-0.05, 0.02, 0]), front + 0.24);
+        plate([[-0.27, 0.38, -0.05], [0.27, 0.38, -0.05], [0.27, -0.42, 0.05], [-0.27, -0.42, 0.05]].map(o => add(c, [o[0], o[1], f * o[2]])), '#3a4a66', 0.05);
+        plate([[-0.2, 0.32, -0.04], [0.2, 0.32, -0.04], [0.2, 0.17, -0.02], [-0.2, 0.17, -0.02]].map(o => add(c, [o[0], o[1], f * (o[2] + 0.012)])), '#7fa6bd', 0.06);
+      }
+      if (P.boss) for (const sd of [-1, 1]) {   // 肩から突き出た骨
+        const sh = sd < 0 ? J.shL : J.shR;
+        seg(add(sh, [sd * 0.02, 0.04, 0]), add(sh, [sd * 0.17, 0.3, -f * 0.05]), 0.05, 0.008, '#d8d2b8', 0.01);
+        seg(add(sh, [-sd * 0.09, 0.05, -f * 0.04]), add(sh, [-sd * 0.05, 0.25, -f * 0.12]), 0.04, 0.008, '#d8d2b8', 0.01);
+      }
       // 腕
       const longSleeve = P.outfit === 'office' || P.outfit === 'hoodie' || P.outfit === 'vest';
       const bare = P.outfit === 'tank';
@@ -214,7 +247,7 @@ const Rig = (() => {
       }
       for (const sd of [-1, 1]) dot(add(H, [sd * R * 0.96, -0.01, 0]), 0.03, skin);                 // 耳
       const jaw = add(H, [0, -R * 0.62, f * R * 0.3]);
-      dot(H, R, skin); dot(jaw, R * 0.74, skin);
+      dot(H, R, skin); dot(jaw, R * P.jawK, skin);
       if (P.hairType === 'messy') for (const o of [[-0.07, 0.72, 0], [0.07, 0.7, 0], [-0.025, 0.86, -0.03], [0.03, 0.84, 0.03]])   // 逆立った髪の房
         seg(add(H, [o[0], R * o[1], f * o[2]]), add(H, [o[0] * 1.5, R * (o[1] + 0.34), f * o[2] * 1.4]), 0.026, 0.007, P.hair, 0.02);
       // 顔（正面が見えるときだけ）
@@ -225,7 +258,7 @@ const Rig = (() => {
         const ex = R * 0.27 * S, big = S > 60;
         g.fillStyle = 'rgba(18,20,10,0.8)';                                                         // くぼんだ目
         g.beginPath(); g.ellipse(e1[0], e1[1], ex, ex * 0.85, 0, 0, TAU); g.ellipse(e2[0], e2[1], ex, ex * 0.85, 0, 0, TAU); g.fill();
-        g.fillStyle = '#ff3a2a'; g.shadowColor = '#ff2a1a'; g.shadowBlur = Math.max(2, S * 0.07);
+        g.fillStyle = P.eye; g.shadowColor = P.eye; g.shadowBlur = Math.max(2, S * 0.07);
         g.beginPath(); g.arc(e1[0], e1[1], Math.max(0.8, R * 0.13 * S), 0, TAU); g.arc(e2[0], e2[1], Math.max(0.8, R * 0.13 * S), 0, TAU); g.fill();
         g.shadowBlur = 0;
         if (big) {                                                                                  // 眉（内側へ下がる）と鼻
@@ -303,6 +336,12 @@ const Rig = (() => {
         g.beginPath(); g.arc(q.C[0], q.C[1], q.r, 0, TAU);
         g.strokeStyle = ol; g.lineWidth = olw * 2; g.stroke();
         g.fillStyle = paint(q.C[0], q.C[1], q.r, q.col); g.fill();
+      } else if (q.t === 3) {
+        let cx = 0, cyy = 0, r = 0;
+        g.beginPath(); q.Q.forEach((v, i) => { i ? g.lineTo(v[0], v[1]) : g.moveTo(v[0], v[1]); cx += v[0] / q.Q.length; cyy += v[1] / q.Q.length; }); g.closePath();
+        for (const v of q.Q) r = Math.max(r, Math.hypot(v[0] - cx, v[1] - cyy));
+        g.strokeStyle = ol; g.lineWidth = olw * 2; g.stroke();
+        g.fillStyle = paint(cx, cyy, r, q.col); g.fill();
       } else q.fn();
     }
   }
@@ -312,7 +351,7 @@ const Rig = (() => {
   // -------------------------------------------------------------------
   const FR = 16, CS = 36;
   const caches = {};
-  const R = { TYPES, T_FAT, T_SOL, pose, drawRig, FR, cacheFrames: 0, cdpr: 1 };
+  const R = { TYPES, T_FAT, T_SOL, T_RUN, T_SHD, T_BOSS, pose, drawRig, FR, cacheFrames: 0, cdpr: 1 };
   R.getSet = (ti, tilt, state) => {
     const key = ti + '|' + tilt + '|' + state;
     if (caches[key]) return caches[key];

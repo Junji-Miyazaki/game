@@ -55,9 +55,10 @@ button:disabled{opacity:.42;border-color:#35505c}
 <script>
 'use strict';
 // =====================================================================
-// NIGHT WALL（仮）試作 v0.2 — 防衛＋育成の合わせ技
+// NIGHT WALL（仮）試作 v0.3 — 防衛＋育成の合わせ技
 //   夜：壁の上から一人称で撃つ（頭は3倍）。仲間は自動で撃つ。壁が壊れたら負け。
 //   朝：見下ろしの拠点画面で、稼いだコインを武器・壁・仲間に使う。
+//   ゾンビの種類：太った（硬い）、ランナー（速い）、盾持ち（胴は効かない）。5の倍数の WAVE は BOSS の夜。
 //   留守番：朝に1回、仲間だけで弱い波を守らせる（見下ろし・自動・早送り）。稼ぎは少なく、壁が傷む。
 // 人型の描画は rig.js。保存は localStorage。
 // =====================================================================
@@ -67,7 +68,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
-const { TYPES, T_FAT, T_SOL } = Rig;
+const { TYPES, T_FAT, T_SOL, T_RUN, T_SHD, T_BOSS } = Rig;
 const TILT_N = 0.1, TILT_D = 0.62, CT = Math.cos(TILT_N), ST = Math.sin(TILT_N);
 
 // ---------------------------------------------------------------------
@@ -95,13 +96,27 @@ const St = {
   get dmg() { return 1 + sv.lv.dmg; }, get rate() { return rateAt(sv.lv.rate); }, get mag() { return 20 + 5 * sv.lv.mag; },
   get wallMax() { return 100 + 50 * sv.lv.wall; }, get allies() { return sv.lv.ally; }, get allyDmg() { return 1 + Math.floor(sv.lv.dmg / 2); }
 };
-const waveCfg = w => ({
-  count: 8 + 4 * w, hp: 2 + Math.floor((w - 1) / 2), fat: w < 2 ? 0 : Math.min(0.25, 0.06 * (w - 1)),
-  sm: 1.4 + 0.04 * w, gap: Math.max(0.35, 1.5 - 0.09 * w), claw: 4 * (1 + 0.06 * (w - 1)), bonus: 20 + 5 * w
-});
+const waveCfg = w => {
+  const boss = w % 5 === 0, hp = 2 + Math.floor((w - 1) / 2);
+  return {
+    boss, count: boss ? Math.round((8 + 4 * w) * 0.6) : 8 + 4 * w, hp,
+    fat: w < 2 ? 0 : Math.min(0.25, 0.06 * (w - 1)), run: w < 3 ? 0 : Math.min(0.25, 0.08 * (w - 2)), shd: w < 5 ? 0 : Math.min(0.2, 0.06 * (w - 4)),
+    sm: 1.4 + 0.04 * w, gap: Math.max(0.35, 1.5 - 0.09 * w), claw: 4 * (1 + 0.06 * (w - 1)), bonus: 20 + 5 * w,
+    bossHP: Math.round(90 * hp * Math.sqrt(w / 5)), bossCoin: 100 + 20 * w, slam: 28 + 4 * w
+  };
+};
+// 種類ごとの倍率：体力（波の基準に掛ける）・速さ・コイン
+const KIND = {
+  norm: { hp: 1,   spd: 1,   coin: 5 },
+  fat:  { hp: 4,   spd: 0.7, coin: 15 },
+  run:  { hp: 0.5, spd: 0.8, coin: 8 },    // 細くて速い（歩幅と周期が速いので、実際の速さは約2.5倍）
+  shd:  { hp: 1.5, spd: 0.8, coin: 12 },   // 盾：胴は 1/4 しか通らない。頭は通る
+  boss: { hp: 0,   spd: 1,   coin: 0 },    // 体力とコインは波の設定から
+};
+const SHIELD_PASS = 0.25, BOSS_SCALE = 2.3, BOSS_SLAM = 1.4;
 
 // 留守番の波：夜より少なく、間隔が長い。倒しても稼ぎは少ない
-const awayCfg = w => Object.assign(waveCfg(w), { count: 6 + 3 * w, gap: Math.max(1.2, 2.6 - 0.12 * w), bonus: 10 + 2 * w, claw: waveCfg(w).claw * 0.5 });
+const awayCfg = w => Object.assign(waveCfg(w), { boss: false, shd: 0, count: 6 + 3 * w, gap: Math.max(1.2, 2.6 - 0.12 * w), bonus: 10 + 2 * w, claw: waveCfg(w).claw * 0.5 });
 const AWAY_RETREAT = 0.5;   // 壁が「出したときの耐久」のこの割合まで減ったら撤退（失うのは最大で半分）
 const AWAY_NEED = 0.25;     // 出すのに必要な壁の割合
 const isAway = () => scene === 'away' || scene === 'awayEnd';
@@ -143,6 +158,10 @@ const sfx = {
   clear() { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 0.14, 'triangle', i * 0.11)); },
   over() { [330, 262, 196, 131].forEach((f, i) => tone(f, f * 0.96, 0.3, 0.16, 'sawtooth', i * 0.16)); },
   groan() { tone(rnd(85, 120), rnd(60, 80), rnd(0.5, 0.9), 0.07, 'sawtooth'); },
+  clang() { tone(1900, 1300, 0.06, 0.12, 'square'); noise(0.05, 4000, 0.12, 'highpass'); },
+  roar() { tone(70, 38, 1.1, 0.3, 'sawtooth'); tone(105, 52, 1.0, 0.18, 'square'); noise(0.9, 300, 0.2, 'lowpass'); },
+  slam() { tone(60, 28, 0.35, 0.4, 'sine'); noise(0.25, 180, 0.4, 'lowpass'); },
+  bossDie() { tone(90, 25, 1.2, 0.35, 'sawtooth'); noise(0.8, 500, 0.35, 'lowpass'); [392, 523, 659, 784].forEach((f, i) => tone(f, f, 0.25, 0.12, 'triangle', 0.5 + i * 0.1)); },
 };
 const lastSfx = {};
 function sfxT(name, gap = 0.07) {   // 早送りで音が重なりすぎないよう間引く
@@ -221,10 +240,25 @@ let toSpawn = 0, spawnT = 0, ammo = 0, reloadT = 0, fireT = 0, aiming = false, a
 let earned = 0, killsN = 0, headsN = 0, allyT = [], groanT = 2, wallSfxT = 0, shotLine = 0, clawing = 0, muzzle = [0, 0];
 const RELOAD = 1.3;
 
-function spawnZ(zNear, zFar, away) {
-  const fat = Math.random() < cfg.fat, ti = fat ? T_FAT : (Math.random() * 6) | 0, x0 = away ? rnd(-6.3, 6.3) : rnd(-3.2, 3.2), hp = cfg.hp * (fat ? 4 : 1);
-  zs.push({ ti, x0, x: x0, z: rnd(zNear, zFar), ph: Math.random(), spd: rnd(0.85, 1.2) * (fat ? 0.7 : 1), mir: Math.random() < 0.5,
-    state: 'walk', stopZ: away ? cam.zw + 0.7 + rnd(0, 2.2) : 1.9 + rnd(0, 1.5), hp, maxhp: hp, wob: rnd(0, TAU), hit: 0, fat, pend: 0 });
+let banner = null;
+const seen = {};
+function say(txt) { banner = { txt, t: 0 }; }
+function spawnZ(zNear, zFar, away, force) {
+  let kind = force || 'norm';
+  if (!force) { const r = Math.random(); let a = 0;
+    if (r < (a += cfg.shd || 0)) kind = 'shd'; else if (r < (a += cfg.run || 0)) kind = 'run'; else if (r < (a += cfg.fat)) kind = 'fat'; }
+  const K = KIND[kind], boss = kind === 'boss';
+  const ti = kind === 'fat' ? T_FAT : kind === 'run' ? T_RUN : kind === 'shd' ? T_SHD : boss ? T_BOSS : (Math.random() * 6) | 0;
+  const hp = boss ? cfg.bossHP : Math.max(1, Math.ceil(cfg.hp * K.hp));
+  const x0 = boss ? 0 : away ? rnd(-6.3, 6.3) : rnd(-3.2, 3.2);
+  zs.push({ kind, ti, x0, x: x0, z: rnd(zNear, zFar), ph: Math.random(), spd: (boss ? 1 : rnd(0.85, 1.2)) * K.spd, mir: !boss && Math.random() < 0.5,
+    state: 'walk', stopZ: boss ? 3.4 : away ? cam.zw + 0.7 + rnd(0, 2.2) : 1.9 + rnd(0, 1.5), hp, maxhp: hp, wob: rnd(0, TAU), hit: 0, pend: 0,
+    scale: boss ? BOSS_SCALE : 1, coin: boss ? cfg.bossCoin : K.coin, slamT: 0.8, blockT: 0 });
+  if (scene === 'night' && !seen[kind]) {   // 初めて出た種類はひとこと知らせる
+    seen[kind] = 1;
+    if (kind === 'run') say('ランナー：速い。早めに倒せ');
+    if (kind === 'shd') say('盾持ち：胴は効かない。頭を狙え');
+  }
 }
 function startNight() {
   cfg = waveCfg(sv.wave);
@@ -233,12 +267,13 @@ function startNight() {
   earned = 0; killsN = 0; headsN = 0; groanT = 2;
   allyT = Array.from({ length: St.allies }, (_, i) => 1.5 + i * 0.37);
   if (sv.wallHP <= 0) sv.wallHP = Math.round(St.wallMax * 0.3);
-  setScene('night'); aim = [W / 2, H * 0.5];
+  setScene('night'); aim = [W / 2, H * 0.5]; banner = null;
+  if (cfg.boss) { spawnZ(43, 44, false, 'boss'); say('BOSS の夜 — 頭が弱点'); sfx.roar(); }
 }
 function startReload() { if (reloadT > 0 || ammo >= St.mag) return; reloadT = RELOAD; sfx.reload(); }
 
 function zombieScreen(o) {   // 頭の位置（当たり判定用）
-  const [sx, gy, sc] = scr(o.x, o.z), P = TYPES[o.ti], J = Rig.pose(P, o.ph, o.state);
+  const [sx, gy, s0] = scr(o.x, o.z), sc = s0 * o.scale, P = TYPES[o.ti], J = Rig.pose(P, o.ph, o.state);
   return { sx, gy, sc, P, hx: sx + (o.mir ? -1 : 1) * J.head[0] * sc, hy: gy + (-J.head[1] * CT + J.head[2] * ST) * sc };
 }
 function hitTest(px, py) {
@@ -256,23 +291,31 @@ function burst(o, n) {
   const P = TYPES[o.ti], cols = [P.skin, P.skin, P.skin, P.shirt, P.shirt, P.shirt, P.pants, P.pants, '#a8ff6a', '#a8ff6a', '#a8ff6a', '#7a1a1a', '#7a1a1a'];
   for (let i = 0; i < n; i++) {
     const col = cols[i % cols.length];
-    particles.push({ x: o.x + rnd(-0.2, 0.2), z: o.z + rnd(-0.2, 0.2), h: rnd(0.4, 1.6), vx: rnd(-2.5, 2.5), vz: rnd(-2.5, 2.5), vh: rnd(1.5, 5),
-      life: rnd(0.5, 0.95), max: 0.95, col, s: rnd(0.05, 0.13), glow: col === '#a8ff6a' });
+    particles.push({ x: o.x + rnd(-0.2, 0.2) * o.scale, z: o.z + rnd(-0.2, 0.2), h: rnd(0.4, 1.6) * o.scale, vx: rnd(-2.5, 2.5), vz: rnd(-2.5, 2.5), vh: rnd(1.5, 5),
+      life: rnd(0.5, 0.95), max: 0.95, col, s: rnd(0.05, 0.13) * (o.scale > 1 ? 1.6 : 1), glow: col === '#a8ff6a' });
   }
   if (particles.length > 900) particles.splice(0, particles.length - 900);
 }
 function damage(o, d, head, by) {
+  const blocked = o.kind === 'shd' && !head;
+  if (blocked) {   // 盾に当たった：ほとんど通らない
+    d *= SHIELD_PASS;
+    for (let i = 0; i < 4; i++) particles.push({ x: o.x + rnd(-0.2, 0.2), z: o.z - 0.3, h: rnd(0.8, 1.3), vx: rnd(-3, 3), vz: rnd(-3, -1), vh: rnd(1, 4), life: 0.25, max: 0.25, col: '#ffe9a0', s: 0.04, glow: true });
+    if (by === 'me') { sfxT('clang', 0.05);
+      if (o.blockT <= 0) { o.blockT = 0.6; const [bx, bgy, bsc] = scr(o.x, o.z); pops.push({ x: bx, y: bgy - 1.2 * bsc, txt: 'BLOCK', t: 0, col: '#9fb8d0' }); } }
+  }
   o.hp -= d; o.hit = 0.12;
-  if (o.state === 'walk') o.z += 0.25;
-  burst(o, 3);
+  if (o.state === 'walk' && o.kind !== 'boss') o.z += 0.25;
+  if (!blocked) burst(o, 3);
   if (o.hp > 0) { if (by === 'me') { sfx.hit(); if (head) sfx.head(); } return; }
-  const c = isAway() ? (o.fat ? 6 : 2) : (o.fat ? 15 : 5) + (head ? 3 : 0);
+  const boss = o.kind === 'boss';
+  const c = isAway() ? Math.max(2, Math.round(o.coin * 0.4)) : o.coin + (head && !boss ? 3 : 0);
   sv.coins += c; earned += c; killsN++; if (head) headsN++;
   const [px, pgy, psc] = scr(o.x, o.z);
-  pops.push({ x: px, y: pgy - 1.9 * psc, txt: (head ? 'HEAD ' : '') + '+' + c, t: 0, col: head ? '#ffe27a' : '#bff7ff' });
-  burst(o, 14); flashes.push({ x: o.x, z: o.z, t: 0 });
+  pops.push({ x: px, y: Math.max(90, pgy - 1.9 * psc * o.scale), txt: (boss ? 'BOSS ' : head ? 'HEAD ' : '') + '+' + c, t: 0, col: head || boss ? '#ffe27a' : '#bff7ff' });
+  burst(o, boss ? 60 : 14); flashes.push({ x: o.x, z: o.z, t: 0, k: o.scale });
   zs.splice(zs.indexOf(o), 1);
-  sfxT('kill', 0.06); if (head && by === 'me') sfx.head();
+  if (boss) { sfx.bossDie(); viewKick = 2; } else { sfxT('kill', 0.06); if (head && by === 'me') sfx.head(); }
 }
 function fire() {
   ammo--; fireT = 1 / St.rate; gunKick = 1; viewKick = 1; shotLine = 0.06; sfx.shot();
@@ -287,14 +330,16 @@ function updateWorld(dt, T) {
   clawing = 0;
   for (const o of zs) {
     const P = TYPES[o.ti];
-    o.hit = Math.max(0, o.hit - dt);
+    o.hit = Math.max(0, o.hit - dt); o.blockT = Math.max(0, o.blockT - dt);
     if (o.state === 'walk') {
       o.z -= 1.5 / P.cycle * o.spd * sm * dt;
       o.ph = (o.ph + dt / P.cycle * o.spd * sm) % 1;
       o.x = o.x0 * clamp(0.3 + 0.7 * (o.z - 3) / 12, 0.3, 1) + Math.sin(T * 0.7 + o.wob) * 0.12;
       if (o.z <= o.stopZ) { if (decor) { o.z = rnd(30, 41); } else { o.z = o.stopZ; o.state = 'claw'; o.ph = Math.random(); } }
-    } else { o.ph = (o.ph + dt / 0.9) % 1; clawing++; }
+    } else if (o.kind === 'boss') o.ph = (o.ph + dt / BOSS_SLAM) % 1;   // ボスは叩きつけで別に数える
+    else { o.ph = (o.ph + dt / 0.9) % 1; clawing++; }
   }
+  if (banner && (banner.t += dt) > 2.6) banner = null;
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.life -= dt; if (p.life <= 0) { particles.splice(i, 1); continue; }
@@ -327,6 +372,10 @@ function updateNight(dt) {
   if (clawing > 0) {
     sv.wallHP -= clawing * cfg.claw * dt; hurt = Math.min(1, hurt + dt * 3);
     if ((wallSfxT -= dt) <= 0) { sfx.wall(); wallSfxT = rnd(0.25, 0.5); }
+  }
+  for (const o of zs) {   // ボスの叩きつけ
+    if (o.kind !== 'boss' || o.state !== 'claw' || (o.slamT -= dt) > 0) continue;
+    o.slamT = BOSS_SLAM; sv.wallHP -= cfg.slam; hurt = 1; viewKick = 1.6; sfx.slam();
   }
   if ((groanT -= dt) <= 0 && zs.length) { sfx.groan(); groanT = rnd(1.2, 3.5); }
   if (sv.wallHP <= 0) { sv.wallHP = 0; sv.awayDone = 0; persist(); sfx.over(); setScene('over'); return; }   // 負けた朝は留守番をもう一度出せる
@@ -382,7 +431,7 @@ function updateAway(dt) {
 // 描画（夜）
 // ---------------------------------------------------------------------
 function drawZombie(o) {
-  const [sx, gy, sc] = scr(o.x, o.z);
+  const [sx, gy, s0] = scr(o.x, o.z), sc = s0 * o.scale;
   if (sx < -2 * sc || sx > W + 2 * sc || o.z < 0.5) return;
   const a = fogAt(o.z); if (a <= 0.02) return;
   ctx.globalAlpha = a;
@@ -395,7 +444,7 @@ function drawZombie(o) {
     ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,255,230,${0.3 * o.hit / 0.12})`;
     ctx.beginPath(); ctx.ellipse(sx, gy - 1.0 * sc, 0.32 * sc, 0.8 * sc, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
   }
-  if (o.hp < o.maxhp && o.maxhp > 2) {   // 残り体力
+  if (o.hp < o.maxhp && o.maxhp > 2 && o.kind !== 'boss') {   // 残り体力（ボスは画面上の帯）
     const bw = 0.6 * sc, bx = sx - bw / 2, by = gy - 2.0 * sc;
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx, by, bw, 3); ctx.fillStyle = '#ff5a4a'; ctx.fillRect(bx, by, bw * o.hp / o.maxhp, 3);
   }
@@ -428,7 +477,7 @@ function drawFx() {
   }
   ctx.globalCompositeOperation = 'lighter';
   for (const fl of flashes) {
-    const [sx, gy, sc] = scr(fl.x, fl.z), k = fl.t / 0.3;
+    const [sx, gy, s0] = scr(fl.x, fl.z), sc = s0 * (fl.k || 1), k = fl.t / 0.3;
     ctx.strokeStyle = `rgba(170,255,120,${0.8 * (1 - k)})`; ctx.lineWidth = Math.max(1, 0.06 * sc);
     ctx.beginPath(); ctx.arc(sx, gy - 1.0 * sc, (0.2 + 0.9 * k) * sc, 0, TAU); ctx.stroke();
   }
@@ -500,6 +549,22 @@ function renderNight(T) {
     ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'center';
     for (const p of pops) { ctx.globalAlpha = 1 - p.t / 0.8; ctx.fillStyle = p.col; ctx.fillText(p.txt, p.x, p.y - p.t * 40); }
     ctx.globalAlpha = 1;
+    const boss = zs.find(o => o.kind === 'boss');
+    if (boss) {   // ボスの体力
+      const bw = Math.min(260, W * 0.7), bx = (W - bw) / 2, by = 112;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx, by, bw, 10);
+      ctx.fillStyle = '#c05ae0'; ctx.fillRect(bx, by, bw * clamp(boss.hp / boss.maxhp, 0, 1), 10);
+      ctx.strokeStyle = '#e6b8ff'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 10);
+      ctx.fillStyle = '#f0d8ff'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'; ctx.fillText('BOSS', bx, by - 3);
+    }
+    if (banner) {   // ひとこと
+      const a = clamp(Math.min(banner.t / 0.25, (2.6 - banner.t) / 0.5), 0, 1);
+      ctx.globalAlpha = a; ctx.font = 'bold 19px system-ui'; ctx.textAlign = 'center';
+      const tw = ctx.measureText(banner.txt).width + 28;
+      ctx.fillStyle = 'rgba(8,12,22,0.78)'; ctx.fillRect(W / 2 - tw / 2, H * 0.2 - 24, tw, 36);
+      ctx.fillStyle = '#ffe27a'; ctx.fillText(banner.txt, W / 2, H * 0.2);
+      ctx.globalAlpha = 1;
+    }
   }
   if (hurt > 0) {
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
@@ -563,14 +628,14 @@ function setScene(s) {
   $('card').classList.toggle('hide', !(s === 'title' || s === 'clear' || s === 'over' || s === 'awayEnd'));
   aiming = false;
   if (s === 'title') { cfg = waveCfg(1); zs = []; for (let i = 0; i < 10; i++) spawnZ(6, 41); renderCard(); }
-  if (s === 'clear' || s === 'over' || s === 'awayEnd') renderCard();
+  if (s === 'clear' || s === 'over' || s === 'awayEnd') { renderCard(); updateHud(); }
   if (s === 'day') { zs = []; renderPanel(); }
 }
 function renderCard() {
   const c = $('card');
   if (scene === 'title') {
     const cont = sv.wave > 1 || sv.coins > 0 || Object.values(sv.lv).some(v => v > 0);
-    c.innerHTML = `<h1>NIGHT WALL</h1><p>（仮題・試作 v0.2）</p>
+    c.innerHTML = `<h1>NIGHT WALL</h1><p>（仮題・試作 v0.3）</p>
       <p>夜：壁の上から狙って撃つ。<b>頭は3倍</b>。<br>朝：稼いだコインで武器・壁・仲間を育てる。<br>押したまま動かすと、狙いながら連射。</p>
       <button id="bStart">${cont ? `つづきから（WAVE ${sv.wave}）` : 'はじめる'}</button>
       ${cont ? '<button id="bReset" class="sub">最初からやり直す</button>' : ''}`;
@@ -607,7 +672,7 @@ function renderPanel() {
   h += `<button data-k="repair" ${miss <= 0 || pay <= 0 ? 'disabled' : ''}><b>修理</b><small>壁 ${Math.ceil(sv.wallHP)} / ${St.wallMax}${miss > 0 ? ` → ${Math.min(St.wallMax, Math.ceil(sv.wallHP) + pay * 2)}` : ''}</small><i>${miss <= 0 ? '満タン' : '◎ ' + pay}</i></button>`;
   const why = canAway();
   h += `</div><button id="bAway" ${why ? 'disabled' : ''}><span><b>留守番に出す</b><br><small>${why || `仲間だけで ${awayCfg(sv.wave).count}体を守る。稼ぎは少なめ。壁が半分になると撤退`}</small></span><span>▶</span></button>`;
-  h += `<button id="bGo">夜へ ▶ WAVE ${sv.wave}（ゾンビ ${waveCfg(sv.wave).count}体）</button>`;
+  h += `<button id="bGo">夜へ ▶ WAVE ${sv.wave}（ゾンビ ${waveCfg(sv.wave).count}体${waveCfg(sv.wave).boss ? '＋BOSS' : ''}）</button>`;
   $('panel').innerHTML = h;
   $('panel').querySelectorAll('[data-k]').forEach(b => b.onclick = () => buy(b.dataset.k));
   $('bGo').onclick = () => { audio(); startNight(); };
