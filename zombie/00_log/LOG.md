@@ -2,6 +2,10 @@
 
 新しい順。各エントリ：実施内容／判断と理由／問題点／次アクション。
 
+## 2026-11-18 一覧ページにリンクを足して push
+- 経緯：ユーザーから「Index の表示はなんと出る？」。一覧（リポジトリ直下の `index.html`）には載せていなかった。昔の縦シューター 2 つ（「Zombie game」「Mobile Zombie game ver2」）と区別するため、「NIGHT WALL」の名前で足す案を出し、ユーザーが「Push して」と答えた。
+- 実施：一覧の末尾（VÖGEL の次）に 1 行足した。表示は「NIGHT WALL (first-person zombie defense: road, city, forest, 7 guns, prototype)」、リンク先は `zombie/index.html`。
+
 ## 2026-11-18 スマホで試すために公開（push）
 - 経緯：ユーザーから「スマホで試したい」。公開には push が必要だと先に伝えてあり、そのうえでの依頼なので push した。
 - 実施：
