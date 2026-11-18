@@ -22,6 +22,7 @@ button:disabled{opacity:.42;border-color:#35505c}
 #panel{position:fixed;left:0;right:0;bottom:0;top:44%;background:linear-gradient(#0a1220f2,#05070df7);border-top:1px solid #2bbbd8;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;overflow:auto}
 #panel .head{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}
 #panel .head b{font-size:20px;color:#ffe27a}
+#panel .head small{font-size:11px;color:#8fb0bd}
 #panel .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 #panel .grid button{text-align:left;display:flex;flex-direction:column;gap:1px;padding:7px 10px;min-height:58px}
 #panel .grid button b{font-size:14px}
@@ -588,20 +589,79 @@ function drawBase(T, withYou) {
   ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, (0.1 + 0.02 * lv) * lsc); ctx.shadowColor = col; ctx.shadowBlur = 8;
   ctx.beginPath(); ctx.moveTo(lx, top); ctx.lineTo(rx, top); ctx.stroke(); ctx.shadowBlur = 0;
   // 自分（中央）と仲間
-  const set = Rig.getSet(T_SOL, TILT_D, 'aim'), n = St.allies;
+  const set = Rig.getSet(T_SOL, TILT_D, 'aim'), n = St.allies, away = isAway();
+  const m = n + (withYou ? 1 : 0), amp = m <= 1 ? 2.2 : Math.min(0.9, 0.45 * Math.min(1.0, 7.6 / (m - 1)));
   for (let i = withYou ? -1 : 0; i < n; i++) {
-    const [sx, gy, sc] = scr(i < 0 ? 0 : allySlot(i, n, withYou), z - 0.9);
-    Rig.blit(ctx, DPR, set, (T * (isAway() ? 0.8 : 0.25) + i * 0.3 + 1) % 1, sx, gy, sc * (i < 0 ? 1.12 : 1), false);
+    const home = i < 0 ? 0 : allySlot(i, n, withYou), big = i < 0 ? 1.12 : 1;
+    if (away) {   // 留守番：持ち場で撃つ
+      const [sx, gy, sc] = scr(home, z - 0.9);
+      Rig.blit(ctx, DPR, set, (T * 0.8 + i * 0.3 + 1) % 1, sx, gy, sc * big, false);
+      continue;
+    }
+    // 朝：壁ぎわを行き来して見回る。折り返しでは立ち止まって外を見る
+    const a = T * 0.45 + i * 1.7, v = Math.cos(a);
+    const [sx, gy, sc] = scr(home + amp * Math.sin(a), z - 0.9);
+    if (Math.abs(v) < 0.35) Rig.blit(ctx, DPR, set, (T * 0.2 + i * 0.3 + 1) % 1, sx, gy, sc * big, false);
+    else Rig.drawRig(ctx, TYPES[T_SOL], (T * 1.1 + i * 0.3 + 1) % 1, sc * big, sx, gy, v > 0 ? -Math.PI / 2 : Math.PI / 2, TILT_D, 'walk');
     if (i < 0) { ctx.fillStyle = '#ffe27a'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('YOU', sx, gy + 14); }
   }
 }
+// 朝の空気：朝日、鳥、夜の跡から立つ煙、買ったときの光
+let dayFx = [];
+function dayBurst(k) {
+  const z = cam.zw, n = St.allies;
+  if (k === 'wall' || k === 'repair') for (let i = 0; i < 26; i++) dayFx.push({ x: rnd(-7, 7), z, h: 1.0 + 0.12 * sv.lv.wall, vh: rnd(0.5, 2.5), vx: rnd(-0.6, 0.6), t: 0, life: rnd(0.5, 1.0), col: k === 'wall' ? '#7ff6ff' : '#ffe27a' });
+  else { const x = k === 'ally' ? allySlot(n - 1, n, true) : 0; dayFx.push({ ring: true, x, z: z - 0.9, t: 0, life: 0.6, col: k === 'ally' ? '#7ff6ff' : '#ffe27a' }); }
+}
+function drawDayAir(T, dt) {
+  const hy = cam.hy, sx = W * 0.3;
+  const g = ctx.createRadialGradient(sx, hy, 2, sx, hy, H * 0.16);   // 朝日（ゆっくり明滅）
+  g.addColorStop(0, `rgba(255,236,190,${0.85 + 0.1 * Math.sin(T * 0.8)})`); g.addColorStop(0.25, 'rgba(255,190,110,0.45)'); g.addColorStop(1, 'rgba(255,170,90,0)');
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, hy); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(0, 0, W, hy); ctx.restore();
+  ctx.strokeStyle = 'rgba(20,16,26,0.85)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';   // 鳥
+  for (let i = 0; i < 5; i++) {
+    const u = ((T * (0.035 + i * 0.006) + i * 0.23) % 1.3) - 0.15, x = u * W, y = hy * (0.25 + 0.11 * i) + Math.sin(T * 0.9 + i) * 3, f = Math.sin(T * 7 + i * 2) * 2.2, w = 4 + (i % 2);
+    ctx.beginPath(); ctx.moveTo(x - w, y - f); ctx.lineTo(x, y); ctx.lineTo(x + w, y - f); ctx.stroke();
+  }
+}
+function drawDaySmoke(T) {   // 夜の跡から立つ煙
+  for (let i = 0; i < 14; i += 3) {
+    const [px, gy, sc] = scr(Math.sin(i * 7.3) * 6, cam.zw + 4 + (i * 5.7) % 34);
+    for (let k = 0; k < 4; k++) {
+      const u = (T * 0.22 + k * 0.25 + i * 0.13) % 1;
+      ctx.fillStyle = `rgba(150,160,150,${0.22 * (1 - u)})`;
+      ctx.beginPath(); ctx.arc(px + Math.sin(u * 5 + i) * 0.3 * sc, gy - u * 2.4 * sc, (0.15 + u * 0.45) * sc, 0, TAU); ctx.fill();
+    }
+  }
+}
+function drawDayFx(dt) {
+  for (let i = dayFx.length - 1; i >= 0; i--) {
+    const p = dayFx[i]; p.t += dt; if (p.t >= p.life) { dayFx.splice(i, 1); continue; }
+    const k = p.t / p.life;
+    if (p.ring) {
+      const [px, gy, sc] = scr(p.x, p.z);
+      ctx.strokeStyle = p.col; ctx.globalAlpha = 1 - k; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(px, gy - 0.9 * sc, (0.3 + 1.2 * k) * sc, (0.5 + 1.2 * k) * sc, 0, 0, TAU); ctx.stroke();
+    } else {
+      p.h += p.vh * dt; p.x += p.vx * dt;
+      const [px, gy, sc] = scr(p.x, p.z);
+      ctx.fillStyle = p.col; ctx.globalAlpha = 1 - k; ctx.fillRect(px - 1.5, gy - p.h * sc - 1.5, 3, 3);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+let dayLast = 0;
 function renderDay(T) {
+  const dt = clamp(T - dayLast, 0, 0.05); dayLast = T;
   drawWorld(true);
+  drawDayAir(T, dt);
   for (let i = 0; i < 14; i++) {   // 夜の名残（弾けた跡）
     const [sx, gy, sc] = scr(Math.sin(i * 7.3) * 6, cam.zw + 4 + (i * 5.7) % 34);
     ctx.fillStyle = 'rgba(120,170,90,0.25)'; ctx.beginPath(); ctx.ellipse(sx, gy, 0.5 * sc, 0.2 * sc, 0, 0, TAU); ctx.fill();
   }
+  drawDaySmoke(T);
   drawBase(T, true);
+  drawDayFx(dt);
   ctx.fillStyle = 'rgba(232,251,255,0.9)'; ctx.font = '12px system-ui'; ctx.textAlign = 'left';
   ctx.fillText(`壁 Lv${sv.lv.wall}　仲間 ${St.allies}人　最高 WAVE ${sv.best}`, 10, H * 0.44 - 10);
 }
@@ -629,7 +689,7 @@ function setScene(s) {
   aiming = false;
   if (s === 'title') { cfg = waveCfg(1); zs = []; for (let i = 0; i < 10; i++) spawnZ(6, 41); renderCard(); }
   if (s === 'clear' || s === 'over' || s === 'awayEnd') { renderCard(); updateHud(); }
-  if (s === 'day') { zs = []; renderPanel(); }
+  if (s === 'day') { zs = []; dayFx = []; renderPanel(); }
 }
 function renderCard() {
   const c = $('card');
@@ -664,7 +724,7 @@ function renderCard() {
 }
 function renderPanel() {
   const miss = St.wallMax - Math.ceil(sv.wallHP), full = Math.ceil(miss / 2), pay = Math.min(full, sv.coins);
-  let h = `<div class="head"><span>朝 — 拠点を育てる</span><span>◎ <b>${sv.coins}</b></span></div><div class="grid">`;
+  let h = `<div class="head"><span>朝 — 拠点を育てる <small>（時間は進みません）</small></span><span>◎ <b>${sv.coins}</b></span></div><div class="grid">`;
   for (const k in UP) {
     const u = UP[k], l = sv.lv[k], mx = l >= u.max, c = cost(k);
     h += `<button data-k="${k}" ${mx || sv.coins < c ? 'disabled' : ''}><b>${u.name} Lv${l}</b><small>${mx ? '最大' : u.desc(l)}</small><i>${mx ? '—' : '◎ ' + c}</i></button>`;
@@ -688,7 +748,7 @@ function buy(k) {
     const c = cost(k); if (sv.coins < c || sv.lv[k] >= UP[k].max) return sfx.no();
     sv.coins -= c; sv.lv[k]++; if (k === 'wall') sv.wallHP += 50;
   }
-  sfx.buy(); persist(); renderPanel();
+  sfx.buy(); persist(); renderPanel(); dayBurst(k);
 }
 function updateHud() {
   $('hWave').textContent = (isAway() ? '留守番 ' : '') + 'WAVE ' + (scene === 'clear' ? sv.wave - 1 : sv.wave);
