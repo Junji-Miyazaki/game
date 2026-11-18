@@ -27,6 +27,10 @@ button:disabled{opacity:.42;border-color:#35505c}
 #panel .grid button b{font-size:14px}
 #panel .grid button small{font-size:11px;color:#9cc7d6}
 #panel .grid button i{font-style:normal;font-size:13px;color:#ffe27a}
+#bAway{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border-color:#e0a84a;background:#221a0c}
+#bAway small{font-size:11px;color:#d9c08a}
+#awayBar{position:fixed;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:10px}
+#awayBar button{min-width:110px;font-size:15px}
 #bGo{font-size:18px;min-height:52px;background:#123a2a;border-color:#58ffb0;box-shadow:0 0 12px #2fd88a55;margin-top:auto}
 #card{position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);width:min(84vw,340px);background:#08101cf0;border:1px solid #2bbbd8;border-radius:14px;padding:18px 18px 16px;text-align:center;box-shadow:0 0 30px #000}
 #card h1{margin:0 0 4px;font-size:26px;letter-spacing:.06em;color:#fff;text-shadow:0 0 12px #3fe0ff}
@@ -43,6 +47,7 @@ button:disabled{opacity:.42;border-color:#35505c}
   <div id="wallWrap"><span>壁</span><div id="wallBar"><i id="wallFill"></i></div><span id="wallNum"></span></div>
 </div>
 <div id="ammoBox" class="hide"><b id="hAmmo"></b><button id="bReload">装填</button></div>
+<div id="awayBar" class="hide"><button id="bSpeed">速さ ×1</button><button id="bRetreat">撤退する</button></div>
 <button id="bMute">♪ ON</button>
 <div id="panel" class="hide"></div>
 <div id="card" class="hide"></div>
@@ -50,9 +55,10 @@ button:disabled{opacity:.42;border-color:#35505c}
 <script>
 'use strict';
 // =====================================================================
-// NIGHT WALL（仮）試作 v0.1 — 防衛＋育成の合わせ技
+// NIGHT WALL（仮）試作 v0.2 — 防衛＋育成の合わせ技
 //   夜：壁の上から一人称で撃つ（頭は3倍）。仲間は自動で撃つ。壁が壊れたら負け。
 //   朝：見下ろしの拠点画面で、稼いだコインを武器・壁・仲間に使う。
+//   留守番：朝に1回、仲間だけで弱い波を守らせる（見下ろし・自動・早送り）。稼ぎは少なく、壁が傷む。
 // 人型の描画は rig.js。保存は localStorage。
 // =====================================================================
 const TAU = Math.PI * 2;
@@ -68,7 +74,7 @@ const TILT_N = 0.1, TILT_D = 0.62, CT = Math.cos(TILT_N), ST = Math.sin(TILT_N);
 // 保存と強さ
 // ---------------------------------------------------------------------
 const SAVE_KEY = 'nightwall_proto_v1';
-const DEF = { wave: 1, coins: 0, lv: { dmg: 0, rate: 0, mag: 0, wall: 0, ally: 0 }, wallHP: 100, best: 1, mute: false };
+const DEF = { wave: 1, coins: 0, lv: { dmg: 0, rate: 0, mag: 0, wall: 0, ally: 0 }, wallHP: 100, best: 1, mute: false, awayDone: 0 };
 function load() {
   try { const o = JSON.parse(localStorage.getItem(SAVE_KEY)); if (o && o.lv) return Object.assign({}, DEF, o, { lv: Object.assign({}, DEF.lv, o.lv) }); } catch (e) {}
   return JSON.parse(JSON.stringify(DEF));
@@ -93,6 +99,12 @@ const waveCfg = w => ({
   count: 8 + 4 * w, hp: 2 + Math.floor((w - 1) / 2), fat: w < 2 ? 0 : Math.min(0.25, 0.06 * (w - 1)),
   sm: 1.4 + 0.04 * w, gap: Math.max(0.35, 1.5 - 0.09 * w), claw: 4 * (1 + 0.06 * (w - 1)), bonus: 20 + 5 * w
 });
+
+// 留守番の波：夜より少なく、間隔が長い。倒しても稼ぎは少ない
+const awayCfg = w => Object.assign(waveCfg(w), { count: 6 + 3 * w, gap: Math.max(1.2, 2.6 - 0.12 * w), bonus: 10 + 2 * w, claw: waveCfg(w).claw * 0.5 });
+const AWAY_RETREAT = 0.5;   // 壁が「出したときの耐久」のこの割合まで減ったら撤退（失うのは最大で半分）
+const AWAY_NEED = 0.25;     // 出すのに必要な壁の割合
+const isAway = () => scene === 'away' || scene === 'awayEnd';
 
 // ---------------------------------------------------------------------
 // 音（Web Audio の合成だけ）
@@ -132,6 +144,10 @@ const sfx = {
   over() { [330, 262, 196, 131].forEach((f, i) => tone(f, f * 0.96, 0.3, 0.16, 'sawtooth', i * 0.16)); },
   groan() { tone(rnd(85, 120), rnd(60, 80), rnd(0.5, 0.9), 0.07, 'sawtooth'); },
 };
+const lastSfx = {};
+function sfxT(name, gap = 0.07) {   // 早送りで音が重なりすぎないよう間引く
+  const n = performance.now() / 1000; if (n - (lastSfx[name] || 0) < gap) return; lastSfx[name] = n; sfx[name]();
+}
 
 // ---------------------------------------------------------------------
 // カメラ：夜＝目の高さ（壁の上）、朝＝高い位置から拠点を見下ろす
@@ -143,6 +159,9 @@ function setupCamera() {
   if (scene === 'day') {
     const Hd = H * 0.44, scw = Math.min(0.85 * W / 9, 0.1 * Hd);
     cam.zw = 20; cam.F = scw * cam.zw; cam.hy = 0.14 * Hd; cam.Hc = (0.74 * Hd - cam.hy) / scw; cam.fogA = 50; cam.fogB = 100;
+  } else if (isAway()) {
+    const scw = Math.min(0.85 * W / 14, 0.05 * H);
+    cam.zw = 20; cam.F = scw * cam.zw; cam.hy = 0.15 * H; cam.Hc = (0.66 * H - cam.hy) / scw; cam.fogA = 55; cam.fogB = 100;
   } else { cam.hy = 0.42 * H; cam.F = 0.62 * H; cam.Hc = 2.0; cam.fogA = 18; cam.fogB = 42; }
 }
 let viewKick = 0;
@@ -202,10 +221,10 @@ let toSpawn = 0, spawnT = 0, ammo = 0, reloadT = 0, fireT = 0, aiming = false, a
 let earned = 0, killsN = 0, headsN = 0, allyT = [], groanT = 2, wallSfxT = 0, shotLine = 0, clawing = 0, muzzle = [0, 0];
 const RELOAD = 1.3;
 
-function spawnZ(zNear, zFar) {
-  const fat = Math.random() < cfg.fat, ti = fat ? T_FAT : (Math.random() * 6) | 0, x0 = rnd(-3.2, 3.2), hp = cfg.hp * (fat ? 4 : 1);
+function spawnZ(zNear, zFar, away) {
+  const fat = Math.random() < cfg.fat, ti = fat ? T_FAT : (Math.random() * 6) | 0, x0 = away ? rnd(-6.3, 6.3) : rnd(-3.2, 3.2), hp = cfg.hp * (fat ? 4 : 1);
   zs.push({ ti, x0, x: x0, z: rnd(zNear, zFar), ph: Math.random(), spd: rnd(0.85, 1.2) * (fat ? 0.7 : 1), mir: Math.random() < 0.5,
-    state: 'walk', stopZ: 1.9 + rnd(0, 1.5), hp, maxhp: hp, wob: rnd(0, TAU), hit: 0, fat });
+    state: 'walk', stopZ: away ? cam.zw + 0.7 + rnd(0, 2.2) : 1.9 + rnd(0, 1.5), hp, maxhp: hp, wob: rnd(0, TAU), hit: 0, fat, pend: 0 });
 }
 function startNight() {
   cfg = waveCfg(sv.wave);
@@ -247,13 +266,13 @@ function damage(o, d, head, by) {
   if (o.state === 'walk') o.z += 0.25;
   burst(o, 3);
   if (o.hp > 0) { if (by === 'me') { sfx.hit(); if (head) sfx.head(); } return; }
-  const c = (o.fat ? 15 : 5) + (head ? 3 : 0);
+  const c = isAway() ? (o.fat ? 6 : 2) : (o.fat ? 15 : 5) + (head ? 3 : 0);
   sv.coins += c; earned += c; killsN++; if (head) headsN++;
-  const q = zombieScreen(o);
-  pops.push({ x: q.hx, y: q.hy - 10, txt: (head ? 'HEAD ' : '') + '+' + c, t: 0, col: head ? '#ffe27a' : '#bff7ff' });
+  const [px, pgy, psc] = scr(o.x, o.z);
+  pops.push({ x: px, y: pgy - 1.9 * psc, txt: (head ? 'HEAD ' : '') + '+' + c, t: 0, col: head ? '#ffe27a' : '#bff7ff' });
   burst(o, 14); flashes.push({ x: o.x, z: o.z, t: 0 });
   zs.splice(zs.indexOf(o), 1);
-  sfx.kill(); if (head && by === 'me') sfx.head();
+  sfxT('kill', 0.06); if (head && by === 'me') sfx.head();
 }
 function fire() {
   ammo--; fireT = 1 / St.rate; gunKick = 1; viewKick = 1; shotLine = 0.06; sfx.shot();
@@ -285,7 +304,7 @@ function updateWorld(dt, T) {
   for (let i = pops.length - 1; i >= 0; i--) { pops[i].t += dt; if (pops[i].t > 0.8) pops.splice(i, 1); }
   for (let i = tracers.length - 1; i >= 0; i--) {
     const tr = tracers[i]; tr.t += dt;
-    if (tr.t >= tr.dur) { if (zs.includes(tr.o)) damage(tr.o, St.allyDmg, false, 'ally'); tracers.splice(i, 1); }
+    if (tr.t >= tr.dur) { tr.o.pend = Math.max(0, tr.o.pend - St.allyDmg); if (zs.includes(tr.o)) damage(tr.o, St.allyDmg, false, 'ally'); tracers.splice(i, 1); }
   }
   gunKick = Math.max(0, gunKick - dt * 7); viewKick = Math.max(0, viewKick - dt * 9); shotLine = Math.max(0, shotLine - dt);
   hurt = Math.max(0, hurt - dt * 1.5);
@@ -310,10 +329,53 @@ function updateNight(dt) {
     if ((wallSfxT -= dt) <= 0) { sfx.wall(); wallSfxT = rnd(0.25, 0.5); }
   }
   if ((groanT -= dt) <= 0 && zs.length) { sfx.groan(); groanT = rnd(1.2, 3.5); }
-  if (sv.wallHP <= 0) { sv.wallHP = 0; persist(); sfx.over(); setScene('over'); return; }
+  if (sv.wallHP <= 0) { sv.wallHP = 0; sv.awayDone = 0; persist(); sfx.over(); setScene('over'); return; }   // 負けた朝は留守番をもう一度出せる
   if (toSpawn === 0 && zs.length === 0) {
     const b = cfg.bonus; sv.coins += b; earned += b; sv.wave++; sv.best = Math.max(sv.best, sv.wave); persist(); sfx.clear(); setScene('clear');
   }
+}
+
+// ---------------------------------------------------------------------
+// 留守番：仲間だけで守る。壁の傷みは本物。壁が出したときの半分まで減ったら撤退
+// ---------------------------------------------------------------------
+let awaySpeed = 1, awayRes = null, wall0 = 0;
+const allySlot = (i, n, withYou) => {   // 壁ぎわの並び位置（中央から左右へ）
+  const m = n + (withYou ? 1 : 0), sp = Math.min(1.0, 7.6 / Math.max(1, m - 1)), j = i + (withYou ? 1 : 0);
+  return (j === 0 ? 0 : (j % 2 ? 1 : -1) * Math.ceil(j / 2)) * sp;
+};
+const canAway = () => St.allies < 1 ? '仲間が1人以上必要' : sv.awayDone === sv.wave ? '今朝は済み（夜を越えるとまた出せる）'
+  : sv.wallHP < St.wallMax * AWAY_NEED ? '壁を修理してから' : '';
+function startAway() {
+  if (canAway()) return;
+  cfg = awayCfg(sv.wave);
+  zs = []; particles = []; tracers = []; flashes = []; pops = [];
+  toSpawn = cfg.count; spawnT = 1; earned = 0; killsN = 0; headsN = 0; hurt = 0; awaySpeed = 1; awayRes = null;
+  allyT = Array.from({ length: St.allies }, (_, i) => 0.8 + i * 0.4);
+  wall0 = Math.ceil(sv.wallHP); sv.awayDone = sv.wave; persist();
+  setScene('away'); $('bSpeed').textContent = '速さ ×1';
+}
+function endAway(kind) {
+  if (kind === 'clear') { sv.coins += cfg.bonus; earned += cfg.bonus; }
+  awayRes = { kind, kills: killsN, total: cfg.count, earned, wall0, wall1: Math.ceil(sv.wallHP), bonus: kind === 'clear' ? cfg.bonus : 0 };
+  persist(); if (kind === 'clear') sfx.clear(); else sfx.no();
+  setScene('awayEnd');
+}
+function updateAway(dt) {
+  if (toSpawn > 0 && (spawnT -= dt) <= 0) { spawnZ(cam.zw + 35, cam.zw + 65, true); toSpawn--; spawnT = cfg.gap * rnd(0.6, 1.4); }
+  for (let i = 0; i < allyT.length; i++) {
+    if ((allyT[i] -= dt) > 0) continue;
+    let best = null;   // 近い順。すでに弾が向かっていて倒れる相手は狙わない
+    for (const o of zs) if (o.z < cam.zw + 45 && o.hp - o.pend > 0 && (!best || o.z < best.z)) best = o;
+    if (!best) { allyT[i] = 0.3; continue; }
+    allyT[i] = rnd(2.6, 3.4); best.pend += St.allyDmg;
+    tracers.push({ ax: allySlot(i, allyT.length, false), o: best, t: 0, dur: 0.09 }); sfxT('ally', 0.09);
+  }
+  if (clawing > 0) {
+    sv.wallHP = Math.max(1, sv.wallHP - clawing * cfg.claw * dt); hurt = Math.min(1, hurt + dt * 3);
+    if ((wallSfxT -= dt) <= 0) { sfxT('wall', 0.2); wallSfxT = rnd(0.25, 0.5); }
+  }
+  if (sv.wallHP <= wall0 * AWAY_RETREAT) return endAway('retreat');
+  if (toSpawn === 0 && zs.length === 0) endAway('clear');
 }
 
 // ---------------------------------------------------------------------
@@ -325,7 +387,8 @@ function drawZombie(o) {
   const a = fogAt(o.z); if (a <= 0.02) return;
   ctx.globalAlpha = a;
   const P = TYPES[o.ti];
-  if (sc * 1.8 > 150) Rig.live(ctx, DPR, P, o.ph, sx, gy, sc, o.mir, TILT_N, o.state);
+  if (isAway()) Rig.blit(ctx, DPR, Rig.getSet(o.ti, TILT_D, o.state), o.ph, sx, gy, sc, o.mir);
+  else if (sc * 1.8 > 150) Rig.live(ctx, DPR, P, o.ph, sx, gy, sc, o.mir, TILT_N, o.state);
   else Rig.blit(ctx, DPR, Rig.getSet(o.ti, TILT_N, o.state), o.ph, sx, gy, sc, o.mir);
   ctx.globalAlpha = 1;
   if (o.hit > 0) {   // 当たった瞬間の光
@@ -354,10 +417,12 @@ function drawWallFront(T) {
   ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.shadowBlur = 0;
 }
 function drawFx() {
-  for (const tr of tracers) {   // 仲間の弾：画面の左右下から
+  for (const tr of tracers) {   // 仲間の弾：夜は画面の左右下から、留守番は仲間の位置から
     if (!zs.includes(tr.o)) continue;
-    const q = zombieScreen(tr.o), k = tr.t / tr.dur, k0 = Math.max(0, k - 0.4);
-    const ax = tr.side < 0 ? W * 0.04 : W * 0.96, ay = wallTopY() - 6, bx = q.sx, by = q.gy - 1.2 * q.sc;
+    const [bx, bgy, bsc] = scr(tr.o.x, tr.o.z), by = bgy - 1.2 * bsc, k = tr.t / tr.dur, k0 = Math.max(0, k - 0.4);
+    let ax, ay;
+    if (isAway()) { const [sx, sgy, ssc] = scr(tr.ax, cam.zw - 0.9); ax = sx; ay = sgy - 1.25 * ssc; }
+    else { ax = tr.side < 0 ? W * 0.04 : W * 0.96; ay = wallTopY() - 6; }
     ctx.strokeStyle = 'rgba(140,240,255,0.9)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(ax + (bx - ax) * k0, ay + (by - ay) * k0); ctx.lineTo(ax + (bx - ax) * k, ay + (by - ay) * k); ctx.stroke();
   }
@@ -446,15 +511,9 @@ function renderNight(T) {
 // ---------------------------------------------------------------------
 // 描画（朝の拠点：見下ろし）。壁と仲間は育てた分だけ変わる
 // ---------------------------------------------------------------------
-function renderDay(T) {
-  drawWorld(true);
+function drawBase(T, withYou) {
   const z = cam.zw, lv = sv.lv.wall, hgt = 1.0 + 0.12 * lv;
-  const [lx, ly, lsc] = scr(-7.4, z), [rx] = scr(7.4, z), top = ly - hgt * lsc;
-  // 夜の名残（弾けた跡）
-  for (let i = 0; i < 14; i++) {
-    const [sx, gy, sc] = scr(Math.sin(i * 7.3) * 6, z + 4 + (i * 5.7) % 34);
-    ctx.fillStyle = 'rgba(120,170,90,0.25)'; ctx.beginPath(); ctx.ellipse(sx, gy, 0.5 * sc, 0.2 * sc, 0, 0, TAU); ctx.fill();
-  }
+  const [lx, ly, lsc] = scr(-7.4, z), [rx] = scr(7.4, z), top = ly - hgt * lsc + (hurt > 0 && isAway() ? Math.sin(T * 60) * 1.5 * hurt : 0);
   ctx.fillStyle = lv >= 6 ? '#1c2c40' : lv >= 3 ? '#182536' : '#141d2a'; ctx.fillRect(lx, top, rx - lx, ly - top);
   ctx.strokeStyle = 'rgba(80,230,255,0.25)'; ctx.lineWidth = 1;
   for (let x = -7.4; x <= 7.4; x += 1.85) { const [px] = scr(x, z); ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, ly); ctx.stroke(); }
@@ -464,15 +523,32 @@ function renderDay(T) {
   ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, (0.1 + 0.02 * lv) * lsc); ctx.shadowColor = col; ctx.shadowBlur = 8;
   ctx.beginPath(); ctx.moveTo(lx, top); ctx.lineTo(rx, top); ctx.stroke(); ctx.shadowBlur = 0;
   // 自分（中央）と仲間
-  const n = 1 + St.allies, set = Rig.getSet(T_SOL, TILT_D, 'aim'), sp = Math.min(1.0, 7.6 / Math.max(1, n - 1));
-  for (let i = 0; i < n; i++) {
-    const k = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2);
-    const [sx, gy, sc] = scr(k * sp, z - 0.9);
-    Rig.blit(ctx, DPR, set, (T * 0.25 + i * 0.3) % 1, sx, gy, sc * (i === 0 ? 1.12 : 1), false);
-    if (i === 0) { ctx.fillStyle = '#ffe27a'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('YOU', sx, gy + 14); }
+  const set = Rig.getSet(T_SOL, TILT_D, 'aim'), n = St.allies;
+  for (let i = withYou ? -1 : 0; i < n; i++) {
+    const [sx, gy, sc] = scr(i < 0 ? 0 : allySlot(i, n, withYou), z - 0.9);
+    Rig.blit(ctx, DPR, set, (T * (isAway() ? 0.8 : 0.25) + i * 0.3 + 1) % 1, sx, gy, sc * (i < 0 ? 1.12 : 1), false);
+    if (i < 0) { ctx.fillStyle = '#ffe27a'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('YOU', sx, gy + 14); }
   }
+}
+function renderDay(T) {
+  drawWorld(true);
+  for (let i = 0; i < 14; i++) {   // 夜の名残（弾けた跡）
+    const [sx, gy, sc] = scr(Math.sin(i * 7.3) * 6, cam.zw + 4 + (i * 5.7) % 34);
+    ctx.fillStyle = 'rgba(120,170,90,0.25)'; ctx.beginPath(); ctx.ellipse(sx, gy, 0.5 * sc, 0.2 * sc, 0, 0, TAU); ctx.fill();
+  }
+  drawBase(T, true);
   ctx.fillStyle = 'rgba(232,251,255,0.9)'; ctx.font = '12px system-ui'; ctx.textAlign = 'left';
-  ctx.fillText(`壁 Lv${lv}　仲間 ${St.allies}人　最高 WAVE ${sv.best}`, 10, H * 0.44 - 10);
+  ctx.fillText(`壁 Lv${sv.lv.wall}　仲間 ${St.allies}人　最高 WAVE ${sv.best}`, 10, H * 0.44 - 10);
+}
+function renderAway(T) {
+  drawWorld(true);
+  zs.sort((a, b) => b.z - a.z);
+  for (const o of zs) drawZombie(o);
+  drawBase(T, false);
+  drawFx();
+  ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+  for (const p of pops) { ctx.globalAlpha = 1 - p.t / 0.8; ctx.fillStyle = p.col; ctx.fillText(p.txt, p.x, p.y - p.t * 30); }
+  ctx.globalAlpha = 1;
 }
 
 // ---------------------------------------------------------------------
@@ -480,20 +556,21 @@ function renderDay(T) {
 // ---------------------------------------------------------------------
 function setScene(s) {
   scene = s; setupCamera();
-  $('hud').classList.toggle('hide', !(s === 'night' || s === 'clear' || s === 'over'));
+  $('hud').classList.toggle('hide', !(s === 'night' || s === 'clear' || s === 'over' || s === 'away' || s === 'awayEnd'));
+  $('awayBar').classList.toggle('hide', s !== 'away');
   $('ammoBox').classList.toggle('hide', s !== 'night');
   $('panel').classList.toggle('hide', s !== 'day');
-  $('card').classList.toggle('hide', !(s === 'title' || s === 'clear' || s === 'over'));
+  $('card').classList.toggle('hide', !(s === 'title' || s === 'clear' || s === 'over' || s === 'awayEnd'));
   aiming = false;
   if (s === 'title') { cfg = waveCfg(1); zs = []; for (let i = 0; i < 10; i++) spawnZ(6, 41); renderCard(); }
-  if (s === 'clear' || s === 'over') renderCard();
+  if (s === 'clear' || s === 'over' || s === 'awayEnd') renderCard();
   if (s === 'day') { zs = []; renderPanel(); }
 }
 function renderCard() {
   const c = $('card');
   if (scene === 'title') {
     const cont = sv.wave > 1 || sv.coins > 0 || Object.values(sv.lv).some(v => v > 0);
-    c.innerHTML = `<h1>NIGHT WALL</h1><p>（仮題・試作 v0.1）</p>
+    c.innerHTML = `<h1>NIGHT WALL</h1><p>（仮題・試作 v0.2）</p>
       <p>夜：壁の上から狙って撃つ。<b>頭は3倍</b>。<br>朝：稼いだコインで武器・壁・仲間を育てる。<br>押したまま動かすと、狙いながら連射。</p>
       <button id="bStart">${cont ? `つづきから（WAVE ${sv.wave}）` : 'はじめる'}</button>
       ${cont ? '<button id="bReset" class="sub">最初からやり直す</button>' : ''}`;
@@ -504,6 +581,13 @@ function renderCard() {
       <p>撃破 ${killsN}　うち頭 ${headsN}<br>壁 ${Math.ceil(sv.wallHP)} / ${St.wallMax}</p>
       <p class="big">◎ +${earned}（うち突破ボーナス ${cfg.bonus}）</p>
       <button id="bNext">朝へ（拠点を育てる）</button>`;
+    $('bNext').onclick = () => setScene('day');
+  } else if (scene === 'awayEnd') {
+    const r = awayRes;
+    c.innerHTML = `<h1>留守番 ${r.kind === 'clear' ? '成功' : '撤退'}</h1>
+      <p>${r.kind === 'clear' ? '仲間だけで守り切った。' : r.kind === 'retreat' ? '壁が危ないので引き上げた。' : '途中で引き上げた。'}<br>撃破 ${r.kills} / ${r.total}　壁 ${r.wall0} → ${r.wall1}</p>
+      <p class="big">◎ +${r.earned}${r.bonus ? `（うちボーナス ${r.bonus}）` : ''}</p>
+      <button id="bNext">朝へ戻る</button>`;
     $('bNext').onclick = () => setScene('day');
   } else {
     c.innerHTML = `<h1>壁が破られた</h1>
@@ -521,10 +605,13 @@ function renderPanel() {
     h += `<button data-k="${k}" ${mx || sv.coins < c ? 'disabled' : ''}><b>${u.name} Lv${l}</b><small>${mx ? '最大' : u.desc(l)}</small><i>${mx ? '—' : '◎ ' + c}</i></button>`;
   }
   h += `<button data-k="repair" ${miss <= 0 || pay <= 0 ? 'disabled' : ''}><b>修理</b><small>壁 ${Math.ceil(sv.wallHP)} / ${St.wallMax}${miss > 0 ? ` → ${Math.min(St.wallMax, Math.ceil(sv.wallHP) + pay * 2)}` : ''}</small><i>${miss <= 0 ? '満タン' : '◎ ' + pay}</i></button>`;
-  h += `</div><button id="bGo">夜へ ▶ WAVE ${sv.wave}（ゾンビ ${waveCfg(sv.wave).count}体）</button>`;
+  const why = canAway();
+  h += `</div><button id="bAway" ${why ? 'disabled' : ''}><span><b>留守番に出す</b><br><small>${why || `仲間だけで ${awayCfg(sv.wave).count}体を守る。稼ぎは少なめ。壁が半分になると撤退`}</small></span><span>▶</span></button>`;
+  h += `<button id="bGo">夜へ ▶ WAVE ${sv.wave}（ゾンビ ${waveCfg(sv.wave).count}体）</button>`;
   $('panel').innerHTML = h;
   $('panel').querySelectorAll('[data-k]').forEach(b => b.onclick = () => buy(b.dataset.k));
   $('bGo').onclick = () => { audio(); startNight(); };
+  $('bAway').onclick = () => { audio(); startAway(); };
 }
 function buy(k) {
   audio();
@@ -539,7 +626,7 @@ function buy(k) {
   sfx.buy(); persist(); renderPanel();
 }
 function updateHud() {
-  $('hWave').textContent = 'WAVE ' + (scene === 'clear' ? sv.wave - 1 : sv.wave);
+  $('hWave').textContent = (isAway() ? '留守番 ' : '') + 'WAVE ' + (scene === 'clear' ? sv.wave - 1 : sv.wave);
   $('hLeft').textContent = '残り ' + (toSpawn + zs.length);
   $('hCoin').textContent = sv.coins;
   const r = clamp(sv.wallHP / St.wallMax, 0, 1);
@@ -549,6 +636,8 @@ function updateHud() {
   $('bReload').disabled = reloadT > 0 || ammo >= St.mag;
 }
 $('bReload').onclick = () => startReload();
+$('bSpeed').onclick = () => { awaySpeed = awaySpeed === 1 ? 2 : awaySpeed === 2 ? 4 : 1; $('bSpeed').textContent = '速さ ×' + awaySpeed; };
+$('bRetreat').onclick = () => { if (scene === 'away') endAway('quit'); };
 const muteLabel = () => { $('bMute').textContent = sv.mute ? '♪ OFF' : '♪ ON'; };
 $('bMute').onclick = () => { sv.mute = !sv.mute; persist(); muteLabel(); audio(); };
 muteLabel();
@@ -573,14 +662,16 @@ let last = performance.now(), T = 0, hudT = 0, msS = 0;
 function step(dt) {
   T += dt;
   if (scene === 'night') { updateWorld(dt, T); updateNight(dt); }
+  else if (scene === 'away') { updateWorld(dt, T); updateAway(dt); }
   else if (scene !== 'day') updateWorld(dt, T);
 }
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const t0 = performance.now();
   step(dt);
+  for (let i = 1; i < awaySpeed && scene === 'away'; i++) step(dt);   // 留守番の早送り
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  if (scene === 'day') renderDay(T); else renderNight(T);
+  if (scene === 'day') renderDay(T); else if (isAway()) renderAway(T); else renderNight(T);
   msS += (performance.now() - t0 - msS) * 0.05;
   if ((hudT -= dt) <= 0) { hudT = 0.1; if (scene !== 'title' && scene !== 'day') updateHud(); }
   requestAnimationFrame(frame);
@@ -590,7 +681,7 @@ resize(); setScene('title');
 window.__g = {
   get scene() { return scene; }, get sv() { return sv; }, get zs() { return zs; }, get ms() { return msS; },
   get night() { return { toSpawn, alive: zs.length, ammo, reloadT, earned, killsN, headsN, clawing, wall: sv.wallHP }; },
-  step, startNight, setScene, hitTest, zombieScreen, fire, setAim: (x, y) => { aim = [x, y]; }, hold: v => { aiming = v; },
+  step, startNight, startAway, canAway, awayCfg, get awayRes() { return awayRes; }, setScene, hitTest, zombieScreen, fire, setAim: (x, y) => { aim = [x, y]; }, hold: v => { aiming = v; },
   coins: n => { sv.coins += n; persist(); if (scene === 'day') renderPanel(); }, St, cost, waveCfg
 };
 requestAnimationFrame(frame);
